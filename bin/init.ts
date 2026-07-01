@@ -276,10 +276,10 @@ export function parseArgs(argv: string[]): InitOptions {
 }
 
 function printHelp(): void {
-  console.log(`req-workflow-init — AI REQ workflow kit 설치
+  console.log(`commitgate — AI REQ workflow(커밋 게이트) kit 설치
 
 사용법:
-  npx req-workflow-init [--dir <대상repo>] [--force] [--dry-run]
+  npx commitgate [--dir <대상repo>] [--force] [--dry-run]
 
 옵션:
   --dir <path>   대상 repo 루트(기본: 현재 디렉터리)

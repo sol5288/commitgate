@@ -1,10 +1,10 @@
 {
-  "name": "ai-req-workflow",
+  "name": "commitgate",
   "version": "0.1.0",
-  "description": "AI REQ workflow — Claude↔Codex 핸드오프 fail-closed staged-tree 승인 kit (req:new/review-codex/doctor/commit)",
+  "description": "CommitGate — Builder↔Reviewer(Claude↔Codex) fail-closed 커밋 게이트: 리뷰·승인·증거 없인 커밋을 통과시키지 않는 AI REQ 워크플로 kit (req:new/review-codex/doctor/commit)",
   "type": "module",
   "bin": {
-    "req-workflow-init": "bin/req-workflow-init.mjs"
+    "commitgate": "bin/commitgate.mjs"
   },
   "scripts": {
     "req:new": "tsx scripts/req/req-new.ts",

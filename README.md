@@ -1,7 +1,6 @@
-# ai-req-workflow
+# CommitGate
 
-AI REQ workflow — **Builder(Claude 등) ↔ Reviewer(Codex)** 핸드오프를 fail-closed로 강제하는 개발 워크플로 kit.
-승인된 staged tree와 리뷰 evidence를 묶어, 리뷰받지 않은 변경이 커밋되지 못하게 한다.
+**Builder(Claude 등) ↔ Reviewer(Codex)** 핸드오프를 fail-closed로 강제하는 **커밋 게이트** — 승인된 staged tree와 리뷰 evidence를 묶어, 리뷰·승인받지 않은 변경이 커밋을 통과하지 못하게 한다.
 
 > 출처: `palm-kiosk-app`의 REQ-2026-017 portability kit을 독립 패키지로 추출한 것.
 > **Stage A (현재)**: 대상 repo에 파일을 vendored 설치하는 스캐폴딩 모델. **Stage B (예정)**: `node_modules` 직접 실행 라이브러리 모델.
@@ -19,10 +18,10 @@ AI REQ workflow — **Builder(Claude 등) ↔ Reviewer(Codex)** 핸드오프를 
 
 ```sh
 # 대상 repo(= git repo + package.json)에서
-npx ai-req-workflow            # 또는: npx req-workflow-init
+npx commitgate
 ```
 
-`req-workflow-init`이 하는 일(멱등·비파괴):
+`commitgate`(init 스캐폴딩)이 하는 일(멱등·비파괴):
 
 1. `scripts/req/**` + `workflow/{machine,req.config}.schema.json` 복사(기존 파일은 스킵, `--force`로 덮어씀)
 2. `req.config.json` 시드(부재 시): 감지한 packageManager + `handoffPath:null`

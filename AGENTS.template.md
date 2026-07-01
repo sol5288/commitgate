@@ -1,6 +1,6 @@
 # AGENTS.md (AI REQ workflow — Codex/Builder 계약)
 
-> 이 파일은 `req-workflow-init`이 대상 repo에 `AGENTS.md`가 없을 때 생성한 **템플릿**이다.
+> 이 파일은 `commitgate`(init)가 대상 repo에 `AGENTS.md`가 없을 때 생성한 **템플릿**이다.
 > 프로젝트 고유 규칙(SSOT 경로·포트·참조 프로젝트·phase 문서 등)은 여기에 직접 채워 넣어라.
 > Codex CLI는 repo 루트의 `AGENTS.md`를 리뷰 컨텍스트로 읽는다.
 

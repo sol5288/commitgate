@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * req-workflow-init bin 런처(Stage A).
+ * commitgate bin 런처(Stage A).
  * npm bin은 TS를 직접 실행 못 하므로 tsx ESM 로더를 얹어 init.ts를 실행한다.
  *
  * ⚠️ tsx는 반드시 **이 런처(=패키지) 기준**으로 해소해야 한다(호출 cwd 아님).
