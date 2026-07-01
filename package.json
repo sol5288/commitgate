@@ -1,0 +1,38 @@
+{
+  "name": "ai-req-workflow",
+  "version": "0.1.0",
+  "description": "AI REQ workflow — Claude↔Codex 핸드오프 fail-closed staged-tree 승인 kit (req:new/review-codex/doctor/commit)",
+  "type": "module",
+  "bin": {
+    "req-workflow-init": "bin/req-workflow-init.mjs"
+  },
+  "scripts": {
+    "req:new": "tsx scripts/req/req-new.ts",
+    "req:review-codex": "tsx scripts/req/review-codex.ts",
+    "req:doctor": "tsx scripts/req/req-doctor.ts",
+    "req:commit": "tsx scripts/req/req-commit.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "scripts",
+    "workflow/machine.schema.json",
+    "workflow/req.config.schema.json",
+    "bin",
+    "AGENTS.template.md",
+    "req.config.json.sample",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "tsx": "^4.19.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

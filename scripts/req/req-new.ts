@@ -1,0 +1,173 @@
+#!/usr/bin/env tsx
+/**
+ * req:new — AI REQ 워크플로우 1차 (단계 4A): REQ 티켓 + feat/req-* 브랜치 생성.
+ *
+ * SSOT: palm-kiosk/docs/evaluation/ai-req-workflow-design.md §9.1·§9.2·DEC-WF-020(D11).
+ *   - state.json은 **BOM 없이** 생성(Node, review-codex의 writeState 재사용).
+ *   - 기본 dry-run(계획 출력), `--run` 시 실제 브랜치 생성·티켓 파일·스캐폴드 커밋.
+ *   - REQ id 채번은 registry 미사용(1차) — workflow/REQ-* 디렉터리 스캔으로 max+1.
+ *
+ * 사용: pnpm req:new <slug> [--run] [--risk LOW|HIGH] [--title "..."]
+ */
+import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
+import { join, relative } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { writeState, type WorkflowState } from './review-codex'
+import { loadConfig, packageRoot, type DesignDocs } from './lib/config'
+import { createGitAdapter, type GitAdapter } from './lib/adapters'
+
+// 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — 현재 동작 보존).
+let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
+
+function git(args: string[]): string {
+  return gitAdapter.exec(args)
+}
+
+/** slug 검증: kebab-case(a-z0-9, '-' 구분). */
+export function validateSlug(slug: string): void {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
+    throw new Error(`slug는 kebab-case(a-z0-9, '-' 구분)여야 함: "${slug}"`)
+}
+
+/** REQ id 채번(순수): 같은 연도 기존 id의 max+1, 3자리 zero-pad. */
+export function nextReqId(year: number, existingIds: string[]): string {
+  const prefix = `REQ-${year}-`
+  const maxN = existingIds
+    .filter((id) => id.startsWith(prefix))
+    .map((id) => Number.parseInt(id.slice(prefix.length), 10))
+    .filter((n) => Number.isFinite(n))
+    .reduce((a, b) => Math.max(a, b), 0)
+  return `${prefix}${String(maxN + 1).padStart(3, '0')}`
+}
+
+export function branchName(reqId: string, slug: string, branchPrefix: string): string {
+  return `${branchPrefix}${reqId.replace(/^REQ-/, '')}-${slug}`
+}
+
+export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | 'HIGH'): WorkflowState {
+  return {
+    id: reqId,
+    branch,
+    phase: 'INTAKE',
+    risk_level: risk,
+    codex_thread_id: null,
+    review_base_sha: null,
+    review_diff_hash: null,
+    approved_diff_hash: null,
+    commit_allowed: false,
+    // DEC-WF-027 design-first / phase-gated 상태(Phase 2 도입). design 승인·phase 추적은 후속 단계에서 사용.
+    design_approved: false,
+    design_approved_hash: null,
+    current_phase: null,
+    phases: [],
+    // REQ-016 A1(D-016-6): grandfathering 트리거 — 신규 REQ는 승인 증거를 강제(FAIL), legacy(필드 부재)는 WARN.
+    approval_evidence_required: true,
+  }
+}
+
+function listExistingReqIds(workflowDir: string): string[] {
+  if (!existsSync(workflowDir)) return []
+  return readdirSync(workflowDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && /^REQ-\d{4}-\d+$/.test(d.name))
+    .map((d) => d.name)
+}
+
+export interface Opts {
+  slug: string | null
+  risk: 'LOW' | 'HIGH'
+  title: string | null
+  run: boolean
+  root: string | null
+}
+
+/** 인자 파싱(fail-closed): 잘못된 --risk·값 누락·알 수 없는 옵션은 즉시 throw(조용한 fallback 금지). */
+export function parseArgs(argv: string[]): Opts {
+  const o: Opts = { slug: null, risk: 'LOW', title: null, run: false, root: null }
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === undefined) continue
+    if (a === '--run') {
+      o.run = true
+    } else if (a === '--root') {
+      const v = argv[++i]
+      if (v === undefined) throw new Error('--root 값 필요')
+      o.root = v
+    } else if (a === '--risk') {
+      const v = argv[++i]
+      if (v !== 'LOW' && v !== 'HIGH')
+        throw new Error(`--risk 값은 LOW 또는 HIGH여야 함 (받음: ${v ?? '(없음)'})`)
+      o.risk = v
+    } else if (a === '--title') {
+      const v = argv[++i]
+      if (v === undefined) throw new Error('--title 값 필요')
+      o.title = v
+    } else if (a.startsWith('-')) {
+      throw new Error(`알 수 없는 옵션: ${a}`)
+    } else {
+      o.slug = a
+    }
+  }
+  return o
+}
+
+function main(): void {
+  const o = parseArgs(process.argv.slice(2))
+  if (!o.slug) throw new Error('slug 필요 (예: pnpm req:new camera-hardfail --run)')
+  validateSlug(o.slug)
+
+  const cfg = loadConfig({ root: o.root })
+  gitAdapter = createGitAdapter(cfg.root) // 모든 git 호출 cwd = config.root
+  const dd: DesignDocs = cfg.designDocs
+
+  const year = new Date().getFullYear()
+  const reqId = nextReqId(year, listExistingReqIds(cfg.workflowDirAbs))
+  const branch = branchName(reqId, o.slug, cfg.branchPrefix)
+  const ticketDir = join(cfg.workflowDirAbs, reqId)
+  const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
+
+  if (!o.run) {
+    console.log('[req:new] DRY-RUN (--run 시 실제 생성)')
+    console.log(`  REQ    : ${reqId}`)
+    console.log(`  branch : ${branch}`)
+    console.log(`  ticket : ${ticketRel}/ (state.json·${dd.requirement}·${dd.design}·${dd.plan}·codex-request.md)`)
+    console.log(`  risk   : ${o.risk}`)
+    return
+  }
+
+  // 클린 트리 요구(새 브랜치 깨끗이 시작 — 의도 변경 섞임 방지)
+  const dirty = git(['-c', 'core.quotePath=false', 'status', '--porcelain'])
+  if (dirty) throw new Error(`워킹트리가 clean이어야 req:new --run 가능:\n${dirty}`)
+  const cur = git(['rev-parse', '--abbrev-ref', 'HEAD'])
+  if (cur !== 'main') console.warn(`⚠️  현재 브랜치가 main이 아님(${cur}) — REQ는 main에서 시작 권장(DEC-WF-020)`)
+
+  git(['checkout', '-b', branch]) // D11/DEC-WF-020: feat/req-* 생성·체크아웃
+  mkdirSync(ticketDir, { recursive: true })
+  writeState(ticketDir, buildInitialState(reqId, branch, o.risk))
+  writeFileSync(join(ticketDir, dd.requirement), `# ${reqId} 요구사항\n\n${o.title ?? '(요구사항 작성)'}\n`, 'utf8')
+  // DEC-WF-027 design-first: design·plan 스캐폴드도 함께 생성 — 첫 --kind design 리뷰가 문서 누락으로 fail-closed 되지 않게.
+  writeFileSync(
+    join(ticketDir, dd.design),
+    `# ${reqId} 설계\n\n> 정본 결정은 SSOT(해당 DEC). 본 문서는 그 결정을 현재 코드/구조에 어떻게 반영할지 기록.\n\n## 현재 상태(변경 대상)\n\n## 핵심 설계 결정\n\n## Phase별 구현\n\n## 변경 파일\n\n## 하위호환·안전\n`,
+    'utf8',
+  )
+  writeFileSync(
+    join(ticketDir, dd.plan),
+    `# ${reqId} 계획 — phase 분해 (DEC-WF-027 §9.0)\n\n설계 승인 후 phase별 진행. **각 phase 후 Codex 리뷰·승인 → 다음.**\n\n> **Granularity 정책(REQ-2026-016 Phase C)**: phase 1개는 리뷰 가능한 크기로 — 코드 변경 ${cfg.granularityMaxFiles}파일 이하 권고. 초과 시 req:doctor가 D18 WARN(분할 권고·FAIL 아님). 큰 phase는 런타임 분할(예: B→B1/B2/B3)로 검수 면적을 줄인다.\n\n## Phase 1 — (제목) (\`phase-1-...\`)\n범위:\nExit: eslint0·typecheck0 · 단위 그린 · Codex phase 리뷰 승인.\n\n## 완료\n- 게이트 해당분(unit·typecheck·lint) · 사용자 main 머지(별도 승인).\n`,
+    'utf8',
+  )
+  writeFileSync(
+    join(ticketDir, 'codex-request.md'),
+    `# ${reqId} 리뷰 요청\n\n## 배경\n\n## 변경 요약\n\n## 리뷰 포인트\n`,
+    'utf8',
+  )
+  git(['add', ticketRel])
+  git(['commit', '-m', `chore(req): ${reqId} 티켓 생성`])
+
+  console.log(`[req:new] 생성 완료: ${reqId}`)
+  console.log(`  branch : ${branch} (체크아웃됨)`)
+  console.log(`  ticket : ${ticketRel}/  (스캐폴드 커밋)`)
+  console.log(`  다음   : 코드 변경 → git add → pnpm req:review-codex ${reqId.replace(/^REQ-/, '')} --run`)
+}
+
+const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+if (isMain) main()

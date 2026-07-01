@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ticketRoot": { "type": "string", "minLength": 1 },
+    "schemaPath": { "type": "string", "minLength": 1 },
+    "handoffPath": { "type": ["string", "null"] },
+    "branchPrefix": { "type": "string", "minLength": 1 },
+    "packageManager": { "type": "string", "enum": ["pnpm", "npm", "yarn"] },
+    "granularityMaxFiles": { "type": "integer", "minimum": 1 },
+    "designDocs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requirement": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "design": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "plan": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+      }
+    }
+  }
+}

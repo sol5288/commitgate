@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "machine_schema_version",
+    "review_base_sha",
+    "status",
+    "commit_approved",
+    "merge_ready",
+    "risk_level",
+    "review_kind",
+    "findings",
+    "next_action"
+  ],
+  "properties": {
+    "machine_schema_version": { "type": "string", "enum": ["1.1"] },
+    "review_base_sha": { "type": "string" },
+    "status": { "type": "string", "enum": ["NEEDS_FIX", "STEP_COMPLETE", "COMPLETE"] },
+    "commit_approved": { "type": "string", "enum": ["yes", "no"] },
+    "merge_ready": { "type": "string", "enum": ["yes", "no"] },
+    "risk_level": { "type": "string", "enum": ["LOW", "HIGH"] },
+    "review_kind": { "type": "string", "enum": ["design", "phase"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "detail", "file"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["P1", "P2", "P3"] },
+          "detail": { "type": "string" },
+          "file": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "next_action": { "type": "string" }
+  }
+}
