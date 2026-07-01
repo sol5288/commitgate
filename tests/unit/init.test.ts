@@ -1,13 +1,23 @@
 import { describe, it, expect } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInit, detectPackageManager, parseArgs, type InitOptions } from '../../bin/init'
 
-/** 최소 git repo(빈 .git 마커 + package.json) 임시 생성. */
-function tmpTarget(opts?: { pkg?: object; lock?: string; withGit?: boolean; withPkg?: boolean }): string {
+/**
+ * 임시 대상 repo 생성.
+ * - withGit: 'real'(기본) = 실제 `git init` / 'fake' = 빈 `.git` 마커만 / 'none' = git 없음
+ * - withPkg: package.json 작성 여부(기본 true)
+ */
+function tmpTarget(opts?: { pkg?: object; lock?: string; withGit?: 'real' | 'fake' | 'none'; withPkg?: boolean }): string {
   const dir = mkdtempSync(join(tmpdir(), 'reqwf-init-'))
-  if (opts?.withGit !== false) mkdirSync(join(dir, '.git'))
+  const g = opts?.withGit ?? 'real'
+  if (g === 'real') {
+    execFileSync('git', ['init', '-q'], { cwd: dir })
+  } else if (g === 'fake') {
+    mkdirSync(join(dir, '.git'))
+  }
   if (opts?.withPkg !== false)
     writeFileSync(join(dir, 'package.json'), JSON.stringify(opts?.pkg ?? { name: 'x', version: '0.0.0' }, null, 2))
   if (opts?.lock) writeFileSync(join(dir, opts.lock), '')
@@ -23,17 +33,15 @@ describe('[init] 정상 설치', () => {
     const dir = tmpTarget()
     try {
       const r = runInit(OPTS(dir))
-      // kit 소스 복사
       expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true)
       expect(existsSync(join(dir, 'scripts/req/lib/config.ts'))).toBe(true)
       expect(existsSync(join(dir, 'scripts/req/lib/adapters.ts'))).toBe(true)
-      // 스키마 2종
       expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(true)
       expect(existsSync(join(dir, 'workflow/req.config.schema.json'))).toBe(true)
       // 티켓 디렉터리는 복사 대상 아님(스키마 2종만)
       expect(r.copied.some((f) => f.startsWith('workflow/REQ-'))).toBe(false)
       // config 시드: handoffPath null(palm 경로 미상속) + 감지 pm
-      expect(r.configCreated).toBe(true)
+      expect(r.configAction).toBe('created')
       const cfg = JSON.parse(readFileSync(join(dir, 'req.config.json'), 'utf8'))
       expect(cfg.handoffPath).toBeNull()
       expect(cfg.packageManager).toBe('npm')
@@ -60,7 +68,7 @@ describe('[init] 멱등성(재실행)', () => {
       const r2 = runInit(OPTS(dir))
       expect(r2.copied.length).toBe(0)
       expect(r2.skipped).toContain('scripts/req/req-new.ts')
-      expect(r2.configCreated).toBe(false)
+      expect(r2.configAction).toBe('unchanged')
       expect(r2.agentsCreated).toBe(false)
       expect(r2.packageJsonAdded.length).toBe(0)
     } finally {
@@ -82,20 +90,96 @@ describe('[init] 멱등성(재실행)', () => {
   })
 })
 
-describe('[init] 기존 키 보존', () => {
-  it('기존 req:new 스크립트/handoffPath를 덮어쓰지 않음', () => {
+describe('[init] 기존 config 누락키 병합(design R1 P2)', () => {
+  it('기존 req.config.json에 handoffPath 없으면 병합, 기존 키는 보존', () => {
+    // handoffPath 없는 부분 config → 병합으로 handoffPath:null 추가(palm 경로 resurface 차단)
     const dir = tmpTarget({ pkg: { name: 'x', scripts: { 'req:new': 'custom' }, devDependencies: { ajv: '^7.0.0' } } })
     try {
-      writeFileSync(join(dir, 'req.config.json'), JSON.stringify({ handoffPath: 'keep/me.md' }), 'utf8')
+      writeFileSync(join(dir, 'req.config.json'), JSON.stringify({ branchPrefix: 'feat/x-' }), 'utf8')
       const r = runInit(OPTS(dir))
+      expect(r.configAction).toBe('merged')
+      const cfg = JSON.parse(readFileSync(join(dir, 'req.config.json'), 'utf8'))
+      expect(cfg.branchPrefix).toBe('feat/x-') // 기존 키 보존
+      expect(cfg.handoffPath).toBeNull() // 누락키 추가
+      expect(cfg.packageManager).toBe('npm') // 누락키 추가
+      // package.json: 기존 키 보존
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-      expect(pkg.scripts['req:new']).toBe('custom') // 기존 유지
-      expect(pkg.devDependencies.ajv).toBe('^7.0.0') // 기존 버전 유지
-      expect(pkg.scripts['req:commit']).toBe('tsx scripts/req/req-commit.ts') // 없던 건 추가
-      expect(r.configCreated).toBe(false)
-      expect(JSON.parse(readFileSync(join(dir, 'req.config.json'), 'utf8')).handoffPath).toBe('keep/me.md')
+      expect(pkg.scripts['req:new']).toBe('custom')
+      expect(pkg.devDependencies.ajv).toBe('^7.0.0')
+      expect(pkg.scripts['req:commit']).toBe('tsx scripts/req/req-commit.ts')
     } finally {
       cleanup(dir)
+    }
+  })
+
+  it('기존 config에 handoffPath 명시값 있으면 유지', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'req.config.json'), JSON.stringify({ handoffPath: 'keep/me.md', packageManager: 'pnpm' }), 'utf8')
+      const r = runInit(OPTS(dir))
+      expect(r.configAction).toBe('unchanged')
+      const cfg = JSON.parse(readFileSync(join(dir, 'req.config.json'), 'utf8'))
+      expect(cfg.handoffPath).toBe('keep/me.md')
+      expect(cfg.packageManager).toBe('pnpm')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('기존 config가 malformed면 fail-closed throw + 부분 복사 없음(design R2 P2)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'req.config.json'), '{ not json', 'utf8')
+      expect(() => runInit(OPTS(dir))).toThrow(/req\.config\.json 파싱 실패/)
+      // preflight에서 실패 → kit 파일이 하나도 복사되지 않아야(부분 벤더링 방지)
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
+      expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('package.json이 malformed/비객체면 throw + 부분 복사 없음(design R2 P2)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'package.json'), '[1,2,3]', 'utf8') // 배열 = 비객체
+      expect(() => runInit(OPTS(dir))).toThrow(/package\.json이 JSON 객체가 아님/)
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('package.json scripts/devDependencies가 배열이면 throw + 부분 복사 없음(phase R1 P2)', () => {
+    for (const bad of [{ name: 'x', scripts: [] }, { name: 'x', devDependencies: [1, 2] }]) {
+      const dir = tmpTarget({ pkg: bad })
+      try {
+        expect(() => runInit(OPTS(dir))).toThrow(/필드가 객체가 아님/)
+        expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
+      } finally {
+        cleanup(dir)
+      }
+    }
+  })
+})
+
+describe('[init] 기존 config 스키마/경로 검증(phase R2 P2)', () => {
+  it('schema-invalid 기존 config는 복사 전 throw + 부분 복사 없음', () => {
+    const cases = [
+      { bogusUnknownKey: 1 }, // additionalProperties:false
+      { packageManager: 'bun' }, // enum 위반
+      { branchPrefix: '' }, // minLength 위반(D11 무력화 차단)
+      { ticketRoot: '../escape' }, // root 밖 탈출
+    ]
+    for (const bad of cases) {
+      const dir = tmpTarget()
+      try {
+        writeFileSync(join(dir, 'req.config.json'), JSON.stringify(bad), 'utf8')
+        expect(() => runInit(OPTS(dir))).toThrow()
+        expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
+      } finally {
+        cleanup(dir)
+      }
     }
   })
 })
@@ -106,11 +190,10 @@ describe('[init] dry-run', () => {
     try {
       const r = runInit(OPTS(dir, { dryRun: true }))
       expect(r.copied.length).toBeGreaterThan(0)
-      expect(r.configCreated).toBe(true)
+      expect(r.configAction).toBe('created')
       expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
       expect(existsSync(join(dir, 'req.config.json'))).toBe(false)
       expect(existsSync(join(dir, 'AGENTS.md'))).toBe(false)
-      // package.json 미변경
       expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).scripts).toBeUndefined()
     } finally {
       cleanup(dir)
@@ -119,8 +202,17 @@ describe('[init] dry-run', () => {
 })
 
 describe('[init] fail-closed', () => {
-  it('git repo 아니면 throw', () => {
-    const dir = tmpTarget({ withGit: false })
+  it('git repo 아니면 throw(실제 probe)', () => {
+    const dir = tmpTarget({ withGit: 'none' })
+    try {
+      expect(() => runInit(OPTS(dir))).toThrow(/git repo가 아님/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('빈 .git 마커만 있는 fake repo도 거부(design R1 P2)', () => {
+    const dir = tmpTarget({ withGit: 'fake' })
     try {
       expect(() => runInit(OPTS(dir))).toThrow(/git repo가 아님/)
     } finally {

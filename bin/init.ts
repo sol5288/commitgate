@@ -11,10 +11,20 @@
  *
  * 코어 승인 바인딩·staged tree 검증은 건드리지 않는다(복사만). 프로젝트 차이는 req.config.json에서만 흡수.
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, copyFileSync } from 'node:fs'
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+  copyFileSync,
+  realpathSync,
+} from 'node:fs'
 import { resolve, join, dirname, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { PackageManager } from '../scripts/req/lib/config'
+import { loadConfig, type PackageManager } from '../scripts/req/lib/config'
+import { createGitAdapter } from '../scripts/req/lib/adapters'
 
 /** 이 패키지 루트(bin/ 기준 1단계 위). 복사 원본. */
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -43,11 +53,34 @@ export interface InitResult {
   targetRoot: string
   copied: string[] // repo-상대 경로(신규 복사)
   skipped: string[] // repo-상대 경로(이미 존재 → 미덮어씀)
-  configCreated: boolean
+  configAction: 'created' | 'merged' | 'unchanged' // req.config.json: 신규 생성 / 누락키 병합 / 변경 없음
+  configKeysAdded: string[] // 병합 시 추가된 키(handoffPath·packageManager)
   packageJsonAdded: string[] // 추가된 script/devDep 키
   agentsCreated: boolean
   packageManager: PackageManager
   dryRun: boolean
+}
+
+/**
+ * 대상이 진짜 git work tree인지 실제 git으로 검증(D5, design R1 P2). `.git` 경로 존재만으론 부족(fake 마커 통과).
+ * targetRoot가 repo top-level과 일치해야 함(하위 디렉터리에 스캐폴드 방지). git 미설치/비-repo → throw(fail-closed).
+ */
+function assertGitWorkTree(targetRoot: string): void {
+  const git = createGitAdapter(targetRoot)
+  let inside: string
+  let topLevel: string
+  try {
+    inside = git.exec(['rev-parse', '--is-inside-work-tree'])
+    topLevel = git.exec(['rev-parse', '--show-toplevel'])
+  } catch {
+    throw new Error(`대상이 git repo가 아님: ${targetRoot} — 'git init' 후 재시도(워크플로는 git 전제).`)
+  }
+  if (inside !== 'true') throw new Error(`대상이 git work tree가 아님: ${targetRoot}`)
+  // Windows 임시경로(8.3 short name·drive/컴포넌트 case)·symlink 차이 정규화.
+  // realpathSync.native = OS API라 컴포넌트 실제 case까지 canonical(WINDOWS/TEMP → Windows/Temp).
+  const norm = (p: string): string => resolve(realpathSync.native(p))
+  if (norm(topLevel) !== norm(targetRoot))
+    throw new Error(`대상이 git repo 최상위가 아님: ${targetRoot} (top-level=${topLevel}) — repo 루트에서 실행.`)
 }
 
 /** lockfile로 대상 패키지매니저 감지(없으면 npm — 가장 보편적 기본). */
@@ -95,50 +128,80 @@ function copyInto(
   }
 }
 
-/** 설치 코어. IO는 여기서만(테스트가 임시 repo로 직접 호출). */
+/** JSON 파일을 객체로 파싱(fail-closed). 파싱 실패·비-객체(배열/원시)면 throw. */
+function parseJsonObject(path: string, label: string): Record<string, unknown> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (e) {
+    throw new Error(`${label} 파싱 실패(${path}): ${(e as Error).message}`)
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+    throw new Error(`${label}이 JSON 객체가 아님(${path})`)
+  return parsed as Record<string, unknown>
+}
+
+/**
+ * 설치 코어. IO는 여기서만(테스트가 임시 repo로 직접 호출).
+ * **Preflight(전 검증·파싱) → Apply(쓰기) 2단계** — malformed 입력에 대해 어떤 파일도 복사·수정하기 전에 실패한다(부분 설치 방지, design R2 P2).
+ */
 export function runInit(opts: InitOptions): InitResult {
   const targetRoot = resolve(opts.dir)
 
-  // ── 감사(fail-closed) ─────────────────────────────────────────────
+  // ══ Preflight: 모든 검증·파싱을 어떤 쓰기보다 먼저 ═══════════════════
   if (!existsSync(targetRoot) || !statSync(targetRoot).isDirectory())
     throw new Error(`대상 디렉터리가 없음: ${targetRoot}`)
-  if (!existsSync(join(targetRoot, '.git')))
-    throw new Error(`대상이 git repo가 아님: ${targetRoot} — 'git init' 후 재시도(워크플로는 git 전제).`)
+  assertGitWorkTree(targetRoot) // 실제 git probe(fake .git 마커 거부)
+
   const pkgPath = join(targetRoot, 'package.json')
   if (!existsSync(pkgPath))
     throw new Error(`package.json 없음: ${targetRoot} — 'npm init' 등으로 먼저 생성(req:* 스크립트 주입 대상).`)
-
-  const copied: string[] = []
-  const skipped: string[] = []
-
-  // ── 1) scripts/req/** 복사 ────────────────────────────────────────
-  copyInto(walkFiles(join(PACKAGE_ROOT, 'scripts', 'req')), PACKAGE_ROOT, targetRoot, opts, copied, skipped)
-
-  // ── 2) workflow 스키마 2종만 복사(티켓 디렉터리는 제외) ─────────────
-  const schemaFiles = ['machine.schema.json', 'req.config.schema.json'].map((f) =>
-    join(PACKAGE_ROOT, 'workflow', f),
-  )
-  copyInto(schemaFiles, PACKAGE_ROOT, targetRoot, opts, copied, skipped)
-
-  // ── 3) req.config.json 시드(부재 시) ──────────────────────────────
-  const packageManager = detectPackageManager(targetRoot)
-  const cfgPath = join(targetRoot, 'req.config.json')
-  let configCreated = false
-  if (!existsSync(cfgPath)) {
-    configCreated = true
-    if (!opts.dryRun) {
-      // handoffPath:null — 코어 DEFAULTS의 프로젝트 고유값(palm 경로)을 상속하지 않도록 명시 비활성.
-      const seed = { packageManager, handoffPath: null }
-      writeFileSync(cfgPath, JSON.stringify(seed, null, 2) + '\n', 'utf8')
-    }
-  }
-
-  // ── 4) 대상 package.json 패치(기존 키 미덮어씀) ────────────────────
-  const packageJsonAdded: string[] = []
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+  const pkg = parseJsonObject(pkgPath, 'package.json') as {
     scripts?: Record<string, string>
     devDependencies?: Record<string, string>
   }
+  // scripts·devDependencies가 존재하면 반드시 plain object — 배열/원시면 patch가 조용히 유실되어(성공 보고인데 req:* 미주입) fail-closed 위반(phase R1 P2).
+  for (const field of ['scripts', 'devDependencies'] as const) {
+    const v = (pkg as Record<string, unknown>)[field]
+    if (v !== undefined && (typeof v !== 'object' || v === null || Array.isArray(v)))
+      throw new Error(`package.json의 ${field} 필드가 객체가 아님(${pkgPath}) — req:* 주입 불가(배열/원시 미지원).`)
+  }
+
+  const cfgPath = join(targetRoot, 'req.config.json')
+  const existingCfg = existsSync(cfgPath) ? parseJsonObject(cfgPath, 'req.config.json') : null
+  // 기존 config는 워크플로 CONFIG_SCHEMA(additionalProperties·enum·type) + 경로 confinement까지 preflight 검증(phase R2 P2).
+  // kit의 loadConfig를 재사용 — schema-invalid(unknown key·bad enum·escaping ticketRoot 등)면 복사 전 throw(첫 req:* 지연 실패 방지).
+  // 병합은 유효 키만 추가(handoffPath:null·packageManager)라 "기존 유효 ⇒ 병합 유효".
+  loadConfig({ root: targetRoot })
+  const packageManager = detectPackageManager(targetRoot)
+
+  // req.config.json 계획(쓰기 없음). handoffPath:null·packageManager를 항상 보장 —
+  // 코어 DEFAULTS의 palm 고유값(handoffPath)이 기존 부분 config에서도 resurface하지 않도록(design R1 P2). 기존 키 보존.
+  let configAction: 'created' | 'merged' | 'unchanged' = 'unchanged'
+  const configKeysAdded: string[] = []
+  let configToWrite: Record<string, unknown> | null = null
+  if (existingCfg === null) {
+    configAction = 'created'
+    configKeysAdded.push('packageManager', 'handoffPath')
+    configToWrite = { packageManager, handoffPath: null }
+  } else {
+    const patch: Record<string, unknown> = {}
+    if (!('handoffPath' in existingCfg)) {
+      patch.handoffPath = null
+      configKeysAdded.push('handoffPath')
+    }
+    if (!('packageManager' in existingCfg)) {
+      patch.packageManager = packageManager
+      configKeysAdded.push('packageManager')
+    }
+    if (configKeysAdded.length > 0) {
+      configAction = 'merged'
+      configToWrite = { ...existingCfg, ...patch }
+    }
+  }
+
+  // package.json 패치 계획(쓰기 없음, 기존 키 미덮어씀)
+  const packageJsonAdded: string[] = []
   const scripts = pkg.scripts ?? {}
   const devDeps = pkg.devDependencies ?? {}
   for (const [k, v] of Object.entries(REQ_SCRIPTS)) {
@@ -153,27 +216,33 @@ export function runInit(opts: InitOptions): InitResult {
       packageJsonAdded.push(`devDependencies.${k}`)
     }
   }
-  if (packageJsonAdded.length > 0 && !opts.dryRun) {
-    pkg.scripts = scripts
-    pkg.devDependencies = devDeps
-    writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
-  }
 
-  // ── 5) AGENTS.md 시드(부재 시) ────────────────────────────────────
   const agentsPath = join(targetRoot, 'AGENTS.md')
-  let agentsCreated = false
-  if (!existsSync(agentsPath)) {
-    agentsCreated = true
-    if (!opts.dryRun) {
-      copyFileSync(join(PACKAGE_ROOT, 'AGENTS.template.md'), agentsPath)
+  const agentsCreated = !existsSync(agentsPath)
+
+  // ══ Apply: 여기부터 쓰기(preflight 전부 통과 후에만) ═════════════════
+  const copied: string[] = []
+  const skipped: string[] = []
+  copyInto(walkFiles(join(PACKAGE_ROOT, 'scripts', 'req')), PACKAGE_ROOT, targetRoot, opts, copied, skipped)
+  const schemaFiles = ['machine.schema.json', 'req.config.schema.json'].map((f) => join(PACKAGE_ROOT, 'workflow', f))
+  copyInto(schemaFiles, PACKAGE_ROOT, targetRoot, opts, copied, skipped)
+
+  if (!opts.dryRun) {
+    if (configToWrite) writeFileSync(cfgPath, JSON.stringify(configToWrite, null, 2) + '\n', 'utf8')
+    if (packageJsonAdded.length > 0) {
+      pkg.scripts = scripts
+      pkg.devDependencies = devDeps
+      writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
     }
+    if (agentsCreated) copyFileSync(join(PACKAGE_ROOT, 'AGENTS.template.md'), agentsPath)
   }
 
   return {
     targetRoot,
     copied,
     skipped,
-    configCreated,
+    configAction,
+    configKeysAdded,
     packageJsonAdded,
     agentsCreated,
     packageManager,
@@ -234,7 +303,13 @@ export function main(argv: string[]): void {
   console.log(`${tag}  복사 ${r.copied.length}개 / 스킵(기존) ${r.skipped.length}개`)
   for (const f of r.copied) console.log(`${tag}    + ${f}`)
   for (const f of r.skipped) console.log(`${tag}    = ${f} (이미 존재)`)
-  console.log(`${tag}  req.config.json: ${r.configCreated ? '생성' : '이미 존재(유지)'}`)
+  const cfgMsg =
+    r.configAction === 'created'
+      ? `생성(${r.configKeysAdded.join(', ')})`
+      : r.configAction === 'merged'
+        ? `누락키 병합(${r.configKeysAdded.join(', ')})`
+        : '변경 없음(기존 유지)'
+  console.log(`${tag}  req.config.json: ${cfgMsg}`)
   console.log(
     `${tag}  package.json: ${r.packageJsonAdded.length > 0 ? '추가 ' + r.packageJsonAdded.join(', ') : '변경 없음'}`,
   )
