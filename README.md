@@ -1,5 +1,7 @@
 # CommitGate 🚦
 
+🌐 **한국어** · [English](./README.en.md)
+
 **AI가 짠 코드를, 다른 AI가 리뷰하고 승인해야만 커밋되게 하는 "커밋 관문(gate)".**
 
 > 한 줄 요약: **만드는 AI(Builder)** 와 **검사하는 AI(Reviewer)** 를 짝지어, **리뷰·승인·증거 없이는 커밋이 통과하지 못하게** 막아줍니다.
@@ -118,7 +120,7 @@ npx commitgate
 
 1. 워크플로 스크립트(`scripts/req/`)와 스키마를 복사합니다.
 2. `req.config.json`(설정 파일)을 만들어 둡니다.
-3. `package.json`에 `req:*` 명령들과 필요한 devDependencies(`tsx`, `ajv`)를 추가합니다.
+3. `package.json`에 `req:*` 명령들과 필요한 devDependencies(`tsx`, `ajv`, `cross-spawn`)를 추가합니다.
 4. `AGENTS.md`(Reviewer가 읽는 규칙 파일)가 없으면 템플릿을 만들어 줍니다.
 
 설치 후, 방금 추가된 의존성을 받습니다:
