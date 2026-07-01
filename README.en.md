@@ -6,6 +6,8 @@
 
 AI coding agents can move quickly, but unreviewed changes should not go straight into your history. CommitGate wraps each change in a REQ ticket and only allows the staged tree approved by Codex to be committed. If the code changes after approval, or if evidence is missing, it fails closed.
 
+[![CI](https://github.com/sol5288/commitgate/actions/workflows/ci.yml/badge.svg)](https://github.com/sol5288/commitgate/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 ---
@@ -71,6 +73,7 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - If the approved staged tree differs from the current staged tree, the commit is blocked.
 - Workflow files such as `state.json` and `responses/` cannot be mixed into the source commit.
 - If Codex CLI is missing or fails, the workflow fails instead of silently passing.
+- During install, existing `cross-spawn` versions below the verified floor warn by default and fail with `--strict`.
 - Approval responses and evidence are kept under `workflow/REQ-.../responses/`.
 
 In short: **approved changes pass, ambiguous changes stop.**
@@ -94,6 +97,14 @@ Preview without writing files:
 ```sh
 npx commitgate --dry-run
 ```
+
+Treat the security floor warning as an install failure:
+
+```sh
+npx commitgate --strict
+```
+
+If an existing `cross-spawn` is below the verified floor, CommitGate stops before copying files.
 
 ---
 
@@ -160,6 +171,8 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | Command | Purpose |
 |---|---|
 | `npx commitgate` | Install CommitGate into a project |
+| `npx commitgate --dry-run` | Preview the install plan without writing files |
+| `npx commitgate --strict` | Treat low `cross-spawn` version warnings as install failures |
 | `req:new <slug> --run` | Create a REQ ticket, branch, and design docs |
 | `req:review-codex <id> --kind design --run` | Review the design |
 | `req:review-codex <id> --kind phase --run` | Review the implementation |
@@ -194,6 +207,9 @@ No. If the staged tree changes after approval, CommitGate treats the approval as
 **Why should I not stage `state.json` or `responses/`?**
 They are workflow state and evidence files. Mixing them into the source commit weakens the approval binding, so `req:commit` blocks it.
 
+**What should I do if I see a cross-spawn version warning?**
+It means the target project may already have a `cross-spawn` version below CommitGate's verified floor. Upgrade it with `npm i -D cross-spawn@^7.0.6`. In CI or security-sensitive installs, use `npx commitgate --strict` to treat the warning as a failure.
+
 **Does running install twice overwrite files?**
 No. Existing files are skipped. Use `--force` if you intentionally want to refresh them.
 
@@ -203,12 +219,17 @@ No. Existing files are skipped. Use `--force` if you intentionally want to refre
 
 The current release is **Stage A: vendored scaffold model**. `npx commitgate` copies workflow files into the target project.
 
+Current verification:
+
+- GitHub Actions runs a `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 18/20/22 matrix.
+- `npm run smoke` installs the packed tarball and runs the installed `commitgate` bin.
+- A Windows `.cmd` wrapper injection regression test protects package-manager and Codex wrapper paths.
+
 Future scope:
 
 - Running directly from `node_modules` as a library-style model
 - Non-git VCS support
 - More design document templates
-- Broader Linux/macOS CI smoke coverage
 
 ---
 

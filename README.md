@@ -6,6 +6,8 @@
 
 AI 에이전트가 코드를 빠르게 만들더라도, 리뷰 없이 바로 커밋되면 위험합니다. CommitGate는 변경을 티켓 단위로 묶고, Codex가 승인한 staged tree만 커밋되게 합니다. 승인 후 코드가 바뀌거나 증거가 부족하면 기본적으로 막습니다.
 
+[![CI](https://github.com/sol5288/commitgate/actions/workflows/ci.yml/badge.svg)](https://github.com/sol5288/commitgate/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 ---
@@ -71,6 +73,7 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 - 승인된 staged tree와 지금 커밋하려는 staged tree가 다르면 막습니다.
 - `state.json`, `responses/` 같은 워크플로 내부 파일을 source 커밋에 섞으면 막습니다.
 - Codex CLI가 없거나 실행에 실패하면 조용히 통과하지 않고 실패합니다.
+- 설치 시 기존 `cross-spawn`이 검증 하한보다 낮으면 경고하고, `--strict`에서는 중단합니다.
 - 승인 응답과 증거 파일은 `workflow/REQ-.../responses/`에 남습니다.
 
 한 줄로 말하면, **확실히 승인된 변경만 통과하고 애매하면 멈추는 방식**입니다.
@@ -94,6 +97,14 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 ```sh
 npx commitgate --dry-run
 ```
+
+보안 하한 경고를 설치 실패로 취급하려면:
+
+```sh
+npx commitgate --strict
+```
+
+기존 `cross-spawn`이 검증 하한보다 낮으면 파일을 복사하기 전에 중단합니다.
 
 ---
 
@@ -160,6 +171,8 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | 명령 | 용도 |
 |---|---|
 | `npx commitgate` | 프로젝트에 CommitGate 설치 |
+| `npx commitgate --dry-run` | 파일을 쓰지 않고 설치 계획 확인 |
+| `npx commitgate --strict` | 낮은 `cross-spawn` 버전 경고를 설치 실패로 처리 |
 | `req:new <slug> --run` | REQ 티켓, 브랜치, 설계문서 생성 |
 | `req:review-codex <id> --kind design --run` | 설계 리뷰 |
 | `req:review-codex <id> --kind phase --run` | 구현 리뷰 |
@@ -194,6 +207,9 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 **`state.json`이나 `responses/`는 왜 stage하면 안 되나요?**
 워크플로 증거와 상태 파일입니다. source 커밋에 섞이면 승인 바인딩이 흐려지므로 `req:commit`이 막습니다.
 
+**cross-spawn 버전 경고가 나오면 어떻게 하나요?**
+대상 프로젝트의 기존 `cross-spawn`이 CommitGate가 검증한 하한보다 낮을 수 있다는 뜻입니다. `npm i -D cross-spawn@^7.0.6`으로 올리세요. CI나 보안 민감 환경에서는 `npx commitgate --strict`를 사용해 경고를 실패로 다루세요.
+
 **두 번 설치하면 덮어쓰나요?**
 아니요. 기존 파일은 건너뜁니다. 강제로 갱신하려면 `--force`를 사용하세요.
 
@@ -203,12 +219,17 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 
 현재 버전은 **Stage A: vendored scaffold 모델**입니다. 즉 `npx commitgate`가 대상 프로젝트에 워크플로 파일을 복사합니다.
 
+현재 운영 중인 검증입니다.
+
+- GitHub Actions에서 `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 18/20/22 매트릭스를 실행합니다.
+- `npm run smoke`는 pack tarball 설치본의 `commitgate` bin을 실행합니다.
+- Windows `.cmd` 래퍼 주입 회귀 테스트가 패키지 매니저와 Codex wrapper 경로를 보호합니다.
+
 아래는 후속 범위입니다.
 
 - `node_modules`에서 직접 실행하는 라이브러리 모델
 - 비-git VCS 지원
 - 더 다양한 설계문서 템플릿
-- Linux/macOS CI smoke 확대
 
 ---
 
