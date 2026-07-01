@@ -25,6 +25,7 @@ import { resolve, join, dirname, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadConfig, stripBom, type PackageManager } from '../scripts/req/lib/config'
 import { createGitAdapter } from '../scripts/req/lib/adapters'
+import * as semver from 'semver'
 
 /** 이 패키지 루트(bin/ 기준 1단계 위). 복사 원본. */
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -37,10 +38,13 @@ const REQ_SCRIPTS: Record<string, string> = {
   'req:commit': 'tsx scripts/req/req-commit.ts',
 }
 
+/** cross-spawn 주입 spec(= 보안 하한 SSOT). 진단(#1)과 주입이 이 값을 공유. */
+const CROSS_SPAWN_SPEC = '^7.0.6'
+
 /** 대상 package.json에 주입할 devDeps(워크플로 실행 전제). cross-spawn = 복사된 adapters.ts의 안전 spawn(P1) 런타임 의존. */
 const REQ_DEV_DEPS: Record<string, string> = {
   ajv: '^8.20.0',
-  'cross-spawn': '^7.0.6',
+  'cross-spawn': CROSS_SPAWN_SPEC,
   tsx: '^4.19.1',
 }
 
@@ -48,6 +52,7 @@ export interface InitOptions {
   dir: string
   force: boolean
   dryRun: boolean
+  strict: boolean // cross-spawn 하한 미만이면 WARN 대신 throw(#1)
 }
 
 export interface InitResult {
@@ -59,6 +64,7 @@ export interface InitResult {
   packageJsonAdded: string[] // 추가된 script/devDep 키
   agentsCreated: boolean
   packageManager: PackageManager
+  crossSpawnFloorWarned: boolean // 기존 cross-spawn이 보안 하한 미만이라 경고(#1)
   dryRun: boolean
 }
 
@@ -142,6 +148,92 @@ function parseJsonObject(path: string, label: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
+// ─────────────────────────────── cross-spawn 버전 하한 진단 (#1) ──
+
+/** 보안 하한 = 주입 spec의 최소버전(SSOT — 하드코딩 이중화 금지). '^7.0.6' → 7.0.6. */
+const CROSS_SPAWN_FLOOR = semver.minVersion(CROSS_SPAWN_SPEC)
+
+/** obj가 plain object일 때 obj[key](문자열). 아니면 undefined. */
+function stringField(obj: unknown, key: string): string | undefined {
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    const v = (obj as Record<string, unknown>)[key]
+    if (typeof v === 'string') return v
+  }
+  return undefined
+}
+
+/** 대상의 기존 cross-spawn spec(devDeps 우선, 없으면 deps). 없으면 null. */
+function existingCrossSpawnSpec(pkg: Record<string, unknown>): string | null {
+  return stringField(pkg.devDependencies, 'cross-spawn') ?? stringField(pkg.dependencies, 'cross-spawn') ?? null
+}
+
+/** node_modules에 실제 설치된 cross-spawn 버전(valid semver). 없으면 null. */
+function installedCrossSpawnVersion(targetRoot: string): string | null {
+  const p = join(targetRoot, 'node_modules', 'cross-spawn', 'package.json')
+  if (!existsSync(p)) return null
+  try {
+    const v = (JSON.parse(stripBom(readFileSync(p, 'utf8'))) as { version?: unknown }).version
+    return typeof v === 'string' && semver.valid(v) ? v : null
+  } catch {
+    return null
+  }
+}
+
+/** lockfile 해소 cross-spawn 버전(package-lock v2/v3 JSON 우선, pnpm/yarn best-effort). 없으면 null. */
+function lockedCrossSpawnVersion(targetRoot: string): string | null {
+  const pl = join(targetRoot, 'package-lock.json')
+  if (existsSync(pl)) {
+    try {
+      const j = JSON.parse(stripBom(readFileSync(pl, 'utf8'))) as {
+        packages?: Record<string, { version?: unknown }>
+        dependencies?: Record<string, { version?: unknown }>
+      }
+      const v = j.packages?.['node_modules/cross-spawn']?.version ?? j.dependencies?.['cross-spawn']?.version
+      if (typeof v === 'string' && semver.valid(v)) return v
+    } catch {
+      /* best-effort */
+    }
+  }
+  for (const [file, re] of [
+    ['pnpm-lock.yaml', /cross-spawn@(\d+\.\d+\.\d+)/],
+    ['yarn.lock', /(?:^|\n)"?cross-spawn@[^\n]*:[\s\S]*?\n\s+version:?\s+"?(\d+\.\d+\.\d+)"?/],
+  ] as const) {
+    const fp = join(targetRoot, file)
+    if (!existsSync(fp)) continue
+    try {
+      const m = readFileSync(fp, 'utf8').match(re)
+      if (m?.[1] && semver.valid(m[1])) return m[1]
+    } catch {
+      /* best-effort */
+    }
+  }
+  return null
+}
+
+/**
+ * 기존 cross-spawn이 보안 하한 미만인지 판정(#1). 우선순위: **설치버전 → lockfile 해소버전 → range**.
+ * range fallback은 `>=floor`로 절대 해소 불가한 spec만 below로 본다(‘^7.0.0’·‘~7.0.1’ 오탐 방지 — R1 P2).
+ * 기존 cross-spawn 없으면 null(우리가 `^7.0.6` 주입 → 진단 불필요).
+ */
+export function crossSpawnBelowFloor(
+  targetRoot: string,
+  pkg: Record<string, unknown>,
+): { below: boolean; detail: string } | null {
+  if (!CROSS_SPAWN_FLOOR) return null // 이론상 도달 불가(REQ_DEV_DEPS 고정값)
+  const floor = CROSS_SPAWN_FLOOR.version
+  const spec = existingCrossSpawnSpec(pkg)
+  if (!spec) return null
+
+  const installed = installedCrossSpawnVersion(targetRoot)
+  if (installed) return { below: semver.lt(installed, floor), detail: `설치버전 ${installed}` }
+
+  const locked = lockedCrossSpawnVersion(targetRoot)
+  if (locked) return { below: semver.lt(locked, floor), detail: `lockfile ${locked}` }
+
+  if (semver.validRange(spec)) return { below: !semver.intersects(spec, `>=${floor}`), detail: `범위 ${spec}` }
+  return { below: false, detail: `범위 ${spec}(파싱 불가 — 무경고)` }
+}
+
 /**
  * 설치 코어. IO는 여기서만(테스트가 임시 repo로 직접 호출).
  * **Preflight(전 검증·파싱) → Apply(쓰기) 2단계** — malformed 입력에 대해 어떤 파일도 복사·수정하기 전에 실패한다(부분 설치 방지, design R2 P2).
@@ -161,11 +253,23 @@ export function runInit(opts: InitOptions): InitResult {
     scripts?: Record<string, string>
     devDependencies?: Record<string, string>
   }
-  // scripts·devDependencies가 존재하면 반드시 plain object — 배열/원시면 patch가 조용히 유실되어(성공 보고인데 req:* 미주입) fail-closed 위반(phase R1 P2).
-  for (const field of ['scripts', 'devDependencies'] as const) {
+  // scripts·devDependencies·dependencies가 존재하면 반드시 plain object — 배열/원시면 patch 유실(scripts/devDeps, phase R1 P2)
+  // 또는 cross-spawn 진단(dependencies, design R1 P3) 오동작. 읽기 전에 shape 검증(fail-closed).
+  for (const field of ['scripts', 'devDependencies', 'dependencies'] as const) {
     const v = (pkg as Record<string, unknown>)[field]
     if (v !== undefined && (typeof v !== 'object' || v === null || Array.isArray(v)))
-      throw new Error(`package.json의 ${field} 필드가 객체가 아님(${pkgPath}) — req:* 주입 불가(배열/원시 미지원).`)
+      throw new Error(`package.json의 ${field} 필드가 객체가 아님(${pkgPath}) — 배열/원시 미지원.`)
+  }
+
+  // cross-spawn 보안 하한 진단(#1): 기존 cross-spawn이 하한 미만이면 WARN(기본)/throw(--strict). preflight라 strict throw 시 부분 설치 없음.
+  let crossSpawnFloorWarned = false
+  const floorCheck = crossSpawnBelowFloor(targetRoot, pkg as Record<string, unknown>)
+  if (floorCheck?.below) {
+    const spec = CROSS_SPAWN_SPEC
+    const msg = `기존 cross-spawn(${floorCheck.detail})이 보안 하한 >=${CROSS_SPAWN_FLOOR?.version} 미만 — CommitGate 안전 경계(safeSpawnSync)는 ${spec} 검증분입니다. 'npm i -D cross-spawn@${spec}' 권장.`
+    if (opts.strict) throw new Error(`[--strict] ${msg}`)
+    console.warn(`⚠️  ${msg} (설치는 계속 — 강제 중단하려면 --strict)`)
+    crossSpawnFloorWarned = true
   }
 
   const cfgPath = join(targetRoot, 'req.config.json')
@@ -247,6 +351,7 @@ export function runInit(opts: InitOptions): InitResult {
     packageJsonAdded,
     agentsCreated,
     packageManager,
+    crossSpawnFloorWarned,
     dryRun: opts.dryRun,
   }
 }
@@ -255,6 +360,7 @@ export function parseArgs(argv: string[]): InitOptions {
   let dir = process.cwd()
   let force = false
   let dryRun = false
+  let strict = false
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--dir') {
@@ -266,6 +372,8 @@ export function parseArgs(argv: string[]): InitOptions {
       force = true
     } else if (a === '--dry-run') {
       dryRun = true
+    } else if (a === '--strict') {
+      strict = true
     } else if (a === '-h' || a === '--help') {
       printHelp()
       process.exit(0)
@@ -273,7 +381,7 @@ export function parseArgs(argv: string[]): InitOptions {
       throw new Error(`알 수 없는 인자: ${a}`)
     }
   }
-  return { dir: resolve(dir), force, dryRun }
+  return { dir: resolve(dir), force, dryRun, strict }
 }
 
 function printHelp(): void {
@@ -286,6 +394,7 @@ function printHelp(): void {
   --dir <path>   대상 repo 루트(기본: 현재 디렉터리)
   --force        기존 kit 파일 덮어쓰기(기본: 스킵)
   --dry-run      변경 없이 수행 예정 목록만 출력
+  --strict       기존 cross-spawn이 보안 하한(>=7.0.6) 미만이면 경고 대신 중단(fail-closed)
   -h, --help     도움말
 
 설치 후:
@@ -315,6 +424,7 @@ export function main(argv: string[]): void {
     `${tag}  package.json: ${r.packageJsonAdded.length > 0 ? '추가 ' + r.packageJsonAdded.join(', ') : '변경 없음'}`,
   )
   console.log(`${tag}  AGENTS.md: ${r.agentsCreated ? '템플릿 생성' : '이미 존재(유지)'}`)
+  if (r.crossSpawnFloorWarned) console.log(`${tag}  ⚠️ cross-spawn 버전 하한 경고(위 참조) — 강제 중단은 --strict`)
   if (!r.dryRun) {
     console.log(`\n다음:`)
     console.log(`  1. cd ${r.targetRoot} && ${r.packageManager} install`)

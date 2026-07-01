@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runInit, detectPackageManager, parseArgs, type InitOptions } from '../../bin/init'
+import { runInit, detectPackageManager, parseArgs, crossSpawnBelowFloor, type InitOptions } from '../../bin/init'
 
 /**
  * 임시 대상 repo 생성.
@@ -26,7 +26,13 @@ function tmpTarget(opts?: { pkg?: object; lock?: string; withGit?: 'real' | 'fak
 function cleanup(dir: string): void {
   rmSync(dir, { recursive: true, force: true })
 }
-const OPTS = (dir: string, over?: Partial<InitOptions>): InitOptions => ({ dir, force: false, dryRun: false, ...over })
+const OPTS = (dir: string, over?: Partial<InitOptions>): InitOptions => ({
+  dir,
+  force: false,
+  dryRun: false,
+  strict: false,
+  ...over,
+})
 
 describe('[init] 정상 설치', () => {
   it('kit 파일·config·package.json·AGENTS를 설치', () => {
@@ -268,6 +274,99 @@ describe('[init] packageManager 감지', () => {
       expect(detectPackageManager(bare)).toBe('npm')
     } finally {
       cleanup(bare)
+    }
+  })
+})
+
+describe('[#1] cross-spawn 버전 하한 진단', () => {
+  const below = (dir: string, pkg: Record<string, unknown>) => crossSpawnBelowFloor(dir, pkg)?.below
+
+  it('[순수] range 판정 매트릭스(설치·lock 없음) — ^7.0.0 오탐 방지', () => {
+    const dir = tmpTarget()
+    try {
+      // 하한(>=7.0.6)으로 절대 해소 불가 → below
+      for (const s of ['^6.0.0', '6.x', '~6.1.0', '7.0.1', '7.0.5'])
+        expect(below(dir, { devDependencies: { 'cross-spawn': s } })).toBe(true)
+      // 하한 이상 해소 가능 → 무경고(오탐 방지: 특히 ^7.0.0·~7.0.1)
+      for (const s of ['^7.0.0', '~7.0.1', '>=7.0.6', '^7.0.6', '7.0.9', '^8.0.0', '*'])
+        expect(below(dir, { devDependencies: { 'cross-spawn': s } })).toBe(false)
+      // 기존 cross-spawn 없음 → null(진단 불필요), deps 쪽도 감지
+      expect(crossSpawnBelowFloor(dir, {})).toBeNull()
+      expect(below(dir, { dependencies: { 'cross-spawn': '^6.0.0' } })).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('[lockfile] ^7.0.0 spec + package-lock 7.0.1 핀 → below(range fallback 전에 잡음, R1 P2)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(
+        join(dir, 'package-lock.json'),
+        JSON.stringify({ lockfileVersion: 3, packages: { 'node_modules/cross-spawn': { version: '7.0.1' } } }),
+      )
+      expect(below(dir, { devDependencies: { 'cross-spawn': '^7.0.0' } })).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('[설치버전 우선] node_modules 설치본이 lockfile·range보다 우선', () => {
+    const dir = tmpTarget()
+    try {
+      mkdirSync(join(dir, 'node_modules', 'cross-spawn'), { recursive: true })
+      writeFileSync(join(dir, 'node_modules/cross-spawn/package.json'), JSON.stringify({ version: '7.0.9' }))
+      writeFileSync(
+        join(dir, 'package-lock.json'),
+        JSON.stringify({ packages: { 'node_modules/cross-spawn': { version: '6.0.0' } } }),
+      )
+      // 설치본 7.0.9(>=floor) → lock 6.0.0·spec ^6.0.0이 낮아도 무경고
+      expect(below(dir, { devDependencies: { 'cross-spawn': '^6.0.0' } })).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('[통합] 하한 미만 → WARN(기본, 설치 계속)', () => {
+    const dir = tmpTarget({ pkg: { name: 'x', devDependencies: { 'cross-spawn': '^6.0.0' } } })
+    try {
+      const r = runInit(OPTS(dir))
+      expect(r.crossSpawnFloorWarned).toBe(true)
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true) // 비파괴 — 설치 계속
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('[통합] --strict → throw + 부분 복사 없음', () => {
+    const dir = tmpTarget({ pkg: { name: 'x', dependencies: { 'cross-spawn': '5.0.0' } } })
+    try {
+      expect(() => runInit(OPTS(dir, { strict: true }))).toThrow(/cross-spawn.*하한/)
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('[통합] cross-spawn 없음/>=floor → 무경고', () => {
+    const d1 = tmpTarget()
+    const d2 = tmpTarget({ pkg: { name: 'x', devDependencies: { 'cross-spawn': '^7.0.6' } } })
+    try {
+      expect(runInit(OPTS(d1)).crossSpawnFloorWarned).toBe(false)
+      expect(runInit(OPTS(d2)).crossSpawnFloorWarned).toBe(false)
+    } finally {
+      cleanup(d1)
+      cleanup(d2)
+    }
+  })
+
+  it('[통합] dependencies가 배열이면 throw(shape 검증, R1 P3) + 부분 복사 없음', () => {
+    const dir = tmpTarget({ pkg: { name: 'x', dependencies: [] } })
+    try {
+      expect(() => runInit(OPTS(dir))).toThrow(/dependencies 필드가 객체가 아님/)
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
+    } finally {
+      cleanup(dir)
     }
   })
 })
