@@ -34,10 +34,11 @@
     "req:doctor": "tsx scripts/req/req-doctor.ts",
     "req:commit": "tsx scripts/req/req-commit.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs"
   },
   "files": [
-    "scripts",
+    "scripts/req",
     "workflow/machine.schema.json",
     "workflow/req.config.schema.json",
     "bin",
