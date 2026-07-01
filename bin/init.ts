@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * req-workflow init — AI REQ workflow kit을 대상 git repo에 설치(Stage A / Model A: vendored 스캐폴딩).
+ * commitgate init — AI REQ workflow(커밋 게이트) kit을 대상 git repo에 설치(Stage A / Model A: vendored 스캐폴딩).
  *
  * 동작(멱등·비파괴):
  *   1. 대상 repo 감사(git repo·package.json 필수 → 없으면 fail-closed throw)
@@ -23,7 +23,7 @@ import {
 } from 'node:fs'
 import { resolve, join, dirname, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { loadConfig, type PackageManager } from '../scripts/req/lib/config'
+import { loadConfig, stripBom, type PackageManager } from '../scripts/req/lib/config'
 import { createGitAdapter } from '../scripts/req/lib/adapters'
 
 /** 이 패키지 루트(bin/ 기준 1단계 위). 복사 원본. */
@@ -37,9 +37,10 @@ const REQ_SCRIPTS: Record<string, string> = {
   'req:commit': 'tsx scripts/req/req-commit.ts',
 }
 
-/** 대상 package.json에 주입할 devDeps(워크플로 실행 전제). */
+/** 대상 package.json에 주입할 devDeps(워크플로 실행 전제). cross-spawn = 복사된 adapters.ts의 안전 spawn(P1) 런타임 의존. */
 const REQ_DEV_DEPS: Record<string, string> = {
   ajv: '^8.20.0',
+  'cross-spawn': '^7.0.6',
   tsx: '^4.19.1',
 }
 
@@ -132,7 +133,7 @@ function copyInto(
 function parseJsonObject(path: string, label: string): Record<string, unknown> {
   let parsed: unknown
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'))
+    parsed = JSON.parse(stripBom(readFileSync(path, 'utf8')))
   } catch (e) {
     throw new Error(`${label} 파싱 실패(${path}): ${(e as Error).message}`)
   }
@@ -298,7 +299,7 @@ export function main(argv: string[]): void {
   const opts = parseArgs(argv)
   const r = runInit(opts)
   const tag = r.dryRun ? '[dry-run] ' : ''
-  console.log(`${tag}req-workflow 설치: ${r.targetRoot}`)
+  console.log(`${tag}commitgate 설치: ${r.targetRoot}`)
   console.log(`${tag}  packageManager 감지: ${r.packageManager}`)
   console.log(`${tag}  복사 ${r.copied.length}개 / 스킵(기존) ${r.skipped.length}개`)
   for (const f of r.copied) console.log(`${tag}    + ${f}`)

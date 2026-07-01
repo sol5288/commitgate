@@ -1,5 +1,4 @@
 {
-  "_comment": "대상 repo 루트에 req.config.json으로 두면 loadConfig가 읽는다. 모든 키 선택 — 미지정 시 DEFAULTS(=behavior-preserving). 이 _comment 키는 제거하고 사용할 것(AJV additionalProperties:false).",
   "ticketRoot": "workflow",
   "schemaPath": "workflow/machine.schema.json",
   "handoffPath": null,

@@ -9,6 +9,8 @@ import {
   consumeState,
   evidencePreflight,
   recoveryClassify,
+  recoveryCoreValid,
+  resolveRecoverySource,
   manifestHasConsumed,
   markPendingEvidence,
   parseArgs,
@@ -43,6 +45,42 @@ const phaseEv: ApprovalEvidence = {
   approved_at: AT,
 }
 const consume = { consumedAt: CAT, consumedByCommitSha: COMMIT, userCommitConfirmed: null }
+
+describe('[P2a] resolveRecoverySource / recoveryCoreValid — orphaned source 복구창', () => {
+  const APPROVED = 'a'.repeat(40)
+  const st = (over: Partial<WorkflowState> = {}): WorkflowState =>
+    ({
+      id: 'REQ-2026-001',
+      phase: 'X',
+      commit_allowed: true,
+      approval_evidence: { response_sha256: SHA } as unknown as ApprovalEvidence,
+      approved_diff_hash: APPROVED,
+      ...over,
+    }) as WorkflowState
+
+  it('pending 마커 있으면 그 SHA(viaOrphan=false)', () => {
+    const r = resolveRecoverySource(st({ pending_evidence_for: { source_commit_sha: 'deadbeef' } }), { sha: 'HEAD', tree: 'other' })
+    expect(r).toMatchObject({ sourceSha: 'deadbeef', viaOrphan: false })
+  })
+  it('마커 없고 HEAD tree==approved → HEAD를 orphaned source로 복구', () => {
+    const r = resolveRecoverySource(st(), { sha: 'HEADSHA', tree: APPROVED })
+    expect(r.sourceSha).toBe('HEADSHA')
+    expect(r.viaOrphan).toBe(true)
+  })
+  it('마커 없고 HEAD tree!=approved → 복구 불가(승인 우회 방지)', () => {
+    expect(resolveRecoverySource(st(), { sha: 'H', tree: 'mismatch' }).sourceSha).toBeNull()
+  })
+  it('commit_allowed 아님/approval_evidence 없음/HEAD null → orphaned 복구 안 함', () => {
+    expect(resolveRecoverySource(st({ commit_allowed: false }), { sha: 'H', tree: APPROVED }).sourceSha).toBeNull()
+    expect(resolveRecoverySource(st({ approval_evidence: undefined }), { sha: 'H', tree: APPROVED }).sourceSha).toBeNull()
+    expect(resolveRecoverySource(st(), null).sourceSha).toBeNull()
+  })
+  it('recoveryCoreValid: source tree == approved면 valid, 아니면 invalid', () => {
+    expect(recoveryCoreValid(st(), APPROVED).valid).toBe(true)
+    expect(recoveryCoreValid(st(), 'X').valid).toBe(false)
+    expect(recoveryCoreValid(st({ approved_diff_hash: null }), null).valid).toBe(false)
+  })
+})
 
 describe('[B1] buildManifestEntry — 고정 필드 + fail-fast', () => {
   it('phase evidence → 필드 전부(approved_tree, design_hash 없음)', () => {

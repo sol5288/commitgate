@@ -7,6 +7,7 @@ import {
   resolveRoot,
   packageRoot,
   buildScriptInvocation,
+  stripBom,
   DEFAULTS,
   CONFIG_SCHEMA,
 } from '../../scripts/req/lib/config'
@@ -20,6 +21,37 @@ function tmpRoot(config?: object): string {
 function cleanup(dir: string): void {
   rmSync(dir, { recursive: true, force: true })
 }
+
+describe('[P3] stripBom / BOM 붙은 JSON', () => {
+  it('stripBom은 선두 U+FEFF만 제거(그 외 원문 유지)', () => {
+    expect(stripBom('﻿{}')).toBe('{}')
+    expect(stripBom('{}')).toBe('{}')
+    expect(stripBom('a﻿b')).toBe('a﻿b')
+  })
+  it('BOM 붙은 req.config.json도 loadConfig가 파싱(PowerShell5 UTF8 이식성)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reqcfg-bom-'))
+    try {
+      writeFileSync(join(dir, 'req.config.json'), '﻿' + JSON.stringify({ branchPrefix: 'feat/x-' }), 'utf8')
+      expect(loadConfig({ root: dir }).branchPrefix).toBe('feat/x-')
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+describe('[P2b] req.config.json.sample 유효성', () => {
+  it('샘플을 그대로 복사해 req.config.json으로 두면 loadConfig 통과(첫 실행 실패 없음)', () => {
+    const sample = readFileSync(resolve(packageRoot(), 'req.config.json.sample'), 'utf8')
+    // _comment 같은 unknown 키가 남아있으면 additionalProperties:false로 throw → 아래가 이를 가드
+    const dir = mkdtempSync(join(tmpdir(), 'reqcfg-sample-'))
+    try {
+      writeFileSync(join(dir, 'req.config.json'), sample, 'utf8')
+      expect(() => loadConfig({ root: dir })).not.toThrow()
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
 
 describe('[P1] DEFAULTS — 현재 하드코딩 값 정합(behavior-preserving)', () => {
   it('DEFAULTS가 현재 값과 일치', () => {

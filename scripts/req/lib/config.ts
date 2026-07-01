@@ -118,6 +118,11 @@ function assertUnderRoot(rootAbs: string, rel: string, name: string): void {
   if (abs !== rootAbs && !abs.startsWith(rootAbs + sep)) throw new Error(`req.config: ${name}가 root 밖으로 탈출: ${rel}`)
 }
 
+/** UTF-8 BOM(U+FEFF) 제거 — PowerShell 5 `Set-Content -Encoding UTF8` 등이 BOM을 붙여 JSON.parse가 실패하는 것 방지(P3). */
+export function stripBom(s: string): string {
+  return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s
+}
+
 /**
  * config 로드(fail-closed). root 결정 → `<root>/req.config.json` 있으면 파싱+AJV 검증+confinement → DEFAULTS 병합 → 파생경로.
  * 파일 부재 시 DEFAULTS만(현재 동작). 위반은 명확한 throw(자동 보정·기본값 강등 금지).
@@ -129,7 +134,7 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
   if (existsSync(cfgPath)) {
     let parsed: unknown
     try {
-      parsed = JSON.parse(readFileSync(cfgPath, 'utf8'))
+      parsed = JSON.parse(stripBom(readFileSync(cfgPath, 'utf8')))
     } catch (e) {
       throw new Error(`req.config.json 파싱 실패(${cfgPath}): ${(e as Error).message}`)
     }

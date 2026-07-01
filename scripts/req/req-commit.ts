@@ -12,7 +12,6 @@
  *   ⚠️ B2 도구 자체 커밋은 부트스트랩 수기(req:commit dogfood는 Phase C부터).
  */
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
 import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -27,7 +26,7 @@ import {
 } from './review-codex'
 import { isConfinedArchivePath } from './req-doctor'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type PackageManager, type ResolvedConfig } from './lib/config'
-import { createGitAdapter, type GitAdapter } from './lib/adapters'
+import { createGitAdapter, safeSpawnSync, type GitAdapter } from './lib/adapters'
 
 // git=GitAdapter 경유(D-017-3), 패키지매니저=config. runDoctor(pnpm/npm 실행)는 cwd=gitRoot 필요(비-git 호출). main()이 loadConfig 후 config.root로 설정.
 let gitRoot = packageRoot()
@@ -296,13 +295,40 @@ export function pendingSourceSha(state: WorkflowState): string | null {
  */
 export function recoveryClassify(state: WorkflowState, sourceCommitTree: string | null): { valid: boolean; reason: string } {
   if (!pendingSourceSha(state)) return { valid: false, reason: 'pending_evidence_for.source_commit_sha 없음 — 복구할 미완 작업 없음' }
+  return recoveryCoreValid(state, sourceCommitTree)
+}
+
+/**
+ * 복구 유효성 코어(순수, pending 마커 유무와 무관): commit_allowed·approval_evidence·approved_diff_hash·**sourceCommitTree == approved_diff_hash**.
+ * recoveryClassify(마커 필수)와 resolveRecoverySource(orphan 복구)가 공용으로 쓴다.
+ */
+export function recoveryCoreValid(state: WorkflowState, sourceCommitTree: string | null): { valid: boolean; reason: string } {
   if (state.commit_allowed !== true) return { valid: false, reason: 'commit_allowed=true 아님 — 복구할 미완 승인 없음' }
   if (!state.approval_evidence) return { valid: false, reason: 'approval_evidence 없음' }
   const approved = typeof state.approved_diff_hash === 'string' ? state.approved_diff_hash : null
   if (!approved) return { valid: false, reason: 'approved_diff_hash 없음' }
   if (sourceCommitTree !== approved)
     return { valid: false, reason: `source 커밋 tree(${String(sourceCommitTree)}) != approved(${approved}) — 잘못된 복구 대상` }
-  return { valid: true, reason: 'finalize 유효: source 커밋 tree == approved, evidence/consume 복구 가능(HEAD는 source/evidence 무관)' }
+  return { valid: true, reason: 'finalize 유효: source 커밋 tree == approved, evidence/consume 복구 가능' }
+}
+
+/**
+ * finalize 복구 대상 source SHA 해소(순수, P2-a — marker 기록 전 crash 복구창).
+ * ① pending 마커 있으면 그 SHA(viaOrphan=false).
+ * ② 마커 없어도 HEAD가 승인 source(head.tree == approved_diff_hash + commit_allowed + approval_evidence)면 orphaned source로 HEAD 복구(viaOrphan=true).
+ *    ⚠️ 승인 tree 대조라 **승인 우회 아님** — source 커밋 성공 후 markPendingEvidence 전에 죽은 상태만 복구한다.
+ */
+export function resolveRecoverySource(
+  state: WorkflowState,
+  head: { sha: string; tree: string } | null,
+): { sourceSha: string | null; viaOrphan: boolean; reason: string } {
+  const pending = pendingSourceSha(state)
+  if (pending) return { sourceSha: pending, viaOrphan: false, reason: 'pending 마커' }
+  if (!head) return { sourceSha: null, viaOrphan: false, reason: 'pending 마커 없음 + HEAD 미상 — 복구할 미완 작업 없음' }
+  const approved = typeof state.approved_diff_hash === 'string' ? state.approved_diff_hash : null
+  if (state.commit_allowed === true && !!state.approval_evidence && approved !== null && head.tree === approved)
+    return { sourceSha: head.sha, viaOrphan: true, reason: 'orphaned source(HEAD tree == approved) 복구' }
+  return { sourceSha: null, viaOrphan: false, reason: 'pending 마커 없음 + HEAD가 승인 source 아님 — 복구할 미완 작업 없음' }
 }
 
 /**
@@ -505,7 +531,8 @@ function git(args: string[]): string {
 function runDoctor(doctorArgs: string[]): void {
   const [cmd, ...rest] = buildScriptInvocation(pkgManager, 'req:doctor', doctorArgs)
   if (!cmd) throw new Error('buildScriptInvocation: 빈 호출(패키지매니저 설정 오류)')
-  execFileSync(cmd, rest, { cwd: gitRoot, stdio: 'inherit', shell: true })
+  // shell 없이 안전 실행(P1): pkg manager는 Windows에서 .cmd라 과거 shell:true였고 doctorArgs(reqId·root 경로)의 메타문자로 주입 가능했음.
+  safeSpawnSync(cmd, rest, { cwd: gitRoot, stdio: 'inherit' })
 }
 
 /** `git diff --cached --name-only`를 정규화 경로 배열로. */
@@ -638,17 +665,28 @@ function main(): void {
     console.log(`  ticket=${ticketRel} commit_allowed=${String(state.commit_allowed)} risk=${String(state.risk_level)}`)
     console.log(`  HIGH 게이트: ${gate.blocked ? `차단 — ${gate.reason}` : 'OK(또는 비-HIGH)'}`)
     if (finalize) {
-      const sha = pendingSourceSha(state)
-      let sourceTree: string | null = null
-      if (sha) {
+      // P2-a: pending 마커 없어도 HEAD가 승인 source면 orphaned 복구 가능 → dry-run에도 반영.
+      const head = (() => {
         try {
-          sourceTree = git(['rev-parse', `${sha}^{tree}`])
+          return { sha: git(['rev-parse', 'HEAD']), tree: git(['rev-parse', 'HEAD^{tree}']) }
+        } catch {
+          return null
+        }
+      })()
+      const rec = resolveRecoverySource(state, head)
+      let core = { valid: false, reason: rec.reason }
+      if (rec.sourceSha) {
+        let sourceTree: string | null = null
+        try {
+          sourceTree = git(['rev-parse', `${rec.sourceSha}^{tree}`])
         } catch {
           sourceTree = null
         }
+        core = recoveryCoreValid(state, sourceTree)
       }
-      const rc = recoveryClassify(state, sourceTree)
-      console.log(`  finalize 적용 가능성: ${rc.valid ? 'valid' : `invalid — ${rc.reason}`}`)
+      console.log(
+        `  finalize 적용 가능성: ${core.valid ? `valid${rec.viaOrphan ? '(orphaned 복구)' : ''}` : `invalid — ${core.reason}`}`,
+      )
     }
     if (ev) {
       const archiveNames = existsSync(responsesDir) ? readdirSync(responsesDir).filter(isArchiveFileName) : []
@@ -675,18 +713,32 @@ function main(): void {
 
   // ── B3: finalize(복구) — source 재커밋 없이 evidence/consume만 복구 ──
   if (finalize) {
-    // B3-P1: source SHA는 pending 마커에서. HEAD는 source/evidence 커밋 어느 쪽이든 가능(consume-only 복구창 포함).
-    const sourceSha = pendingSourceSha(state)
-    if (!sourceSha) throw new Error('finalize 거부: pending_evidence_for.source_commit_sha 없음 — 복구할 미완 작업 없음')
+    // P2-a: pending 마커가 없을 수 있다(source 커밋 성공 후 markPendingEvidence 전에 crash). HEAD가 승인 source면 마커를 재구성해 복구.
+    let fstate = state
+    if (!pendingSourceSha(fstate)) {
+      const head = (() => {
+        try {
+          return { sha: git(['rev-parse', 'HEAD']), tree: git(['rev-parse', 'HEAD^{tree}']) }
+        } catch {
+          return null
+        }
+      })()
+      const rec = resolveRecoverySource(fstate, head)
+      if (!rec.sourceSha) throw new Error(`finalize 거부: ${rec.reason}`)
+      fstate = markPendingEvidence(fstate, rec.sourceSha) // crash가 막은 마커 재구성(승인 tree 대조로 안전 — 우회 아님)
+      writeState(ticketDir, fstate)
+      console.warn(`[req:commit] pending 마커 없음 — HEAD(${rec.sourceSha.slice(0, 8)})가 승인 source(tree==approved)라 orphaned 복구용 마커 재구성`)
+    }
+    const sourceSha = pendingSourceSha(fstate) as string
     const sourceTree = git(['rev-parse', `${sourceSha}^{tree}`])
-    const rc = recoveryClassify(state, sourceTree)
+    const rc = recoveryClassify(fstate, sourceTree)
     if (!rc.valid) throw new Error(`finalize 거부: ${rc.reason}`)
     if (!ev) throw new Error('approval_evidence 없음') // rc.valid가 보장하나 TS narrowing
     // doctor --finalize: D9를 source 커밋 tree로 교체(우회 아님), 나머지 검사 정상.
     runDoctor([...doctorArgs, '--finalize'])
-    const gate = userConfirmGate(state)
+    const gate = userConfirmGate(fstate)
     if (gate.blocked) throw new Error(gate.reason)
-    finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state, ev, existing, archiveNames, validPhaseIds, sourceSha })
+    finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state: fstate, ev, existing, archiveNames, validPhaseIds, sourceSha })
     console.log(`[req:commit] ✅ finalize 복구 완료 — source=${sourceSha.slice(0, 8)} · evidence/consume 복구`)
     return
   }

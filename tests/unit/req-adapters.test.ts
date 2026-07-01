@@ -7,9 +7,33 @@ import {
   createCodexReviewerAdapter,
   createFakeReviewerAdapter,
   parseThreadId,
+  safeSpawnSync,
   type CodexRunner,
 } from '../../scripts/req/lib/adapters'
 import { callReviewer } from '../../scripts/req/review-codex'
+
+// ─────────────────────────────── safeSpawnSync 명령 주입 방어 (P1) ──
+describe('[P1] safeSpawnSync — shell 메타문자 인자 주입 차단', () => {
+  it('메타문자 인자가 별도 명령으로 실행되지 않고 리터럴로 전달됨(주입 없음)', () => {
+    // node -e 스크립트만 실행되고, 뒤 인자는 process.argv로 리터럴 전달 → shell이면 `& echo INJECTED`가 돌지만 안 돌아야.
+    const evil = 'x & echo INJECTED | echo PIPED > out.txt'
+    const out = safeSpawnSync(process.execPath, ['-e', 'process.stdout.write("SAFE")', evil])
+    expect(out).toBe('SAFE')
+    expect(out).not.toContain('INJECTED')
+    expect(out).not.toContain('PIPED')
+  })
+
+  it('메타문자 인자가 argv에 원문 그대로 도착(공백·특수문자 보존)', () => {
+    const marker = 'A&B|C;D>E<F^G"H (I) !J% `K$'
+    const script = 'process.stdout.write(JSON.stringify(process.argv.slice(1)))'
+    const out = safeSpawnSync(process.execPath, ['-e', script, marker])
+    expect(JSON.parse(out)).toEqual([marker])
+  })
+
+  it('exit≠0이면 throw(fail-closed)', () => {
+    expect(() => safeSpawnSync(process.execPath, ['-e', 'process.exit(3)'])).toThrow(/exit=3/)
+  })
+})
 
 // ─────────────────────────────────────────────────── GitAdapter ──
 describe('Phase 3 — GitAdapter(createGitAdapter)', () => {

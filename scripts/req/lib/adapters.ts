@@ -12,6 +12,39 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import spawn from 'cross-spawn'
+
+// ─────────────────────────────────────────────── 안전 spawn (P1) ──
+
+/** safeSpawnSync 옵션(필요분만). stdio 미지정 = 'pipe'(stdout 반환). */
+export interface SafeSpawnOptions {
+  cwd?: string
+  input?: string
+  stdio?: 'pipe' | 'inherit'
+  maxBuffer?: number
+}
+
+/**
+ * 크로스플랫폼 **안전** 동기 spawn. cross-spawn으로 **shell 없이** 실행한다.
+ * - 인자의 shell 메타문자(`& | < > ^ " ' 백틱 $ ; ( ) ! %` 등)가 별도 명령으로 해석되지 않는다(명령 주입 차단).
+ * - 공백 포함 경로도 올바르게 전달된다(shell:true는 인용을 안 해 깨졌음).
+ * - Windows의 `.cmd` 래퍼(codex·npm·pnpm·yarn)도 안전하게 해소한다(과거 `shell:true`가 필요했던 이유를 대체).
+ * 실패(spawn 오류·exit≠0)면 throw(fail-closed — 기존 execFileSync 의미 보존).
+ */
+export function safeSpawnSync(file: string, args: readonly string[], opts: SafeSpawnOptions = {}): string {
+  const res = spawn.sync(file, args as string[], {
+    cwd: opts.cwd,
+    input: opts.input,
+    stdio: opts.stdio ?? 'pipe',
+    maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
+  })
+  if (res.error) throw res.error
+  if (res.status !== 0) {
+    const err = res.stderr ? res.stderr.toString('utf8') : ''
+    throw new Error(`명령 실패(exit=${res.status ?? 'null'}): ${file}\n${err}`.trim())
+  }
+  return res.stdout ? res.stdout.toString('utf8') : ''
+}
 
 // ──────────────────────────────────────────────────────────── Git ──
 
@@ -68,8 +101,9 @@ export function parseThreadId(jsonl: string): string | null {
 /** codex 실행자(주입 가능 — 테스트). stdout 반환, 실패 시 throw. */
 export type CodexRunner = (args: string[], input: string, cwd: string) => string
 const defaultCodexRunner: CodexRunner = (args, input, cwd) =>
-  // Windows에서 codex는 .cmd 래퍼 → execFileSync는 shell 필요(Node 보안 변경). 프롬프트는 stdin(input)으로 전달(shell 파싱 영향 없음).
-  execFileSync('codex', args, { cwd, input, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, shell: true })
+  // shell 없이 안전 실행(safeSpawnSync/cross-spawn). 프롬프트는 stdin(input)으로 전달.
+  // ⚠️ 과거 `shell:true`는 args(schemaPath·resumeThreadId 등)의 메타문자로 **명령 주입**이 가능했고 공백 경로도 깨졌음 — P1 수정.
+  safeSpawnSync('codex', args, { cwd, input, maxBuffer: 64 * 1024 * 1024 })
 
 /**
  * default ReviewerAdapter(codex CLI). exec(신규)/resume(thread_id) 분기 + `--output-last-message`(임시파일) 캡처 + thread 파싱.

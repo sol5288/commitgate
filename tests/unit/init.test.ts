@@ -51,6 +51,7 @@ describe('[init] 정상 설치', () => {
       expect(pkg.scripts['req:commit']).toBe('tsx scripts/req/req-commit.ts')
       expect(pkg.devDependencies.tsx).toBeTruthy()
       expect(pkg.devDependencies.ajv).toBeTruthy()
+      expect(pkg.devDependencies['cross-spawn']).toBeTruthy() // 복사된 adapters.ts 안전 spawn 의존(P1)
       // AGENTS 생성
       expect(r.agentsCreated).toBe(true)
       expect(existsSync(join(dir, 'AGENTS.md'))).toBe(true)
@@ -231,6 +232,20 @@ describe('[init] fail-closed', () => {
 
   it('존재하지 않는 디렉터리면 throw', () => {
     expect(() => runInit(OPTS(join(tmpdir(), 'reqwf-nope-does-not-exist-xyz')))).toThrow(/대상 디렉터리가 없음/)
+  })
+})
+
+describe('[init] BOM 이식성(P3)', () => {
+  it('BOM 붙은 package.json도 파싱·패치(PowerShell5 UTF8)', () => {
+    const dir = tmpTarget({ withPkg: false })
+    try {
+      writeFileSync(join(dir, 'package.json'), '﻿' + JSON.stringify({ name: 'x', version: '0.0.0' }), 'utf8')
+      expect(() => runInit(OPTS(dir))).not.toThrow()
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) // init은 BOM 없이 재작성
+      expect(pkg.scripts['req:new']).toBe('tsx scripts/req/req-new.ts')
+    } finally {
+      cleanup(dir)
+    }
   })
 })
 
