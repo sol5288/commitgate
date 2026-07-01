@@ -3,6 +3,28 @@
   "version": "0.1.0",
   "description": "CommitGate — Builder↔Reviewer(Claude↔Codex) fail-closed 커밋 게이트: 리뷰·승인·증거 없인 커밋을 통과시키지 않는 AI REQ 워크플로 kit (req:new/review-codex/doctor/commit)",
   "type": "module",
+  "license": "MIT",
+  "author": "sol5288",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sol5288/commitgate.git"
+  },
+  "homepage": "https://github.com/sol5288/commitgate#readme",
+  "bugs": {
+    "url": "https://github.com/sol5288/commitgate/issues"
+  },
+  "keywords": [
+    "ai",
+    "code-review",
+    "workflow",
+    "codex",
+    "claude",
+    "git",
+    "commit-gate",
+    "fail-closed",
+    "review-gate",
+    "cli"
+  ],
   "bin": {
     "commitgate": "bin/commitgate.mjs"
   },
