@@ -56,6 +56,54 @@ AI는 코드를 **빠르게** 만들지만, 검증 없이 그대로 커밋되면
 
 > 💡 **Reviewer = Codex CLI** 입니다. 리뷰를 실제로 돌리려면 Codex CLI가 설치되어 있어야 해요. 없으면 리뷰 명령이 "안전하게 실패(fail-closed)"합니다 — 조용히 통과되는 일은 없습니다.
 
+### 🔧 Codex CLI 설치 & 로그인 (Reviewer 준비)
+
+CommitGate의 리뷰는 **OpenAI Codex CLI**가 담당합니다. 아래 3단계면 끝납니다.
+
+**① 설치**
+
+```sh
+# npm (모든 OS)
+npm install -g @openai/codex
+
+# 또는 macOS Homebrew
+brew install codex
+```
+
+설치 확인:
+
+```sh
+codex --version      # 예: codex-cli 0.4x.x
+```
+
+**② 로그인** — 둘 중 편한 방법 하나
+
+- **방법 A. ChatGPT 계정으로 (권장, 브라우저)**
+  ```sh
+  codex login
+  ```
+  브라우저가 열리면 ChatGPT 계정으로 로그인 → 터미널로 돌아오면 완료.
+
+- **방법 B. OpenAI API 키로**
+  ```sh
+  # 환경변수로 (가장 간단)
+  export OPENAI_API_KEY=sk-...        # Windows PowerShell: $env:OPENAI_API_KEY="sk-..."
+
+  # 또는 키를 Codex에 저장
+  printenv OPENAI_API_KEY | codex login --with-api-key
+  ```
+  API 키는 [platform.openai.com](https://platform.openai.com/api-keys) 에서 발급합니다.
+
+**③ 로그인 확인**
+
+```sh
+codex login status     # 로그인 상태 표시
+codex doctor           # 설치·인증·환경 종합 진단(문제 있으면 원인 안내)
+```
+
+> ✅ `codex --version` 과 `codex login status` 가 정상이면 리뷰 준비 끝. 이제 `npx commitgate` 로 넘어가세요.
+> ⚠️ Windows에서 `codex` 명령을 못 찾으면 **새 터미널**을 열어 PATH를 새로 읽게 하세요(전역 설치 직후 흔한 문제).
+
 ---
 
 ## 🚀 설치 (딱 한 줄)
