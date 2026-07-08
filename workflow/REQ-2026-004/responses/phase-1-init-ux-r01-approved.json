@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"756e7f31c2f8fbd3f9e2fc4895798562014887a7","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","findings":[],"next_action":"Proceed with the Phase 1 init UX commit; this phase review covers the staged init CLI UX diff only."}
