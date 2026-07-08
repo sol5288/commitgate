@@ -103,7 +103,7 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
     expect(r.lastMessage).toBe('{"status":"STEP_COMPLETE"}')
   })
 
-  it('resume: exec resume <tid> + --sandbox 없음 + strict output-schema + threadId=resumeThreadId(stdout 파싱 안 함)', () => {
+  it('[R9] resume: exec resume <tid> + -c sandbox_mode="read-only"(read-only 강제) + strict output-schema + threadId=resumeThreadId', () => {
     const schemaPath = writeValidationSchema()
     let captured: string[] = []
     const run: CodexRunner = (args) => {
@@ -114,7 +114,11 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
     }
     const r = createCodexReviewerAdapter(run).review({ prompt: 'P', schemaPath, resumeThreadId: 'tid-existing', cwd: '/r' })
     expect(captured.slice(0, 3)).toEqual(['exec', 'resume', 'tid-existing'])
-    expect(captured).not.toContain('--sandbox')
+    // R9(REQ-2026-006): resume은 --sandbox 플래그를 거부하므로 read-only를 -c sandbox_mode config override로 강제(spike 검증).
+    expect(captured).not.toContain('--sandbox') // 플래그 형태는 여전히 미사용(resume이 거부)
+    const ci = captured.indexOf('-c')
+    expect(ci).toBeGreaterThanOrEqual(0)
+    expect(captured[ci + 1]).toBe('sandbox_mode="read-only"')
     expect(outputSchemaFrom(captured).required).toEqual(expect.arrayContaining(['status', 'observations']))
     expect(r.threadId).toBe('tid-existing')
     expect(r.lastMessage).toBe('RESP')

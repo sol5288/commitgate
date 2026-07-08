@@ -126,7 +126,10 @@ export function deriveStrictOutputSchema(schemaText: string): string {
 
 /**
  * default ReviewerAdapter(codex CLI). exec(신규)/resume(thread_id) 분기 + `--output-last-message`(임시파일) 캡처 + thread 파싱.
- * - resume은 `--sandbox` 미수용(0차 실측) → 생략(정책 상속). exec은 `--sandbox read-only`.
+ * - **read-only 리뷰어 강제(양 라운드, REQ-2026-006/R9)**: exec은 `--sandbox read-only`. resume은 `-s/--sandbox` 플래그를 **거부**하므로
+ *   (`error: unexpected argument '--sandbox'` — spike 확인) `-c sandbox_mode="read-only"` **config override**로 read-only를 강제한다.
+ *   행동 검증: resume(무 override)은 실제 write 성공(sandbox drop=갭 실재), resume(override)은 write가 `Access is denied`로 차단(enforced).
+ *   `-c`가 향후 CLI에서 거부되면 resume 자체가 실패=fail-closed(리뷰 미승인).
  * - `--output-schema`에는 원본이 아니라 **strict 파생 copy**를 넘긴다(codex strict mode 400 방지, REQ-2026-005). 원본은 검증 SSOT.
  * - threadId: resume이면 resumeThreadId, exec이면 parseThreadId(stdout)(없으면 null → 호출처가 fail-closed).
  * - codex 미설치/실패 → runner가 throw(그대로 전파, fail-closed).
@@ -140,7 +143,7 @@ export function createCodexReviewerAdapter(run: CodexRunner = defaultCodexRunner
       const outputSchemaPath = join(tmpDir, 'output-schema.json')
       writeFileSync(outputSchemaPath, deriveStrictOutputSchema(readFileSync(schemaPath, 'utf8')), 'utf8')
       const args = resumeThreadId
-        ? ['exec', 'resume', resumeThreadId, '--json', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
+        ? ['exec', 'resume', resumeThreadId, '-c', 'sandbox_mode="read-only"', '--json', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
         : ['exec', '--json', '--sandbox', 'read-only', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
       const rawStdout = run(args, prompt, cwd)
       const threadId = resumeThreadId ?? parseThreadId(rawStdout)
