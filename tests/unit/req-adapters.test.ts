@@ -6,6 +6,7 @@ import {
   createGitAdapter,
   createCodexReviewerAdapter,
   createFakeReviewerAdapter,
+  deriveStrictOutputSchema,
   parseThreadId,
   safeSpawnSync,
   type CodexRunner,
@@ -59,7 +60,27 @@ describe('Phase 3 — GitAdapter(createGitAdapter)', () => {
 
 // ─────────────────────────────────────────── ReviewerAdapter(codex) ──
 describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => {
-  it('exec(신규): --sandbox read-only + thread.started 파싱 + lastMessage 캡처', () => {
+  // 원본 검증 스키마(observations는 optional — required에 없음). 어댑터가 이걸 읽어 strict copy를 파생.
+  const writeValidationSchema = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-schema-'))
+    const p = join(dir, 's.json')
+    writeFileSync(
+      p,
+      JSON.stringify({
+        type: 'object',
+        additionalProperties: false,
+        required: ['status'],
+        properties: { status: { type: 'string' }, observations: { type: 'array' } },
+      }),
+      'utf8',
+    )
+    return p
+  }
+  // --output-schema로 넘어간 파일이 strict(required ⊇ properties 전체)인지 확인.
+  const outputSchemaFrom = (args: string[]) => JSON.parse(readFileSync(args[args.indexOf('--output-schema') + 1] as string, 'utf8'))
+
+  it('exec(신규): --sandbox read-only + strict output-schema(파생) + thread.started 파싱 + lastMessage 캡처', () => {
+    const schemaPath = writeValidationSchema()
     let seen: { args: string[]; input: string; cwd: string } | null = null
     const run: CodexRunner = (args, input, cwd) => {
       seen = { args, input, cwd }
@@ -67,17 +88,23 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
       writeFileSync(p, '{"status":"STEP_COMPLETE"}') // codex가 쓰는 --output-last-message를 테스트가 대신 기록
       return '{"type":"thread.started","thread_id":"tid-1"}\n{"type":"other"}'
     }
-    const r = createCodexReviewerAdapter(run).review({ prompt: 'PROMPT', schemaPath: '/s.json', resumeThreadId: null, cwd: '/repo' })
+    const r = createCodexReviewerAdapter(run).review({ prompt: 'PROMPT', schemaPath, resumeThreadId: null, cwd: '/repo' })
     expect(seen!.args).toContain('--sandbox')
     expect(seen!.args).toContain('read-only')
     expect(seen!.args).toContain('--output-schema')
+    // 파생 strict: root.required가 properties 전체(observations 포함)를 담아야 함(codex strict mode 400 방지).
+    const strict = outputSchemaFrom(seen!.args)
+    expect(strict.required).toEqual(expect.arrayContaining(['status', 'observations']))
+    // 원본 검증 스키마는 불변(observations optional 유지) — 어댑터가 원본을 덮어쓰지 않음.
+    expect(JSON.parse(readFileSync(schemaPath, 'utf8')).required).toEqual(['status'])
     expect(seen!.input).toBe('PROMPT')
     expect(seen!.cwd).toBe('/repo')
     expect(r.threadId).toBe('tid-1')
     expect(r.lastMessage).toBe('{"status":"STEP_COMPLETE"}')
   })
 
-  it('resume: exec resume <tid> + --sandbox 없음 + threadId=resumeThreadId(stdout 파싱 안 함)', () => {
+  it('resume: exec resume <tid> + --sandbox 없음 + strict output-schema + threadId=resumeThreadId(stdout 파싱 안 함)', () => {
+    const schemaPath = writeValidationSchema()
     let captured: string[] = []
     const run: CodexRunner = (args) => {
       captured = args
@@ -85,18 +112,35 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
       writeFileSync(p, 'RESP')
       return '' // resume은 thread.started 없음
     }
-    const r = createCodexReviewerAdapter(run).review({ prompt: 'P', schemaPath: '/s', resumeThreadId: 'tid-existing', cwd: '/r' })
+    const r = createCodexReviewerAdapter(run).review({ prompt: 'P', schemaPath, resumeThreadId: 'tid-existing', cwd: '/r' })
     expect(captured.slice(0, 3)).toEqual(['exec', 'resume', 'tid-existing'])
     expect(captured).not.toContain('--sandbox')
+    expect(outputSchemaFrom(captured).required).toEqual(expect.arrayContaining(['status', 'observations']))
     expect(r.threadId).toBe('tid-existing')
     expect(r.lastMessage).toBe('RESP')
   })
 
   it('codex 미설치/실패 → review가 그대로 throw(fail-closed, D-017-4/7)', () => {
+    const schemaPath = writeValidationSchema() // 어댑터가 원본 스키마를 읽으므로 실제 파일 필요(런너 도달 전 파일오류 방지)
     const rv = createCodexReviewerAdapter(() => {
       throw new Error('codex ENOENT')
     })
-    expect(() => rv.review({ prompt: 'P', schemaPath: '/s', resumeThreadId: null, cwd: '/r' })).toThrow(/codex ENOENT/)
+    expect(() => rv.review({ prompt: 'P', schemaPath, resumeThreadId: null, cwd: '/r' })).toThrow(/codex ENOENT/)
+  })
+
+  it('[REQ-005] deriveStrictOutputSchema: root.required = properties 전체 키(strict), 나머지 불변', () => {
+    const original = JSON.stringify({
+      type: 'object',
+      additionalProperties: false,
+      required: ['a', 'b'],
+      properties: { a: { type: 'string' }, b: { type: 'string' }, observations: { type: 'array' } },
+    })
+    const strict = JSON.parse(deriveStrictOutputSchema(original))
+    expect(strict.required.sort()).toEqual(['a', 'b', 'observations'])
+    expect(strict.additionalProperties).toBe(false)
+    expect(Object.keys(strict.properties).sort()).toEqual(['a', 'b', 'observations'])
+    // 순수 함수 — 입력 문자열의 원본 required는 그대로(부수효과 없음, 어댑터가 파일 원본을 덮어쓰지 않음)
+    expect(JSON.parse(original).required).toEqual(['a', 'b'])
   })
 })
 

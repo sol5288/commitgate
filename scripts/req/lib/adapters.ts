@@ -9,7 +9,7 @@
  * 본 모듈은 req 스크립트에 의존하지 않는 leaf(순환 의존 금지) — parseThreadId도 여기로 이동(codex CLI 전용 로직).
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, mkdtempSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import spawn from 'cross-spawn'
@@ -110,18 +110,38 @@ const defaultCodexRunner: CodexRunner = (args, input, cwd) =>
   safeSpawnSync('codex', args, { cwd, input, maxBuffer: 64 * 1024 * 1024 })
 
 /**
+ * Codex `--output-schema`용 **strict copy** 파생(REQ-2026-005). OpenAI structured-outputs strict mode는
+ * root `required`가 `properties`의 **모든 키**를 포함해야 한다 — optional 필드(예: observations)가 있으면 400 invalid_json_schema.
+ * 원본 스키마(`workflow/machine.schema.json`)는 **검증 SSOT로 불변**(observations optional → 기존 archive 하위호환)이고,
+ * codex 호출 직전에만 root.required를 `properties` 전체로 확장한 copy를 파생한다. 응답/archive 검증은 계속 원본으로 한다.
+ * 중첩 객체(findings/observations items)는 이미 모든 필드 required + additionalProperties:false라 root만 확장하면 충분.
+ */
+export function deriveStrictOutputSchema(schemaText: string): string {
+  const schema = JSON.parse(schemaText) as { properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown }
+  if (schema && typeof schema === 'object' && schema.properties && typeof schema.properties === 'object') {
+    schema.required = Object.keys(schema.properties)
+  }
+  return JSON.stringify(schema)
+}
+
+/**
  * default ReviewerAdapter(codex CLI). exec(신규)/resume(thread_id) 분기 + `--output-last-message`(임시파일) 캡처 + thread 파싱.
  * - resume은 `--sandbox` 미수용(0차 실측) → 생략(정책 상속). exec은 `--sandbox read-only`.
+ * - `--output-schema`에는 원본이 아니라 **strict 파생 copy**를 넘긴다(codex strict mode 400 방지, REQ-2026-005). 원본은 검증 SSOT.
  * - threadId: resume이면 resumeThreadId, exec이면 parseThreadId(stdout)(없으면 null → 호출처가 fail-closed).
  * - codex 미설치/실패 → runner가 throw(그대로 전파, fail-closed).
  */
 export function createCodexReviewerAdapter(run: CodexRunner = defaultCodexRunner): ReviewerAdapter {
   return {
     review({ prompt, schemaPath, resumeThreadId, cwd }) {
-      const lastPath = join(mkdtempSync(join(tmpdir(), 'req-codex-')), 'last.json')
+      const tmpDir = mkdtempSync(join(tmpdir(), 'req-codex-'))
+      const lastPath = join(tmpDir, 'last.json')
+      // 원본(검증 SSOT)을 읽어 strict copy 파생 → temp에 기록 → --output-schema로 전달(archive 검증엔 원본 사용).
+      const outputSchemaPath = join(tmpDir, 'output-schema.json')
+      writeFileSync(outputSchemaPath, deriveStrictOutputSchema(readFileSync(schemaPath, 'utf8')), 'utf8')
       const args = resumeThreadId
-        ? ['exec', 'resume', resumeThreadId, '--json', '--output-schema', schemaPath, '--output-last-message', lastPath, '-']
-        : ['exec', '--json', '--sandbox', 'read-only', '--output-schema', schemaPath, '--output-last-message', lastPath, '-']
+        ? ['exec', 'resume', resumeThreadId, '--json', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
+        : ['exec', '--json', '--sandbox', 'read-only', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
       const rawStdout = run(args, prompt, cwd)
       const threadId = resumeThreadId ?? parseThreadId(rawStdout)
       const lastMessage = existsSync(lastPath) ? readFileSync(lastPath, 'utf8') : ''

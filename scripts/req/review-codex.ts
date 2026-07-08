@@ -191,9 +191,18 @@ export function readDesignDocsFromIndex(
 // 구조(필수 키·enum)는 단계 3에서 AJV(machine.schema.json)로 강제.
 // 여기서는 AJV가 표현 못 하는 교차필드 모순·버전·git 바인딩을 fail-closed로 검사(§9.6 rule 2~3).
 
-/** 리뷰 지적 항목 (machine.schema.json 1.1 findings[]). file은 nullable(전역 지적 등). */
+/** 리뷰 지적 항목 (machine.schema.json 1.1 findings[]). file은 nullable(전역 지적 등). severity=blocking 신호. */
 export interface Finding {
   severity?: string
+  detail?: string
+  file?: string | null
+}
+
+/**
+ * 비차단 코멘트(observations[], REQ-2026-005). 승인/차단 판정에 영향 없음(순수 정보).
+ * **severity 없음** — severity가 붙는 순간 blocking(findings)/non-blocking(observations) 경계가 흐려진다(스키마가 구조적으로 거부).
+ */
+export interface Observation {
   detail?: string
   file?: string | null
 }
@@ -208,6 +217,8 @@ export interface Verdict {
   review_kind?: string
   findings?: Finding[]
   next_action?: string
+  // REQ-2026-005: optional 비차단 코멘트. classifyReview는 이 필드를 보지 않는다(findings 존재만으로 분류).
+  observations?: Observation[]
 }
 
 const STATUS_VALUES = ['NEEDS_FIX', 'STEP_COMPLETE', 'COMPLETE']
@@ -514,6 +525,10 @@ export function processResponse(args: {
 
   const struct = validateResponseStructure(verdict, schemaPath ?? MACHINE_SCHEMA_PATH)
   const domain = validateVerdict(verdict, { reviewBaseSha: binding.reviewBaseSha })
+  // REQ-2026-005 defaulting layer: **검증(원본, observations optional) 이후** 결측/비배열 observations를 []로 정규화한다.
+  //   strict 출력 스키마(codex는 항상 observations emit)와 optional 검증 스키마(구 archive는 결측 허용) 사이의 계약을 내부적으로 일관화 —
+  //   하류(classifyReview·표출·evidence)는 observations를 **항상 배열**로 취급. 검증 전에 하지 않는 이유: 비배열(파손) observations는 AJV가 먼저 invalid로 잡아야 하기 때문.
+  verdict.observations = Array.isArray(verdict.observations) ? verdict.observations : []
   const kindMismatch = verdict.review_kind !== kind
   // design 승인엔 non-null designHash 필수(freshness anchor) — 누락은 fail-closed(Codex P3).
   const designHashMissing = kind === 'design' && !(typeof designHash === 'string' && designHash.trim().length > 0)
@@ -827,6 +842,17 @@ function outcomeLabel(outcome: ReviewOutcome): string {
   return outcome.toUpperCase()
 }
 
+/** 비차단 코멘트(observations) 표출 — REQ-2026-005. 승인에서도 보이게(사용자가 놓치지 않게). 판정엔 영향 없음. */
+function printObservations(verdict: Verdict): void {
+  const obs = Array.isArray(verdict.observations) ? verdict.observations : []
+  if (!obs.length) return
+  console.error('   observations (non-blocking):')
+  for (const o of obs) {
+    const where = o.file ? ` ${o.file}` : ''
+    console.error(`   -${where}: ${o.detail ?? ''}`)
+  }
+}
+
 function printOutcomeDetails(outcome: ReviewOutcome, result: ProcessResponseResult): void {
   if (outcome === 'needs-fix') {
     for (const f of result.verdict.findings ?? []) {
@@ -840,7 +866,10 @@ function printOutcomeDetails(outcome: ReviewOutcome, result: ProcessResponseResu
     console.error('   - Do not retry the same review without changing the binding or escalating to a human.')
   } else if (outcome === 'invalid') {
     for (const e of result.errors) console.error(`   - ${e}`)
+    return // invalid는 errors만 — observations 미표출
   }
+  // approved/needs-fix/blocked에서 비차단 코멘트 표출(특히 approved에서 사용자가 코멘트를 놓치지 않게).
+  printObservations(result.verdict)
 }
 
 // ──────────────────────────────────────────────────────────────── CLI ──

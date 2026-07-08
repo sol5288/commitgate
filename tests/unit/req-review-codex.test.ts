@@ -534,6 +534,25 @@ describe('req:review-codex — 응답 구조검증(validateResponseStructure, AJ
   it('정의 외 필드는 거부(additionalProperties:false)', () => {
     expect(vrs({ ...good, extra: 1 }).ok).toBe(false)
   })
+  // REQ-2026-005: observations(optional 비차단 코멘트)
+  it('[REQ-005] observations(optional) 없이도 유효(하위호환 — 기존 1.1 응답)', () => {
+    expect(vrs(good).ok).toBe(true) // good에 observations 없음
+  })
+  it('[REQ-005] observations: [] (빈 배열 — "없음"의 표준 표현) 유효', () => {
+    expect(vrs({ ...good, observations: [] }).ok).toBe(true)
+  })
+  it('[REQ-005] observations 배열({detail,file}) 있으면 유효', () => {
+    const v = { ...good, observations: [{ detail: '사소한 네이밍 제안', file: 'a.ts' }, { detail: '전역 코멘트', file: null }] }
+    expect(vrs(v).ok).toBe(true)
+  })
+  it('[REQ-005] observation에 severity가 있으면 거부(additionalProperties:false — blocking/non-blocking 경계)', () => {
+    const v = { ...good, observations: [{ severity: 'P3', detail: 'x', file: null }] }
+    expect(vrs(v).ok).toBe(false)
+  })
+  it('[REQ-005] observation 필수필드(file) 누락은 거부', () => {
+    const v = { ...good, observations: [{ detail: 'x' }] }
+    expect(vrs(v).ok).toBe(false)
+  })
 })
 
 describe('req:review-codex — 승인 반영(applyVerdict)', () => {
@@ -729,6 +748,69 @@ describe('req:review-codex — 응답 처리(processResponse) fail-closed', () =
     expect(r.nextState.approved_diff_hash).toBe(null)
     expect(classifyReview(r, 'phase')).toBe('blocked')
     expect(archiveDecision(r, 'phase')).toBe(null)
+    expect(reviewOutcomeExitCode('blocked')).toBe(2)
+  })
+
+  it('[REQ-005] commit_approved=yes + findings=[] + observations → approved (비차단 코멘트는 승인 불변)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'req-resp-'))
+    writeResp(dir, {
+      machine_schema_version: '1.1',
+      review_base_sha: 'BASE_SHA',
+      status: 'STEP_COMPLETE',
+      commit_approved: 'yes',
+      merge_ready: 'no',
+      risk_level: 'LOW',
+      review_kind: 'phase',
+      findings: [],
+      next_action: '',
+      observations: [{ detail: '사소한 코멘트', file: 'a.ts' }],
+    })
+    const r = processResponse({ ticketDir: dir, state, binding, threadId: 'TID' })
+    expect(r.ok).toBe(true)
+    expect(r.nextState.commit_allowed).toBe(true)
+    expect(classifyReview(r, 'phase')).toBe('approved')
+    expect(reviewOutcomeExitCode('approved')).toBe(0)
+  })
+
+  it('[REQ-005] defaulting layer: observations 결측 응답 → 검증 통과 + result.verdict.observations === [] (하류 항상 배열)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'req-resp-'))
+    // observations 키 자체가 없는 응답(구 archive/1.1 형태) — 검증(optional)은 통과하고 내부적으로 []로 정규화되어야.
+    writeResp(dir, {
+      machine_schema_version: '1.1',
+      review_base_sha: 'BASE_SHA',
+      status: 'STEP_COMPLETE',
+      commit_approved: 'yes',
+      merge_ready: 'no',
+      risk_level: 'LOW',
+      review_kind: 'phase',
+      findings: [],
+      next_action: '',
+    })
+    const r = processResponse({ ticketDir: dir, state, binding, threadId: 'TID' })
+    expect(r.ok).toBe(true)
+    expect(Array.isArray(r.verdict.observations)).toBe(true)
+    expect(r.verdict.observations).toEqual([])
+    expect(classifyReview(r, 'phase')).toBe('approved')
+  })
+
+  it('[REQ-005] commit_approved=no + findings=[] + observations만 → 여전히 blocked (observations는 findings 대체 아님)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'req-resp-'))
+    writeResp(dir, {
+      machine_schema_version: '1.1',
+      review_base_sha: 'BASE_SHA',
+      status: 'STEP_COMPLETE',
+      commit_approved: 'no',
+      merge_ready: 'no',
+      risk_level: 'LOW',
+      review_kind: 'phase',
+      findings: [],
+      next_action: '',
+      observations: [{ detail: '비차단 의견', file: null }],
+    })
+    const r = processResponse({ ticketDir: dir, state, binding, threadId: 'TID' })
+    expect(r.ok).toBe(true)
+    expect(r.nextState.commit_allowed).toBe(false)
+    expect(classifyReview(r, 'phase')).toBe('blocked')
     expect(reviewOutcomeExitCode('blocked')).toBe(2)
   })
 

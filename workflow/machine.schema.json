@@ -19,7 +19,7 @@
     "commit_approved": {
       "type": "string",
       "enum": ["yes", "no"],
-      "description": "Gate approval for this review. For review_kind=design, yes means the design is approved to proceed (nothing is committed); approve a good design with commit_approved=yes and merge_ready=no. For review_kind=phase, yes means the staged tree is approved to commit. Approve (yes) ONLY when findings is empty: any finding is a blocking signal, so commit_approved=yes with a non-empty findings array is a contradiction and is rejected. Conversely, returning no with an empty findings array is also a contradiction and is rejected as BLOCKED — if you have no findings you must approve."
+      "description": "Gate approval for this review. For review_kind=design, yes means the design is approved to proceed (nothing is committed); approve a good design with commit_approved=yes and merge_ready=no. For review_kind=phase, yes means the staged tree is approved to commit. Approve (yes) ONLY when findings is empty: any finding is a blocking signal, so commit_approved=yes with a non-empty findings array is a contradiction and is rejected. Conversely, returning no with an empty findings array is also a contradiction and is rejected as BLOCKED — if you have no findings you must approve. Minor/non-blocking remarks do NOT belong in findings; put them in observations and still approve."
     },
     "merge_ready": { "type": "string", "enum": ["yes", "no"] },
     "risk_level": { "type": "string", "enum": ["LOW", "HIGH"] },
@@ -37,6 +37,19 @@
         }
       }
     },
-    "next_action": { "type": "string" }
+    "next_action": { "type": "string" },
+    "observations": {
+      "type": "array",
+      "description": "Optional non-blocking comments that do NOT block approval or gate the commit. Use this (NOT findings) for minor/nit remarks when approving. Items carry detail and file only — deliberately NO severity (severity belongs to blocking findings). commit_approved=yes with findings=[] and observations present is still approved. observations never substitute for findings: commit_approved=no with findings=[] and observations only is still BLOCKED.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["detail", "file"],
+        "properties": {
+          "detail": { "type": "string" },
+          "file": { "type": ["string", "null"] }
+        }
+      }
+    }
   }
 }
