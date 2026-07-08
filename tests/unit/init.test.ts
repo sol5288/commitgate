@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runInit, detectPackageManager, parseArgs, crossSpawnBelowFloor, type InitOptions } from '../../bin/init'
+import { runInit, detectPackageManager, runScriptCmd, parseArgs, crossSpawnBelowFloor, type InitOptions } from '../../bin/init'
 
 /**
  * 임시 대상 repo 생성.
@@ -377,5 +377,14 @@ describe('[init] parseArgs', () => {
     expect(parseArgs(['--dry-run']).dryRun).toBe(true)
     expect(() => parseArgs(['--bogus'])).toThrow(/알 수 없는 인자/)
     expect(() => parseArgs(['--dir'])).toThrow(/--dir 값 누락/)
+  })
+})
+
+describe('[init] runScriptCmd — pm별 유효 실행 커맨드(안내 정확성)', () => {
+  it('npm은 run + `--` 구분자, pnpm/yarn은 bare script + 인자 직접', () => {
+    // npm: `npm req:new …`은 Unknown command로 실패 → run + -- 필수(README 수동 명령과 동일)
+    expect(runScriptCmd('npm', 'req:new', '<slug> --run')).toBe('npm run req:new -- <slug> --run')
+    expect(runScriptCmd('pnpm', 'req:new', '<slug> --run')).toBe('pnpm req:new <slug> --run')
+    expect(runScriptCmd('yarn', 'req:new', '<slug> --run')).toBe('yarn req:new <slug> --run')
   })
 })

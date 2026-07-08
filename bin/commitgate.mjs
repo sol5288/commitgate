@@ -18,4 +18,5 @@ register()
 
 const initTs = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), 'init.ts')).href
 const mod = await import(initTs)
-mod.main(process.argv.slice(2))
+// runCli = 예외를 친절한 한 줄 메시지 + exit 1로 변환하는 CLI 경계(스택트레이스 노출 방지).
+mod.runCli(process.argv.slice(2))

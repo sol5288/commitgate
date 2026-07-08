@@ -21,10 +21,11 @@ import {
   copyFileSync,
   realpathSync,
 } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { resolve, join, dirname, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadConfig, stripBom, type PackageManager } from '../scripts/req/lib/config'
-import { createGitAdapter } from '../scripts/req/lib/adapters'
+import { createGitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
 import * as semver from 'semver'
 
 /** 이 패키지 루트(bin/ 기준 1단계 위). 복사 원본. */
@@ -73,7 +74,12 @@ export interface InitResult {
  * targetRoot가 repo top-level과 일치해야 함(하위 디렉터리에 스캐폴드 방지). git 미설치/비-repo → throw(fail-closed).
  */
 function assertGitWorkTree(targetRoot: string): void {
-  const git = createGitAdapter(targetRoot)
+  // probe 전용 runner: 비-repo일 때 git이 뱉는 `fatal: not a git repository` stderr를 삼킨다.
+  // 우리가 더 명확한 조치 메시지로 대체하므로 raw git stderr는 노이즈일 뿐(design 후속 UX).
+  // ⚠️ 전역 GitAdapter 기본(stderr 상속)은 그대로 — 다른 git 호출(req:commit 등)의 진단 손실 방지.
+  const quietRunner: GitRunner = (file, args, opts) =>
+    execFileSync(file, args, { ...opts, stdio: ['ignore', 'pipe', 'ignore'] })
+  const git = createGitAdapter(targetRoot, quietRunner)
   let inside: string
   let topLevel: string
   try {
@@ -96,6 +102,16 @@ export function detectPackageManager(root: string): PackageManager {
   if (existsSync(join(root, 'yarn.lock'))) return 'yarn'
   if (existsSync(join(root, 'package-lock.json'))) return 'npm'
   return 'npm'
+}
+
+/**
+ * 대상 pm에 맞는 package.json script 실행 커맨드 문자열.
+ * npm은 임의 스크립트를 `npm run <script>`로만 실행하고 인자 전달에 `--` 구분자가 필요하다
+ * (`npm req:new …`은 "Unknown command"로 실패). pnpm/yarn은 bare script + 인자 직접 전달을 지원.
+ * → 안내 문구가 실제로 복붙 가능한 유효 커맨드가 되도록 pm별로 분기(README 수동 명령과 동일 형태).
+ */
+export function runScriptCmd(pm: PackageManager, script: string, args: string): string {
+  return pm === 'npm' ? `npm run ${script} -- ${args}` : `${pm} ${script} ${args}`
 }
 
 /** dir 하위 모든 파일의 절대경로(재귀). */
@@ -388,7 +404,7 @@ function printHelp(): void {
   console.log(`commitgate — AI REQ workflow(커밋 게이트) kit 설치
 
 사용법:
-  npx commitgate [--dir <대상repo>] [--force] [--dry-run]
+  npx commitgate [--dir <대상repo>] [--force] [--dry-run] [--strict]
 
 옵션:
   --dir <path>   대상 repo 루트(기본: 현재 디렉터리)
@@ -401,7 +417,10 @@ function printHelp(): void {
   1. <대상repo>에서 의존성 설치(감지된 패키지매니저)
   2. codex CLI 설치 확인(리뷰 실호출용)
   3. req.config.json 조정(branchPrefix/ticketRoot 등)
-  4. <pm> req:new <slug> --run 으로 첫 티켓 생성`)
+  4. 첫 티켓 생성:
+       npm  → npm run req:new -- <slug> --run
+       pnpm → pnpm req:new <slug> --run
+       yarn → yarn req:new <slug> --run`)
 }
 
 export function main(argv: string[]): void {
@@ -430,9 +449,24 @@ export function main(argv: string[]): void {
     console.log(`  1. cd ${r.targetRoot} && ${r.packageManager} install`)
     console.log(`  2. codex --version   # 리뷰 실호출 전제(미설치면 review-codex --run이 fail-closed)`)
     console.log(`  3. req.config.json 확인(branchPrefix 등)`)
-    console.log(`  4. ${r.packageManager} req:new <slug> --run`)
+    console.log(`  4. ${runScriptCmd(r.packageManager, 'req:new', '<slug> --run')}`)
+  }
+}
+
+/**
+ * CLI 경계: main을 실행하되 사전조건 미충족 등 예상된 실패(throw)는
+ * raw 스택트레이스가 아니라 친절한 한 줄 메시지 + 종료코드 1로 표면화한다.
+ * (에러 문구 자체가 이미 조치 안내를 담고 있어 스택트레이스는 노이즈일 뿐 — REQ 후속 UX 개선.)
+ * bin/commitgate.mjs 런처와 직접 실행(`tsx bin/init.ts`)이 공유하는 단일 경계.
+ */
+export function runCli(argv: string[]): void {
+  try {
+    main(argv)
+  } catch (err) {
+    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
+    process.exitCode = 1
   }
 }
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
-if (isMain) main(process.argv.slice(2))
+if (isMain) runCli(process.argv.slice(2))
