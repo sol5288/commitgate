@@ -17,6 +17,11 @@ AI coding agents can move quickly, but unreviewed changes should not go straight
 Run this from your project root. The project must be a **git repository with a `package.json`**.
 
 ```sh
+# If this is a fresh folder that is not yet a git repo or has no package.json, first:
+git init
+npm init -y
+
+# Then install:
 npx commitgate
 npm install
 codex --version
@@ -32,7 +37,8 @@ Create a new REQ ticket and run this flow end to end:
 req:new → write design docs → Codex design review → implement and test → req:doctor → Codex phase review → req:commit
 
 Proceed automatically:
-- If Codex returns NEEDS_FIX, fix the findings and rerun review until approved.
+- If `req:review-codex` returns NEEDS_FIX/exit 3, fix the findings and rerun review.
+- If it returns BLOCKED/exit 2, do not retry the same review; escalate or change the review target. If a stuck thread is suspected, you may retry once with `--fresh-thread`.
 - The review target is only what has been staged with git add.
 - Do not manually git add state.json or responses/.
 
@@ -41,7 +47,7 @@ Stop for human confirmation only:
 - Before merging to main or pushing
 - Before destructive actions such as reset, clean, or force push
 - When the requested scope must change
-- When Codex review is still not approved after 3 rounds
+- When Codex review returns BLOCKED or remains unclear after bounded retries
 
 Requirement:
 - What:
@@ -73,6 +79,8 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - If the approved staged tree differs from the current staged tree, the commit is blocked.
 - Workflow files such as `state.json` and `responses/` cannot be mixed into the source commit.
 - If Codex CLI is missing or fails, the workflow fails instead of silently passing.
+- Review exit codes are outcome-based: `0` approved, `1` invalid/fail-closed, `2` blocked/no actionable findings, `3` needs fix.
+- A no-findings/no-approval response is BLOCKED, not NEEDS_FIX, so agents must not loop on it.
 - During install, existing `cross-spawn` versions below the verified floor warn by default and fail with `--strict`.
 - Approval responses and evidence are kept under `workflow/REQ-.../responses/`.
 

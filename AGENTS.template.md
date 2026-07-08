@@ -21,6 +21,8 @@
 - staged tree는 승인된 tree와 일치해야 한다(D9). 승인 후 재stage/설계 변경은 stale 승인으로 거부.
 - 워킹트리는 리뷰 시점에 clean해야 한다(비-스크래치 unstaged/untracked → D10 FAIL).
 - codex 미설치/실패는 silent 처리 금지 — 명확히 fail-closed.
+- `req:review-codex` exit 0만 승인이다. exit 3(NEEDS_FIX)은 수정 후 재리뷰, exit 2(BLOCKED)는 같은 리뷰 재시도 금지. BLOCKED가 스레드 고착으로 의심되면 `--fresh-thread`로 1회만 회복 시도, 그래도 BLOCKED면 사람 보고.
+- 승인(`commit_approved=yes`)은 `findings`가 0건일 때만이다. 지적이 하나라도 있으면 승인 불가(모순 → 거부). 비차단 코멘트를 `findings`에 섞지 말 것.
 
 ### 4. 커밋 정책
 - 각 phase는 의미 있는 커밋. "WIP" 금지.
@@ -33,7 +35,7 @@
 - main merge / push 직전
 - destructive 작업(reset/clean/force push) 필요
 - 설계 범위 변경 또는 비목표 추가 필요
-- Codex 리뷰 3라운드 이상 반복 또는 판단 불명확
+- Codex 리뷰 BLOCKED(exit 2) 또는 제한된 재시도 후 판단 불명확
 - git·Codex CLI·Node·패키지매니저 등 필수 전제 미충족(fail-closed)
 
 ## 워크플로 명령

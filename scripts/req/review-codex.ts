@@ -253,6 +253,12 @@ export function validateVerdict(
   if (v.merge_ready === 'yes' && v.commit_approved !== 'yes')
     errors.push('모순: merge_ready=yes 인데 commit_approved≠yes')
 
+  // R10 (safety, fail-closed): 승인(commit_approved=yes)은 findings가 0건이어야 한다.
+  //   findings는 **승인 차단 신호**이므로, 지적이 있는데 승인은 모순 — 미검토/미조치 코드가 승인되는 구멍을 막는다.
+  //   비차단 코멘트가 필요하면 findings가 아니라 별도 필드(예: observations)를 도입해야 한다(findings 오버로드 금지).
+  if (v.commit_approved === 'yes' && Array.isArray(v.findings) && v.findings.length > 0)
+    errors.push('모순: commit_approved=yes 인데 findings가 비어있지 않음 (승인은 findings 0건 — 지적이 있으면 미승인)')
+
   return { ok: errors.length === 0, errors }
 }
 
@@ -283,6 +289,35 @@ export interface ApprovalEvidence {
   approved_at: string
 }
 
+export type ReviewOutcome = 'approved' | 'needs-fix' | 'blocked' | 'invalid'
+
+export const REVIEW_EXIT_CODES: Record<ReviewOutcome, number> = {
+  approved: 0,
+  invalid: 1,
+  blocked: 2,
+  'needs-fix': 3,
+}
+
+export interface ProcessResponseResult {
+  ok: boolean
+  errors: string[]
+  nextState: WorkflowState
+  verdict: Verdict
+}
+
+export interface BlockedReviewTarget {
+  review_kind: ReviewKind
+  phase_id: string | null
+  review_base_sha: string
+  review_binding: string
+}
+
+export interface BlockedReviewMarker extends BlockedReviewTarget {
+  count: number
+  response_sha256: string | null
+  blocked_at: string
+}
+
 export interface WorkflowState {
   id: string
   phase: string
@@ -295,6 +330,7 @@ export interface WorkflowState {
   // REQ-016 A1: 승인 증거 핀(kind 격리) + grandfathering 트리거. 반대 kind 증거는 미오염.
   approval_evidence?: ApprovalEvidence
   design_approval_evidence?: ApprovalEvidence
+  blocked_review?: BlockedReviewMarker
   approval_evidence_required?: boolean
   [k: string]: unknown
 }
@@ -464,7 +500,7 @@ export function processResponse(args: {
   // REQ-016 A1: 승인 시 증거 핀 정본(아카이브 경로+sha). 미제공 시 evidence 미부착(하위호환).
   archive?: { path: string; sha256: string }
   approvedAt?: string
-}): { ok: boolean; errors: string[]; nextState: WorkflowState } {
+}): ProcessResponseResult {
   const { ticketDir, state, binding, threadId, designHash, schemaPath } = args
   const kind: ReviewKind = args.kind ?? 'phase'
   const respPath = join(ticketDir, 'codex-response.json')
@@ -510,7 +546,7 @@ export function processResponse(args: {
         approvedAt: args.approvedAt ?? new Date().toISOString(),
       })
     }
-    return { ok, errors, nextState }
+    return { ok, errors, nextState, verdict }
   }
 
   // A1-P2-1: 같은 kind(phase)의 기존 증거는 항상 stale로 보고 제거(base에서 omit). 반대 kind(design)는 보존.
@@ -539,12 +575,121 @@ export function processResponse(args: {
     })
   }
 
-  return { ok, errors, nextState }
+  return { ok, errors, nextState, verdict }
 }
 
 /** state.json 기록 — UTF-8(BOM 없음), 2-space + 끝 개행. */
 export function writeState(ticketDir: string, state: WorkflowState): void {
   writeFileSync(join(ticketDir, 'state.json'), `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+}
+
+function verdictHasFindings(verdict: Verdict): boolean {
+  return Array.isArray(verdict.findings) && verdict.findings.length > 0
+}
+
+function isOutcomeApproved(result: ProcessResponseResult, kind: ReviewKind): boolean {
+  return kind === 'phase' ? result.nextState.commit_allowed === true : result.nextState.design_approved === true
+}
+
+/**
+ * 검증 유효성(result.ok)과 게이트 승인 여부를 분리한 최종 리뷰 outcome.
+ * - invalid  ⟺ !result.ok (구조/도메인 검증 실패). errors[]가 진단 정본.
+ * - approved  = 게이트 승인(phase=commit_allowed·design=design_approved).
+ * - needs-fix = 유효·미승인·**조치할 findings 있음**(NEEDS_FIX든 STEP_COMPLETE든 findings가 있으면 여기 — 조치 가능하므로).
+ * - blocked   = 유효·미승인·**findings 없음**(결정적 고착 — 같은 바인딩 재리뷰는 순수 낭비).
+ * ⚠️ status 기반이 아니라 **findings 존재** 기반으로 분기 — "미승인인데 findings=[]"만 blocked로 격리해야
+ *    (a) 조치할 게 있는 verdict가 진단 없이 invalid로 새는 것을 막고 (b) blocked 회로차단기가 오탐 없이 동작한다.
+ *    (NEEDS_FIX + findings=[]는 validateVerdict가 invalid로 잡으므로 여기 도달하지 않는다.)
+ */
+export function classifyReview(result: ProcessResponseResult, kind: ReviewKind): ReviewOutcome {
+  if (!result.ok) return 'invalid'
+  if (isOutcomeApproved(result, kind)) return 'approved'
+  if (verdictHasFindings(result.verdict)) return 'needs-fix'
+  return 'blocked'
+}
+
+export function reviewOutcomeExitCode(outcome: ReviewOutcome): number {
+  return REVIEW_EXIT_CODES[outcome]
+}
+
+/**
+ * 리뷰 결과 → 최종 outcome·종료코드·기록할 state(순수). main() 종료 배선의 **단일 정본**
+ * (main이 이 함수를 호출하므로 병렬 재구현으로 인한 drift가 없다 — exit-code 계약을 테스트로 고정 가능).
+ * - outcome = classifyReview
+ * - blocked → 회로차단기 마커 기록(같은 target이면 count 증가), 그 외 → 마커 제거(clear)
+ * - exitCode: approved=0 · invalid=1 · blocked=2 · needs-fix=3
+ */
+export function resolveReviewOutcome(args: {
+  result: ProcessResponseResult
+  kind: ReviewKind
+  blockedTarget: BlockedReviewTarget
+  responseSha256: string | null
+  blockedAt: string
+}): { outcome: ReviewOutcome; exitCode: number; finalState: WorkflowState } {
+  const outcome = classifyReview(args.result, args.kind)
+  const finalState =
+    outcome === 'blocked'
+      ? recordBlockedReview(args.result.nextState, args.blockedTarget, args.responseSha256, args.blockedAt)
+      : clearBlockedReview(args.result.nextState)
+  return { outcome, exitCode: reviewOutcomeExitCode(outcome), finalState }
+}
+
+export function buildBlockedReviewTarget(args: {
+  kind: ReviewKind
+  phaseId: string | null
+  binding: Binding
+  designHash?: string | null
+}): BlockedReviewTarget {
+  return {
+    review_kind: args.kind,
+    phase_id: args.kind === 'phase' ? args.phaseId ?? null : null,
+    review_base_sha: args.binding.reviewBaseSha,
+    review_binding: args.kind === 'design' ? args.designHash ?? args.binding.reviewTree : args.binding.reviewTree,
+  }
+}
+
+function sameBlockedReviewTarget(a: BlockedReviewMarker | undefined, b: BlockedReviewTarget): boolean {
+  return (
+    !!a &&
+    a.review_kind === b.review_kind &&
+    a.phase_id === b.phase_id &&
+    a.review_base_sha === b.review_base_sha &&
+    a.review_binding === b.review_binding
+  )
+}
+
+export function shouldShortCircuitBlockedReview(
+  state: WorkflowState,
+  target: BlockedReviewTarget,
+  limit = 2,
+): boolean {
+  const marker = state.blocked_review
+  if (!marker || !sameBlockedReviewTarget(marker, target)) return false
+  return marker.count >= limit
+}
+
+export function recordBlockedReview(
+  state: WorkflowState,
+  target: BlockedReviewTarget,
+  responseSha256: string | null,
+  blockedAt: string,
+): WorkflowState {
+  const marker = state.blocked_review
+  const count = marker && sameBlockedReviewTarget(marker, target) ? marker.count + 1 : 1
+  return {
+    ...state,
+    blocked_review: {
+      ...target,
+      count,
+      response_sha256: responseSha256,
+      blocked_at: blockedAt,
+    },
+  }
+}
+
+export function clearBlockedReview(state: WorkflowState): WorkflowState {
+  const { blocked_review: _blocked, ...rest } = state
+  return rest
 }
 
 // parseThreadId는 lib/adapters로 이동(codex CLI 전용 로직) — 상단에서 re-export.
@@ -668,13 +813,34 @@ export function buildApprovalEvidence(args: {
  * 유효 + 승인(phase=commit_allowed·design=design_approved) → 'approved', 그 외(유효 NEEDS_FIX) → 'needs-fix'.
  */
 export function archiveDecision(
-  result: { ok: boolean; nextState: WorkflowState },
+  result: ProcessResponseResult,
   kind: ReviewKind,
 ): 'approved' | 'needs-fix' | null {
-  if (!result.ok) return null
-  const approved =
-    kind === 'phase' ? result.nextState.commit_allowed === true : result.nextState.design_approved === true
-  return approved ? 'approved' : 'needs-fix'
+  const outcome = classifyReview(result, kind)
+  if (outcome === 'approved') return 'approved'
+  if (outcome === 'needs-fix') return 'needs-fix'
+  return null
+}
+
+function outcomeLabel(outcome: ReviewOutcome): string {
+  if (outcome === 'needs-fix') return 'NEEDS_FIX'
+  return outcome.toUpperCase()
+}
+
+function printOutcomeDetails(outcome: ReviewOutcome, result: ProcessResponseResult): void {
+  if (outcome === 'needs-fix') {
+    for (const f of result.verdict.findings ?? []) {
+      const where = f.file ? ` ${f.file}` : ''
+      console.error(`   - ${f.severity ?? 'P?'}${where}: ${f.detail ?? ''}`)
+    }
+    if (typeof result.verdict.next_action === 'string' && result.verdict.next_action.trim())
+      console.error(`   next_action: ${result.verdict.next_action}`)
+  } else if (outcome === 'blocked') {
+    console.error('   - Codex returned no actionable findings but did not approve the gate.')
+    console.error('   - Do not retry the same review without changing the binding or escalating to a human.')
+  } else if (outcome === 'invalid') {
+    for (const e of result.errors) console.error(`   - ${e}`)
+  }
 }
 
 // ──────────────────────────────────────────────────────────────── CLI ──
@@ -687,11 +853,15 @@ export interface Opts {
   kind: ReviewKind
   phase: string | null
   root: string | null
+  freshThread: boolean
 }
 
-/** CLI 파싱. `--kind design|phase`(기본 phase, 하위호환)·`--phase <id>`(phase kind 대상). 잘못된 --kind/--phase 값은 fail-closed throw. */
+/**
+ * CLI 파싱. `--kind design|phase`(기본 phase, 하위호환)·`--phase <id>`(phase kind 대상). 잘못된 --kind/--phase 값은 fail-closed throw.
+ * `--fresh-thread`: blocked 회로차단기의 명시적 회복 경로 — blocked_review 마커를 초기화하고 codex 스레드를 새로 시작(고착된 resume 스레드를 끊는다).
+ */
 export function parseArgs(argv: string[]): Opts {
-  const opts: Opts = { ticket: null, reqId: null, handoff: null, run: false, kind: 'phase', phase: null, root: null }
+  const opts: Opts = { ticket: null, reqId: null, handoff: null, run: false, kind: 'phase', phase: null, root: null, freshThread: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === undefined) continue
@@ -713,6 +883,7 @@ export function parseArgs(argv: string[]): Opts {
       opts.phase = v
     } else if (a === '--run') opts.run = true // 라이브 codex 호출(미지정 시 dry-run 미리보기)
     else if (a === '--dry-run') opts.run = false
+    else if (a === '--fresh-thread') opts.freshThread = true // blocked 회복: 마커 초기화 + 새 스레드
     else if (!a.startsWith('-')) opts.reqId = a
   }
   return opts
@@ -758,7 +929,9 @@ function main(): void {
   const cfg = loadConfig({ root: opts.root })
   gitAdapter = createGitAdapter(cfg.root) // 모든 git 호출 cwd = config.root
   const ticketDir = resolveTicketDir(opts, cfg)
-  const state = loadState(ticketDir) // 부재 시 명확한 에러
+  let state = loadState(ticketDir) // 부재 시 명확한 에러
+  // --fresh-thread: blocked 회로차단기 명시적 회복 — 마커 제거(단락 해제) + resume 대신 새 스레드(고착 resume 끊기).
+  if (opts.freshThread) state = clearBlockedReview(state)
 
   const requestPath = join(ticketDir, 'codex-request.md')
   if (!existsSync(requestPath)) throw new Error(`codex-request.md 없음: ${requestPath}`)
@@ -801,6 +974,12 @@ function main(): void {
   } else {
     stagedDiff = git(['diff', '--cached'])
   }
+  const blockedTarget = buildBlockedReviewTarget({
+    kind: opts.kind,
+    phaseId,
+    binding: { reviewBaseSha, reviewTree },
+    designHash,
+  })
 
   const reviewContext: ReviewContext = {
     branch,
@@ -839,7 +1018,8 @@ function main(): void {
   // 워크플로 도구가 쓰는 메타데이터(응답·프리뷰·state)는 리뷰 대상 아님 → exact 경로로 허용(precondition/무수정검증 제외).
   // 특히 state.json은 직전 라운드 writeState로 unstaged가 되므로 resume(2회차) precondition 통과에 필수(4C e2e 발견).
   const SCRATCH = [repoRel(respPath), repoRel(previewPath), repoRel(join(ticketDir, 'state.json'))]
-  const isResume = typeof state.codex_thread_id === 'string' && state.codex_thread_id.length > 0
+  // --fresh-thread면 codex_thread_id가 있어도 resume하지 않고 새 exec으로 시작(고착 스레드 회복).
+  const isResume = !opts.freshThread && typeof state.codex_thread_id === 'string' && state.codex_thread_id.length > 0
 
   // Phase 4: 추적 phase는 유효 design 승인 전제(D13 동일) — 미충족 시 호출 전 fail-closed(불필요 codex 호출 방지).
   if (phaseId && !designValid)
@@ -854,6 +1034,12 @@ function main(): void {
     throw new Error(
       `리뷰 전 워킹트리에 unstaged/untracked 존재(D10) — 의도 변경은 git add, 그 외 정리 필요:\n  ${preDirty.join('\n  ')}`,
     )
+
+  if (shouldShortCircuitBlockedReview(state, blockedTarget)) {
+    console.error('[req:review-codex] BLOCKED  repeated blocked result for the same review binding')
+    console.error('  Codex will not be called again for this unchanged target. Change the staged binding or escalate.')
+    process.exit(reviewOutcomeExitCode('blocked'))
+  }
 
   console.warn(`⚠️  codex 실제 호출 (${isResume ? 'resume' : 'exec'}) — 호출 1회 발생 (DEC-WF-026: 호출 직전 확인)`)
 
@@ -911,16 +1097,24 @@ function main(): void {
     decision === 'approved' && archiveDesc
       ? processResponse({ ...baseArgs, archive: archiveDesc, approvedAt })
       : probe
-  writeState(ticketDir, result.nextState)
+  const responseSha256 = existsSync(respPath)
+    ? createHash('sha256').update(readFileSync(respPath)).digest('hex')
+    : null
+  const { outcome, exitCode, finalState } = resolveReviewOutcome({
+    result,
+    kind: opts.kind,
+    blockedTarget,
+    responseSha256,
+    blockedAt: approvedAt,
+  })
+  writeState(ticketDir, finalState)
 
-  console.log(`[req:review-codex] ${result.ok ? 'OK' : 'FAIL(fail-closed)'}  thread=${threadId}`)
+  console.log(`[req:review-codex] ${outcomeLabel(outcome)}  thread=${threadId}`)
   console.log(
-    `  commit_allowed=${String(result.nextState.commit_allowed)}  approved=${String(result.nextState.approved_diff_hash ?? 'null')}`,
+    `  commit_allowed=${String(finalState.commit_allowed)}  approved=${String(finalState.approved_diff_hash ?? 'null')}`,
   )
-  if (!result.ok) {
-    for (const e of result.errors) console.error(`   - ${e}`)
-    process.exit(1)
-  }
+  printOutcomeDetails(outcome, result)
+  if (exitCode !== 0) process.exit(exitCode)
 }
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href

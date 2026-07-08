@@ -25,6 +25,13 @@ import {
   isArchiveFileName,
   isAllowedResponsesScratch,
   archiveDecision,
+  buildBlockedReviewTarget,
+  classifyReview,
+  clearBlockedReview,
+  recordBlockedReview,
+  resolveReviewOutcome,
+  reviewOutcomeExitCode,
+  shouldShortCircuitBlockedReview,
   MACHINE_SCHEMA_VERSION,
   MACHINE_SCHEMA_PATH,
   type Verdict,
@@ -239,6 +246,10 @@ describe('req:review-codex — CLI 파싱(parseArgs)', () => {
   it('[P2] --root 값 누락은 throw', () => {
     expect(() => parseArgs(['2026-001', '--root'])).toThrow(/--root/)
   })
+  it('[REQ-1] --fresh-thread 파싱(기본 false)', () => {
+    expect(parseArgs(['2026-001']).freshThread).toBe(false)
+    expect(parseArgs(['2026-001', '--fresh-thread', '--run']).freshThread).toBe(true)
+  })
 })
 
 describe('req:review-codex — phase 대상 해소(resolvePhaseTarget)', () => {
@@ -399,6 +410,19 @@ describe('req:review-codex — 응답 도메인 검증(validateVerdict)', () => 
   it('모순: merge_ready=yes 인데 status≠COMPLETE → 실패', () => {
     const r = validateVerdict({ ...ok, merge_ready: 'yes', status: 'STEP_COMPLETE' })
     expect(r.ok).toBe(false)
+  })
+
+  it('[R10] 모순: commit_approved=yes 인데 findings 있음 → 실패(승인은 findings 0건)', () => {
+    const r = validateVerdict(
+      { ...ok, commit_approved: 'yes', findings: [{ severity: 'P1', detail: 'SQLi', file: 'a.ts' }] },
+      { reviewBaseSha: 'abc' },
+    )
+    expect(r.ok).toBe(false)
+    expect(r.errors.join()).toContain('findings')
+  })
+
+  it('[R10] 승인 + findings=[]는 정상(비차단 코멘트를 findings에 넣지 않은 경우)', () => {
+    expect(validateVerdict({ ...ok, commit_approved: 'yes', findings: [] }, { reviewBaseSha: 'abc' }).ok).toBe(true)
   })
 
   it('review_base_sha 불일치(state 바인딩) → 실패', () => {
@@ -683,6 +707,51 @@ describe('req:review-codex — 응답 처리(processResponse) fail-closed', () =
     expect(r.nextState.codex_thread_id).toBe('TID')
     expect(r.nextState.review_base_sha).toBe('BASE_SHA')
     expect(r.nextState.review_diff_hash).toBe('TREE_OID')
+    expect(classifyReview(r, 'phase')).toBe('approved')
+  })
+
+  it('[REQ-1] STEP_COMPLETE + findings=[] + commit_approved=no → blocked(재시도 금지), needs-fix 아카이브 아님', () => {
+    dir = mkdtempSync(join(tmpdir(), 'req-resp-'))
+    writeResp(dir, {
+      machine_schema_version: '1.1',
+      review_base_sha: 'BASE_SHA',
+      status: 'STEP_COMPLETE',
+      commit_approved: 'no',
+      merge_ready: 'no',
+      risk_level: 'LOW',
+      review_kind: 'phase',
+      findings: [],
+      next_action: '',
+    })
+    const r = processResponse({ ticketDir: dir, state, binding, threadId: 'TID' })
+    expect(r.ok).toBe(true)
+    expect(r.nextState.commit_allowed).toBe(false)
+    expect(r.nextState.approved_diff_hash).toBe(null)
+    expect(classifyReview(r, 'phase')).toBe('blocked')
+    expect(archiveDecision(r, 'phase')).toBe(null)
+    expect(reviewOutcomeExitCode('blocked')).toBe(2)
+  })
+
+  it('[REQ-1] 유효·미승인·findings 있음(STEP_COMPLETE+commit_approved=no+findings) → needs-fix(진단 표출, invalid로 새지 않음)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'req-resp-'))
+    // 비-NEEDS_FIX terminal status인데 findings가 있는 자기모순 응답도 조치 가능하므로 needs-fix로 분류(silent exit-1 방지).
+    writeResp(dir, {
+      machine_schema_version: '1.1',
+      review_base_sha: 'BASE_SHA',
+      status: 'STEP_COMPLETE',
+      commit_approved: 'no',
+      merge_ready: 'no',
+      risk_level: 'LOW',
+      review_kind: 'phase',
+      findings: [{ severity: 'P2', detail: 'x', file: null }],
+      next_action: 'fix x',
+    })
+    const r = processResponse({ ticketDir: dir, state, binding, threadId: 'TID' })
+    expect(r.ok).toBe(true)
+    expect(r.nextState.commit_allowed).toBe(false)
+    expect(classifyReview(r, 'phase')).toBe('needs-fix')
+    expect(archiveDecision(r, 'phase')).toBe('needs-fix')
+    expect(reviewOutcomeExitCode('needs-fix')).toBe(3)
   })
 
   it('모순(commit=yes+NEEDS_FIX) → ok=false, 승인 미부여(fail-closed)', () => {
@@ -1209,16 +1278,122 @@ describe('[A2-fix2] findUnstagedOrUntracked — responses/ rename·copy 주입 �
 
 describe('[A2-fix2] archiveDecision — 검증된 result로 suffix 결정', () => {
   const ns = (over: Partial<WorkflowState>): WorkflowState => ({ id: 'X', phase: 'P', ...over } as WorkflowState)
+  const approvedVerdict: Verdict = {
+    machine_schema_version: '1.1',
+    review_base_sha: 'BASE',
+    status: 'STEP_COMPLETE',
+    commit_approved: 'yes',
+    merge_ready: 'no',
+    risk_level: 'LOW',
+    review_kind: 'phase',
+    findings: [],
+    next_action: '',
+  }
+  const needsFixVerdict: Verdict = {
+    ...approvedVerdict,
+    status: 'NEEDS_FIX',
+    commit_approved: 'no',
+    findings: [{ severity: 'P2', detail: 'x', file: null }],
+    next_action: 'fix',
+  }
+  const blockedVerdict: Verdict = { ...approvedVerdict, commit_approved: 'no' }
   it('result.ok=false(무효/kind 불일치) → null(아카이브 안 함)', () => {
-    expect(archiveDecision({ ok: false, nextState: ns({ commit_allowed: true }) }, 'phase')).toBe(null)
-    expect(archiveDecision({ ok: false, nextState: ns({ design_approved: true }) }, 'design')).toBe(null)
+    expect(archiveDecision({ ok: false, errors: ['x'], nextState: ns({ commit_allowed: true }), verdict: approvedVerdict }, 'phase')).toBe(null)
+    expect(archiveDecision({ ok: false, errors: ['x'], nextState: ns({ design_approved: true }), verdict: { ...approvedVerdict, review_kind: 'design' } }, 'design')).toBe(null)
   })
   it('valid NEEDS_FIX(승인 아님) → needs-fix', () => {
-    expect(archiveDecision({ ok: true, nextState: ns({ commit_allowed: false }) }, 'phase')).toBe('needs-fix')
-    expect(archiveDecision({ ok: true, nextState: ns({ design_approved: false }) }, 'design')).toBe('needs-fix')
+    expect(archiveDecision({ ok: true, errors: [], nextState: ns({ commit_allowed: false }), verdict: needsFixVerdict }, 'phase')).toBe('needs-fix')
+    expect(archiveDecision({ ok: true, errors: [], nextState: ns({ design_approved: false }), verdict: { ...needsFixVerdict, review_kind: 'design' } }, 'design')).toBe('needs-fix')
+  })
+  it('[REQ-1] valid blocked(승인 아님 + findings 없음) → null(아카이브 안 함)', () => {
+    expect(archiveDecision({ ok: true, errors: [], nextState: ns({ commit_allowed: false }), verdict: blockedVerdict }, 'phase')).toBe(null)
+    expect(archiveDecision({ ok: true, errors: [], nextState: ns({ design_approved: false }), verdict: { ...blockedVerdict, review_kind: 'design' } }, 'design')).toBe(null)
   })
   it('valid 승인 → approved', () => {
-    expect(archiveDecision({ ok: true, nextState: ns({ commit_allowed: true }) }, 'phase')).toBe('approved')
-    expect(archiveDecision({ ok: true, nextState: ns({ design_approved: true }) }, 'design')).toBe('approved')
+    expect(archiveDecision({ ok: true, errors: [], nextState: ns({ commit_allowed: true }), verdict: approvedVerdict }, 'phase')).toBe('approved')
+    expect(archiveDecision({ ok: true, errors: [], nextState: ns({ design_approved: true }), verdict: { ...approvedVerdict, review_kind: 'design' } }, 'design')).toBe('approved')
+  })
+})
+
+describe('[REQ-1] blocked review circuit breaker', () => {
+  const binding = { reviewBaseSha: 'BASE', reviewTree: 'TREE' }
+  const target = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'phase-1', binding })
+
+  it('same binding blocked count reaches threshold → short-circuit before codex call', () => {
+    const s1 = recordBlockedReview({ id: 'REQ', phase: 'IMPLEMENT' } as WorkflowState, target, 'SHA1', '2026-01-01T00:00:00.000Z')
+    expect(shouldShortCircuitBlockedReview(s1, target)).toBe(false)
+    const s2 = recordBlockedReview(s1, target, 'SHA1', '2026-01-01T00:01:00.000Z')
+    expect(shouldShortCircuitBlockedReview(s2, target)).toBe(true)
+  })
+
+  it('binding change resets blocked count', () => {
+    const s1 = recordBlockedReview({ id: 'REQ', phase: 'IMPLEMENT' } as WorkflowState, target, 'SHA1', '2026-01-01T00:00:00.000Z')
+    const changed = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'phase-1', binding: { reviewBaseSha: 'BASE', reviewTree: 'TREE2' } })
+    const s2 = recordBlockedReview(s1, changed, 'SHA2', '2026-01-01T00:01:00.000Z')
+    expect((s2.blocked_review as { count: number }).count).toBe(1)
+    expect(shouldShortCircuitBlockedReview(s2, target)).toBe(false)
+  })
+
+  it('non-blocked outcome clears stale blocked marker', () => {
+    const s1 = recordBlockedReview({ id: 'REQ', phase: 'IMPLEMENT' } as WorkflowState, target, 'SHA1', '2026-01-01T00:00:00.000Z')
+    expect(clearBlockedReview(s1).blocked_review).toBeUndefined()
+  })
+})
+
+// main()의 종료 배선(단일 정본 resolveReviewOutcome)을 canned codex 응답 → processResponse → outcome/exit code로
+// near-e2e 고정. 4개 outcome(approved/needs-fix/blocked/invalid) 종료코드와 blocked 마커 기록/제거를 함께 검증.
+describe('[REQ-1] resolveReviewOutcome — outcome→exit code·state 배선(near-e2e)', () => {
+  let dir: string | null = null
+  const binding = { reviewBaseSha: 'BASE_SHA', reviewTree: 'TREE_OID' }
+  const state: WorkflowState = { id: 'REQ-2026-001', phase: 'IMPLEMENT' }
+  const blockedTarget = buildBlockedReviewTarget({ kind: 'phase', phaseId: null, binding })
+  const base = {
+    machine_schema_version: '1.1',
+    review_base_sha: 'BASE_SHA',
+    merge_ready: 'no',
+    risk_level: 'LOW',
+    review_kind: 'phase',
+  }
+  const run = (obj: Record<string, unknown>) => {
+    dir = mkdtempSync(join(tmpdir(), 'req-outcome-'))
+    writeFileSync(join(dir, 'codex-response.json'), JSON.stringify(obj), 'utf8')
+    const result = processResponse({ ticketDir: dir, state, binding, threadId: 'TID' })
+    return resolveReviewOutcome({ result, kind: 'phase', blockedTarget, responseSha256: 'RSHA', blockedAt: '2026-01-01T00:00:00.000Z' })
+  }
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+    dir = null
+  })
+
+  it('approved → exit 0, blocked 마커 없음, commit_allowed=true', () => {
+    const o = run({ ...base, status: 'STEP_COMPLETE', commit_approved: 'yes', findings: [], next_action: '' })
+    expect(o.outcome).toBe('approved')
+    expect(o.exitCode).toBe(0)
+    expect(o.finalState.commit_allowed).toBe(true)
+    expect(o.finalState.blocked_review).toBeUndefined()
+  })
+
+  it('needs-fix(findings 있음) → exit 3, 마커 없음', () => {
+    const o = run({ ...base, status: 'NEEDS_FIX', commit_approved: 'no', findings: [{ severity: 'P2', detail: 'x', file: null }], next_action: 'fix' })
+    expect(o.outcome).toBe('needs-fix')
+    expect(o.exitCode).toBe(3)
+    expect(o.finalState.commit_allowed).toBe(false)
+    expect(o.finalState.blocked_review).toBeUndefined()
+  })
+
+  it('blocked(미승인+findings 없음) → exit 2, blocked 마커 기록(count=1)', () => {
+    const o = run({ ...base, status: 'STEP_COMPLETE', commit_approved: 'no', findings: [], next_action: '' })
+    expect(o.outcome).toBe('blocked')
+    expect(o.exitCode).toBe(2)
+    expect(o.finalState.commit_allowed).toBe(false)
+    expect((o.finalState.blocked_review as { count: number }).count).toBe(1)
+  })
+
+  it('invalid(base sha 불일치) → exit 1, 마커 없음', () => {
+    const o = run({ ...base, review_base_sha: 'WRONG', status: 'STEP_COMPLETE', commit_approved: 'yes', findings: [], next_action: '' })
+    expect(o.outcome).toBe('invalid')
+    expect(o.exitCode).toBe(1)
+    expect(o.finalState.commit_allowed).toBe(false)
+    expect(o.finalState.blocked_review).toBeUndefined()
   })
 })

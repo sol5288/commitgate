@@ -44,7 +44,7 @@ describe('Phase 3 — GitAdapter(createGitAdapter)', () => {
       return ' M a.ts\n M b.ts\n  ' // 선행 공백(XY 코드) + trailing 공백
     })
     const out = ga.exec(['status', '--porcelain'])
-    expect(calls[0]).toEqual(['git', ['status', '--porcelain'], { cwd: '/repo', encoding: 'utf8' }])
+    expect(calls[0]).toEqual(['git', ['status', '--porcelain'], { cwd: '/repo', encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }])
     // ⚠️ .trim() 아님 — status --porcelain 선행 공백 보존, trailing만 제거
     expect(out).toBe(' M a.ts\n M b.ts')
   })

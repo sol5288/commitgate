@@ -16,7 +16,11 @@
     "machine_schema_version": { "type": "string", "enum": ["1.1"] },
     "review_base_sha": { "type": "string" },
     "status": { "type": "string", "enum": ["NEEDS_FIX", "STEP_COMPLETE", "COMPLETE"] },
-    "commit_approved": { "type": "string", "enum": ["yes", "no"] },
+    "commit_approved": {
+      "type": "string",
+      "enum": ["yes", "no"],
+      "description": "Gate approval for this review. For review_kind=design, yes means the design is approved to proceed (nothing is committed); approve a good design with commit_approved=yes and merge_ready=no. For review_kind=phase, yes means the staged tree is approved to commit. Approve (yes) ONLY when findings is empty: any finding is a blocking signal, so commit_approved=yes with a non-empty findings array is a contradiction and is rejected. Conversely, returning no with an empty findings array is also a contradiction and is rejected as BLOCKED — if you have no findings you must approve."
+    },
     "merge_ready": { "type": "string", "enum": ["yes", "no"] },
     "risk_level": { "type": "string", "enum": ["LOW", "HIGH"] },
     "review_kind": { "type": "string", "enum": ["design", "phase"] },

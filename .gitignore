@@ -3,6 +3,9 @@ dist/
 *.log
 .DS_Store
 
+# 테스트 픽스처용 repo 내부 writable temp(hermetic child-process 실행)
+.tmp/
+
 # req 워크플로 스크래치 산출물(티켓 내부)
 workflow/**/.review-preview.txt
 workflow/**/.codex-*.tmp

@@ -54,15 +54,19 @@ export interface GitAdapter {
 }
 
 /** GitAdapter default 구현의 내부 실행자(주입 가능 — 테스트). encoding:'utf8'이라 string 반환. */
-export type GitRunner = (file: string, args: string[], opts: { cwd: string; encoding: 'utf8' }) => string
+export type GitRunner = (file: string, args: string[], opts: { cwd: string; encoding: 'utf8'; maxBuffer: number }) => string
 const defaultGitRunner: GitRunner = (file, args, opts) => execFileSync(file, args, opts)
 
+/** git stdout 상한 — codex 경로(safeSpawnSync)와 동일 64 MiB. 큰 staged diff/status에서 Node 기본 1 MiB의 ENOBUFS throw 방지. */
+const GIT_MAX_BUFFER = 64 * 1024 * 1024
+
 /**
- * default GitAdapter — `execFileSync('git', args, {cwd: root, encoding:'utf8'})` 후 **trailing 공백만 제거**.
+ * default GitAdapter — `execFileSync('git', args, {cwd: root, encoding:'utf8', maxBuffer})` 후 **trailing 공백만 제거**.
  * ⚠️ `.trim()`이 아니라 `.replace(/\s+$/, '')` — `git status --porcelain`의 **선행 공백(XY 코드)**을 보존(behavior-preserving).
+ * maxBuffer=64MiB: `git diff --cached`/`git show :<path>`가 1 MiB 기본 상한을 넘겨 codex 호출 전에 하드 실패하는 것 방지.
  */
 export function createGitAdapter(root: string, run: GitRunner = defaultGitRunner): GitAdapter {
-  return { exec: (args) => run('git', args, { cwd: root, encoding: 'utf8' }).replace(/\s+$/, '') }
+  return { exec: (args) => run('git', args, { cwd: root, encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER }).replace(/\s+$/, '') }
 }
 
 // ─────────────────────────────────────────────── Reviewer (codex) ──
