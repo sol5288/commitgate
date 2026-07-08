@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"858c1c49717d53153d5f140e1eea655477249833","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","findings":[],"next_action":"Proceed to phase implementation: add optional observations schema/type/output support and lock the policy matrix with tests."}
