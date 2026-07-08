@@ -3,14 +3,41 @@
   "branch": "feat/req-2026-006-resume-sandbox",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f4291-ac4c-7c12-b597-4edc2685be85",
+  "review_base_sha": "42522bc5a8a7388c99a8359198f7897393fc8c9c",
+  "review_diff_hash": "16c681416e38dfcf6fa3ce49cfca3b808c4cbf4b",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "8d4d027e3b4626a6c5df9c93deff2ffeaffb55c26379cc530a2518c9511cf638",
+  "current_phase": "phase-1-resume-sandbox",
+  "phases": [
+    {
+      "id": "phase-1-resume-sandbox",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-006/responses/design-r01-approved.json",
+    "response_sha256": "3f7da85741895153d153a1f2da495b7df359cd4ec4d50932a60ff3905da80796",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "a3a0027e88e364fece87fc802ecb51ab8adeeebc",
+    "codex_thread_id": "019f4291-ac4c-7c12-b597-4edc2685be85",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-08T16:32:09.167Z",
+    "design_hash": "8d4d027e3b4626a6c5df9c93deff2ffeaffb55c26379cc530a2518c9511cf638"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "16c681416e38dfcf6fa3ce49cfca3b808c4cbf4b",
+      "phase_id": "phase-1-resume-sandbox",
+      "consumed_by_commit_sha": "d1aea521109dc1bcd08a9df9eb6efd86e3a06a35",
+      "approval_consumed_at": "2026-07-08T16:37:40.783Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
