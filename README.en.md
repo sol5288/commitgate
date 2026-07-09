@@ -44,10 +44,9 @@ Proceed automatically:
 
 Stop for human confirmation only (each item must be approved by that exact sentence; one approval never carries over to the next step):
 - Right before req:commit --run
-- [I1] Before pushing the feature branch and opening a PR
-- [I2] Before merging the PR, after confirming the required status checks are green
-- [B1] When a direct push to a protected branch is needed — get a separate "branch protection bypass를 사용한 direct push 승인"
-- [R1/R2/R3] tag creation and push / npm publish / GitHub release — each approved separately
+- [Path A · optional] [I1] Before pushing the feature branch and opening a PR / [I2] Before merging the PR, after confirming the required status checks are green
+- [Path B] [B1] Before a direct push to a protected branch — get a separate "branch protection bypass를 사용한 direct push 승인". This push bypasses the required status checks, and CI runs after it
+- [R1/R2/R3] tag creation and push / npm publish / GitHub release — each approved separately, after CI is green
 - Before destructive actions such as reset, clean, or force push
 - When the requested scope must change
 - When Codex review returns BLOCKED or remains unclear after bounded retries
@@ -67,12 +66,12 @@ Branch: feat/req-2026-002-profile-edit-api
 Phases:
 - phase-1: implement PATCH /profile
 - phase-2: tests and regression checks
-Control points: before req:commit --run / [I1] before opening the PR / [I2] before PR merge, after required checks are green
+Control points: before req:commit --run / [B1] before a direct push to main (or [I1] open PR → [I2] merge)
 ```
 
 After that, the agent runs design, implementation, tests, and Codex review. You only confirm at control points.
 
-The default integration path is **through a PR**. A direct push to a protected branch requires a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. tag, npm publish, and GitHub release are control points of their own and are never bundled with the merge approval. See [AGENTS.template.md](AGENTS.template.md) and [docs/RELEASING.md](docs/RELEASING.md) for the full contract.
+Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses the required status checks**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. In that case CI runs **after** the push, so its green is post-hoc verification, and the agent must not omit that from its report. tag, npm publish, and GitHub release are control points of their own, requested after CI is green and never bundled with the integration approval. See [AGENTS.template.md](AGENTS.template.md) and [docs/RELEASING.md](docs/RELEASING.md) for the full contract.
 
 ---
 

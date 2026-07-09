@@ -40,23 +40,31 @@
 - **권한이 있다는 사실은 승인이 아니다.** protected branch를 우회할 권한이 있어도, 우회하려면 그 우회 자체를 승인받아야 한다.
 - 승인 문장이 모호하면 확대 해석하지 말고 **다시 묻는다**.
 
+> PR을 생략할 수 있다는 것과, 우회를 보고하지 않아도 된다는 것은 다르다. 경로는 선택이지만 **투명성은 선택이 아니다.**
+
 ## 사람에게 보고해야 할 때
 
 각 통제점은 **고유한 승인 문장**을 가진다. 그 문장 그대로 승인받지 못했으면 실행하지 않는다.
 
-| # | 통제점 | 멈추는 시점 | 승인 문장 |
-|---|---|---|---|
-| `I1` | 통합 — PR 열기 | feature branch를 원격에 push하고 PR을 생성하기 직전 | `feature branch push + PR 생성 승인` |
-| `I2` | 통합 — PR 머지 | **required status checks가 전부 green으로 끝난 것을 확인한 뒤**, PR을 protected branch에 머지하기 직전 | `required checks green 확인 후 PR merge 승인` |
-| `B1` | bypass (예외) | required status checks를 우회해 protected branch에 **direct push**해야 할 때 | `branch protection bypass를 사용한 direct push 승인` |
-| `R1` | 릴리즈 — tag | 버전 tag 생성 및 tag push 직전 | `tag 생성·push 승인` |
-| `R2` | 릴리즈 — publish | 패키지 publish 직전 | `npm publish 승인` |
-| `R3` | 릴리즈 — release | GitHub release 생성 직전 | `GitHub release 생성 승인` |
+protected branch에 변경을 넣는 경로는 **두 가지**이고 **둘 다 유효**하다. PR은 **의무가 아니라 선택**이다.
 
-- **기본 통합 경로는 PR 경유다**(`I1` → required status checks green → `I2`). `I2`는 checks 결과를 본 뒤에만 요청한다 — green 전 선승인은 받지 않는다(승인자가 볼 근거가 아직 없다).
-- `B1`은 `I1`+`I2`를 대체하는 **예외 경로**다. `B1` 승인이 없으면 protected branch에 direct push하지 않는다.
-- **push 전에 멈춰라.** protected branch로 알고 있거나 확인이 안 되면 push하기 전에 보고한다. push 응답의 `remote: Bypassed rule violations`는 우회가 **이미 일어난 뒤**의 사후 신호이므로 계약 근거가 될 수 없다.
-- `R1`·`R2`·`R3`는 `I2` 이후, CI green 이후에 각각 따로 요청한다. 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.
+- **경로 A (PR 경유)**: `I1` → required status checks green → `I2`
+- **경로 B (direct push)**: `B1` → push → **CI 사후 실행**
+
+| # | 통제점 | 경로 | 멈추는 시점 | 승인 문장 |
+|---|---|---|---|---|
+| `I1` | 통합 — PR 열기 | A | feature branch를 원격에 push하고 PR을 생성하기 직전 | `feature branch push + PR 생성 승인` |
+| `I2` | 통합 — PR 머지 | A | **required status checks가 전부 green으로 끝난 것을 확인한 뒤**, PR을 protected branch에 머지하기 직전 | `required checks green 확인 후 PR merge 승인` |
+| `B1` | 통합 — direct push | B | protected branch에 **direct push**하기 직전 | `branch protection bypass를 사용한 direct push 승인` |
+| `R1` | 릴리즈 — tag | — | 버전 tag 생성 및 tag push 직전 | `tag 생성·push 승인` |
+| `R2` | 릴리즈 — publish | — | 패키지 publish 직전 | `npm publish 승인` |
+| `R3` | 릴리즈 — release | — | GitHub release 생성 직전 | `GitHub release 생성 승인` |
+
+- 경로 A: `I2`는 checks 결과를 본 뒤에만 요청한다 — green 전 선승인은 받지 않는다(승인자가 볼 근거가 아직 없다).
+- 경로 B: **direct push는 required status checks를 우회한다.** 그래서 `B1` 승인이 따로 필요하다. 경로 B를 고르는 것 자체는 잘못이 아니다 — **우회 사실을 숨기는 것**이 잘못이다.
+- **push 전에 멈춰라.** 대상이 protected branch로 알려져 있거나 확인이 안 되면 push하기 전에 보고한다. push 응답의 `remote: Bypassed rule violations`는 우회가 **이미 일어난 뒤**의 사후 신호이므로 사전 정지의 근거가 될 수 없다.
+- **경로 B에서 CI는 사후 검증이다.** push 이후에 돌기 때문에, 그 green은 반영을 *사전에* 막아 준 게 아니다. 보고할 때 이 사실을 생략하지 않는다.
+- `R1`·`R2`·`R3`는 반영(`I2` 또는 `B1`) 이후 **CI green을 확인한 뒤** 각각 따로 요청한다. 경로 B였다면 그 green이 push 뒤에 나왔다는 점을 함께 보고한다. 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.
 
 그 밖에 보고해야 할 때:
 - HIGH commit 실행 직전
