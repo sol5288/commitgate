@@ -5,8 +5,9 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, resolve, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runInit } from '../../bin/init'
+import { runInit, KIT_COPY_RELPATHS } from '../../bin/init'
 import { planUninstall, renderPlan, runUninstall, parseArgs } from '../../bin/uninstall'
+import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
 import type { GitRunner } from '../../scripts/req/lib/adapters'
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -269,8 +270,10 @@ describe('[uninstall] 커밋 전/후 안내 분기', () => {
       const oldSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim()
 
       // 2) 이후 전부 제거하고 커밋 — 이력에는 add 커밋이 그대로 남는다
+      // ⚠️ 제거 목록을 하드코딩하지 않는다. KIT_COPY_RELPATHS에 파일이 추가되면(예: review-persona.md)
+      //    "전부 제거" 픽스처가 조용히 불완전해지고, 남은 tracked 파일이 아래 단언을 깨뜨린다.
       execFileSync('git', ['rm', '-r', '-q', 'scripts/req'], { cwd: dir })
-      execFileSync('git', ['rm', '-q', 'workflow/machine.schema.json', 'workflow/req.config.schema.json'], { cwd: dir })
+      execFileSync('git', ['rm', '-q', ...KIT_COPY_RELPATHS], { cwd: dir })
       execFileSync('git', ['rm', '-q', 'req.config.json', 'AGENTS.md'], { cwd: dir })
       execFileSync('git', ['commit', '-qm', 'chore: remove commitgate'], { cwd: dir })
 
@@ -385,6 +388,40 @@ describe('[uninstall] tool 아티팩트 무결성 표기', () => {
       expect(plan.review.map((t) => t.path)).toContain('scripts/req/req-new.ts')
       expect(plan.removable.map((t) => t.path)).not.toContain('scripts/req/req-new.ts')
       expect(plan.review.find((t) => t.path === 'scripts/req/req-new.ts')?.match).toBe('differs')
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-010 phase-1a — persona 파일은 init이 깐 **tool** 아티팩트다.
+ * 분류에서 빠지면 (a) 제거 계획이 파일을 누락하고 (b) `미분류 파일 보호` 가드가 잔여물로 잡는다.
+ */
+describe('[uninstall] persona 파일 분류', () => {
+  it('바이트 동일한 persona는 tool/identical로 removable', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const plan = planUninstall({ dir })
+      const t = plan.facts.tool.find((x) => x.path === DEFAULT_REVIEW_PERSONA_RELPATH)
+      expect(t?.present).toBe(true)
+      expect(t?.match).toBe('identical')
+      expect(plan.removable.map((x) => x.path)).toContain(DEFAULT_REVIEW_PERSONA_RELPATH)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('편집된 persona는 removable이 아니라 review', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const p = join(dir, DEFAULT_REVIEW_PERSONA_RELPATH)
+      writeFileSync(p, readFileSync(p, 'utf8') + '\n프로젝트 고유 리뷰 지침\n')
+      const plan = planUninstall({ dir })
+      expect(plan.review.find((x) => x.path === DEFAULT_REVIEW_PERSONA_RELPATH)?.match).toBe('differs')
+      expect(plan.removable.map((x) => x.path)).not.toContain(DEFAULT_REVIEW_PERSONA_RELPATH)
     } finally {
       cleanup(dir)
     }

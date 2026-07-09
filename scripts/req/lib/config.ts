@@ -49,6 +49,19 @@ export interface ResolvedConfig {
 }
 
 /**
+ * Codex 리뷰 프롬프트에 주입되는 **리뷰어 페르소나** 문서의 repo-상대 경로(코어 기본값).
+ *
+ * ⚠️ 이 상수는 두 축의 SSOT다(REQ-2026-010 D3-1).
+ *   - **설치 축**: `bin/init.ts`의 `KIT_COPY_RELPATHS`가 이 경로를 대상 repo에 복사한다.
+ *   - **설정 축**: `DEFAULTS.reviewPersonaPath`가 이 값으로 해소된다(phase-1b에서 도입).
+ *
+ * 둘이 갈라지면 신규 설치본은 프롬프트 조립 시 이 파일을 찾지 못하고 **모든 리뷰가 fail-closed로 멈춘다.**
+ * `tests/unit/init.test.ts`의 "설치 축 SSOT"가 그 드리프트를 회귀로 잡는다.
+ * `package.json`의 `files[]`는 또 **다른 축**(npm tarball 적재분)이므로 함께 갱신해야 한다.
+ */
+export const DEFAULT_REVIEW_PERSONA_RELPATH = 'workflow/review-persona.md'
+
+/**
  * 코어 기본값. `req.config.json` 부재 시 이 값으로 해소된다.
  *
  * ⚠️ 여기 있는 값은 **모든 대상 프로젝트에 유효한 중립 기본값**이어야 한다.

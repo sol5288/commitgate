@@ -17,7 +17,42 @@
 
 리뷰 종류/범위는 프롬프트의 **REVIEW_KIND**를 따른다. design=설계문서 00/01/02(구현 diff 없음 정상), phase=staged diff.
 
-> 이 페르소나 블록이 `codex-request.md`에 손으로 들어간 것은 이번이 **마지막**이다. phase-1이 이것을 `review-codex.ts`의 프롬프트 조립 단계로 옮긴다 — 그게 이 티켓의 요지다.
+> 이 페르소나 블록이 `codex-request.md`에 손으로 들어간 것은 이번이 **마지막**이다. phase-1b가 이것을 `review-codex.ts`의 프롬프트 조립 단계로 옮긴다 — 그게 이 티켓의 요지다.
+
+---
+
+## 현재 phase 리뷰: `phase-1a-persona-install`
+
+design은 R6에서 승인됐다(`responses/design-r06-approved.json`). 지금은 **staged diff만** 심사한다. 설계·계획 정본은 커밋된 `01-design.md`(D3-1)·`02-plan.md`(Phase 1a)에 있다.
+
+**이 phase가 하는 일**: persona 파일을 **깔기만** 한다. 소비(fail-closed 주입)는 phase-1b다. 이 순서 자체가 design R1 P1의 해법이다 — 반대로 하면 신규 설치본의 모든 리뷰가 멈춘다.
+
+staged 변경 (8파일):
+- `workflow/review-persona.md` (신규) — D5 매핑표대로. 가드레일 포함.
+- `scripts/req/lib/config.ts` — `DEFAULT_REVIEW_PERSONA_RELPATH` 상수 **추가만**. `DEFAULTS`·`CONFIG_SCHEMA`는 미변경(1b).
+- `bin/init.ts` — `KIT_COPY_RELPATHS = [...KIT_SCHEMA_RELPATHS, DEFAULT_REVIEW_PERSONA_RELPATH]` 신설, 복사기가 이를 사용.
+- `bin/uninstall.ts` — `tool` 분류를 `KIT_COPY_RELPATHS` 기준으로. `KIT_SCHEMA_RELPATHS`의 schemaPath 축 판정(`:189`)은 **불변**.
+- `package.json` — `files[]`에 `workflow/review-persona.md`.
+- `tests/unit/init.test.ts` — 설치 축 SSOT 회귀(P1 재발 방지) + 복사 + dry-run 무쓰기.
+- `tests/unit/uninstall.test.ts` — persona `tool`/`identical`/removable, 편집 시 `differs`/review. **기존 "전부 제거" 픽스처를 `KIT_COPY_RELPATHS` 기반으로 교체**(하드코딩 목록이 새 파일을 놓쳐 실패했음).
+- `tests/unit/package-payload.test.ts` — tarball 축 가드.
+
+**실행한 검증** (증거):
+- `npm run typecheck` → 0
+- `npm test` → 462/462 green
+- `npm pack --dry-run --json`(격리 `npm_config_cache`) → 18파일, `workflow/review-persona.md` 포함
+- **실 sandbox**: pack tarball → 임시 git repo에 `npm i -D` → `node node_modules/commitgate/bin/commitgate.mjs` 실행 → `workflow/review-persona.md` 생성 확인 · `req.config.json`에 `reviewPersonaPath` **미주입**(D4) 확인 · `commitgate uninstall`이 `rm -f workflow/review-persona.md` 제시 · 편집 후엔 removable에서 빠지고 review로 강등 확인
+
+### 이 phase의 리뷰 포인트
+
+- **세 축이 정말 분리됐는가**: `files[]`(tarball) / `KIT_COPY_RELPATHS`(설치) / `KIT_SCHEMA_RELPATHS`(schemaPath 판정). `uninstall.ts:189`의 판정이 오염되지 않았는가? `KIT_COPY_RELPATHS`를 거기 쓰면 무엇이 깨지는가?
+- **SSOT 회귀가 진짜 P1을 막는가**: `init.test.ts`의 단언이 "설치 축에서 persona가 빠지는" 시나리오를 실제로 잡는가? `DEFAULT_REVIEW_PERSONA_RELPATH`를 `config.ts`에 둔 것이 옳은가(순환 의존·레이어링)?
+- **phase 경계 준수**: `config.ts`에 상수만 추가하고 `DEFAULTS`/`CONFIG_SCHEMA`/`ResolvedConfig`는 건드리지 않았는가? `review-codex.ts`를 전혀 안 건드렸는가? (1b 침범 금지)
+- **`copyInto` 재사용이 안전한가**: `KIT_COPY_RELPATHS`는 `src`와 `dest` 상대경로가 같다(리터럴 `workflow/`). `--force` 없는 재설치·중첩 디렉터리·dry-run에서 기존 계약이 보존되는가?
+- **혼합 버전**: 0.3.1 설치본에 `--force` 없이 0.4.0을 돌리면 구 `review-codex.ts` + 신 persona 파일이 남는다(무해). `--force`면 둘 다 갱신. 이 분석이 diff와 일치하는가?
+- **테스트 픽스처 수정이 정당한가**: `uninstall.test.ts:274`의 하드코딩 제거 목록을 `KIT_COPY_RELPATHS` 스프레드로 바꿨다. 이것이 테스트의 의도("전부 제거")를 보존하는가, 아니면 단언을 약화시키는가?
+- **persona 본문이 D5 가드레일을 지키는가**: 승인=findings 0건 / 비차단=observations / "부채를 findings로 밀어 올리지 마라"가 명확한가? 이 문서가 곧 이후 모든 리뷰의 리뷰어 지시가 된다 — 문구의 결함은 복리로 쌓인다.
+- 범위 이탈: `workflow/REQ-2026-00*` 미변경, 버전 bump 미수행, `req:next`·`templates/` 미착수 확인.
 
 ## 배경
 

@@ -63,6 +63,16 @@ describe('[payload] 공개 패키지에 사설 프로젝트 참조가 없다', (
     expect(files.some((f) => f.endsWith('req.config.json.sample'))).toBe(true)
   })
 
+  /**
+   * REQ-2026-010 phase-1a — tarball 축(`files[]`) 가드.
+   * 설치 축(`KIT_COPY_RELPATHS`)은 `init.test.ts`가 따로 지킨다. **두 축은 다르다**:
+   * 하나만 갱신하면 tarball엔 있는데 대상 repo엔 안 깔리거나(또는 그 반대) 한다.
+   */
+  it('persona 파일이 tarball payload에 실린다', () => {
+    const rels = files.map((f) => relative(PACKAGE_ROOT, f).replace(/\\/g, '/'))
+    expect(rels).toContain('workflow/review-persona.md')
+  })
+
   it('열거된 payload 파일 중 텍스트는 전부 스캔된다(건너뛴 텍스트 0개)', () => {
     const skipped = files.filter((f) => readTextOrNull(f) === null)
     // 현재 payload는 전부 텍스트다. 바이너리가 생기면 여기서 드러난다.

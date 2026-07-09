@@ -27,6 +27,7 @@ import {
   PACKAGE_ROOT,
   KIT_SOURCE_DIR_REL,
   KIT_SCHEMA_RELPATHS,
+  KIT_COPY_RELPATHS,
   REQ_SCRIPTS,
   REQ_DEV_DEPS,
   assertGitWorkTree,
@@ -191,9 +192,10 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
       `schemaPath=${schemaPath} — 런타임이 읽는 경로이지만 init이 복사한 파일이 아닙니다(제거 후보 아님).`,
     )
 
-  // ── tool: kit 소스 + init이 **실제로 복사한** 스키마(항상 리터럴 workflow/ — ticketRoot 무관)
+  // ── tool: kit 소스 + init이 **실제로 복사한** 파일들(스키마 2종 + review-persona.md — 항상 리터럴 workflow/, ticketRoot 무관)
+  // 복사 축(KIT_COPY_RELPATHS)을 쓴다. 위 info의 스키마 축(KIT_SCHEMA_RELPATHS)과 의도적으로 다른 상수다.
   const kitSourceRels = walkFiles(join(PACKAGE_ROOT, KIT_SOURCE_DIR_REL)).map(toRel)
-  const toolRels = [...kitSourceRels, ...KIT_SCHEMA_RELPATHS]
+  const toolRels = [...kitSourceRels, ...KIT_COPY_RELPATHS]
   const tool: ToolArtifact[] = toolRels.map((rel) => {
     const dest = join(targetRoot, rel)
     const src = join(PACKAGE_ROOT, rel)

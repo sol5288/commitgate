@@ -3,7 +3,17 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runInit, detectPackageManager, runScriptCmd, parseArgs, crossSpawnBelowFloor, type InitOptions } from '../../bin/init'
+import {
+  runInit,
+  detectPackageManager,
+  runScriptCmd,
+  parseArgs,
+  crossSpawnBelowFloor,
+  KIT_COPY_RELPATHS,
+  KIT_SCHEMA_RELPATHS,
+  type InitOptions,
+} from '../../bin/init'
+import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
 
 /**
  * 임시 대상 repo 생성.
@@ -32,6 +42,49 @@ const OPTS = (dir: string, over?: Partial<InitOptions>): InitOptions => ({
   dryRun: false,
   strict: false,
   ...over,
+})
+
+/**
+ * REQ-2026-010 phase-1a — **설치 축과 tarball 축은 다르다** (design R1 P1).
+ *
+ * `package.json`의 `files[]`는 npm tarball에 무엇이 실리는가이고,
+ * `KIT_COPY_RELPATHS`는 **대상 repo에 무엇이 깔리는가**다.
+ * phase-1b가 `review-codex`에 persona fail-closed를 켜므로, persona 파일이 설치 축에서
+ * 빠지면 신규 설치본의 **모든 리뷰가 멈춘다**. 두 SSOT가 갈라지는 순간 여기서 실패한다.
+ */
+describe('[init] 설치 축 SSOT (persona)', () => {
+  it('KIT_COPY_RELPATHS가 코어 기본 persona 경로를 포함한다', () => {
+    expect(KIT_COPY_RELPATHS).toContain(DEFAULT_REVIEW_PERSONA_RELPATH)
+  })
+
+  it('KIT_SCHEMA_RELPATHS는 스키마 축으로 남는다(persona 미포함)', () => {
+    // uninstall.ts의 "설정된 schemaPath가 init이 깐 스키마인가" 판정이 이 상수에 의존한다.
+    // persona를 여기 섞으면 그 판정이 오염된다.
+    expect(KIT_SCHEMA_RELPATHS as readonly string[]).not.toContain(DEFAULT_REVIEW_PERSONA_RELPATH)
+    expect([...KIT_COPY_RELPATHS]).toEqual(expect.arrayContaining([...KIT_SCHEMA_RELPATHS]))
+  })
+
+  it('설치가 persona 파일을 실제로 복사한다', () => {
+    const dir = tmpTarget()
+    try {
+      const r = runInit(OPTS(dir))
+      expect(r.copied).toContain(DEFAULT_REVIEW_PERSONA_RELPATH)
+      expect(existsSync(join(dir, DEFAULT_REVIEW_PERSONA_RELPATH))).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('dry-run은 persona 파일을 쓰지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      const r = runInit(OPTS(dir, { dryRun: true }))
+      expect(r.copied).toContain(DEFAULT_REVIEW_PERSONA_RELPATH)
+      expect(existsSync(join(dir, DEFAULT_REVIEW_PERSONA_RELPATH))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
 })
 
 describe('[init] 정상 설치', () => {

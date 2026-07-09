@@ -4,7 +4,7 @@
  *
  * 동작(멱등·비파괴):
  *   1. 대상 repo 감사(git repo·package.json 필수 → 없으면 fail-closed throw)
- *   2. `scripts/req/**` + `workflow/{machine,req.config}.schema.json` 복사(기존 파일은 --force 없으면 스킵)
+ *   2. `scripts/req/**` + `KIT_COPY_RELPATHS`(스키마 2종 + review-persona.md) 복사(기존 파일은 --force 없으면 스킵)
  *   3. `req.config.json` 시드(부재 시): 감지한 packageManager + handoffPath:null(프로젝트별 값은 코어 DEFAULTS가 아니라 config에서 흡수)
  *   4. 대상 `package.json`에 req:* 스크립트·devDeps(ajv/tsx) 주입(기존 키 미덮어씀)
  *   5. `AGENTS.md` 부재 시 템플릿 생성(있으면 스킵 — Codex 계약 보존)
@@ -24,7 +24,7 @@ import {
 import { execFileSync } from 'node:child_process'
 import { resolve, join, dirname, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { loadConfig, stripBom, type PackageManager } from '../scripts/req/lib/config'
+import { loadConfig, stripBom, DEFAULT_REVIEW_PERSONA_RELPATH, type PackageManager } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
 import * as semver from 'semver'
 
@@ -40,6 +40,18 @@ export const KIT_SOURCE_DIR_REL = 'scripts/req'
  * runInit(복사)과 uninstall planner(제거 후보)가 이 상수를 **공유**해야 드리프트가 없다(REQ-2026-007 design R1 P2 / D3b).
  */
 export const KIT_SCHEMA_RELPATHS = ['workflow/machine.schema.json', 'workflow/req.config.schema.json'] as const
+
+/**
+ * init이 `scripts/req/**` 외에 **실제로 복사하는** 파일 목록(패키지-상대 = 대상-상대). 복사기와 uninstall planner의 SSOT.
+ *
+ * ⚠️ `KIT_SCHEMA_RELPATHS`와 **의미가 다르다** — 그 상수는 "설정된 `schemaPath`가 init이 깐 스키마인가"를
+ * 판정하는 **스키마 축**이고(`bin/uninstall.ts`), 이 상수는 **복사 축**이다. 여기 persona를 넣되 저기엔 넣지 않는다.
+ *
+ * ⚠️ `package.json`의 `files[]`는 또 다른 축(npm tarball)이다. **셋을 혼동하면**
+ * tarball엔 실렸는데 대상 repo엔 안 깔리는 파일이 생기고, phase-1b의 persona fail-closed와 만나
+ * 신규 설치본의 모든 리뷰가 멈춘다(REQ-2026-010 design R1 P1).
+ */
+export const KIT_COPY_RELPATHS = [...KIT_SCHEMA_RELPATHS, DEFAULT_REVIEW_PERSONA_RELPATH] as const
 
 /** 대상 package.json에 주입할 req:* 스크립트. */
 export const REQ_SCRIPTS: Record<string, string> = {
@@ -358,9 +370,9 @@ export function runInit(opts: InitOptions): InitResult {
   const copied: string[] = []
   const skipped: string[] = []
   copyInto(walkFiles(join(PACKAGE_ROOT, KIT_SOURCE_DIR_REL)), PACKAGE_ROOT, targetRoot, opts, copied, skipped)
-  // ⚠️ KIT_SCHEMA_RELPATHS는 패키지-상대 = 대상-상대(리터럴 `workflow/`). ticketRoot/schemaPath 설정과 무관 — uninstall planner와 공유하는 SSOT.
-  const schemaFiles = KIT_SCHEMA_RELPATHS.map((rel) => join(PACKAGE_ROOT, rel))
-  copyInto(schemaFiles, PACKAGE_ROOT, targetRoot, opts, copied, skipped)
+  // ⚠️ KIT_COPY_RELPATHS는 패키지-상대 = 대상-상대(리터럴 `workflow/`). ticketRoot/schemaPath 설정과 무관 — uninstall planner와 공유하는 SSOT.
+  const kitFiles = KIT_COPY_RELPATHS.map((rel) => join(PACKAGE_ROOT, rel))
+  copyInto(kitFiles, PACKAGE_ROOT, targetRoot, opts, copied, skipped)
 
   if (!opts.dryRun) {
     if (configToWrite) writeFileSync(cfgPath, JSON.stringify(configToWrite, null, 2) + '\n', 'utf8')
