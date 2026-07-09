@@ -2,7 +2,13 @@
 
 design-first. **단일 phase**(추적) — 네 문서의 문구가 서로 어긋나면 안 되므로 한 덩어리로 정비한다. 코드 변경 0파일.
 
-## Phase 1 — governance docs (`phase-1-governance-docs`)
+## Phase 1 — governance docs (`phase-1-governance-docs`) — ✅ 완료(커밋 `3a1199f`) · ⚠️ 일부 **Phase 2가 개정**
+
+> **이력 기록.** 이 phase는 "기본 통합 경로는 **PR 경유**"를 전제로 작성·승인·커밋됐다. 이후 사용자 결정으로 **PR은 선택 경로**가 되었고, 그 부분은 아래 **Phase 2**가 덮어쓴다.
+> - Phase 2에 의해 **개정됨**: "PR 경유 기본" 서술 · `B1`을 "예외"로 부르던 표현 · `docs/RELEASING.md`의 direct push 강등.
+> - Phase 2에도 **그대로 유지됨**: 통제점 6개 분리 · 승인 문장 · `I1`/`I2` 분리와 시점 조건 · 승인 이월 금지 · 템플릿 일반화(D5) · merge 후 릴리즈 대상 커밋 확정 단계.
+>
+> 현재 유효한 정책은 **Phase 2**와 `00-requirement.md`의 "핵심 정책"이다.
 
 범위(문서 4파일):
 
