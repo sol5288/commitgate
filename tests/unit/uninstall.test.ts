@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, resolve, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runInit, KIT_COPY_RELPATHS } from '../../bin/init'
+import { runInit, KIT_COPY_RELPATHS, KIT_AGENT_ENTRYPOINTS } from '../../bin/init'
 import { planUninstall, renderPlan, runUninstall, parseArgs } from '../../bin/uninstall'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
 import type { GitRunner } from '../../scripts/req/lib/adapters'
@@ -270,11 +270,12 @@ describe('[uninstall] 커밋 전/후 안내 분기', () => {
       const oldSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim()
 
       // 2) 이후 전부 제거하고 커밋 — 이력에는 add 커밋이 그대로 남는다
-      // ⚠️ 제거 목록을 하드코딩하지 않는다. KIT_COPY_RELPATHS에 파일이 추가되면(예: review-persona.md)
+      // ⚠️ 제거 목록을 하드코딩하지 않는다. 설치물이 늘어나면(review-persona.md·진입점 3종·CLAUDE.md)
       //    "전부 제거" 픽스처가 조용히 불완전해지고, 남은 tracked 파일이 아래 단언을 깨뜨린다.
       execFileSync('git', ['rm', '-r', '-q', 'scripts/req'], { cwd: dir })
       execFileSync('git', ['rm', '-q', ...KIT_COPY_RELPATHS], { cwd: dir })
-      execFileSync('git', ['rm', '-q', 'req.config.json', 'AGENTS.md'], { cwd: dir })
+      execFileSync('git', ['rm', '-q', ...KIT_AGENT_ENTRYPOINTS.map((e) => e.dest)], { cwd: dir })
+      execFileSync('git', ['rm', '-q', 'req.config.json', 'AGENTS.md', 'CLAUDE.md'], { cwd: dir })
       execFileSync('git', ['commit', '-qm', 'chore: remove commitgate'], { cwd: dir })
 
       // 3) 오늘 다시 설치 — 아직 git add 하지 않음
@@ -419,6 +420,126 @@ describe('[uninstall] tool 아티팩트 무결성 표기', () => {
       expect(plan.review.map((t) => t.path)).toContain('scripts/req/req-new.ts')
       expect(plan.removable.map((t) => t.path)).not.toContain('scripts/req/req-new.ts')
       expect(plan.review.find((t) => t.path === 'scripts/req/req-new.ts')?.match).toBe('differs')
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-010 phase-3b — 진입점은 `src ≠ dest`다.
+ *
+ * `tool` 분류가 "원본은 `join(PACKAGE_ROOT, rel)`"이라고 가정하면 `.claude/skills/commitgate/SKILL.md`의
+ * 원본을 찾지 못해 `differs`로 오분류하고, 바이트가 같은데도 제거 후보에서 빠진다.
+ */
+describe('[uninstall] 에이전트 진입점 분류 (src≠dest)', () => {
+  const DESTS = ['.claude/skills/commitgate/SKILL.md', '.claude/commands/req.md', '.cursor/rules/commitgate.mdc']
+
+  it('바이트 동일한 진입점 3종은 tool/identical로 removable', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const plan = planUninstall({ dir })
+      for (const d of DESTS) {
+        const t = plan.facts.tool.find((x) => x.path === d)
+        expect(t?.present, `${d} present`).toBe(true)
+        expect(t?.match, `${d} match`).toBe('identical')
+        expect(plan.removable.map((x) => x.path)).toContain(d)
+      }
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('편집된 진입점은 removable이 아니라 review', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const p = join(dir, '.cursor', 'rules', 'commitgate.mdc')
+      writeFileSync(p, readFileSync(p, 'utf8') + '\n추가 규칙\n')
+      const plan = planUninstall({ dir })
+      expect(plan.review.find((x) => x.path === '.cursor/rules/commitgate.mdc')?.match).toBe('differs')
+      expect(plan.removable.map((x) => x.path)).not.toContain('.cursor/rules/commitgate.mdc')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('제거 명령에 진입점 경로가 포함된다', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const text = renderPlan(planUninstall({ dir }))
+      for (const d of DESTS) expect(text).toContain(`rm -f ${d}`)
+      // 디렉터리 통삭제는 절대 제안하지 않는다.
+      expect(text).not.toMatch(/rm\s+-rf\s+\.claude/)
+      expect(text).not.toMatch(/rm\s+-rf\s+\.cursor/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('CLAUDE.md는 ambiguous(자동 제거 금지) — AGENTS.md와 같은 계층', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const plan = planUninstall({ dir })
+      const k = plan.keep.find((x) => x.path === 'CLAUDE.md')
+      expect(k, 'CLAUDE.md가 keep에 있어야 함').toBeTruthy()
+      expect(k?.note).toContain('자동 제거 대상이 아닙니다')
+      expect(plan.removable.map((x) => x.path)).not.toContain('CLAUDE.md')
+      expect(plan.facts.tool.map((x) => x.path)).not.toContain('CLAUDE.md')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('편집된 CLAUDE.md는 "템플릿과 다름"으로 표기', () => {
+    const dir = tmpRepo({ files: { 'CLAUDE.md': '# 내 지침\n' } })
+    try {
+      install(dir)
+      expect(planUninstall({ dir }).keep.find((x) => x.path === 'CLAUDE.md')?.note).toContain('템플릿과 다름')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** 마커 없는 AGENTS.md 경로에서만 설치되는 계약 템플릿 사본. `AGENTS.template.md`가 원본(src≠dest). */
+  it('AGENTS.commitgate.md는 설치됐을 때만 tool/identical', () => {
+    const withMarkerless = tmpRepo({ files: { 'AGENTS.md': '# 우리 규칙\n' } })
+    try {
+      install(withMarkerless)
+      const plan = planUninstall({ dir: withMarkerless })
+      const t = plan.facts.tool.find((x) => x.path === 'AGENTS.commitgate.md')
+      expect(t?.present).toBe(true)
+      expect(t?.match).toBe('identical')
+      expect(plan.removable.map((x) => x.path)).toContain('AGENTS.commitgate.md')
+    } finally {
+      cleanup(withMarkerless)
+    }
+  })
+
+  it('사본이 없는 정상 설치에서는 absent — 제거 후보에 안 뜬다', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const plan = planUninstall({ dir })
+      expect(plan.facts.tool.find((x) => x.path === 'AGENTS.commitgate.md')?.present).toBe(false)
+      expect(plan.removable.map((x) => x.path)).not.toContain('AGENTS.commitgate.md')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--no-agent-entrypoints 설치본에서는 진입점이 absent', () => {
+    const dir = tmpRepo()
+    try {
+      runInit({ dir, force: false, dryRun: false, strict: false, noAgentEntrypoints: true })
+      const plan = planUninstall({ dir })
+      for (const d of DESTS) expect(plan.facts.tool.find((x) => x.path === d)?.present, d).toBe(false)
+      expect(plan.keep.map((x) => x.path)).not.toContain('CLAUDE.md')
+      // 코어는 그대로 제거 후보.
+      expect(plan.removable.map((x) => x.path)).toContain('workflow/machine.schema.json')
     } finally {
       cleanup(dir)
     }

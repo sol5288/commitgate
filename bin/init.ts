@@ -493,11 +493,19 @@ export function runInit(opts: InitOptions): InitResult {
     if (agentsContractCopyCreated) copyFileSync(join(PACKAGE_ROOT, 'AGENTS.template.md'), contractCopyPath)
   }
 
-  if (agentsMarkerMissing)
+  if (agentsMarkerMissing) {
+    // phase-3a R1 observation: 사본을 **새로 놓았을 때**와 **기존 것을 보존했을 때**의 문구가 달라야 한다.
+    // "설치했습니다"가 두 경우 모두에 나오면, 편집된 사본을 그대로 둔 사용자가 새 템플릿을 받았다고 오해한다.
+    const copyNote = opts.dryRun
+      ? `계약 템플릿을 ${KIT_AGENTS_CONTRACT_COPY_REL} 로 설치할 예정입니다.`
+      : agentsContractCopyCreated
+        ? `계약 템플릿을 ${KIT_AGENTS_CONTRACT_COPY_REL} 로 함께 설치했습니다.`
+        : `${KIT_AGENTS_CONTRACT_COPY_REL} 가 이미 있어 보존했습니다(덮어쓰려면 --force).`
     console.warn(
       `⚠️  기존 AGENTS.md에 ${AGENTS_CONTRACT_MARKER} 마커가 없습니다 — .claude/·.cursor/ 진입점이 가리킬 CommitGate 계약이 그 파일에 없습니다.\n` +
-        `   계약 템플릿을 ${KIT_AGENTS_CONTRACT_COPY_REL} 로 함께 설치했습니다. 그 내용을 AGENTS.md에 병합한 뒤 ${KIT_AGENTS_CONTRACT_COPY_REL} 를 지우세요(설치는 계속됩니다).`,
+        `   ${copyNote} 그 내용을 AGENTS.md에 병합한 뒤 ${KIT_AGENTS_CONTRACT_COPY_REL} 를 지우세요(설치는 계속됩니다).`,
     )
+  }
 
   return {
     targetRoot,

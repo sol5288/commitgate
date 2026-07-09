@@ -28,6 +28,10 @@ import {
   KIT_SOURCE_DIR_REL,
   KIT_SCHEMA_RELPATHS,
   KIT_COPY_RELPATHS,
+  KIT_AGENT_ENTRYPOINTS,
+  KIT_CLAUDE_TEMPLATE_REL,
+  KIT_CLAUDE_DEST_REL,
+  KIT_AGENTS_CONTRACT_COPY_REL,
   REQ_SCRIPTS,
   REQ_DEV_DEPS,
   assertGitWorkTree,
@@ -37,7 +41,11 @@ export interface UninstallOptions {
   dir: string
 }
 
-/** CommitGate가 복사한 파일(kit 소스 + `KIT_COPY_RELPATHS` = 스키마 2종 + review-persona.md). 바이트 비교로 무결성만 표기. */
+/**
+ * CommitGate가 복사한 파일. `path`는 **대상 repo의 경로(dest)**다.
+ * 원본(src)은 패키지 안에서 경로가 다를 수 있다(`templates/claude-skill.md` → `.claude/skills/commitgate/SKILL.md`).
+ * 바이트 비교로 무결성만 표기.
+ */
 export interface ToolArtifact {
   path: string // repo-상대
   present: boolean
@@ -199,25 +207,35 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
       `reviewPersonaPath=${reviewPersonaPath} — 런타임이 읽는 경로이지만 init이 복사한 파일이 아닙니다(제거 후보 아님).`,
     )
 
-  // ── tool: kit 소스 + init이 **실제로 복사한** 파일들(스키마 2종 + review-persona.md — 항상 리터럴 workflow/, ticketRoot 무관)
+  // ── tool: kit 소스 + init이 **실제로 복사한** 파일들.
+  //
+  // ⚠️ `src`와 `dest`가 다른 항목이 있다(REQ-2026-010 D8). `KIT_AGENT_ENTRYPOINTS`는 `templates/*` →
+  //    `.claude/…`·`.cursor/…`로 가고, `AGENTS.commitgate.md`는 `AGENTS.template.md`의 사본이다.
+  //    "원본을 `join(PACKAGE_ROOT, rel)`로 찾는다"는 가정을 버리고 매핑을 명시한다.
   // 복사 축(KIT_COPY_RELPATHS)을 쓴다. 위 info의 스키마 축(KIT_SCHEMA_RELPATHS)과 의도적으로 다른 상수다.
   const kitSourceRels = walkFiles(join(PACKAGE_ROOT, KIT_SOURCE_DIR_REL)).map(toRel)
-  const toolRels = [...kitSourceRels, ...KIT_COPY_RELPATHS]
-  const tool: ToolArtifact[] = toolRels.map((rel) => {
-    const dest = join(targetRoot, rel)
-    const src = join(PACKAGE_ROOT, rel)
+  const toolEntries: { destRel: string; srcRel: string }[] = [
+    ...kitSourceRels.map((r) => ({ destRel: r, srcRel: r })),
+    ...KIT_COPY_RELPATHS.map((r) => ({ destRel: r, srcRel: r })),
+    ...KIT_AGENT_ENTRYPOINTS.map((e) => ({ destRel: e.dest, srcRel: e.src })),
+    // 마커 없는 AGENTS.md 경로에서만 설치되는 계약 템플릿 사본. 부재가 정상이므로 present=false여도 문제 없다.
+    { destRel: KIT_AGENTS_CONTRACT_COPY_REL, srcRel: 'AGENTS.template.md' },
+  ]
+  const tool: ToolArtifact[] = toolEntries.map(({ destRel, srcRel }) => {
+    const dest = join(targetRoot, destRel)
+    const src = join(PACKAGE_ROOT, srcRel)
     if (!existsSync(dest))
-      return { path: rel, present: false, match: 'absent', tracked: false, introducedBy: null }
+      return { path: destRel, present: false, match: 'absent', tracked: false, introducedBy: null }
     const match: ToolArtifact['match'] =
       existsSync(src) && sha256(dest) === sha256(src) ? 'identical' : 'differs'
-    const tracked = isTracked(git, rel)
+    const tracked = isTracked(git, destRel)
     return {
-      path: rel,
+      path: destRel,
       present: true,
       match,
       tracked,
       // untracked면 이력의 add 커밋은 "지금 이 설치본"의 도입 커밋이 아니다 → 조회조차 하지 않는다(phase R2 P2).
-      introducedBy: tracked ? (introducingCommit(git, rel)?.sha ?? null) : null,
+      introducedBy: tracked ? (introducingCommit(git, destRel)?.sha ?? null) : null,
     }
   })
 
@@ -233,6 +251,21 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
       present: true,
       note: same
         ? 'init 템플릿과 동일 — 그래도 자동 제거 대상이 아닙니다(Codex 계약 파일)'
+        : '템플릿과 다름 — 사용자/팀이 작성했거나 편집했습니다',
+    })
+  }
+
+  // CLAUDE.md는 AGENTS.md와 같은 계층이다 — init이 **부재 시에만** 만들고 `--force`로도 덮어쓰지 않는다.
+  // 사용자 파일일 수 있으므로 자동 제거 대상이 아니다(REQ-2026-010 D7).
+  const claudeAbs = join(targetRoot, KIT_CLAUDE_DEST_REL)
+  if (existsSync(claudeAbs)) {
+    const tpl = join(PACKAGE_ROOT, KIT_CLAUDE_TEMPLATE_REL)
+    const same = existsSync(tpl) && sha256(claudeAbs) === sha256(tpl)
+    ambiguous.push({
+      path: KIT_CLAUDE_DEST_REL,
+      present: true,
+      note: same
+        ? 'init 템플릿과 동일 — 그래도 자동 제거 대상이 아닙니다(에이전트 지침 파일)'
         : '템플릿과 다름 — 사용자/팀이 작성했거나 편집했습니다',
     })
   }
@@ -430,7 +463,7 @@ export function renderPlan(plan: UninstallPlan): string {
 
   L.push('## 5. 잔여물 경고')
   L.push('   - git은 빈 디렉터리를 추적하지 않습니다. 위 파일을 지운 뒤 `git status`가 clean이어도')
-  L.push(`     빈 디렉터리(scripts/ · ${facts.ticketRoot}/)가 파일시스템에 남을 수 있습니다.`)
+  L.push(`     빈 디렉터리(scripts/ · ${facts.ticketRoot}/ · .claude/ · .cursor/)가 파일시스템에 남을 수 있습니다.`)
   L.push('   - node_modules의 ajv · cross-spawn · tsx 는 다른 패키지도 쓸 수 있어 제거를 권하지 않습니다.')
   L.push('')
 

@@ -21,7 +21,58 @@
 
 ---
 
-## 현재 phase 리뷰: `phase-3a-entrypoint-install`
+## 현재 phase 리뷰: `phase-3b-entrypoint-uninstall`
+
+phase-3a(`f66d45c`)까지 승인·커밋됐다. 진입점은 이제 설치되지만 **제거 계획(planner)은 그것을 모른다.**
+
+staged 변경 (코드 3파일 + `codex-request.md`):
+- `bin/uninstall.ts` — `tool` 분류를 `{destRel, srcRel}` 매핑으로 재작성(진입점 3종 + `AGENTS.commitgate.md`), `CLAUDE.md`를 `ambiguous`로, 잔여물 경고에 `.claude/`·`.cursor/` 추가.
+- `bin/init.ts` — **phase-3a observation 반영**(아래).
+- `tests/unit/uninstall.test.ts` — 8건 신설 + "전부 제거" 픽스처를 SSOT 기반으로 갱신.
+
+### 왜 `tool` 분류를 고쳐야 했나
+
+기존 코드는 원본을 `join(PACKAGE_ROOT, rel)`로 찾았다 — **`src === dest`를 가정**한다. 진입점은 `templates/claude-skill.md` → `.claude/skills/commitgate/SKILL.md`이고, `AGENTS.commitgate.md`의 원본은 `AGENTS.template.md`다. 그대로 두면 원본을 못 찾아 바이트가 같은데도 `differs`로 오분류하고, 제거 후보에서 빠진다.
+
+`KIT_SCHEMA_RELPATHS`(schemaPath 축)는 여전히 건드리지 않았다.
+
+### 분류 결정
+
+| 대상 | 분류 | 근거 |
+|---|---|---|
+| 진입점 3종 | `tool` (removable, 편집 시 `review`) | CommitGate 전용 경로 — 바이트 비교로 origin 판별 가능 |
+| `AGENTS.commitgate.md` | `tool` (원본 = `AGENTS.template.md`) | init이 놓은 사본. 사본이 없는 정상 설치에서는 `absent` |
+| `CLAUDE.md` | `ambiguous` (자동 제거 금지) | `AGENTS.md`와 같은 계층 — 부재 시에만 생성, `--force`로도 미덮어씀. 사용자 파일일 수 있다 |
+
+### phase-3a observation 반영 (init.ts)
+
+> "이미 `AGENTS.commitgate.md`가 존재하는 경우 `--force` 없이 보존하면서 경고 문구는 설치된 사본처럼 읽힐 수 있으므로, 후속 정리에서 경고 문구 분기를 검토하라."
+
+경고를 3분기로 나눴다: 새로 설치 / 기존 사본 보존(`--force`로 덮어쓰기 안내) / dry-run 예정. 편집한 사본을 그대로 둔 사용자가 "새 템플릿을 받았다"고 오해하지 않게 한다. **`bin/init.ts`가 이 phase 범위에 들어온 이유가 이것이다**(계획서상 3b는 uninstall만이었다).
+
+### 실행한 검증 (증거)
+
+- `npm run typecheck` → 0 · `npm test` → **637/637 green**(uninstall 40건)
+- **실 sandbox**: tarball 설치 → `commitgate uninstall` 계획 확인
+  - `rm -f`에 진입점 3종 포함, 코어 10종과 함께 13개
+  - `CLAUDE.md`·`AGENTS.md`는 "자동 제거 대상이 아닙니다"로 keep, `rm .*CLAUDE.md` **0건**
+  - `rm -rf` 1건은 문서화된 npx 캐시 정리(`$(npm config get cache)/_npx`)로 repo와 무관 — `.claude/`·`.cursor/` 통삭제 제안 없음
+  - 잔여물 경고에 `.claude/`·`.cursor/` 반영
+- **읽기 전용 계약 유지**: `bin/uninstall.ts`에 fs 쓰기 API 식별자가 없다는 기존 구조 테스트 통과.
+
+### 이 phase의 리뷰 포인트
+
+- **`src≠dest` 매핑에 빠진 소비 지점이 있는가**: `tool` 분류 외에 `unknownKitFiles`·`renderPlan`·`scaffoldCommits`가 여전히 `src===dest`를 가정하지 않는가?
+- **`AGENTS.commitgate.md`를 `tool`로 둔 것이 옳은가**: 사용자가 그것을 `AGENTS.md`에 병합하고 **편집**했다면 `differs` → `review`가 된다. 그런데 이 파일은 "병합 후 지우라"고 안내된 **임시 파일**이다. `ambiguous`가 더 맞지 않는가?
+- **`CLAUDE.md`를 `ambiguous`로 둔 것이 옳은가**: `AGENTS.md`는 Codex가 읽는 계약이라 보수적으로 다뤘다. `CLAUDE.md`도 같은 무게인가, 아니면 진입점 3종처럼 `tool`이어야 하는가? 판단 기준이 "CommitGate 전용 경로인가"라면 `CLAUDE.md`는 전용이 아니다 — 그 기준이 일관되게 적용됐는가?
+- **미분류 파일 보호가 `.claude/` 아래에도 필요한가**: `scripts/req/` 안의 미지 파일은 `unknownKitFiles`로 보호한다. `.claude/skills/commitgate/` 안에 사용자가 다른 파일을 넣었다면? 지금은 아무 보호가 없다.
+- **`init.ts` 변경이 이 phase에 들어온 것이 정당한가**: 3a의 observation을 3b에서 처리했다. 별도 티켓이어야 하는가?
+- **픽스처 갱신이 단언을 약화시키지 않는가**: "전부 제거" 테스트가 `KIT_AGENT_ENTRYPOINTS.map(e=>e.dest)`를 쓴다. 하드코딩을 없앤 것이 의도("전부 제거")를 보존하는가?
+- 범위 이탈: README·버전 미변경(4), `templates/` 미변경.
+
+---
+
+## 이전 phase 리뷰: `phase-3a-entrypoint-install` (승인됨, `f66d45c`)
 
 phase-1a(`e4a3796`)·1b(`acee2eb`)·2(`fdd20de`)가 승인·커밋됐다. 페르소나는 도구가 주입하고(이 프롬프트 첫 블록), `req:next`가 다음 행동을 계산한다 — **이 phase의 대상도 `req:next`가 지목했다.**
 
