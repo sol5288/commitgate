@@ -28,35 +28,28 @@ codex --version
 codex login status
 ```
 
-Then paste this prompt into your AI coding agent.
+**You do not paste a long prompt.** Installation lays down agent entrypoints for you.
+
+| File | Read by |
+|---|---|
+| `AGENTS.md` | Codex CLI, Cursor — **the contract** |
+| `.claude/skills/commitgate/SKILL.md` | Claude Code (auto-invoked when it matches) |
+| `.claude/commands/req.md` | Claude Code (`/req` explicit call) |
+| `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
+| `CLAUDE.md` | Claude Code (always loaded) — created only if absent |
+
+Just give the agent a requirement.
 
 ```text
-Do not handle this as a normal implementation. Use the CommitGate workflow installed in this project.
+/req Add a profile edit API
 
-Create a new REQ ticket and run this flow end to end:
-req:new → write design docs → Codex design review → implement and test → req:doctor → Codex phase review → req:commit
-
-Proceed automatically:
-- If `req:review-codex` returns NEEDS_FIX/exit 3, fix the findings and rerun review.
-- If it returns BLOCKED/exit 2, do not retry the same review; escalate or change the review target. If a stuck thread is suspected, you may retry once with `--fresh-thread`.
-- The review target is only what has been staged with git add.
-- Do not manually git add state.json or responses/.
-
-Stop for human confirmation only (each item must be approved by that exact sentence; one approval never carries over to the next step):
-- Right before req:commit --run
-- [Path A · optional] [I1] Before pushing the feature branch and opening a PR / [I2] Before merging the PR, after confirming the required status checks are green
-- [Path B] [B1] Before a direct push to a protected branch — get a separate "branch protection bypass를 사용한 direct push 승인". This push bypasses the required status checks, and CI runs after it
-- [R1/R2/R3] tag creation and push / npm publish / GitHub release — each approved separately, after CI is green
-- Before destructive actions such as reset, clean, or force push
-- When the requested scope must change
-- When Codex review returns BLOCKED or remains unclear after bounded retries
-
-Requirement:
-- What:
-- Why:
-- Constraints:
-- Done when:
+- What: PATCH /profile to change nickname and bio
+- Why: users cannot change their profile after signup
+- Constraints: reuse the existing auth middleware, no schema change
+- Done when: unit tests pass, unauthorized users get 403
 ```
+
+Outside Claude Code you can skip the slash command and state the requirement directly — `.cursor/rules` and `AGENTS.md` load the rules. If the four fields are missing, the agent asks first.
 
 The agent's first reply should look roughly like this.
 
@@ -69,7 +62,38 @@ Phases:
 Control points: before req:commit --run / [B1] before a direct push to main (or [I1] open PR → [I2] merge)
 ```
 
-After that, the agent runs design, implementation, tests, and Codex review. You only confirm at control points.
+### The agent follows whatever `req:next` says
+
+The agent never guesses the next action. The tool computes it from `state.json` and git state.
+
+```sh
+npm run req:next -- 2026-002
+```
+
+```text
+[req:next] RUN  REQ-2026-002
+  phase `phase-1`의 staged 변경을 리뷰받는다.
+
+  $ npm run req:review-codex -- 2026-002 --kind phase --phase phase-1 --run
+```
+
+| kind | Meaning | exit |
+|---|---|---|
+| `RUN` | Run the printed command verbatim, then `req:next` again | 0 |
+| `AGENT` | Work the tool cannot do (implement, write docs, `git add`) | 0 |
+| `AWAIT_HUMAN` | **Control point** — do not proceed without the exact approval sentence | 10 |
+| `DONE` | Nothing left for the tool. Integration is a separate control point | 11 |
+| `BLOCKED` | Escalate to a human. Do not retry the same review | 2 |
+
+Use `--json` for machine-readable output. It is **read-only** and changes no state.
+
+Repeat this loop without stopping and it drives design → Codex review → implementation → re-review → commit. You only confirm at `AWAIT_HUMAN`.
+
+### The reviewer persona is injected by the tool
+
+`req:review-codex` puts `workflow/review-persona.md` in as the **first block** of the prompt. It is identical whether a human, Cursor, or Claude runs the command — it does not live where an agent can forget it. If the file is missing or empty, the review stops fail-closed.
+
+Edit it for your project, or point `reviewPersonaPath` in `req.config.json` at a different file. Set it to `null` to disable.
 
 Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses the required status checks**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. In that case CI runs **after** the push, so its green is post-hoc verification, and the agent must not omit that from its report. tag, npm publish, and GitHub release are control points of their own, requested after CI is green and never bundled with the integration approval. See [AGENTS.template.md](AGENTS.template.md) and [docs/RELEASING.md](docs/RELEASING.md) for the full contract.
 
@@ -98,11 +122,26 @@ In short: **approved changes pass, ambiguous changes stop.**
 
 | Added item | Purpose |
 |---|---|
-| `scripts/req/` | `req:new`, `req:review-codex`, `req:doctor`, `req:commit` scripts |
+| `scripts/req/` | `req:new`, `req:next`, `req:review-codex`, `req:doctor`, `req:commit` scripts |
 | `workflow/*.schema.json` | Schemas for Codex responses and config |
+| `workflow/review-persona.md` | Reviewer persona injected into the Codex review prompt |
 | `req.config.json` | Project-level configuration |
-| `AGENTS.md` | Template rules for the agent and reviewer |
+| `AGENTS.md` | The contract (created only if absent) |
+| `CLAUDE.md` | Claude Code pointer (created only if absent) |
+| `.claude/skills/commitgate/SKILL.md` | Claude Code skill (pointer) |
+| `.claude/commands/req.md` | `/req` slash command (pointer) |
+| `.cursor/rules/commitgate.mdc` | Cursor rule (pointer) |
 | `package.json` scripts | `req:*` commands and required devDependencies |
+
+The entrypoint files are **thin pointers**. The contract itself lives only in `AGENTS.md`.
+
+If another tool already owns `.claude/` or `.cursor/`, skip that layer.
+
+```sh
+npx commitgate --no-agent-entrypoints
+```
+
+If an `AGENTS.md` already exists without the CommitGate contract marker (`<!-- commitgate:contract -->`), the contract template is installed alongside it as `AGENTS.commitgate.md` and you are told to merge it. Your existing file is never touched.
 
 Preview without writing files:
 
@@ -163,7 +202,7 @@ git checkout HEAD -- package.json
 
 Delete only the paths `npx commitgate uninstall` listed. Removing `scripts/req/` or `workflow/` as whole directories would also take your own files and your ticket evidence with them.
 
-> git does not track empty directories. After deleting the files, `git status` can report a clean tree while empty `scripts/` and `workflow/` directories remain on disk.
+> git does not track empty directories. After deleting the files, `git status` can report a clean tree while empty `scripts/`, `workflow/`, `.claude/`, and `.cursor/` directories remain on disk.
 
 ### If you already committed the scaffold
 
@@ -266,12 +305,22 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `npx commitgate` | Install CommitGate into a project |
 | `npx commitgate --dry-run` | Preview the install plan without writing files |
 | `npx commitgate --strict` | Treat low `cross-spawn` version warnings as install failures |
+| `npx commitgate --no-agent-entrypoints` | Skip `.claude/`, `.cursor/`, and `CLAUDE.md` |
 | `npx commitgate uninstall` | Preview the removal plan (read-only — deletes nothing) |
-| `req:new <slug> --run` | Create a REQ ticket, branch, and design docs |
-| `req:review-codex <id> --kind design --run` | Review the design |
-| `req:review-codex <id> --kind phase --run` | Review the implementation |
-| `req:doctor <id>` | Check gate status |
-| `req:commit <id> --run -m "message"` | Commit approved changes |
+| `npm run req:new -- <slug> --run` | Create a REQ ticket, branch, and design docs |
+| `npm run req:next -- <id> [--json]` | **Compute the next action** (read-only) |
+| `npm run req:review-codex -- <id> --kind design --run` | Review the design |
+| `npm run req:review-codex -- <id> --kind phase --phase <p> --run` | Review the implementation |
+| `npm run req:doctor -- <id>` | Check gate status |
+| `npm run req:commit -- <id> --run -m "message"` | Commit approved changes |
+
+`req:*` are **`package.json` scripts**, not executables on your PATH. npm needs the `--` separator to pass arguments.
+
+```sh
+npm  run req:next -- 2026-002    # npm
+pnpm req:next 2026-002           # pnpm
+yarn req:next 2026-002           # yarn
+```
 
 ---
 
@@ -285,6 +334,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `ticketRoot` | `"workflow"` | REQ ticket directory |
 | `packageManager` | auto-detected | `npm`, `pnpm`, or `yarn` |
 | `designDocs` | `00/01/02` docs | Design document filenames |
+| `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it |
 
 Empty `branchPrefix` values and paths that escape the project root are rejected.
 

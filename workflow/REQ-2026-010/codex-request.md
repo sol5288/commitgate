@@ -21,7 +21,66 @@
 
 ---
 
-## 현재 phase 리뷰: `phase-3b-entrypoint-uninstall`
+## 현재 phase 리뷰: `phase-4-docs-version` (마지막)
+
+phase-3b(`52d01ea`)까지 승인·커밋됐다. 남은 것은 문서와 버전이다.
+
+staged 변경 (4파일 + `codex-request.md`):
+- `README.md` / `README.en.md` — Quick Start를 **"긴 프롬프트 붙여넣기"에서 "요구사항만 입력"**으로 교체. 진입점 표 · `req:next` 루프 표(kind·exit) · "페르소나는 도구가 주입" 절 · 설치 표에 신규 파일 5종 · `--no-agent-entrypoints` · 명령표에 `req:next` · 설정표에 `reviewPersonaPath`.
+- `package.json` / `package-lock.json` — `0.3.1` → **`0.4.0`**. `description`에 `next` 추가.
+
+### 이것이 이 티켓의 목적이었다
+
+README의 Quick Start가 요구하던 **60줄짜리 프롬프트**가 사라졌다. 그 안에 있던 세 가지가 각각 도구로 내려갔다.
+
+| 사라진 프롬프트 조각 | 지금 어디에 있나 |
+|---|---|
+| "일반 구현으로 처리하지 말고 CommitGate를 써라" + 요구사항 4칸 | `.claude/skills`·`.claude/commands`·`.cursor/rules`·`CLAUDE.md` (phase-3a) |
+| "PM으로서 리뷰하라 / 리뷰 프레임에 갇히지 마라" | `review-codex.ts`가 `workflow/review-persona.md`를 프롬프트 첫 블록으로 주입 (phase-1a/1b) |
+| "끊지 말고 끝까지 진행하라" + 통제점 목록 | `req:next`가 `RUN`/`AGENT`/`AWAIT_HUMAN`/`DONE`/`BLOCKED`로 계산 (phase-2) |
+
+### 계획서와의 편차 (의도적, 판단 요청)
+
+`02-plan.md`의 phase-4는 "`package.json` + `package-lock.json` — `0.4.0` (**분리 커밋**)"이라고 적었다. **그대로 할 수 없다.** `req:commit`은 phase 승인 1건당 source 커밋을 **정확히 1개** 만든다(그다음 evidence-finalize 커밋). 분리 커밋을 하려면 `phase-5-version-bump`를 추가해야 하는데, 그러면 `02-plan.md`를 수정해야 하고 그건 **design 바인딩 해시를 깨뜨려** 설계 재승인(D13)이 필요하다.
+
+그래서 문서와 버전을 **한 커밋**에 넣었다. 이 판단이 옳은지 봐 달라. 대안은 (a) 이대로 진행, (b) design 재리뷰를 감수하고 phase 분리, (c) 버전 bump를 후속 티켓으로.
+
+### 실행한 검증 (증거)
+
+- `npm run typecheck` → 0 · `npm test` → **637/637 green**
+- `npm run smoke` → pack tarball 설치본의 `commitgate` bin 실행 OK (init dry-run + uninstall planner)
+- `npm pack --dry-run --json`(격리 캐시) → `commitgate@0.4.0`, 23파일, 98,053 B
+
+### phase-4 R1 지적 반영 (라운드 1 → 2)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2 (README.md) | Command Cheat Sheet가 **실행 불가능한 bare `req:*`**를 공개 명령처럼 안내한다. 설치되는 것은 PATH 실행 파일이 아니라 `package.json` 스크립트다. 표를 따라 `req:next 2026-002`를 치면 command not found | 표의 6항목 전부를 `npm run req:* -- …` 실제 호출 형태로 교체. "PATH 실행 파일이 아니라 `package.json` 스크립트이며 npm은 `--` 구분자가 필요하다"를 명시하고 npm/pnpm/yarn 3형태 예시 추가 |
+| P2 (README.en.md) | 영문도 동일 | 동일 수정 |
+
+**이 결함은 내 변경 이전부터 있었지만**(기존 표가 `req:new <slug> --run` 형식), `req:next`를 같은 형식으로 추가하면서 확산시켰다. 그리고 이 phase의 목적이 "긴 프롬프트를 지우고 README만 보고 진행 가능하게" 만드는 것이므로 정확히 급소다.
+
+부수: 제거 절차의 "빈 디렉터리(`scripts/`·`workflow/`)" 문구에 `.claude/`·`.cursor/` 추가(양쪽 README) — `uninstall` 출력은 phase-3b에서 이미 갱신했는데 문서가 뒤처져 있었다.
+
+**README 주장과 실제 코드 대조**(재검증):
+- `NEXT_EXIT_CODES` = `{"RUN":0,"AGENT":0,"BLOCKED":2,"AWAIT_HUMAN":10,"DONE":11}` — README 표와 일치
+- `DEFAULTS.reviewPersonaPath` = `"workflow/review-persona.md"` — 설정표와 일치
+- `commitgate --help`에 `--no-agent-entrypoints` 존재
+
+### 이 phase의 리뷰 포인트
+
+- **`AGENTS.template.md`의 명령표도 bare `req:*`다**: 이 phase의 staged에 없다(3a에서 커밋됨). 같은 결함인가, 아니면 그 문서는 "명령 이름 목록"이라 허용되는가? 후속으로 미뤄도 되는가?
+- **버전이 minor인 것이 옳은가**: public 계약에 **추가**된 것 — `req.config.json`의 `reviewPersonaPath` 키, `package.json`에 주입되는 `req:next` 스크립트, init이 까는 파일 5종. **제거·변경**된 것은 없다. `machine.schema.json`(verdict)은 불변이라 `MACHINE_SCHEMA_VERSION`은 `1.1` 유지. 그런데 `review-codex.ts`가 persona 부재 시 **throw**하게 됐다 — 기존 설치본에서 `--force` 없이 업그레이드하면 스크립트가 안 바뀌므로 무해하지만, **major로 봐야 할 breaking**은 아닌가?
+- **`0.4.0`의 breaking 후보를 빠뜨리지 않았는가**: `ResolvedConfig`에 필수 필드 2개(`reviewPersonaPath`, `reviewPersonaPathAbs`)가 추가됐다. `loadConfig`를 직접 import하는 외부 코드가 있다면 타입이 바뀐다. `DEFAULTS`도 키가 늘었다. semver 관점에서 minor가 맞는가?
+- **README가 실제 동작과 일치하는가**: `req:next` 예시 출력(`RUN`/명령 렌더링), exit 표(0/0/10/11/2), `--no-agent-entrypoints`, `reviewPersonaPath: null`. 하나라도 실제와 다르면 사용자가 막힌다.
+- **README.en.md의 `req:next` 예시 출력이 한국어인 것**: 도구가 한국어로 출력하므로 실제와 일치한다. 영어 README에 그대로 두는 것이 맞는가, 번역해서 **실제와 다르게** 만드는 것보다 나은가?
+- **제거 절차 문서가 신규 파일을 반영하는가**: "빈 디렉터리(`scripts/`·`workflow/`)" 문구가 `.claude/`·`.cursor/`를 빠뜨리지 않았는가? (`uninstall` 출력은 phase-3b에서 갱신했다)
+- **계획서 편차**(위)를 어떻게 처리해야 하는가.
+- 범위 이탈: tag·publish·release·main 반영 **미수행**. `templates/`·`bin/`·`scripts/` 미변경.
+
+---
+
+## 이전 phase 리뷰: `phase-3b-entrypoint-uninstall` (승인됨, `52d01ea`)
 
 phase-3a(`f66d45c`)까지 승인·커밋됐다. 진입점은 이제 설치되지만 **제거 계획(planner)은 그것을 모른다.**
 

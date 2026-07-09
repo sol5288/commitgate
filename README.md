@@ -28,37 +28,30 @@ codex --version
 codex login status
 ```
 
-그다음 AI 코딩 에이전트에게 아래 프롬프트를 붙여넣습니다.
+**긴 프롬프트를 붙여넣을 필요가 없습니다.** 설치가 에이전트 진입점을 함께 깝니다.
+
+| 파일 | 읽는 도구 |
+|---|---|
+| `AGENTS.md` | Codex CLI, Cursor — **계약 정본** |
+| `.claude/skills/commitgate/SKILL.md` | Claude Code (요청에 맞으면 자동 발동) |
+| `.claude/commands/req.md` | Claude Code (`/req` 명시 호출) |
+| `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
+| `CLAUDE.md` | Claude Code (항상 로드) — 부재 시에만 생성 |
+
+에이전트에게 요구사항만 주면 됩니다.
 
 ```text
-이 요청은 일반 구현으로 처리하지 말고, 이 프로젝트에 설치된 CommitGate를 사용해라.
+/req 프로필 수정 API를 추가해줘
 
-새 REQ 티켓을 만들고 다음 흐름을 끝까지 진행해라:
-req:new → 설계문서 작성 → Codex design 리뷰 → 구현·테스트 → req:doctor → Codex phase 리뷰 → req:commit
-
-자동으로 진행할 것:
-- `req:review-codex`가 NEEDS_FIX/exit 3을 반환하면 findings를 수정하고 재리뷰한다.
-- BLOCKED/exit 2를 반환하면 같은 리뷰를 재시도하지 말고 사람에게 보고하거나 리뷰 대상을 바꾼다. 스레드 고착이 의심되면 `--fresh-thread`로 한 번만 회복을 시도할 수 있다.
-- 리뷰 대상은 git add 한 파일만이다.
-- `state.json`과 `responses/`는 직접 `git add`하지 않는다.
-
-멈춰서 확인받을 때(각 항목은 그 문장 그대로 승인받아야 하며, 한 승인은 다음 단계로 이월되지 않는다):
-- req:commit --run 직전
-- [경로 A · 선택] [I1] feature branch push + PR 생성 직전 / [I2] required checks green 확인 후 PR merge 직전
-- [경로 B] [B1] protected branch에 direct push 직전 — "branch protection bypass를 사용한 direct push 승인"을 따로 받는다. 이 push는 required checks를 우회하고, CI는 사후에 돈다
-- [R1/R2/R3] tag 생성·push / npm publish / GitHub release — CI green 확인 후 각각 별도 승인
-- reset, clean, force push 같은 destructive 작업 전
-- 요구사항 범위를 바꿔야 할 때
-- Codex 리뷰가 BLOCKED를 반환하거나 제한된 재시도 후에도 판단이 불명확할 때
-
-요구사항:
-- 무엇을:
-- 왜:
-- 제약:
-- 완료 기준:
+- 무엇을: PATCH /profile 로 닉네임·소개글 수정
+- 왜: 지금은 가입 후 프로필을 바꿀 방법이 없다
+- 제약: 기존 인증 미들웨어 재사용, 스키마 변경 없음
+- 완료 기준: 단위 테스트 통과, 권한 없는 사용자는 403
 ```
 
-첫 응답은 보통 이렇게 나와야 합니다.
+Claude Code가 아니면 슬래시 커맨드 없이 요구사항만 주어도 됩니다(`.cursor/rules`·`AGENTS.md`가 규칙을 로드합니다). 네 칸이 비어 있으면 에이전트가 먼저 물어봅니다.
+
+첫 응답은 보통 이렇게 나옵니다.
 
 ```text
 REQ-2026-002 발행
@@ -69,7 +62,38 @@ phase:
 통제점: req:commit --run 직전 / [B1] main direct push 직전 (또는 [I1] PR 생성 → [I2] merge)
 ```
 
-이후에는 에이전트가 설계, 구현, 테스트, Codex 리뷰를 진행합니다. 사용자는 통제점에서만 확인하면 됩니다.
+### 에이전트는 `req:next`가 시키는 대로 진행합니다
+
+다음 행동을 에이전트가 추측하지 않습니다. 도구가 `state.json`과 git 상태에서 계산합니다.
+
+```sh
+npm run req:next -- 2026-002
+```
+
+```text
+[req:next] RUN  REQ-2026-002
+  phase `phase-1`의 staged 변경을 리뷰받는다.
+
+  $ npm run req:review-codex -- 2026-002 --kind phase --phase phase-1 --run
+```
+
+| kind | 뜻 | exit |
+|---|---|---|
+| `RUN` | 출력된 명령을 그대로 실행하고 다시 `req:next` | 0 |
+| `AGENT` | 도구가 대신 못 하는 작업(구현·문서 작성·`git add`) | 0 |
+| `AWAIT_HUMAN` | **통제점** — 출력된 승인 문장을 그대로 받기 전엔 진행 금지 | 10 |
+| `DONE` | 이 티켓에서 도구가 할 일 없음. 통합은 별도 통제점 | 11 |
+| `BLOCKED` | 사람에게 보고. 같은 리뷰 재시도 금지 | 2 |
+
+`--json`으로 기계 판독할 수 있습니다. **읽기 전용**이라 어떤 상태도 바꾸지 않습니다.
+
+이 루프를 끊지 말고 반복하면 설계 → Codex 리뷰 → 구현 → 재리뷰 → 커밋이 진행됩니다. 사용자는 `AWAIT_HUMAN`에서만 확인하면 됩니다.
+
+### 리뷰어 페르소나는 도구가 주입합니다
+
+`req:review-codex`는 `workflow/review-persona.md`를 프롬프트 **첫 블록**으로 넣습니다. 사람이 직접 실행하든, Cursor가 실행하든, Claude가 실행하든 동일합니다 — 에이전트가 잊을 수 있는 자리에 두지 않습니다. 파일이 없거나 비어 있으면 리뷰가 fail-closed로 멈춥니다.
+
+내용을 프로젝트에 맞게 고치거나, `req.config.json`의 `reviewPersonaPath`로 다른 파일을 지정할 수 있습니다. `null`로 두면 비활성화됩니다.
 
 main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 required checks를 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. 그리고 이때 CI는 push **이후에** 도는 **사후 검증**이라, 그 사실을 보고에서 생략하지 않습니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 별도 통제점이고 CI green 이후에 요청합니다. 자세한 계약은 [AGENTS.template.md](AGENTS.template.md)와 [docs/RELEASING.md](docs/RELEASING.md)를 참고하세요.
 
@@ -98,11 +122,26 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 
 | 추가 항목 | 설명 |
 |---|---|
-| `scripts/req/` | `req:new`, `req:review-codex`, `req:doctor`, `req:commit` 스크립트 |
+| `scripts/req/` | `req:new`, `req:next`, `req:review-codex`, `req:doctor`, `req:commit` 스크립트 |
 | `workflow/*.schema.json` | Codex 응답과 설정 검증 스키마 |
+| `workflow/review-persona.md` | Codex 리뷰 프롬프트에 주입되는 리뷰어 페르소나 |
 | `req.config.json` | 프로젝트별 설정 |
-| `AGENTS.md` | 에이전트와 Reviewer가 읽는 규칙 템플릿 |
+| `AGENTS.md` | 계약 정본 (없을 때만 생성) |
+| `CLAUDE.md` | Claude Code 지침 포인터 (없을 때만 생성) |
+| `.claude/skills/commitgate/SKILL.md` | Claude Code 스킬 (포인터) |
+| `.claude/commands/req.md` | `/req` 슬래시 커맨드 (포인터) |
+| `.cursor/rules/commitgate.mdc` | Cursor 규칙 (포인터) |
 | `package.json` 스크립트 | `req:*` 명령과 필요한 devDependencies |
+
+진입점 파일들은 **얇은 포인터**입니다. 계약 본문은 `AGENTS.md` 하나에만 있습니다.
+
+`.claude/`·`.cursor/`를 다른 도구가 쓰고 있다면 건너뛸 수 있습니다.
+
+```sh
+npx commitgate --no-agent-entrypoints
+```
+
+기존 `AGENTS.md`가 있는데 CommitGate 계약 마커(`<!-- commitgate:contract -->`)가 없으면, 계약 템플릿을 `AGENTS.commitgate.md`로 함께 놓고 병합을 안내합니다. 기존 파일은 건드리지 않습니다.
 
 미리보기만 하려면:
 
@@ -163,7 +202,7 @@ git checkout HEAD -- package.json
 
 파일 삭제는 `npx commitgate uninstall`이 나열해 준 경로만 지우세요. `scripts/req/`나 `workflow/`를 디렉터리째 지우면 그 안의 사용자 파일이나 티켓 증거가 함께 사라집니다.
 
-> git은 빈 디렉터리를 추적하지 않습니다. 파일을 다 지운 뒤 `git status`가 clean이어도 빈 `scripts/`·`workflow/`가 파일시스템에 남을 수 있습니다.
+> git은 빈 디렉터리를 추적하지 않습니다. 파일을 다 지운 뒤 `git status`가 clean이어도 빈 `scripts/`·`workflow/`·`.claude/`·`.cursor/`가 파일시스템에 남을 수 있습니다.
 
 ### 이미 커밋했다면
 
@@ -224,7 +263,7 @@ Windows에서 설치 직후 `codex` 명령을 못 찾으면 새 터미널을 열
 
 ## 수동 명령
 
-대부분의 사용자는 위 프롬프트 방식으로 충분합니다. 아래는 내부에서 어떤 명령이 실행되는지 이해하거나 직접 디버깅할 때만 보면 됩니다.
+대부분의 사용자는 `req:next`가 시키는 대로만 하면 됩니다. 아래는 내부에서 어떤 명령이 실행되는지 이해하거나 직접 디버깅할 때만 보면 됩니다.
 
 ```sh
 # 1. 티켓과 브랜치 생성
@@ -266,12 +305,22 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `npx commitgate` | 프로젝트에 CommitGate 설치 |
 | `npx commitgate --dry-run` | 파일을 쓰지 않고 설치 계획 확인 |
 | `npx commitgate --strict` | 낮은 `cross-spawn` 버전 경고를 설치 실패로 처리 |
+| `npx commitgate --no-agent-entrypoints` | `.claude/`·`.cursor/`·`CLAUDE.md` 설치 건너뛰기 |
 | `npx commitgate uninstall` | 제거 계획 확인 (읽기 전용 — 아무것도 지우지 않음) |
-| `req:new <slug> --run` | REQ 티켓, 브랜치, 설계문서 생성 |
-| `req:review-codex <id> --kind design --run` | 설계 리뷰 |
-| `req:review-codex <id> --kind phase --run` | 구현 리뷰 |
-| `req:doctor <id>` | 게이트 상태 확인 |
-| `req:commit <id> --run -m "message"` | 승인된 변경 커밋 |
+| `npm run req:new -- <slug> --run` | REQ 티켓, 브랜치, 설계문서 생성 |
+| `npm run req:next -- <id> [--json]` | **다음 행동 계산** (읽기 전용) |
+| `npm run req:review-codex -- <id> --kind design --run` | 설계 리뷰 |
+| `npm run req:review-codex -- <id> --kind phase --phase <p> --run` | 구현 리뷰 |
+| `npm run req:doctor -- <id>` | 게이트 상태 확인 |
+| `npm run req:commit -- <id> --run -m "message"` | 승인된 변경 커밋 |
+
+`req:*`는 PATH에 잡히는 실행 파일이 아니라 **`package.json` 스크립트**입니다. npm은 인자 전달에 `--` 구분자가 필요합니다.
+
+```sh
+npm  run req:next -- 2026-002    # npm
+pnpm req:next 2026-002           # pnpm
+yarn req:next 2026-002           # yarn
+```
 
 ---
 
@@ -285,6 +334,7 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `ticketRoot` | `"workflow"` | REQ 티켓 폴더 |
 | `packageManager` | 자동 감지 | `npm`, `pnpm`, `yarn` |
 | `designDocs` | `00/01/02` 문서 | 설계 문서 파일명 |
+| `reviewPersonaPath` | `"workflow/review-persona.md"` | 리뷰 프롬프트 첫 블록. `null`이면 비활성 |
 
 빈 `branchPrefix`나 프로젝트 밖으로 나가는 경로는 거부됩니다.
 
