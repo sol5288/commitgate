@@ -42,9 +42,12 @@ Proceed automatically:
 - The review target is only what has been staged with git add.
 - Do not manually git add state.json or responses/.
 
-Stop for human confirmation only:
+Stop for human confirmation only (each item must be approved by that exact sentence; one approval never carries over to the next step):
 - Right before req:commit --run
-- Before merging to main or pushing
+- [I1] Before pushing the feature branch and opening a PR
+- [I2] Before merging the PR, after confirming the required status checks are green
+- [B1] When a direct push to a protected branch is needed — get a separate "branch protection bypass를 사용한 direct push 승인"
+- [R1/R2/R3] tag creation and push / npm publish / GitHub release — each approved separately
 - Before destructive actions such as reset, clean, or force push
 - When the requested scope must change
 - When Codex review returns BLOCKED or remains unclear after bounded retries
@@ -64,10 +67,12 @@ Branch: feat/req-2026-002-profile-edit-api
 Phases:
 - phase-1: implement PATCH /profile
 - phase-2: tests and regression checks
-Control points: before req:commit --run, before push
+Control points: before req:commit --run / [I1] before opening the PR / [I2] before PR merge, after required checks are green
 ```
 
-After that, the agent runs design, implementation, tests, and Codex review. You only confirm at control points such as commit or push.
+After that, the agent runs design, implementation, tests, and Codex review. You only confirm at control points.
+
+The default integration path is **through a PR**. A direct push to a protected branch requires a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. tag, npm publish, and GitHub release are control points of their own and are never bundled with the merge approval. See [AGENTS.template.md](AGENTS.template.md) and [docs/RELEASING.md](docs/RELEASING.md) for the full contract.
 
 ---
 
