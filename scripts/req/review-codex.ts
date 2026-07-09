@@ -17,8 +17,8 @@
  *   pnpm req:review-codex --ticket <dir>    # 임의 티켓 디렉터리
  *   옵션: --handoff <path>  (미지정 시 req.config.json의 handoffPath. 둘 다 없으면 handoff 블록 생략 — 코어 기본은 비활성)
  */
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
-import { resolve, join, relative } from 'node:path'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { resolve, join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
@@ -67,6 +67,8 @@ export interface ReviewContext {
 }
 
 export interface ReviewPromptInput {
+  /** 리뷰어 역할 정의(REQ-2026-010 D1). 첫 블록. null/공백이면 생략. 본문 문자열이지 경로가 아니다. */
+  persona?: string | null
   handoff?: string | null
   reviewContext?: ReviewContext | null
   reviewBaseSha: string
@@ -78,16 +80,20 @@ export interface ReviewPromptInput {
 
 /**
  * 순수 함수: 리뷰 프롬프트 조립 (§9.5).
- * 순서 = [handoff?] → [Review Context?] → REVIEW_BASE_SHA → REVIEW_KIND → codex-request 본문 → 권위 아티팩트.
+ * 순서 = [persona?] → [handoff?] → [Review Context?] → REVIEW_BASE_SHA → REVIEW_KIND → codex-request 본문 → 권위 아티팩트.
  * 권위 아티팩트: kind=phase → staged diff(현행), kind=design → 설계 문서 00/01/02 본문(DEC-WF-027 결정#3).
- * handoff·reviewContext는 선택. 빈 request는 fail-closed로 거부. kind 기본값 phase(하위호환).
+ * persona·handoff·reviewContext는 선택. 빈 request는 fail-closed로 거부. kind 기본값 phase(하위호환).
+ *
+ * persona가 맨 앞인 이유(REQ-2026-010 D1): 리뷰어의 **역할 정의**는 컨텍스트·판정 대상보다 먼저 와야 한다.
+ * ⚠️ 이 함수는 파일을 읽지 않는다 — persona는 이미 읽힌 **본문**이다. 읽기·부재 판정은 `loadReviewPersona`가 한다.
  */
 export function assembleReviewPrompt(input: ReviewPromptInput): string {
-  const { handoff, reviewContext, reviewBaseSha, requestBody, stagedDiff, designDocs } = input
+  const { persona, handoff, reviewContext, reviewBaseSha, requestBody, stagedDiff, designDocs } = input
   const kind: ReviewKind = input.reviewKind ?? 'phase'
   if (!reviewBaseSha) throw new Error('reviewBaseSha 필요')
   if (!requestBody || !requestBody.trim()) throw new Error('codex-request.md 본문이 비어 있음')
   const blocks: string[] = []
+  if (persona && persona.trim()) blocks.push(persona.trim())
   if (handoff && handoff.trim()) blocks.push(handoff.trim())
   if (reviewContext) {
     blocks.push(
@@ -121,6 +127,48 @@ export function assembleReviewPrompt(input: ReviewPromptInput): string {
     blocks.push(`---\n# 권위 아티팩트 = staged diff (리뷰 대상 = 바인딩 대상)\n${stagedDiff ?? ''}`)
   }
   return blocks.join('\n')
+}
+
+/**
+ * persona 문서 로드 — **fail-closed** (REQ-2026-010 D3).
+ *
+ * `handoff`의 `existsSync` silent-skip 패턴을 의도적으로 **따르지 않는다**:
+ *   - handoff는 있으면 좋은 **읽기 전용 참조**라, 없으면 조용히 생략해도 리뷰가 성립한다.
+ *   - persona는 **리뷰 품질 계약**이다. 조용히 빠진 채 exit 0으로 승인이 나오면,
+ *     "약한 리뷰가 통과했다"는 신호가 어디에도 남지 않는다 — 정확히 이 티켓이 없애려는 실패 양식.
+ *
+ * 비활성 경로는 **하나뿐**이다: `req.config.json`에 `reviewPersonaPath: null`을 명시한다(암묵 < 명시).
+ *
+ * 거부하는 것 — 셋 다 "persona 없이 리뷰가 exit 0으로 통과"하거나 계약을 우회하는 경로다.
+ *
+ * 1. **부재**.
+ * 2. **빈 내용**(0바이트·공백 only) — phase-1b R1 P2. `assembleReviewPrompt`가 `persona.trim()`으로 블록을
+ *    생략하므로, 내용을 안 보면 fail-closed 계약이 **파일 하나 비우는 것으로 무너진다.**
+ * 3. **realpath가 root 밖이거나 일반 파일이 아닌 경우** — phase-1b R2 P2. `loadConfig`의 confinement는
+ *    config의 **문자열 경로**만 검사하는데 `readFileSync`는 **symlink를 따라간다.** `workflow/review-persona.md`를
+ *    repo 밖 파일로 향하는 링크로 바꾸면 그 내용이 프롬프트 첫 블록으로 Codex에 전송된다(D2 계약 우회 + 유출).
+ *    그래서 읽기 직전에 **realpath 기준으로** root 하위 regular file인지 다시 확인한다.
+ *
+ * `rootAbs`도 realpath로 정규화한다 — 임시 디렉터리(예: macOS `/tmp` → `/private/tmp`)처럼 root 자체가
+ * symlink 경유일 때 문자열 비교가 거짓 음성을 내기 때문이다.
+ */
+export function loadReviewPersona(pathAbs: string | null, rootAbs: string): string | null {
+  if (pathAbs === null) return null
+  const recovery = `  → \`npx commitgate --force\`로 복원하거나, 의도한 비활성이면 req.config.json에 "reviewPersonaPath": null 을 명시하세요.`
+  if (!existsSync(pathAbs)) throw new Error(`리뷰어 페르소나 문서 없음: ${pathAbs}\n${recovery}`)
+
+  const rootReal = resolve(realpathSync(rootAbs))
+  const targetReal = resolve(realpathSync(pathAbs)) // symlink 해소
+  if (targetReal !== rootReal && !targetReal.startsWith(rootReal + sep))
+    throw new Error(
+      `리뷰어 페르소나 문서가 repo 밖을 가리킵니다(symlink?): ${pathAbs} → ${targetReal}\n${recovery}`,
+    )
+  if (!statSync(targetReal).isFile())
+    throw new Error(`리뷰어 페르소나 문서가 일반 파일이 아닙니다: ${pathAbs}\n${recovery}`)
+
+  const body = readFileSync(targetReal, 'utf8')
+  if (!body.trim()) throw new Error(`리뷰어 페르소나 문서가 비어 있음: ${pathAbs}\n${recovery}`)
+  return body
 }
 
 /**
@@ -964,6 +1012,9 @@ function main(): void {
   if (!existsSync(requestPath)) throw new Error(`codex-request.md 없음: ${requestPath}`)
   const requestBody = readFileSync(requestPath, 'utf8')
 
+  // persona: cfg.reviewPersonaPathAbs(null=명시적 비활성). 부재·빈 내용·root 밖 symlink는 **throw**(D3, fail-closed).
+  const persona = loadReviewPersona(cfg.reviewPersonaPathAbs, cfg.root)
+
   // handoff: --handoff 우선, 없으면 cfg.handoffPathAbs(null=비활성 — 부재 시 생략, 현재 동작 보존).
   const handoffPath = opts.handoff ? resolve(opts.handoff) : cfg.handoffPathAbs
   const handoff = handoffPath && existsSync(handoffPath) ? readFileSync(handoffPath, 'utf8') : null
@@ -1016,6 +1067,7 @@ function main(): void {
     previousResult: readPreviousResult(ticketDir),
   }
   const prompt = assembleReviewPrompt({
+    persona,
     handoff,
     reviewContext,
     reviewBaseSha,

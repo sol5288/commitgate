@@ -1,10 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import {
   assembleReviewPrompt,
+  loadReviewPersona,
   captureGitBinding,
   captureDesignBinding,
   designDocPaths,
@@ -108,6 +109,237 @@ describe('req:review-codex — 조립(assembleReviewPrompt)', () => {
 
   it('kind=design인데 designDocs 누락 → fail-closed throw', () => {
     expect(() => assembleReviewPrompt({ reviewBaseSha: 'x', requestBody: 'R', reviewKind: 'design' })).toThrow()
+  })
+})
+
+/**
+ * REQ-2026-010 phase-1b — persona 블록 (D1).
+ *
+ * 리뷰어의 **역할 정의**는 컨텍스트·판정 대상보다 먼저 온다 → handoff보다도 **첫 블록**.
+ * `assembleReviewPrompt`는 순수 함수로 남는다 — 파일을 읽지 않는다. 읽기·부재 판정은 `main()`의 몫.
+ */
+describe('req:review-codex — persona 블록(assembleReviewPrompt)', () => {
+  it('persona가 handoff보다 앞선 첫 블록으로 들어간다', () => {
+    const p = assembleReviewPrompt({
+      persona: 'PERSONA-BODY',
+      handoff: 'HANDOFF',
+      reviewContext: {
+        branch: 'feat/x',
+        reviewBaseSha: 'abc123',
+        reviewTree: 'TREE9',
+        phase: 'REVIEW_REQUEST',
+        previousResult: 'none',
+      },
+      reviewBaseSha: 'abc123',
+      requestBody: 'REQUEST BODY',
+      stagedDiff: 'diff --git a b',
+    })
+    expect(p.startsWith('PERSONA-BODY')).toBe(true)
+    expect(p.indexOf('PERSONA-BODY')).toBeLessThan(p.indexOf('HANDOFF'))
+    expect(p.indexOf('HANDOFF')).toBeLessThan(p.indexOf('# Review Context'))
+  })
+
+  it('persona만 있고 handoff가 없어도 첫 블록', () => {
+    const p = assembleReviewPrompt({ persona: 'PERSONA-BODY', reviewBaseSha: 'x', requestBody: 'R', stagedDiff: '' })
+    expect(p.startsWith('PERSONA-BODY')).toBe(true)
+    expect(p.indexOf('PERSONA-BODY')).toBeLessThan(p.indexOf('REVIEW_BASE_SHA: x'))
+  })
+
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['빈 문자열', ''],
+    ['공백만', '   \n  '],
+  ])('persona가 %s면 블록을 생략한다(handoff와 동일 규칙)', (_label, persona) => {
+    const p = assembleReviewPrompt({ persona, reviewBaseSha: 'x', requestBody: 'R', stagedDiff: '' })
+    expect(p.startsWith('---\nREVIEW_BASE_SHA: x')).toBe(true)
+  })
+
+  it('design 리뷰에도 persona가 첫 블록으로 들어간다', () => {
+    const p = assembleReviewPrompt({
+      persona: 'PERSONA-BODY',
+      reviewBaseSha: 'x',
+      requestBody: 'R',
+      reviewKind: 'design',
+      designDocs: { requirement: 'A', design: 'B', plan: 'C' },
+    })
+    expect(p.startsWith('PERSONA-BODY')).toBe(true)
+    expect(p.indexOf('PERSONA-BODY')).toBeLessThan(p.indexOf('REVIEW_KIND: design'))
+  })
+
+  it('순수성: persona 문자열을 그대로 쓰고 파일시스템을 읽지 않는다', () => {
+    // 존재하지 않는 경로처럼 생긴 문자열도 그대로 본문으로 취급된다(경로 해석 없음).
+    const p = assembleReviewPrompt({
+      persona: '/nonexistent/persona.md',
+      reviewBaseSha: 'x',
+      requestBody: 'R',
+      stagedDiff: '',
+    })
+    expect(p.startsWith('/nonexistent/persona.md')).toBe(true)
+  })
+})
+
+/**
+ * REQ-2026-010 phase-1b — persona 읽기의 fail-closed (D3).
+ *
+ * `handoff`의 `existsSync` **silent skip 패턴을 따르지 않는다.** 페르소나는 리뷰 품질 계약이므로,
+ * 조용히 빠진 채 exit 0으로 승인이 나오는 것이 정확히 이 티켓이 없애려는 실패 양식이다.
+ * 비활성이 필요하면 `reviewPersonaPath: null`을 **명시**한다(암묵 < 명시).
+ */
+describe('req:review-codex — persona 로드(loadReviewPersona)', () => {
+  const tmp = (): string => mkdtempSync(join(tmpdir(), 'persona-'))
+  /** null 경로면 root를 보기 전에 단락한다 — 임의 경로로 충분. */
+  const PACKAGE_ROOT_FOR_TEST = tmpdir()
+
+  /** Windows는 symlink 생성에 권한(개발자 모드/관리자)이 필요하다. 불가하면 해당 회귀만 skip. */
+  const canSymlink = ((): boolean => {
+    const d = mkdtempSync(join(tmpdir(), 'symcheck-'))
+    try {
+      const target = join(d, 't.txt')
+      writeFileSync(target, 'x', 'utf8')
+      symlinkSync(target, join(d, 'l.txt'), 'file')
+      return true
+    } catch {
+      return false
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })()
+
+  it('null(의도적 비활성) → null 반환, throw 없음', () => {
+    expect(loadReviewPersona(null, PACKAGE_ROOT_FOR_TEST)).toBeNull()
+  })
+
+  it('파일 존재 → 본문 문자열 반환', () => {
+    const d = tmp()
+    try {
+      const p = join(d, 'persona.md')
+      writeFileSync(p, '# Reviewer 역할 (PM)\n본문\n', 'utf8')
+      expect(loadReviewPersona(p, d)).toContain('# Reviewer 역할 (PM)')
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('경로가 주어졌는데 파일 부재 → throw (silent skip 금지)', () => {
+    const d = tmp()
+    try {
+      expect(() => loadReviewPersona(join(d, 'missing.md'), d)).toThrow()
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * phase-1b R1 P2 — **빈 파일은 부재와 같다.**
+   * `assembleReviewPrompt`가 `persona.trim()`으로 블록을 생략하므로, 여기서 통과시키면
+   * "경로는 활성인데 persona 없이 exit 0으로 승인"되는 조용한 우회로가 생긴다.
+   * 비활성 경로는 `reviewPersonaPath: null` 하나뿐이어야 한다.
+   */
+  it.each([
+    ['0바이트', ''],
+    ['개행만', '\n\n'],
+    ['공백·탭·개행', '  \t\n  \r\n '],
+  ])('경로가 주어졌는데 내용이 %s → throw (조용한 우회 차단)', (_label, body) => {
+    const d = tmp()
+    try {
+      const p = join(d, 'persona.md')
+      writeFileSync(p, body, 'utf8')
+      expect(() => loadReviewPersona(p, d)).toThrow(/비어 있음/)
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('빈 파일 에러도 경로와 복구법을 담는다', () => {
+    const d = tmp()
+    try {
+      const p = join(d, 'persona.md')
+      writeFileSync(p, '   \n', 'utf8')
+      let msg = ''
+      try {
+        loadReviewPersona(p, d)
+      } catch (e) {
+        msg = (e as Error).message
+      }
+      expect(msg).toContain('persona.md')
+      expect(msg).toContain('--force')
+      expect(msg).toContain('reviewPersonaPath')
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * phase-1b R2 P2 — **symlink 탈출 차단.**
+   *
+   * `loadConfig`의 confinement는 config의 **문자열 경로**만 본다. 실제 읽기는 링크를 따라가므로,
+   * root 하위처럼 보이는 경로가 repo 밖 파일을 가리킬 수 있다. 그 내용은 프롬프트의 **첫 블록**으로
+   * Codex에 전송된다 — D2 계약 우회이자 유출 통로. realpath 기준 재검증으로 막는다.
+   */
+  it.runIf(canSymlink)('repo 밖을 가리키는 symlink → throw (내용이 프롬프트로 새지 않는다)', () => {
+    const outside = tmp()
+    const root = tmp()
+    try {
+      const secret = join(outside, 'secret.txt')
+      writeFileSync(secret, 'SUPER-SECRET-CONTENT', 'utf8')
+      const link = join(root, 'review-persona.md')
+      symlinkSync(secret, link, 'file')
+      expect(() => loadReviewPersona(link, root)).toThrow(/repo 밖/)
+      // 유출 부재의 직접 확인: 어떤 경로로도 비밀 문자열이 반환되지 않는다.
+      let returned: string | null = null
+      try {
+        returned = loadReviewPersona(link, root)
+      } catch {
+        /* expected */
+      }
+      expect(returned).toBeNull()
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it.runIf(canSymlink)('root 하위를 가리키는 symlink는 허용(repo-내부 자원)', () => {
+    const root = tmp()
+    try {
+      const real = join(root, 'actual-persona.md')
+      writeFileSync(real, '# Reviewer 역할 (PM)\n', 'utf8')
+      const link = join(root, 'review-persona.md')
+      symlinkSync(real, link, 'file')
+      expect(loadReviewPersona(link, root)).toContain('# Reviewer 역할 (PM)')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('경로가 디렉터리면 → throw (일반 파일이 아님)', () => {
+    const d = tmp()
+    try {
+      const dirPath = join(d, 'review-persona.md')
+      mkdirSync(dirPath)
+      expect(() => loadReviewPersona(dirPath, d)).toThrow(/일반 파일이 아닙니다/)
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('부재 에러 메시지가 경로와 두 가지 복구법을 담는다', () => {
+    const d = tmp()
+    try {
+      const missing = join(d, 'missing.md')
+      let msg = ''
+      try {
+        loadReviewPersona(missing, d)
+      } catch (e) {
+        msg = (e as Error).message
+      }
+      expect(msg).toContain('missing.md')
+      expect(msg).toContain('--force') // npx commitgate --force 로 복원
+      expect(msg).toContain('reviewPersonaPath') // 또는 null로 비활성화
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
   })
 })
 

@@ -375,6 +375,37 @@ describe('[uninstall] 설치 경로 ≠ 설정 경로 (D3b)', () => {
       cleanup(dir)
     }
   })
+
+  /**
+   * REQ-2026-010 phase-1b — `reviewPersonaPath`도 `schemaPath`와 같은 **설정 축**을 갖는다.
+   * 커스텀 경로를 쓰면 런타임이 읽는 파일과 init이 깐 파일이 갈라진다. planner는 그 사실만 알리고
+   * 커스텀 경로를 제거 후보로 올리지 않는다(사용자 소유 파일).
+   */
+  it('reviewPersonaPath가 init 복사 경로가 아니면 정보 행으로만 표기', () => {
+    const personaCfg = JSON.stringify({ reviewPersonaPath: 'docs/my-persona.md' }, null, 2)
+    const dir = tmpRepo({ files: { 'req.config.json': personaCfg, 'docs/my-persona.md': '# 내 페르소나\n' } })
+    try {
+      install(dir)
+      const plan = planUninstall({ dir })
+      expect(plan.facts.info.join('\n')).toContain('docs/my-persona.md')
+      expect(plan.removable.map((r) => r.path)).not.toContain('docs/my-persona.md')
+      // init이 깐 기본 경로는 그대로 제거 후보다.
+      expect(plan.removable.map((r) => r.path)).toContain(DEFAULT_REVIEW_PERSONA_RELPATH)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('reviewPersonaPath가 기본 경로면 info를 내지 않는다(잡음 방지)', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const plan = planUninstall({ dir })
+      expect(plan.facts.info.join('\n')).not.toContain('review-persona.md')
+    } finally {
+      cleanup(dir)
+    }
+  })
 })
 
 describe('[uninstall] tool 아티팩트 무결성 표기', () => {

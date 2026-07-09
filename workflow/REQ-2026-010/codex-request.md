@@ -21,7 +21,63 @@
 
 ---
 
-## 현재 phase 리뷰: `phase-1a-persona-install`
+## 현재 phase 리뷰: `phase-1b-persona-inject`
+
+> **이 프롬프트의 첫 블록이 `workflow/review-persona.md`라면, 이 phase는 이미 스스로를 증명한 것이다.** 그 블록은 Builder가 붙여넣은 것이 아니라 `review-codex.ts`가 조립한 것이다.
+
+phase-1a(`e4a3796`)가 persona 파일과 설치 축을 커밋했다. 이제 **소비**를 켠다.
+
+staged 변경 (코드 9파일 + `codex-request.md`):
+- `scripts/req/lib/config.ts` — `reviewPersonaPath`를 `RawConfig`/`ResolvedConfig`/`DEFAULTS`/`CONFIG_SCHEMA`에 추가. **confinement 적용**(`assertRelative`+`assertUnderRoot`) — `handoffPath`는 면제인데 이것은 아니다. 파생 `reviewPersonaPathAbs`.
+- `workflow/req.config.schema.json` — 동일 키(기존 드리프트 가드 테스트가 `CONFIG_SCHEMA`와의 일치를 강제).
+- `scripts/req/review-codex.ts` — `ReviewPromptInput.persona` + **첫 블록**(D1). `loadReviewPersona(pathAbs)` 신설: `null`→`null`, 파일 존재→본문, **경로 있는데 부재→throw**(D3). `main()`에서 호출.
+- `req.config.json.sample` — 키 추가.
+- `bin/uninstall.ts` — 설정 축 info(`reviewPersonaPath ≠ 기본 경로`), `schemaPath` 축과 대칭. phase-1a 리뷰의 observation(`ToolArtifact` 주석이 '스키마' 중심)도 함께 정정.
+- `tests/unit/req-config.test.ts` — 기본값·confinement 5종·`null` 비활성·커스텀 경로 + **D4**(init이 이 키를 config에 주입하지 않음, 신규/병합 2케이스).
+- `tests/unit/req-review-codex.test.ts` — persona 첫 블록(phase·design) · `undefined`/`null`/`''`/공백 생략 · 순수성 · `loadReviewPersona` 4종(부재 에러가 경로+복구법 2개를 담는지 포함).
+- `tests/unit/uninstall.test.ts` — 설정 축 info 표기/미표기.
+- `tests/unit/req-commit.test.ts` — **`cfgStub`에 신규 필수 필드 2개 추가.** `ResolvedConfig`에 필드를 넣으면 모든 스텁이 따라와야 한다(typecheck가 강제). 이것 때문에 코드 파일이 9개가 되어 **D18 WARN**이 뜬다 — 계획서의 8파일 추정이 이 강제 파급을 놓쳤다.
+
+**실행한 검증** (증거):
+- `npm run typecheck` → 0 · `npm test` → 488/488 green
+- **이 repo 자신의 프롬프트**: `.review-preview.txt`의 persona 인덱스 = `0`, 순서 `persona < Review Context < REVIEW_BASE_SHA < REVIEW_KIND < request` 확인
+- **fail-closed 실증**: `workflow/review-persona.md`를 치우고 실행 → `리뷰어 페르소나 문서 없음: <경로>` + 복구법 2개 출력하며 throw
+- **비활성 실증**: `reviewPersonaPath: null` → 생략(프롬프트 18,193자 → 16,625자), throw 없음
+
+### phase-1b R1 지적 반영 (라운드 1 → 2)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2 | 기본 활성 상태에서 `workflow/review-persona.md`가 0바이트/공백-only면 `loadReviewPersona`가 성공 반환하고 `assembleReviewPrompt`의 `persona.trim()`이 블록을 조용히 생략한다. **persona 없이 리뷰가 exit 0으로 통과** — `reviewPersonaPath: null` 명시를 요구한 D3/D4 계약과 같은 실패 양식 | `loadReviewPersona`가 non-null 경로의 **공백-only 본문을 throw**로 거부(`리뷰어 페르소나 문서가 비어 있음: <경로>` + 복구법 2개). 단위 테스트 4건 추가(0바이트·개행만·공백/탭/개행·에러 메시지). **실증**: `: > workflow/review-persona.md` 후 실행 → throw 확인 |
+
+이 지적은 내가 아래 리뷰 포인트에 **의심으로 적어 둔 바로 그 구멍**이었고, 페르소나를 도구가 주입한 첫 리뷰에서 확정됐다. `existsSync`만 보고 내용을 보지 않으면 fail-closed 계약이 **파일 하나 비우는 것으로 무너진다.** 비활성 경로는 이제 `reviewPersonaPath: null` 하나뿐이다.
+
+### phase-1b R2 지적 반영 (라운드 2 → 3)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2 | `loadConfig`의 confinement는 config의 **문자열 경로**만 검사하는데 `readFileSync`는 **symlink를 따라간다**. `workflow/review-persona.md`를 repo 밖 민감 파일로 향하는 링크로 바꾸면, 문자열 경로는 root 하위라 `loadConfig`를 통과하고 그 파일 내용이 **프롬프트 첫 블록으로 Codex에 전송**된다. D2 계약 우회 + 유출 | `loadReviewPersona`가 읽기 직전 **realpath 기준으로 재검증**한다: (a) `realpathSync(target)`이 `realpathSync(root)` 하위인가 (b) `statSync().isFile()`인가. 둘 중 하나라도 아니면 throw. `rootAbs`도 realpath로 정규화 — 임시 디렉터리처럼 root 자체가 symlink 경유(`/tmp`→`/private/tmp`)일 때 문자열 비교가 거짓 음성을 내기 때문 |
+
+**회귀 테스트 3건**: repo 밖 symlink → throw(`/repo 밖/`) + 반환값이 `null`임을 직접 확인(유출 부재) · root 하위 symlink는 허용(repo-내부 자원) · 디렉터리 경로 → throw. Windows에서 `symlinkSync`는 권한이 필요해 `it.runIf(canSymlink)`로 가드했고, **이 머신에서는 실제로 실행됐음을 확인**했다(skip 아님).
+
+**실제 익스플로잇 재현**: persona를 repo 밖 `fake-secret.txt`로 향하는 symlink로 교체 → `리뷰어 페르소나 문서가 repo 밖을 가리킵니다(symlink?)` throw, `.review-preview.txt`에 비밀 문자열 **0건**.
+
+이 결함의 성격이 R1과 같다. **경로 검증과 실제 읽기가 다른 대상을 본다**는 것 — R1은 "존재하는가"만 보고 내용을 안 봤고, R2는 "문자열이 root 하위인가"만 보고 링크 해소 후를 안 봤다.
+
+### 이 phase의 리뷰 포인트
+
+- **fail-closed가 정말 닫혀 있는가**: `loadReviewPersona`가 `null`(의도적 비활성) / 부재 / 빈 내용 셋을 구분해 뒤 둘을 throw하는가? **다른 우회로가 남아 있는가?** (예: persona 파일이 디렉터리인 경우, 심볼릭 링크, 읽기 권한 없음 → `readFileSync` throw로 fail-closed인가?)
+- **confinement 비대칭이 정당한가**: `reviewPersonaPath`에 confinement를 걸고 `handoffPath`는 면제한 근거가 코드 주석과 일치하는가? `null` 분기가 `assertRelative`를 건너뛰는 것이 맞는가?
+- **CONFIG_SCHEMA의 `minLength: 1`이 union 타입에서 의도대로 동작하는가**: `{type:['string','null'], minLength:1}`에서 `null`은 통과하고 `''`는 거부되는가? AJV 의미론을 확인했는가?
+- **D4의 혼합 버전 논증이 지금 코드와 일치하는가**: init이 이 키를 주입하지 않으므로, `--force` 없는 업그레이드로 남은 **구 `review-codex.ts`**가 `additionalProperties:false`에 안 걸린다. 이 주장이 `bin/init.ts`의 실제 병합 코드와 맞는가?
+- **`assembleReviewPrompt`의 순수성이 유지됐는가**: persona를 **본문 문자열**로 받고 경로로 받지 않는다. 파일 I/O가 새로 들어가지 않았는가?
+- **D18 WARN(9파일)이 정당한가**: `req-commit.test.ts` 스텁 수정을 별도 phase로 뺐어야 하는가, 아니면 타입 변경과 같은 커밋에 있어야 하는가?
+- **persona 본문이 리뷰어를 실제로 바꾸는가**: 지금 너에게 주어진 첫 블록이 그 문서다. 그 지시가 `findings`/`observations` 경계를 명확히 하는가, 아니면 과잉 지적을 유도하는가? **이 리뷰 자체가 그 검증이다.**
+- 범위 이탈: `req:next`·`templates/` 미착수, 버전 bump 미수행, `machine.schema.json` 불변 확인.
+
+---
+
+## 이전 phase 리뷰: `phase-1a-persona-install` (승인됨, `e4a3796`)
 
 design은 R6에서 승인됐다(`responses/design-r06-approved.json`). 지금은 **staged diff만** 심사한다. 설계·계획 정본은 커밋된 `01-design.md`(D3-1)·`02-plan.md`(Phase 1a)에 있다.
 

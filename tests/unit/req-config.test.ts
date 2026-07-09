@@ -10,7 +10,10 @@ import {
   stripBom,
   DEFAULTS,
   CONFIG_SCHEMA,
+  DEFAULT_REVIEW_PERSONA_RELPATH,
 } from '../../scripts/req/lib/config'
+import { runInit } from '../../bin/init'
+import { execFileSync } from 'node:child_process'
 
 /** 임시 root 디렉터리 생성(옵션으로 req.config.json 작성). */
 function tmpRoot(config?: object): string {
@@ -179,6 +182,76 @@ describe('[P1] loadConfig fail-closed 안전제약 (Red-first 우선)', () => {
   })
 })
 
+/**
+ * REQ-2026-010 phase-1b — `reviewPersonaPath` (D2·D3·D4).
+ *
+ * `handoffPath`와 **대칭이 아니다**:
+ *   - handoffPath : repo 밖 문서 참조 → confinement 면제, 부재 시 silent skip, 코어 기본 null(비활성)
+ *   - reviewPersonaPath : 패키지가 배포하는 repo-내부 자원 → confinement 적용, 코어 기본 **활성**
+ * 부재 시 throw(fail-closed)는 `review-codex.ts`의 책임이라 여기서 검증하지 않는다.
+ */
+describe('[REQ-2026-010] reviewPersonaPath — confinement 적용(repo-내부 자원)', () => {
+  it('코어 기본값이 활성 경로이며 DEFAULT_REVIEW_PERSONA_RELPATH와 같다', () => {
+    expect(DEFAULTS.reviewPersonaPath).toBe(DEFAULT_REVIEW_PERSONA_RELPATH)
+    expect(DEFAULT_REVIEW_PERSONA_RELPATH).toBe('workflow/review-persona.md')
+  })
+
+  it('직접 import 소비자를 위해 정적 타입은 string | null 로 유지', () => {
+    const widened: string | null = DEFAULTS.reviewPersonaPath
+    expect(typeof widened).toBe('string')
+    const reassigned: typeof DEFAULTS.reviewPersonaPath = null
+    expect(reassigned).toBeNull()
+  })
+
+  it('config 부재 시 기본 경로로 해소되고 abs가 root 하위를 가리킨다', () => {
+    const r = tmpRoot()
+    try {
+      const cfg = loadConfig({ root: r })
+      expect(cfg.reviewPersonaPath).toBe(DEFAULT_REVIEW_PERSONA_RELPATH)
+      expect(cfg.reviewPersonaPathAbs).toBe(resolve(r, DEFAULT_REVIEW_PERSONA_RELPATH))
+    } finally {
+      cleanup(r)
+    }
+  })
+
+  it('null 명시 = 의도적 비활성 → reviewPersonaPathAbs도 null', () => {
+    const r = tmpRoot({ reviewPersonaPath: null })
+    try {
+      const cfg = loadConfig({ root: r })
+      expect(cfg.reviewPersonaPath).toBeNull()
+      expect(cfg.reviewPersonaPathAbs).toBeNull()
+    } finally {
+      cleanup(r)
+    }
+  })
+
+  it('커스텀 repo-상대 경로 허용', () => {
+    const r = tmpRoot({ reviewPersonaPath: 'docs/my-persona.md' })
+    try {
+      const cfg = loadConfig({ root: r })
+      expect(cfg.reviewPersonaPath).toBe('docs/my-persona.md')
+      expect(cfg.reviewPersonaPathAbs).toBe(resolve(r, 'docs/my-persona.md'))
+    } finally {
+      cleanup(r)
+    }
+  })
+
+  // confinement — handoffPath와 달리 절대경로·탈출을 거부한다.
+  const bad = (config: object) => {
+    const r = tmpRoot(config)
+    try {
+      expect(() => loadConfig({ root: r })).toThrow()
+    } finally {
+      cleanup(r)
+    }
+  }
+  it('root 밖 탈출(../) → throw', () => bad({ reviewPersonaPath: '../outside/persona.md' }))
+  it('절대경로(POSIX) → throw', () => bad({ reviewPersonaPath: '/etc/persona.md' }))
+  it('절대경로(Windows drive) → throw', () => bad({ reviewPersonaPath: 'C:\\abs\\persona.md' }))
+  it('UNC → throw', () => bad({ reviewPersonaPath: '\\\\server\\share\\persona.md' }))
+  it('빈 문자열 → throw(minLength 1)', () => bad({ reviewPersonaPath: '' }))
+})
+
 describe('[P1] handoffPath — confinement 면제(읽기 전용 참조)', () => {
   it('null 허용', () => {
     const r = tmpRoot({ handoffPath: null })
@@ -224,5 +297,51 @@ describe('[P1] req.config.schema.json 파일 == CONFIG_SCHEMA (드리프트 가�
   it('파일과 상수 일치', () => {
     const filePath = resolve(packageRoot(), 'workflow', 'req.config.schema.json')
     expect(JSON.parse(readFileSync(filePath, 'utf8'))).toEqual(CONFIG_SCHEMA)
+  })
+})
+
+/**
+ * REQ-2026-010 D4 — **init은 `reviewPersonaPath`를 config에 주입하지 않는다.**
+ *
+ * `handoffPath: null`은 "코어 기본이 비활성"이라 명시 기록에 값이 있었다.
+ * `reviewPersonaPath`는 코어 기본이 **활성**이고 그 값이 곧 init이 까는 파일 경로다.
+ * config에 적으면, `--force` 없는 업그레이드로 남은 **구 review-codex.ts**가
+ * `additionalProperties:false`에 걸려 unknown key로 모든 명령을 죽인다(혼합 버전 안전성).
+ *
+ * 이 비대칭은 나중에 "버그"로 오해되기 쉽다. 그래서 테스트가 의도를 고정한다.
+ */
+describe('[REQ-2026-010 D4] init이 reviewPersonaPath를 req.config.json에 주입하지 않는다', () => {
+  const tmpTarget = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'reqcfg-init-'))
+    execFileSync('git', ['init', '-q'], { cwd: dir })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }, null, 2))
+    return dir
+  }
+
+  it('신규 설치: 시드 config는 packageManager·handoffPath 두 키뿐', () => {
+    const dir = tmpTarget()
+    try {
+      runInit({ dir, force: false, dryRun: false, strict: false })
+      const cfg = JSON.parse(readFileSync(join(dir, 'req.config.json'), 'utf8')) as Record<string, unknown>
+      expect(Object.keys(cfg).sort()).toEqual(['handoffPath', 'packageManager'])
+      expect('reviewPersonaPath' in cfg).toBe(false)
+      // 그럼에도 해소값은 활성 기본 경로 — 암묵 기본값에 맡긴다.
+      expect(loadConfig({ root: dir }).reviewPersonaPath).toBe(DEFAULT_REVIEW_PERSONA_RELPATH)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('기존 config 병합: 누락키 병합이 reviewPersonaPath를 끌어들이지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'req.config.json'), JSON.stringify({ branchPrefix: 'x/' }, null, 2), 'utf8')
+      runInit({ dir, force: false, dryRun: false, strict: false })
+      const cfg = JSON.parse(readFileSync(join(dir, 'req.config.json'), 'utf8')) as Record<string, unknown>
+      expect('reviewPersonaPath' in cfg).toBe(false)
+      expect(cfg.branchPrefix).toBe('x/')
+    } finally {
+      cleanup(dir)
+    }
   })
 })

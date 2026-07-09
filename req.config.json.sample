@@ -2,6 +2,7 @@
   "ticketRoot": "workflow",
   "schemaPath": "workflow/machine.schema.json",
   "handoffPath": null,
+  "reviewPersonaPath": "workflow/review-persona.md",
   "branchPrefix": "feat/req-",
   "packageManager": "npm",
   "granularityMaxFiles": 8,

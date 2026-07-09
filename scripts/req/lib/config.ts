@@ -26,6 +26,8 @@ export interface RawConfig {
   ticketRoot?: string
   schemaPath?: string
   handoffPath?: string | null
+  /** null = 의도적 비활성(persona 블록 생략). 미지정 = DEFAULTS(활성). */
+  reviewPersonaPath?: string | null
   branchPrefix?: string
   packageManager?: PackageManager
   granularityMaxFiles?: number
@@ -38,6 +40,7 @@ export interface ResolvedConfig {
   ticketRoot: string
   schemaPath: string
   handoffPath: string | null
+  reviewPersonaPath: string | null
   branchPrefix: string
   packageManager: PackageManager
   granularityMaxFiles: number
@@ -46,6 +49,7 @@ export interface ResolvedConfig {
   workflowDirAbs: string
   schemaPathAbs: string
   handoffPathAbs: string | null
+  reviewPersonaPathAbs: string | null
 }
 
 /**
@@ -76,6 +80,9 @@ export const DEFAULTS = {
   ticketRoot: 'workflow',
   schemaPath: 'workflow/machine.schema.json',
   handoffPath: null as string | null,
+  // ⚠️ handoffPath와 달리 코어 기본이 **활성**이다. init이 이 경로에 파일을 깔기 때문(KIT_COPY_RELPATHS).
+  //    비활성이 필요하면 config에 `null`을 명시한다. `as string | null`은 handoffPath와 같은 이유(직접 import 소비자 계약).
+  reviewPersonaPath: DEFAULT_REVIEW_PERSONA_RELPATH as string | null,
   branchPrefix: 'feat/req-',
   packageManager: 'pnpm' as PackageManager,
   granularityMaxFiles: 8,
@@ -92,6 +99,8 @@ export const CONFIG_SCHEMA = {
     ticketRoot: { type: 'string', minLength: 1 },
     schemaPath: { type: 'string', minLength: 1 },
     handoffPath: { type: ['string', 'null'] },
+    // null = 의도적 비활성. 문자열이면 minLength 1(빈 문자열은 "비활성"의 애매한 표현 → 거부, null을 쓰게 한다).
+    reviewPersonaPath: { type: ['string', 'null'], minLength: 1 },
     branchPrefix: { type: 'string', minLength: 1 }, // 빈 prefix는 D11 무력화 → 금지
     packageManager: { type: 'string', enum: ['pnpm', 'npm', 'yarn'] },
     granularityMaxFiles: { type: 'integer', minimum: 1 },
@@ -169,17 +178,25 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     ticketRoot: raw.ticketRoot ?? DEFAULTS.ticketRoot,
     schemaPath: raw.schemaPath ?? DEFAULTS.schemaPath,
     handoffPath: raw.handoffPath !== undefined ? raw.handoffPath : DEFAULTS.handoffPath, // null = 명시적 비활성
+    reviewPersonaPath:
+      raw.reviewPersonaPath !== undefined ? raw.reviewPersonaPath : DEFAULTS.reviewPersonaPath, // null = 명시적 비활성
     branchPrefix: raw.branchPrefix ?? DEFAULTS.branchPrefix,
     packageManager: raw.packageManager ?? DEFAULTS.packageManager,
     granularityMaxFiles: raw.granularityMaxFiles ?? DEFAULTS.granularityMaxFiles,
     designDocs: { ...DEFAULTS.designDocs, ...(raw.designDocs ?? {}) },
   }
 
-  // repo-내부 자원(ticketRoot·schemaPath)은 **상대경로 + root 하위**만(절대경로·탈출 금지 → portable). handoffPath는 읽기 전용 참조라 면제.
+  // repo-내부 자원(ticketRoot·schemaPath·reviewPersonaPath)은 **상대경로 + root 하위**만(절대경로·탈출 금지 → portable).
+  // handoffPath만 면제 — 형제 repo의 SSOT 문서를 읽는 **외부 참조**이기 때문.
+  // reviewPersonaPath는 패키지가 배포하고 init이 repo 안에 까는 자원이라 schemaPath와 같은 축이다(REQ-2026-010 D2).
   assertRelative(merged.ticketRoot, 'ticketRoot')
   assertRelative(merged.schemaPath, 'schemaPath')
   assertUnderRoot(rootAbs, merged.ticketRoot, 'ticketRoot')
   assertUnderRoot(rootAbs, merged.schemaPath, 'schemaPath')
+  if (merged.reviewPersonaPath !== null) {
+    assertRelative(merged.reviewPersonaPath, 'reviewPersonaPath')
+    assertUnderRoot(rootAbs, merged.reviewPersonaPath, 'reviewPersonaPath')
+  }
 
   return {
     root: rootAbs,
@@ -187,6 +204,7 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     workflowDirAbs: resolve(rootAbs, merged.ticketRoot),
     schemaPathAbs: resolve(rootAbs, merged.schemaPath),
     handoffPathAbs: merged.handoffPath ? resolve(rootAbs, merged.handoffPath) : null,
+    reviewPersonaPathAbs: merged.reviewPersonaPath ? resolve(rootAbs, merged.reviewPersonaPath) : null,
   }
 }
 

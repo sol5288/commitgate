@@ -21,7 +21,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { loadConfig, stripBom, DEFAULTS } from '../scripts/req/lib/config'
+import { loadConfig, stripBom, DEFAULTS, DEFAULT_REVIEW_PERSONA_RELPATH } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
 import {
   PACKAGE_ROOT,
@@ -37,7 +37,7 @@ export interface UninstallOptions {
   dir: string
 }
 
-/** CommitGate가 복사한 파일(kit 소스 + init이 실제로 복사한 스키마). 바이트 비교로 무결성만 표기. */
+/** CommitGate가 복사한 파일(kit 소스 + `KIT_COPY_RELPATHS` = 스키마 2종 + review-persona.md). 바이트 비교로 무결성만 표기. */
 export interface ToolArtifact {
   path: string // repo-상대
   present: boolean
@@ -174,11 +174,13 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
   // (깨진 config 때문에 제거 안내를 못 받는 건 부당하다 — planner는 쓰기가 없어 강등이 안전).
   let ticketRoot = DEFAULTS.ticketRoot
   let schemaPath = DEFAULTS.schemaPath
+  let reviewPersonaPath = DEFAULTS.reviewPersonaPath
   let configError: string | null = null
   try {
     const cfg = loadConfig({ root: targetRoot })
     ticketRoot = cfg.ticketRoot
     schemaPath = cfg.schemaPath
+    reviewPersonaPath = cfg.reviewPersonaPath
   } catch (e) {
     configError = (e as Error).message
   }
@@ -190,6 +192,11 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
   if (!(KIT_SCHEMA_RELPATHS as readonly string[]).includes(schemaPath))
     info.push(
       `schemaPath=${schemaPath} — 런타임이 읽는 경로이지만 init이 복사한 파일이 아닙니다(제거 후보 아님).`,
+    )
+  // reviewPersonaPath도 같은 축 분기(REQ-2026-010). null=의도적 비활성이므로 알릴 것이 없다.
+  if (reviewPersonaPath !== null && reviewPersonaPath !== DEFAULT_REVIEW_PERSONA_RELPATH)
+    info.push(
+      `reviewPersonaPath=${reviewPersonaPath} — 런타임이 읽는 경로이지만 init이 복사한 파일이 아닙니다(제거 후보 아님).`,
     )
 
   // ── tool: kit 소스 + init이 **실제로 복사한** 파일들(스키마 2종 + review-persona.md — 항상 리터럴 workflow/, ticketRoot 무관)

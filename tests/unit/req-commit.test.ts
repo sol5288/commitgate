@@ -369,6 +369,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   ticketRoot: 'workflow',
   schemaPath: 'workflow/machine.schema.json',
   handoffPath: null,
+  reviewPersonaPath: 'workflow/review-persona.md',
   branchPrefix: 'feat/req-',
   packageManager: 'pnpm',
   granularityMaxFiles: 8,
@@ -376,6 +377,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,
+  reviewPersonaPathAbs: '/repo/workflow/review-persona.md',
   ...over,
 })
 
