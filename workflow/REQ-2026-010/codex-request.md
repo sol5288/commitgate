@@ -21,7 +21,123 @@
 
 ---
 
-## 현재 phase 리뷰: `phase-1b-persona-inject`
+## 현재 phase 리뷰: `phase-2-req-next`
+
+phase-1a(`e4a3796`)·phase-1b(`acee2eb`)가 승인·커밋됐다. persona는 이제 도구가 주입한다 — **이 프롬프트의 첫 블록이 그것이다.**
+
+이 phase는 P3("끊지 말고 이어서")를 프롬프트가 아니라 **상태기계**로 내린다. `req:next`가 `state.json` + git 상태에서 다음 행동을 계산해 한 줄로 알려준다.
+
+staged 변경 (코드 7파일 + `codex-request.md`):
+- `scripts/req/req-next.ts` (신규) — 순수 `resolveNext(input): NextAction` + IO만 하는 `main()`. `--json`.
+- `scripts/req/review-codex.ts` — `captureIndexHash`(읽기 전용 인덱스 신원) + `LastReviewMarker`/`recordLastReview` + `resolveReviewOutcome(compareHash?)` + `main()` 배선.
+- `bin/init.ts` / `package.json` — `req:next`를 5번째 주입 스크립트로.
+- `tests/unit/req-next.test.ts` (신규, 55건) — 판정표 10분기 + G1/G2(outcome 5행) + allowlist + no-write 회귀 + exit 계약 + CLI.
+- `tests/unit/req-review-codex.test.ts` — `last_review` 4 outcome·count 증가/리셋·errors 상한·**D9 불변 회귀**·`captureIndexHash`.
+- `tests/unit/init.test.ts` — 주입 스크립트 5개.
+
+### 설계 대비 구현 요약
+
+| 설계 | 구현 |
+|---|---|
+| D6 판정표 10분기 | `resolveNext` — 1 `commit_allowed` → 2 문서 미인덱스 → 3 design stale → 4 신규 phase 분해 → 5~7 legacy → 8~10 tracked → fallback `BLOCKED` |
+| 진행도 정본 = `consumed_approvals[].phase_id` | `nextPhaseId()`. `phases[].approved`는 sticky(`applyVerdict`가 되돌리지 않음)라 쓰지 않는다. **sticky 회귀 테스트 있음** |
+| G1 (D10 전제) | `findUnstagedOrUntracked` **재사용**(복제 없음). 미통과 → `AGENT` |
+| G2 (outcome-aware) | `needs-fix`→AGENT · `blocked`→BLOCKED(+`--fresh-thread` 자동 지시 안 함) · `invalid` count=1→RUN, ≥2→BLOCKED+errors · `approved`→방어적 BLOCKED · 바인딩 변경 시 전부 RUN |
+| D6-1 읽기 전용 | `createReadOnlyGit`이 **런타임에** allowlist를 강제(`write-tree`·`add`·`commit` 등 실행 전 throw) + 모든 호출에 `--no-optional-locks` prepend |
+| D6-2 `last_review` 자문 | `resolveReviewOutcome`이 모든 outcome에서 기록. `compare_hash`=design→designHash / phase→`captureIndexHash`. `errors`는 invalid에서만(20×500 상한) |
+| `blocked_review` 미참조 | `resolveNext`가 읽지 않는다. 강제는 `shouldShortCircuitBlockedReview`에 잔존 |
+
+### 실행한 검증 (증거)
+
+- `npm run typecheck` → 0 · `npm test` → **566/566 green**
+- **`--no-optional-locks`의 전제 실증**: stat cache가 dirty한 repo에서 평범한 `git status`는 `.git/index`를 **다시 쓴다**(sha 3a14caa5… → cbbf2e17…). `--no-optional-locks`를 붙이면 안 쓴다. R2 P2-B가 옳았다.
+- **no-write 회귀가 위양성이 아님을 확인**: 처음엔 `req:next` 서브프로세스가 크래시해도 "아무것도 안 썼으니" 통과하는 구조였다. `r.status===0` + stdout JSON `kind==='RUN'` 단언을 넣어 실제 판정까지 갔음을 고정했다(실행 시간 684ms→2722ms로 확인).
+- **이 티켓 자신에게 실행**: `npm run req:next -- 2026-010` → `AGENT phase-2-req-next 구현` (phase-1a/1b는 consumed, staged 없음). 정확.
+
+### phase-2 R1 지적 반영 (라운드 1 → 2)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2 | `nextPhaseId()`가 `consumed_approvals[].phase_id`를 Set으로 만들어 `phases[]`를 훑으므로, **중복 id**가 있으면 소비 1건이 같은 id의 모든 항목을 소비 처리한다. `phases=[p1,p1]` + `consumed=[p1]` + clean → `pending=null` → **조용한 `DONE`**. fail-closed `BLOCKED`여야 한다 | **`phaseModelProblems(state)` 신설**, `resolveNext`의 **0번 분기**(살아 있는 승인보다도 먼저)에서 검사. 손상된 state에서 "커밋을 승인하라"고 말하면 엉뚱한 phase가 소비될 수 있으므로 `commit_allowed=true`보다 앞이다 |
+
+**같은 실패 class의 인접 구멍도 함께 막았다**(지적받지 않았으나 자체 발견): `readPhases`가 `{id: string}`이 아닌 항목을 걸러내므로, `phases[]`의 항목이 전부 malformed면 배열이 **비어 보이고** `pending=null`이 된다. 그런데 `rawLen>0`이라 레거시 분기로도 가지 않아 역시 조용한 `DONE`이 된다. `parsed.length !== rawLen`을 같은 함수에서 잡는다.
+
+회귀 테스트 6건: Codex의 재현 시나리오 그대로(중복 id + 소비 1건 → `BLOCKED`) · 중복 id가 `commit_allowed=true`보다 먼저 막히는지 · malformed 항목 · 전부 malformed · 정상 `phases[]`는 문제 없음 · 빈 배열/부재는 여기서 판단하지 않음(레거시 분기 보존).
+
+### phase-2 R2 지적 반영 (라운드 2 → 3)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2-1 | `phases`가 **배열이 아니면**(`{id:'p1'}`·`null`) `Array.isArray` 실패로 `rawLen=0` → **레거시로 오분류**. 소비 이력만 있고 clean이면 조용히 `DONE` | `phaseModelProblems`가 `raw === undefined`(부재=레거시)와 `!Array.isArray(raw)`(손상)를 **구분**한다. 후자는 `BLOCKED` |
+| P2-2 | `id: ''`는 `readPhases`를 통과하지만 `--phase` 인자로 쓸 수 없다. `reviewCmd`의 `if (phaseId)`가 falsy라 `--phase`를 빠뜨린 `RUN`을 지시하고, 그 명령은 `resolvePhaseTarget`이 "대상 모호"로 죽인다 | `phaseModelProblems`가 `id.trim() === ''`을 잡는다. 더불어 `reviewCmd`를 `phaseId !== null`로 고쳐 "레거시(null)"와 "빈 문자열"이 같은 falsy로 뭉개지지 않게 했다 |
+
+회귀 4건 추가: `phases:{id:'p1'}` + 레거시 모양 → `BLOCKED`(전엔 `DONE`) · `phases:null` → `BLOCKED` · `id:''` + staged → `BLOCKED`(전엔 `--phase` 없는 `RUN`) · 공백만인 id.
+
+**R1과 R2의 공통 형태**: `nextPhaseId`가 `null`을 반환하면 "전부 소비됨"으로 읽히는데, `phases`를 신뢰할 수 없으면 그 `null`은 거짓말이다. `phases` **부재**와 **빈 배열**만이 정상적인 "여기서 판단하지 않음"이고, 나머지 모든 이상 형태는 `BLOCKED`다.
+
+### phase-2 R3 지적 반영 (라운드 3 → 4)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2 | `phaseModelProblems`가 non-empty만 확인해 **downstream CLI에 전달 불가능한 id**를 통과시킨다. `id:'--bad'` → `--phase --bad`를 지시하는데 `review-codex`의 `parseArgs`는 값이 `-`로 시작하면 값 누락으로 throw한다. 공백 포함 id는 `.join(' ')` 렌더링에서 argv가 깨진다. **`req:next`가 실행 불가능한 `RUN`을 지시한다** | `PHASE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/` 신설(= `config.ts`의 designDocs basename 계약과 동일). `phaseModelProblems`가 non-empty이면서 이 패턴에 안 맞는 id를 `BLOCKED`로 진단한다 |
+
+회귀 6건: `--bad` · `-x` · 공백 포함 · 따옴표 · 슬래시 → 전부 `BLOCKED` · 실제 사용 중인 id(`phase-1a-persona-install` 등)는 통과.
+
+**R1~R3를 관통하는 것**: `req:next`의 계약은 "다음 행동을 알려준다"가 아니라 **"실행 가능하고 옳은 다음 행동만 알려준다"**이다. `RUN`을 내보내면 그 명령은 반드시 성공 가능해야 하고(G1의 D10 전제, R3의 argv 안전성), `DONE`을 내보내면 정말로 끝났어야 한다(R1/R2의 `phases` 무결성). 확신할 수 없으면 `BLOCKED`.
+
+### phase-2 R4 지적 반영 (라운드 4 → 5)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2 | R3에서 `phase_id`의 argv 안전성은 막았지만 **`reqId`는 같은 구멍이 남아 있다.** `main()`은 CLI 인자가 아니라 `state.id.replace(/^REQ-/, '')`를 쓴다. `state.id='REQ-2026-010 bad'` → `... -- 2026-010 bad --kind phase ...`에서 `bad`가 REQ id로 읽혀 **엉뚱한 티켓을 대상으로 한다.** `REQ---bad` → `--bad` → unknown option | `CLI_SAFE_ARG_RE`(`/^[A-Za-z0-9][A-Za-z0-9._-]*$/`)를 **하나의 계약**으로 두고 `PHASE_ID_RE`·`REQ_ID_RE`가 이를 공유한다. `reqIdProblems()`를 0번 분기에 합쳐 `RUN`/`AWAIT_HUMAN` 렌더링 **전에** `BLOCKED`로 막는다 |
+
+회귀 6건: 공백 포함(다른 티켓 대상) · strip 후 선행 대시 · 세미콜론 · 따옴표 → 전부 `BLOCKED`(`command` 미렌더링) · **argv-불안전 reqId가 `AWAIT_HUMAN`(커밋 승인)보다도 먼저 막히는지** · 정상 id는 통과.
+
+**R3와 R4는 같은 결함이 다른 필드에 있던 것이다.** `req:next`가 렌더링하는 명령의 **모든 argv 토큰**(positional REQ id, `--phase` 값)이 같은 안전 계약을 통과해야 한다. 하나만 막으면 나머지로 샌다.
+
+### phase-2 R5 지적 반영 (라운드 5 → 6)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2-1 | `--ticket <dir>`로 비표준 위치의 티켓을 읽어도 렌더링된 명령은 `req:review-codex -- <reqId>`라, 그대로 실행하면 **기본 위치의 다른 티켓**을 리뷰한다 | `NextTarget = {kind:'req', reqId} \| {kind:'ticket', ticketDir}` 신설. `main()`이 **사용자가 지목한 방식 그대로** 보존하고, `reviewCmd`/`commitCmd`가 `targetArgs()`로 되돌려 준다 |
+| P2-2 | 기본 위치로 읽었는데 `state.id`가 `REQ-2026-999`로 손상돼 있으면 `CLI_SAFE_ARG_RE`를 통과하고 **다른 티켓을 대상으로 하는** 명령을 낸다 | `targetProblems()`가 `kind:'req'`에서 **identity 검증**: `state.id === 'REQ-' + 요청한 reqId`. `main()`이 이제 `state.id`가 아니라 **CLI 요청**에서 reqId를 만든다 |
+
+부수: `--ticket` 경로도 argv 토큰이므로 `CLI_SAFE_PATH_RE`(슬래시 허용, 공백·따옴표·선행 `-` 금지)로 검증한다. `renderAction`의 첫 인자는 이제 **표시 전용**(`state.id`)이고 argv에 쓰이지 않는다.
+
+회귀 10건: `--ticket`이 `RUN`·`AWAIT_HUMAN` 명령에 보존되는지 · `--ticket` 모드에서는 identity를 강제하지 않는지(아카이브 위치 허용) · `REQ-2026-999`/`REQ-bad` 불일치가 `RUN`을 만들지 않는지 · 불일치가 `AWAIT_HUMAN`보다도 먼저 막히는지 · CLI-불안전 `--ticket` 경로 4종.
+
+**R3 → R4 → R5의 상승**: argv 토큰 하나(`--phase`) → 모든 argv 토큰(`reqId` 포함) → **명령이 가리키는 대상 자체**. `req:next`가 내는 `RUN`은 (a) 실행 가능하고 (b) 방금 판정한 그 티켓을 대상으로 해야 한다. 어느 하나라도 보장 못 하면 `BLOCKED`.
+
+### phase-2 R6 지적 반영 (라운드 6 → 7)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2 | R5의 `CLI_SAFE_PATH_RE` 화이트리스트가 **정상 경로를 막는다**(false BLOCKED). `D:\proj\...\REQ-2026-010`(콜론)·`/tmp/.../REQ-2026-010`(선행 `/`)·`./workflow/...`(선행 `.`)가 전부 차단된다. `review-codex`/`req:commit`의 `--ticket` 파서는 이런 값을 받는다 | 화이트리스트 폐기. **denylist**로 전환: `UNSAFE_CLI_PATH_CHARS`(공백류·따옴표·백틱·`$;&\|<>()*?!#~^%{}[]`)와 선행 `-`만 막는다. `ticketPathProblems()`로 분리 |
+
+**이 지적이 중요한 이유**: R1~R5는 전부 "너무 느슨해서 위험하다"였는데, R6은 **"너무 빡빡해서 못 쓴다"**이다. fail-closed를 밀다 보면 정상 입력을 막는 반대 방향 결함이 생긴다. 페르소나가 요구한 "완성도"에는 두 방향이 다 들어 있다.
+
+회귀 11건: **정상 경로 6종**(repo-상대·dot-relative POSIX/Windows·POSIX 절대·Windows drive 절대·UNC)이 `RUN`을 내고 `--ticket`이 그대로 보존되는지 + 절대경로가 `AWAIT_HUMAN` 명령에도 보존되는지 · **불안전 8종**(공백·선행 대시·따옴표·세미콜론·명령 치환·백틱·파이프·빈 문자열)이 `BLOCKED`인지.
+
+실전 확인: `npm run req:next -- --ticket "D:/1_projects/61_commitgate/workflow/REQ-2026-010"` → 정상 판정(false BLOCKED 없음).
+
+### G1의 실전 확인
+
+이 라운드 직전 `req-next.ts`를 수정하고 `git add` 하기 전에 `req:next`를 돌렸더니 `RUN`이 아니라 `AGENT`("워킹트리에 unstaged/untracked 변경이 있어 리뷰(D10)가 실패한다")를 냈다. G1이 설계대로 동작한다 — 그 상태에서 `RUN`을 따랐다면 `review-codex`가 D10 precondition에서 즉시 죽었을 것이다.
+
+### 이 phase의 리뷰 포인트
+
+- **판정 순서가 정말 상호배타적·완전한가**: 빠진 상태 조합은? 특히 `design_approved=true`인데 `design_approved_hash=null`, `consumed_approvals`에 `phases[]`에 없는 id가 있는 경우(orphan). 0번 분기가 그 orphan도 잡아야 하는가?
+- **G2의 `sameTarget` 판정**: `lr.phase_id ?? null`과 `cand.phaseId` 비교가 legacy(`phaseId=null`)에서 옳은가? `compare_hash`가 `null`인 마커와 `cand.compareHash=null`이 **매치되면 안 되는데** 코드가 `cand.compareHash !== null`로 막고 있다 — 이 방향이 맞는가(fail-forward)?
+- **읽기 전용이 정말 닫혔는가**: `createReadOnlyGit`의 `gitSubcommand`가 `-c` 값 소비를 올바로 하는가(`-c write-tree status` → `status`). 우회 가능한 argv 형태가 있는가? `--no-optional-locks`가 **모든** 경로에 붙는가(`captureDesignBinding`·`captureIndexHash` 주입 포함)?
+- **`last_review`가 정말 자문인가**: `req:doctor`·`req:commit`·`applyVerdict` 어디서도 읽지 않는가? `approved_diff_hash`가 tree OID로 남는 회귀 테스트가 충분한가?
+- **exit 10/11 신설의 위험**: CI가 `req:next`를 돌리면 실패로 읽힌다. 문서(주석)만으로 충분한가, 아니면 `--exit-zero` 같은 안전장치가 필요한가?
+- **`resolveNext`가 순수한가**: git·fs를 부르지 않는가? `main()`이 `captureDesignBinding` throw를 `null`로 흡수하는데, 그 흡수가 **다른 실패**(예: git 손상)까지 삼켜 2번 분기로 오분류하지 않는가?
+- **레거시 판정**: `'approval_evidence_required' in state`(존재 여부)와 `=== true`의 3분기가 옳은가? `false`면 `BLOCKED`인데 과한가?
+- 범위 이탈: `templates/`·`.claude/`·`.cursor/` 미착수, 버전 bump 미수행, `machine.schema.json` 불변.
+
+---
+
+## 이전 phase 리뷰: `phase-1b-persona-inject` (승인됨, `acee2eb`)
 
 > **이 프롬프트의 첫 블록이 `workflow/review-persona.md`라면, 이 phase는 이미 스스로를 증명한 것이다.** 그 블록은 Builder가 붙여넣은 것이 아니라 `review-codex.ts`가 조립한 것이다.
 

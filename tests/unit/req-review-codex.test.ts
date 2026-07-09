@@ -31,12 +31,17 @@ import {
   clearBlockedReview,
   recordBlockedReview,
   resolveReviewOutcome,
+  recordLastReview,
+  captureIndexHash,
+  LAST_REVIEW_MAX_ERRORS,
+  LAST_REVIEW_MAX_ERROR_LEN,
   reviewOutcomeExitCode,
   shouldShortCircuitBlockedReview,
   MACHINE_SCHEMA_VERSION,
   MACHINE_SCHEMA_PATH,
   type Verdict,
   type WorkflowState,
+  type LastReviewMarker,
 } from '../../scripts/req/review-codex'
 
 // Phase 2 config 배선: designDocPaths·validateResponseStructure가 config 파생값을 명시 인자로 받음.
@@ -1709,5 +1714,133 @@ describe('[REQ-1] resolveReviewOutcome — outcome→exit code·state 배선(nea
     expect(o.exitCode).toBe(1)
     expect(o.finalState.commit_allowed).toBe(false)
     expect(o.finalState.blocked_review).toBeUndefined()
+  })
+
+  it('compareHash 미제공(하위호환) → last_review 미기록', () => {
+    const o = run({ ...base, status: 'STEP_COMPLETE', commit_approved: 'yes', findings: [], next_action: '' })
+    expect(o.finalState.last_review).toBeUndefined()
+  })
+})
+
+/**
+ * REQ-2026-010 phase-2 — `last_review` **자문** 마커 (D6-2).
+ *
+ * `req:next`의 G2가 "직전 리뷰가 이 바인딩을 보고 승인하지 않았는가"를 알아야 무한 재리뷰 루프를 끊는다.
+ * `approved_diff_hash`는 승인 시에만 채워지고, `review_diff_hash`는 tree OID라 `req:next`가
+ * (write-tree 금지 때문에) 재계산할 수 없다. 그래서 읽기 전용으로 재계산 가능한 `compare_hash`를 남긴다.
+ *
+ * ⚠️ 자문이다. 어떤 게이트도 읽지 않는다 — 아래 D9 불변 회귀가 그 경계를 고정한다.
+ */
+describe('[REQ-2026-010] last_review 자문 마커(recordLastReview / resolveReviewOutcome)', () => {
+  let dir: string | null = null
+  const binding = { reviewBaseSha: 'BASE_SHA', reviewTree: 'TREE_OID' }
+  const state: WorkflowState = { id: 'REQ-2026-001', phase: 'IMPLEMENT' }
+  const blockedTarget = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'p1', binding })
+  const base = {
+    machine_schema_version: '1.1',
+    review_base_sha: 'BASE_SHA',
+    merge_ready: 'no',
+    risk_level: 'LOW',
+    review_kind: 'phase',
+  }
+  const run = (obj: Record<string, unknown>, compareHash: string | null = 'IDXHASH', st: WorkflowState = state) => {
+    dir = mkdtempSync(join(tmpdir(), 'req-lastreview-'))
+    writeFileSync(join(dir, 'codex-response.json'), JSON.stringify(obj), 'utf8')
+    const result = processResponse({ ticketDir: dir, state: st, binding, threadId: 'TID', phaseId: 'p1', designValid: true })
+    return resolveReviewOutcome({ result, kind: 'phase', blockedTarget, responseSha256: 'RSHA', blockedAt: 'T0', compareHash })
+  }
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+    dir = null
+  })
+
+  const APPROVED = { ...base, status: 'STEP_COMPLETE', commit_approved: 'yes', findings: [], next_action: '' }
+  const NEEDS_FIX = { ...base, status: 'NEEDS_FIX', commit_approved: 'no', findings: [{ severity: 'P2', detail: 'x', file: null }], next_action: 'fix' }
+  const BLOCKED = { ...base, status: 'STEP_COMPLETE', commit_approved: 'no', findings: [], next_action: '' }
+  const INVALID = { ...base, review_base_sha: 'WRONG', status: 'STEP_COMPLETE', commit_approved: 'yes', findings: [], next_action: '' }
+
+  it.each([
+    ['approved', APPROVED],
+    ['needs-fix', NEEDS_FIX],
+    ['blocked', BLOCKED],
+    ['invalid', INVALID],
+  ])('outcome=%s 를 모두 기록한다(approved 포함 — G2가 봐야 한다)', (outcome, resp) => {
+    const lr = run(resp).finalState.last_review as LastReviewMarker
+    expect(lr.outcome).toBe(outcome)
+    expect(lr.review_kind).toBe('phase')
+    expect(lr.phase_id).toBe('p1')
+    expect(lr.compare_hash).toBe('IDXHASH')
+    expect(lr.at).toBe('T0')
+  })
+
+  it('errors는 invalid에서만 채워진다(다른 outcome은 빈 배열)', () => {
+    expect((run(INVALID).finalState.last_review as LastReviewMarker).errors.length).toBeGreaterThan(0)
+    expect((run(NEEDS_FIX).finalState.last_review as LastReviewMarker).errors).toEqual([])
+    expect((run(APPROVED).finalState.last_review as LastReviewMarker).errors).toEqual([])
+  })
+
+  it('errors 상한 — 20개 × 500자', () => {
+    const many = Array.from({ length: 50 }, (_, i) => `e${i}`.padEnd(900, 'x'))
+    const s = recordLastReview({ id: 'X', phase: 'P' } as WorkflowState, {
+      kind: 'phase', phaseId: 'p1', outcome: 'invalid', compareHash: 'H', errors: many, at: 'T',
+    })
+    const lr = s.last_review as LastReviewMarker
+    expect(lr.errors).toHaveLength(LAST_REVIEW_MAX_ERRORS)
+    for (const e of lr.errors) expect(e.length).toBeLessThanOrEqual(LAST_REVIEW_MAX_ERROR_LEN)
+  })
+
+  it('같은 target(kind·phase_id·compare_hash) 반복 → count 증가', () => {
+    let s: WorkflowState = { id: 'X', phase: 'P' }
+    const rec = () => (s = recordLastReview(s, { kind: 'phase', phaseId: 'p1', outcome: 'invalid', compareHash: 'H', errors: [], at: 'T' }))
+    rec(); expect((s.last_review as LastReviewMarker).count).toBe(1)
+    rec(); expect((s.last_review as LastReviewMarker).count).toBe(2)
+    rec(); expect((s.last_review as LastReviewMarker).count).toBe(3)
+  })
+
+  it.each([
+    ['compare_hash 변경', { compareHash: 'H2' }],
+    ['phase_id 변경', { phaseId: 'p2' }],
+    ['review_kind 변경', { kind: 'design' as const }],
+  ])('target이 바뀌면(%s) count가 1로 리셋', (_l, over) => {
+    let s: WorkflowState = { id: 'X', phase: 'P' }
+    s = recordLastReview(s, { kind: 'phase', phaseId: 'p1', outcome: 'invalid', compareHash: 'H', errors: [], at: 'T' })
+    s = recordLastReview(s, { kind: 'phase', phaseId: 'p1', outcome: 'invalid', compareHash: 'H', errors: [], at: 'T' })
+    expect((s.last_review as LastReviewMarker).count).toBe(2)
+    s = recordLastReview(s, { kind: 'phase', phaseId: 'p1', outcome: 'invalid', compareHash: 'H', errors: [], at: 'T', ...over })
+    expect((s.last_review as LastReviewMarker).count).toBe(1)
+  })
+
+  /** D9 불변: 승인 바인딩은 여전히 tree OID다. compare_hash가 승인 판정에 관여하면 D9가 다른 해시에 묶인다. */
+  it('승인 바인딩은 여전히 tree OID — compare_hash가 approved_diff_hash를 오염시키지 않는다', () => {
+    const o = run(APPROVED, 'COMPLETELY-DIFFERENT-HASH')
+    expect(o.finalState.approved_diff_hash).toBe('TREE_OID')
+    expect(o.finalState.commit_allowed).toBe(true)
+    expect((o.finalState.last_review as LastReviewMarker).compare_hash).toBe('COMPLETELY-DIFFERENT-HASH')
+  })
+
+  it('compareHash=null도 기록한다(계산 실패 — G2는 fail-forward로 RUN)', () => {
+    expect((run(APPROVED, null).finalState.last_review as LastReviewMarker).compare_hash).toBeNull()
+  })
+})
+
+describe('[REQ-2026-010] captureIndexHash — 읽기 전용 인덱스 신원', () => {
+  it('ls-files -s 출력만으로 결정된다(정렬 무관, 안정적)', () => {
+    const lines = ['100644 aaa 0\tb.txt', '100644 bbb 0\ta.txt']
+    const h1 = captureIndexHash(() => lines.join('\n'))
+    const h2 = captureIndexHash(() => [...lines].reverse().join('\n'))
+    expect(h1).toBe(h2)
+    expect(h1).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('인덱스 내용이 바뀌면 해시가 바뀐다', () => {
+    const a = captureIndexHash(() => '100644 aaa 0\ta.txt')
+    const b = captureIndexHash(() => '100644 ccc 0\ta.txt')
+    expect(a).not.toBe(b)
+  })
+
+  it('write-tree를 부르지 않는다 — ls-files만 쓴다', () => {
+    const calls: string[][] = []
+    captureIndexHash((args) => (calls.push(args), ''))
+    expect(calls).toEqual([['ls-files', '-s']])
   })
 })

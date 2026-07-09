@@ -181,6 +181,24 @@ export function captureGitBinding(gitFn: GitFn = git): { reviewBaseSha: string; 
   return { reviewBaseSha, reviewTree }
 }
 
+/**
+ * 인덱스 전체의 **읽기 전용** 신원 해시 (REQ-2026-010 D6-2).
+ *
+ * `captureGitBinding`의 tree OID와 값은 다르지만 **동치 관계**다: 인덱스 내용(mode·blob sha·stage·path)이
+ * 같으면 같고 다르면 다르다. 존재 이유는 `req:next`가 `git write-tree`를 **부를 수 없기 때문**이다 —
+ * 그 명령은 object DB에 tree object를 쓴다(D6-1의 무쓰기 계약 위반).
+ *
+ * ⚠️ 승인 바인딩이 아니다. `approved_diff_hash`는 여전히 tree OID다. 이 해시는 `last_review.compare_hash`
+ * 전용이고, 어떤 게이트(D6/D9/doctor)도 읽지 않는다. 이 경계가 흐려지면 D9가 다른 해시에 바인딩된다.
+ */
+export function captureIndexHash(gitFn: GitFn = git): string {
+  const lines = gitFn(['ls-files', '-s'])
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  return createHash('sha256').update([...lines].sort().join('\n')).digest('hex')
+}
+
 /** 티켓 설계 문서 3종의 repo-relative 경로. shorthand 금지 — 각 경로를 티켓 디렉터리로 정규화. 파일명은 config(designDocs) 주입. */
 export function designDocPaths(ticketRelDir: string, designDocs: DesignDocs): [string, string, string] {
   const dir = ticketRelDir.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -373,6 +391,65 @@ export interface BlockedReviewMarker extends BlockedReviewTarget {
   count: number
   response_sha256: string | null
   blocked_at: string
+}
+
+/**
+ * 직전 리뷰의 **자문(advisory) 마커** — REQ-2026-010 D6-2. `req:next`의 G2(바인딩 신선도) 전용.
+ *
+ * ⚠️ **어떤 게이트도 이 필드를 읽지 않는다.** 승인 바인딩은 `approved_diff_hash`(tree OID) /
+ * `design_approved_hash`이고, `req:doctor`의 D-체크도 여기를 보지 않는다. `req:next`가
+ * "이 바인딩은 직전 리뷰가 이미 보고 승인하지 않았다"를 알아 무한 재리뷰 루프를 끊는 데만 쓴다.
+ *
+ * `compare_hash`는 **읽기 전용 명령으로 재계산 가능한** 값이어야 한다(`req:next`는 `write-tree` 금지):
+ *   - design → `captureDesignBinding`의 designHash (`git ls-files -s -- <00,01,02>`)
+ *   - phase  → `captureIndexHash` (`git ls-files -s` 전체)
+ *
+ * `errors`는 `outcome === 'invalid'`일 때만 채운다 — `req:next`는 검증기를 다시 돌리지 않으므로
+ * 진단 본문을 리뷰 시점에 함께 저장해야 한다. 상한(20개 × 500자)이 state 비대를 막는다.
+ */
+export interface LastReviewMarker {
+  review_kind: ReviewKind
+  phase_id: string | null
+  outcome: ReviewOutcome
+  compare_hash: string | null
+  /** 같은 (review_kind, phase_id, compare_hash) 반복 횟수. `blocked_review.count`와 동일 의미론. */
+  count: number
+  errors: string[]
+  at: string
+}
+
+/** `last_review.errors` 상한 — state 비대 방지. */
+export const LAST_REVIEW_MAX_ERRORS = 20
+export const LAST_REVIEW_MAX_ERROR_LEN = 500
+
+function sameLastReviewTarget(a: LastReviewMarker | undefined, kind: ReviewKind, phaseId: string | null, compareHash: string | null): boolean {
+  return !!a && a.review_kind === kind && a.phase_id === phaseId && a.compare_hash === compareHash
+}
+
+/**
+ * `last_review` 마커 기록(순수). 같은 target이면 `count` 증가, target이 바뀌면 1로 리셋.
+ * `errors`는 invalid에서만 저장하고 상한을 적용한다(그 외 outcome은 빈 배열 — findings는 `responses/` 아카이브에 남는다).
+ */
+export function recordLastReview(
+  state: WorkflowState,
+  args: { kind: ReviewKind; phaseId: string | null; outcome: ReviewOutcome; compareHash: string | null; errors: string[]; at: string },
+): WorkflowState {
+  const prev = state.last_review as LastReviewMarker | undefined
+  const count = sameLastReviewTarget(prev, args.kind, args.phaseId, args.compareHash) ? prev!.count + 1 : 1
+  const errors =
+    args.outcome === 'invalid'
+      ? args.errors.slice(0, LAST_REVIEW_MAX_ERRORS).map((e) => e.slice(0, LAST_REVIEW_MAX_ERROR_LEN))
+      : []
+  const marker: LastReviewMarker = {
+    review_kind: args.kind,
+    phase_id: args.phaseId,
+    outcome: args.outcome,
+    compare_hash: args.compareHash,
+    count,
+    errors,
+    at: args.at,
+  }
+  return { ...state, last_review: marker }
 }
 
 export interface WorkflowState {
@@ -686,12 +763,26 @@ export function resolveReviewOutcome(args: {
   blockedTarget: BlockedReviewTarget
   responseSha256: string | null
   blockedAt: string
+  /** REQ-2026-010 D6-2: `req:next`가 읽기 전용으로 재계산할 수 있는 바인딩 해시. 미제공이면 `last_review` 미기록(하위호환). */
+  compareHash?: string | null
 }): { outcome: ReviewOutcome; exitCode: number; finalState: WorkflowState } {
   const outcome = classifyReview(args.result, args.kind)
-  const finalState =
+  const afterBlocked =
     outcome === 'blocked'
       ? recordBlockedReview(args.result.nextState, args.blockedTarget, args.responseSha256, args.blockedAt)
       : clearBlockedReview(args.result.nextState)
+  // last_review는 **모든 outcome**에서 기록한다(approved 포함) — G2가 "직전 리뷰가 이 바인딩을 봤는가"를 알아야 한다.
+  const finalState =
+    args.compareHash === undefined
+      ? afterBlocked
+      : recordLastReview(afterBlocked, {
+          kind: args.kind,
+          phaseId: args.blockedTarget.phase_id,
+          outcome,
+          compareHash: args.compareHash,
+          errors: args.result.errors,
+          at: args.blockedAt,
+        })
   return { outcome, exitCode: reviewOutcomeExitCode(outcome), finalState }
 }
 
@@ -1179,12 +1270,15 @@ function main(): void {
   const responseSha256 = existsSync(respPath)
     ? createHash('sha256').update(readFileSync(respPath)).digest('hex')
     : null
+  // D6-2: req:next가 write-tree 없이 재계산할 수 있는 바인딩 해시. design=designHash, phase=인덱스 전체 해시.
+  const compareHash = opts.kind === 'design' ? designHash ?? null : captureIndexHash()
   const { outcome, exitCode, finalState } = resolveReviewOutcome({
     result,
     kind: opts.kind,
     blockedTarget,
     responseSha256,
     blockedAt: approvedAt,
+    compareHash,
   })
   writeState(ticketDir, finalState)
 

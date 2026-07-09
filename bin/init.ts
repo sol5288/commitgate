@@ -58,6 +58,7 @@ export const REQ_SCRIPTS: Record<string, string> = {
   'req:new': 'tsx scripts/req/req-new.ts',
   'req:review-codex': 'tsx scripts/req/review-codex.ts',
   'req:doctor': 'tsx scripts/req/req-doctor.ts',
+  'req:next': 'tsx scripts/req/req-next.ts',
   'req:commit': 'tsx scripts/req/req-commit.ts',
 }
 

@@ -108,6 +108,11 @@ describe('[init] 정상 설치', () => {
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
       expect(pkg.scripts['req:new']).toBe('tsx scripts/req/req-new.ts')
       expect(pkg.scripts['req:commit']).toBe('tsx scripts/req/req-commit.ts')
+      // REQ-2026-010 phase-2: req:next가 5번째 주입 스크립트로 추가됐다.
+      expect(pkg.scripts['req:next']).toBe('tsx scripts/req/req-next.ts')
+      expect(Object.keys(pkg.scripts).sort()).toEqual(
+        ['req:commit', 'req:doctor', 'req:new', 'req:next', 'req:review-codex'].sort(),
+      )
       expect(pkg.devDependencies.tsx).toBeTruthy()
       expect(pkg.devDependencies.ajv).toBeTruthy()
       expect(pkg.devDependencies['cross-spawn']).toBeTruthy() // 복사된 adapters.ts 안전 spawn 의존(P1)
