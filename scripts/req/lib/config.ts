@@ -1,8 +1,8 @@
 /**
- * req 워크플로 config 모듈 (REQ-2026-017 Phase 1, portability kit).
+ * req 워크플로 config 모듈 (portability kit).
  *
- * 목적: 경로·이름·패키지매니저를 `req.config.json`으로 외부화하되, **파일 부재 시 현재 동작 100% 유지**(DEFAULTS=현재 하드코딩 값).
- * 본 Phase는 **모듈만** 제공 — 4 스크립트 배선·`--root` CLI는 Phase 2, 어댑터는 Phase 3.
+ * 목적: 경로·이름·패키지매니저를 `req.config.json`으로 외부화한다. 파일이 없으면 `DEFAULTS`로 해소된다.
+ *   ⚠️ `DEFAULTS`는 **모든 프로젝트에 유효한 중립 기본값**만 담는다(REQ-2026-009). 프로젝트 고유 값은 config가 흡수한다.
  *
  * 안전(fail-closed): config가 게이트를 무력화하거나 경로를 탈출하지 못하도록 AJV 스키마 + 해상도 confinement로 강제.
  */
@@ -48,11 +48,21 @@ export interface ResolvedConfig {
   handoffPathAbs: string | null
 }
 
-/** ⚠️ 현재 하드코딩 값 — 변경 시 behavior-preserving(수용기준 #1) 깨짐. */
+/**
+ * 코어 기본값. `req.config.json` 부재 시 이 값으로 해소된다.
+ *
+ * ⚠️ 여기 있는 값은 **모든 대상 프로젝트에 유효한 중립 기본값**이어야 한다.
+ *    특정 프로젝트에만 의미 있는 값(경로·문서 위치 등)은 코어가 아니라 `req.config.json`이 흡수한다.
+ *    `handoffPath`가 그 예다 — 코어 기본은 **비활성(null)**이고, 쓰려면 config에 명시하거나 `--handoff <path>`로 준다.
+ *    (REQ-2026-009: 이전 기본값은 특정 사설 프로젝트의 문서 경로였다.)
+ *
+ * `handoffPath`의 `as string | null`은 의도적이다. 없으면 TS가 리터럴 `null`로 좁혀
+ * `DEFAULTS`를 직접 import하는 소비자의 `string | null` 계약이 깨진다.
+ */
 export const DEFAULTS = {
   ticketRoot: 'workflow',
   schemaPath: 'workflow/machine.schema.json',
-  handoffPath: '../palm-kiosk/docs/evaluation/project-memory/ai-handoff.md',
+  handoffPath: null as string | null,
   branchPrefix: 'feat/req-',
   packageManager: 'pnpm' as PackageManager,
   granularityMaxFiles: 8,

@@ -46,7 +46,7 @@ describe('[init] 정상 설치', () => {
       expect(existsSync(join(dir, 'workflow/req.config.schema.json'))).toBe(true)
       // 티켓 디렉터리는 복사 대상 아님(스키마 2종만)
       expect(r.copied.some((f) => f.startsWith('workflow/REQ-'))).toBe(false)
-      // config 시드: handoffPath null(palm 경로 미상속) + 감지 pm
+      // config 시드: handoffPath null(비활성을 config에 명시 기록) + 감지 pm
       expect(r.configAction).toBe('created')
       const cfg = JSON.parse(readFileSync(join(dir, 'req.config.json'), 'utf8'))
       expect(cfg.handoffPath).toBeNull()
@@ -99,7 +99,7 @@ describe('[init] 멱등성(재실행)', () => {
 
 describe('[init] 기존 config 누락키 병합(design R1 P2)', () => {
   it('기존 req.config.json에 handoffPath 없으면 병합, 기존 키는 보존', () => {
-    // handoffPath 없는 부분 config → 병합으로 handoffPath:null 추가(palm 경로 resurface 차단)
+    // handoffPath 없는 부분 config → 병합으로 handoffPath:null 추가(비활성을 명시 기록)
     const dir = tmpTarget({ pkg: { name: 'x', scripts: { 'req:new': 'custom' }, devDependencies: { ajv: '^7.0.0' } } })
     try {
       writeFileSync(join(dir, 'req.config.json'), JSON.stringify({ branchPrefix: 'feat/x-' }), 'utf8')

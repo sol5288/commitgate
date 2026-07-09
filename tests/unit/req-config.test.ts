@@ -53,15 +53,26 @@ describe('[P2b] req.config.json.sample 유효성', () => {
   })
 })
 
-describe('[P1] DEFAULTS — 현재 하드코딩 값 정합(behavior-preserving)', () => {
+describe('[P1] DEFAULTS — 코어 기본값 계약', () => {
   it('DEFAULTS가 현재 값과 일치', () => {
     expect(DEFAULTS.ticketRoot).toBe('workflow')
     expect(DEFAULTS.schemaPath).toBe('workflow/machine.schema.json')
-    expect(DEFAULTS.handoffPath).toBe('../palm-kiosk/docs/evaluation/project-memory/ai-handoff.md')
+    // REQ-2026-009: handoffPath는 프로젝트별 값 → 코어 기본은 비활성(null).
+    // 사용하려면 req.config.json에 명시하거나 `--handoff <path>`로 준다.
+    expect(DEFAULTS.handoffPath).toBeNull()
     expect(DEFAULTS.branchPrefix).toBe('feat/req-')
     expect(DEFAULTS.packageManager).toBe('pnpm')
     expect(DEFAULTS.granularityMaxFiles).toBe(8)
     expect(DEFAULTS.designDocs).toEqual({ requirement: '00-requirement.md', design: '01-design.md', plan: '02-plan.md' })
+  })
+
+  it('DEFAULTS.handoffPath의 정적 타입은 string | null 로 유지된다(직접 import 소비자 하위호환)', () => {
+    // `null`로 좁혀지면 `const p: string | null = DEFAULTS.handoffPath` 가 아니라
+    // 반대 방향 대입(문자열 재할당)이 깨진다. 타입 주석으로 넓은 타입을 보존한다.
+    const widened: string | null = DEFAULTS.handoffPath
+    expect(widened).toBeNull()
+    const reassigned: typeof DEFAULTS.handoffPath = '../somewhere/handoff.md'
+    expect(reassigned).toBe('../somewhere/handoff.md')
   })
 })
 
@@ -174,6 +185,18 @@ describe('[P1] handoffPath — confinement 면제(읽기 전용 참조)', () => 
     try {
       expect(loadConfig({ root: r }).handoffPath).toBe(null)
       expect(loadConfig({ root: r }).handoffPathAbs).toBe(null)
+    } finally {
+      cleanup(r)
+    }
+  })
+  // REQ-2026-009: config 파일이 아예 없을 때도 코어 기본값이 null이므로 비활성이어야 한다.
+  // (이전에는 DEFAULTS가 사설 프로젝트 경로를 가리켜, 그 경로가 실재하는 머신에서만 handoff가 붙었다.)
+  it('req.config.json 부재 시 handoffPath·handoffPathAbs 모두 null', () => {
+    const r = tmpRoot() // config 파일 없음
+    try {
+      const cfg = loadConfig({ root: r })
+      expect(cfg.handoffPath).toBeNull()
+      expect(cfg.handoffPathAbs).toBeNull()
     } finally {
       cleanup(r)
     }
