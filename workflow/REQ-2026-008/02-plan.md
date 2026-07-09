@@ -42,7 +42,24 @@ design-first. **단일 phase**(추적) — 네 문서의 문구가 서로 어긋
 - **범위 확인**: staged diff가 위 4개 문서만. `package.json`·`package-lock.json`·`bin/`·`scripts/`·`tests/`·`.github/` 무변경.
 - `npm run typecheck` 0 · `npm test` 그린 · `npm run smoke` 그린 · `req:doctor -- 2026-008` PASS · Codex phase 리뷰 승인(STEP_COMPLETE).
 
+## Phase 2 — 정책 개정: PR 선택화 (`phase-2-policy-revision`)
+
+**요구사항 변경**(사용자 결정, 2026-07-09). phase-1은 "PR 경유가 기본 필수"로 문서를 썼으나, 이 프로젝트는 1인 개발이므로 그 강제를 없앤다. phase-1 커밋(`3a1199f`)은 그대로 두고, 그 위에서 문구를 개정한다.
+
+범위(문서 4파일 — phase-1과 동일 집합):
+1. [AGENTS.template.md](../../AGENTS.template.md) — `B1`을 "예외"가 아니라 **선택 가능한 통합 경로**로 재서술. "기본 통합 경로는 PR 경유다"를 제거. 경로 A/B 병기. 우회 사전 보고 의무(해석 규칙 4)와 **CI 사후성**(해석 규칙 5)을 명시.
+2. [docs/RELEASING.md](../../docs/RELEASING.md) — 경로 A와 경로 B를 **나란히** 제시. `git push origin main`을 예외 블록에서 꺼내 경로 B의 정식 명령으로 복귀시키되, `B1` 승인·우회 사실·CI 사후성·`remote: Bypassed rule violations`의 사후 신호성을 함께 적는다. 경로 B에서는 **CI green 확인 전 `R1`로 넘어가지 않는다**를 명시.
+3. [README.md](../../README.md) — 통제점 목록·예시 응답·설명 문단에서 "기본 통합 경로는 PR 경유"를 제거하고 경로 선택으로 재서술.
+4. [README.en.md](../../README.en.md) — README.md와 대칭.
+
+### 검증(Exit)
+- phase-1의 keyword scan·템플릿 일반화·`I1`/`I2` 분리 검증을 **전부 재실행**(회귀 방지).
+- **음성 확인(개정)**: 네 문서에 `기본 통합 경로는 PR` / `PR 경유가 기본` / `default integration path is **through a PR**` 같은 **PR 의무화 문구가 남아 있지 않을 것.**
+- **양성 확인(개정)**: 네 문서에 `CI는 사후` 또는 `CI runs after` 상당의 **CI 사후성** 문구가 있을 것. `docs/RELEASING.md`에 `git push origin main`이 경로 B 레시피로 존재할 것.
+- 범위 확인: staged diff가 governance docs 4개(+REQ 문서)뿐. 코드·CI 설정·`package.json`/`package-lock.json`(0.3.0 동결)·태그 무변경.
+- `npm run typecheck` 0 · `npm test` 그린 · `npm run smoke` 그린 · `req:doctor -- 2026-008` PASS · Codex phase 리뷰 승인.
+
 ## 완료
 - 게이트 해당분(typecheck·unit·smoke) 그린.
-- **main 반영은 이번엔 PR 경유**로, 사용자 승인 후 진행(별도 통제점).
-- `v0.3.0` tag / tag push / `npm publish` / GitHub release는 **이 티켓 범위 밖**(별도 릴리즈 승인).
+- **main 반영은 `B1`(`branch protection bypass를 사용한 direct push 승인`) 하에 direct push**로 진행. push 후 CI green을 확인하고, green 전에는 `R1`로 넘어가지 않는다.
+- `v0.3.0` tag / tag push / `npm publish` / GitHub release는 **이 티켓 범위 밖**(각각 `R1`·`R2`·`R3` 별도 승인).

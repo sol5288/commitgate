@@ -1,6 +1,6 @@
 # REQ-2026-008 설계 — 통합/릴리즈 통제점 계약화
 
-> 정본 결정은 00-requirement의 "핵심 정책" — 통제점 6개(`I1`·`I2`·`B1`·`R1`·`R2`·`R3`)와 해석 규칙 7개. 본 문서는 그 결정을 현재 문서 구조에 어떻게 반영할지 기록.
+> 정본 결정은 00-requirement의 "핵심 정책" — 통합 경로 2개(A=PR 선택, B=direct push 명시 승인), 통제점 6개(`I1`·`I2`·`B1`·`R1`·`R2`·`R3`), 해석 규칙 7개. 본 문서는 그 결정을 현재 문서 구조에 어떻게 반영할지 기록.
 
 ## 현재 상태(변경 대상)
 
@@ -17,47 +17,62 @@
 
 한 줄짜리 "push 직전"을 합쳐 두면 REQ-2026-007식 확대 해석이 다시 발생한다. **분리 자체가 이 티켓의 산출물**이다. 그리고 D2("승인은 승인받은 문장 그대로만 유효")를 적용하면 **PR 생성 승인은 PR 머지 승인을 포함하지 않는다** — 따라서 통합은 반드시 **두 단계**여야 한다. 한 단계로 두면 "승인 없는 머지" 구멍이 남는다.
 
-| # | 통제점 | 트리거(시점) | **승인 문장**(이 문장 그대로여야 승인) |
-|---|---|---|---|
-| **I1** | 통합 — PR 열기 | feature branch를 origin에 push하고 PR을 생성하기 직전 | `feature branch push + PR 생성 승인` |
-| **I2** | 통합 — PR 머지 | **required checks가 전부 green으로 끝난 것을 확인한 뒤**, PR을 protected branch에 머지하기 직전 | `required checks green 확인 후 PR merge 승인` |
-| **B1** | bypass(예외) | required checks를 우회해 protected branch에 direct push해야 할 때 | `branch protection bypass를 사용한 direct push 승인` |
-| **R1** | 릴리즈 — tag | 버전 tag 생성 및 tag push 직전 | `tag 생성·push 승인` |
-| **R2** | 릴리즈 — publish | `npm publish` 직전 | `npm publish 승인` |
-| **R3** | 릴리즈 — release | GitHub release 생성 직전 | `GitHub release 생성 승인` |
+| # | 통제점 | 경로 | 트리거(시점) | **승인 문장**(이 문장 그대로여야 승인) |
+|---|---|---|---|---|
+| **I1** | 통합 — PR 열기 | A(선택) | feature branch를 origin에 push하고 PR을 생성하기 직전 | `feature branch push + PR 생성 승인` |
+| **I2** | 통합 — PR 머지 | A(선택) | **required status checks가 전부 green으로 끝난 것을 확인한 뒤**, PR을 protected branch에 머지하기 직전 | `required checks green 확인 후 PR merge 승인` |
+| **B1** | 통합 — direct push | B | protected branch에 direct push하기 직전(required status checks를 우회한다) | `branch protection bypass를 사용한 direct push 승인` |
+| **R1** | 릴리즈 — tag | — | 버전 tag 생성 및 tag push 직전 | `tag 생성·push 승인` |
+| **R2** | 릴리즈 — publish | — | `npm publish` 직전 | `npm publish 승인` |
+| **R3** | 릴리즈 — release | — | GitHub release 생성 직전 | `GitHub release 생성 승인` |
 
 규칙:
+- **경로 A와 경로 B는 둘 다 유효하다.** PR은 **의무가 아니라 선택**이다(1인 개발). 어느 쪽이든 승인 없이 protected branch에 들어가지 않는다.
 - **I2는 I1과 별개다.** I1 승인만으로 머지하지 않는다. I2는 checks 결과를 본 뒤에만 요청할 수 있다(green 전에 미리 받아두는 "선승인" 금지 — 승인자가 볼 근거가 아직 없다).
-- **B1은 I1+I2를 대체하는 예외 경로다.** B1 승인이 있으면 PR 없이 direct push할 수 있고, 없으면 못 한다. `main merge 승인`·`push 승인` 같은 문장은 **B1이 아니다**.
-- **R1·R2·R3는 서로도 독립이다.** `tag 생성·push 승인`이 `npm publish 승인`을 포함하지 않는다. 셋 다 I2(머지) 이후, CI green 이후에만 요청한다.
+- **B1은 A를 대체하는 정상 경로다(예외가 아니다).** 다만 B1은 required status checks를 **우회**하므로, ① push 전에 우회 사실을 보고하고 멈춘다, ② `main merge 승인`·`push 승인` 같은 문장은 **B1이 아니다**, ③ B1으로 push하면 CI는 **사후 검증**이 되며 그 사실을 보고에서 숨기지 않는다.
+- **R1·R2·R3는 서로도 독립이다.** `tag 생성·push 승인`이 `npm publish 승인`을 포함하지 않는다. 셋 다 main 반영(I2 또는 B1) 이후, **CI green 확인 이후에만** 요청한다. 경로 B였다면 그 green은 push 뒤에 나온 것임을 명시한다.
 - I2 승인 후 머지 실행 주체는 사용자 또는 에이전트 어느 쪽이어도 된다(승인이 게이트이지 실행자가 게이트가 아니다).
 
+### D1b. PR을 "의무"로 쓰지 않는다 (정책 개정)
+초판 설계는 "기본 통합 경로는 PR 경유"라고 썼다. **이 프로젝트는 1인 개발이므로 그 강제는 과하다.** PR은 선택 경로(A)이고 direct push(B)는 `B1` 승인만 있으면 정상 경로다. 네 문서 어디에도 PR을 "필수"·"기본 필수"로 서술하지 않는다.
+
+바뀌지 않는 것: **우회 사실과 CI 사후성을 숨기지 않는다.** 정책 완화의 대상은 *경로 선택*이지 *투명성*이 아니다.
+
 ### D2. "승인 범위 해석 규칙"을 명문화한다
-AGENTS.template.md에 규칙을 추가한다: **승인은 승인받은 문장 그대로만 유효하다.** "main merge/push 승인"은 required checks bypass 승인이 아니고, PR 생성 승인(I1)은 PR 머지 승인(I2)이 아니며, 통합 승인은 릴리즈 승인이 아니다. 한 통제점의 승인은 **다음 통제점으로 이월되지 않는다.** 모호하면 확대 해석하지 말고 다시 물어본다.
+AGENTS.template.md에 규칙을 추가한다: **승인은 승인받은 문장 그대로만 유효하다.** "main merge/push 승인"은 required status checks bypass 승인이 아니고, PR 생성 승인(I1)은 PR 머지 승인(I2)이 아니며, 통합 승인은 릴리즈 승인이 아니다. 한 통제점의 승인은 **다음 통제점으로 이월되지 않는다.** 모호하면 확대 해석하지 말고 다시 물어본다.
 
 이는 기존 §3(승인 바인딩 fail-closed 우회 금지)의 정신 — *권한이 있다는 사실이 승인이 아니다* — 를 인간 승인 축으로 확장한 것이다. 새 개념이 아니라 같은 원리의 적용 범위 확대로 서술한다.
 
 ### D3. bypass는 **사전 보고 의무**로 쓴다(사후 발견 금지)
 `remote: Bypassed rule violations`는 push가 **이미 끝난 뒤** 나온다. 따라서 계약은 "push 후 보고"가 아니라 **"push 전에 보호 규칙 적용 여부를 확인하고 정지"**여야 한다. 문구에 확인 수단을 함께 적는다(예: `gh api repos/:owner/:repo/rulesets`, 또는 최소한 "protected branch로 알고 있으면 정지").
 
-### D4. RELEASING.md 레시피를 PR 경유로 재작성하고, direct push는 **예외 블록으로 강등**
-주 레시피의 각 단계에 **D1의 통제점 표식을 그대로 박아 넣는다**(문서 사이에 승인 문장이 어긋나지 않도록):
+### D4. RELEASING.md에 **두 경로를 나란히** 제시하고, 각 단계에 통제점 표식을 박아 넣는다
+문서 사이에 승인 문장이 어긋나지 않도록 D1 표식을 그대로 쓴다.
 
 ```
-릴리즈 브랜치 생성 → npm version <bump> --no-git-tag-version → 커밋
+공통: 릴리즈 브랜치 생성 → npm version <bump> --no-git-tag-version → 커밋
+
+[경로 A — PR 경유 (선택)]
   ── [I1] feature branch push + PR 생성 승인 ──
-feature branch push → PR 생성
-required checks(전 플랫폼 CI) 실행 → green 확인
+  feature branch push → PR 생성 → required status checks 실행 → green 확인
   ── [I2] required checks green 확인 후 PR merge 승인 ──
-PR merge
+  PR merge
+
+[경로 B — direct push (1인 개발 통상 경로)]
+  ── [B1] branch protection bypass를 사용한 direct push 승인 ──
+  main 체크아웃 → merge → git push origin main
+  ⚠️ 이 push는 required status checks를 우회한다. CI는 push 이후에 돈다(사후 검증).
+  push 후 CI green 확인 — green 아니면 R1로 넘어가지 않는다.
+
+공통: 릴리즈 대상 커밋 확정(origin/main 동기화 + CI green 확인)
   ── [R1] tag 생성·push 승인 ──   git tag v<version> && git push origin v<version>
   ── [R2] npm publish 승인 ──     npm publish   (2FA — 사람 최종 실행)
   ── [R3] GitHub release 생성 승인 ──
 ```
 
-- tag / publish / release는 **레시피 흐름에서 분리된 별도 섹션**으로 옮기고, 각각 자기 승인 문장을 명시. R1이 R2를 포함하지 않음을 적는다.
-- `git push origin main`은 기본 레시피에서 **삭제**하고, "⚠️ 예외 — `branch protection bypass를 사용한 direct push 승인` 필요" 블록에만 남긴다. `remote: Bypassed rule violations`가 우회가 이미 일어났다는 **사후 신호**임을 적는다(D3와 연결).
-- 기존 "배포 게이트: `npm publish` 전 전 플랫폼 CI green" 문구는 보존한다. 이제 그 green이 I2의 전제이기도 하다.
+- tag / publish / release는 **레시피 흐름에서 분리된 별도 섹션**으로 두고, 각각 자기 승인 문장을 명시. R1이 R2를 포함하지 않음을 적는다.
+- `git push origin main`은 **삭제하지 않는다.** 경로 B의 정식 명령으로 남기되, ① `B1` 승인 문장, ② required status checks 우회 사실, ③ CI 사후성, ④ `remote: Bypassed rule violations`가 **이미 일어난 우회의 사후 신호**라 사전 정지 근거가 못 된다는 점(D3)을 함께 적는다.
+- 기존 "배포 게이트: `npm publish` 전 전 플랫폼 CI green" 문구는 보존한다. 그 green은 경로 A에서는 `I2`의 전제이고, 경로 B에서는 **push 이후에 확인되는 `R1`의 전제**다.
 
 ### D5. AGENTS.template.md는 **대상 repo로 복사되는 템플릿**이다 → 문구를 일반화한다
 `init`이 대상 repo에 `AGENTS.md`가 없을 때 이 파일을 복사한다. 따라서 CommitGate repo의 GitHub 설정에 의존하는 표현(예: "9개의 required checks", 특정 run id, `sol5288/commitgate`)을 넣으면 **모든 대상 repo에 거짓 사실이 배포된다**.
