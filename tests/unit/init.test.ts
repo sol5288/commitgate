@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   runInit,
   detectPackageManager,
@@ -11,9 +12,15 @@ import {
   crossSpawnBelowFloor,
   KIT_COPY_RELPATHS,
   KIT_SCHEMA_RELPATHS,
+  KIT_AGENT_ENTRYPOINTS,
+  KIT_CLAUDE_TEMPLATE_REL,
+  KIT_AGENTS_CONTRACT_COPY_REL,
+  AGENTS_CONTRACT_MARKER,
   type InitOptions,
 } from '../../bin/init'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
+
+const PACKAGE_ROOT_FOR_TEST = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /**
  * 임시 대상 repo 생성.
@@ -81,6 +88,277 @@ describe('[init] 설치 축 SSOT (persona)', () => {
       const r = runInit(OPTS(dir, { dryRun: true }))
       expect(r.copied).toContain(DEFAULT_REVIEW_PERSONA_RELPATH)
       expect(existsSync(join(dir, DEFAULT_REVIEW_PERSONA_RELPATH))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-010 phase-3a — 에이전트 진입점 (D7·D8).
+ *
+ * 본문 SSOT는 `AGENTS.md`다. 여기 깔리는 것은 **얇은 포인터**이며 계약 본문을 복제하지 않는다.
+ * `src !== dest`라 기존 `copyInto`(레이아웃 재현)를 쓸 수 없다 — 명시적 매핑 복사기가 필요하다.
+ */
+describe('[init] 에이전트 진입점 설치', () => {
+  const DESTS = ['.claude/skills/commitgate/SKILL.md', '.claude/commands/req.md', '.cursor/rules/commitgate.mdc']
+
+  it('중첩 디렉터리를 만들고 3종 + CLAUDE.md를 설치한다', () => {
+    const dir = tmpTarget()
+    try {
+      const r = runInit(OPTS(dir))
+      for (const d of DESTS) {
+        expect(r.copied, `copied에 ${d}`).toContain(d)
+        expect(existsSync(join(dir, d)), `${d} 실재`).toBe(true)
+      }
+      expect(r.claudeMdCreated).toBe(true)
+      expect(existsSync(join(dir, 'CLAUDE.md'))).toBe(true)
+      expect(r.agentEntrypointsSkipped).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('KIT_AGENT_ENTRYPOINTS는 src≠dest이며 src가 패키지에 실재한다', () => {
+    for (const { src, dest } of KIT_AGENT_ENTRYPOINTS) {
+      expect(src).not.toBe(dest)
+      expect(existsSync(join(PACKAGE_ROOT_FOR_TEST, src)), `${src} 실재`).toBe(true)
+    }
+    expect(existsSync(join(PACKAGE_ROOT_FOR_TEST, KIT_CLAUDE_TEMPLATE_REL))).toBe(true)
+  })
+
+  it('포인터는 AGENTS.md를 가리키고 계약 본문을 복제하지 않는다', () => {
+    for (const { src } of KIT_AGENT_ENTRYPOINTS) {
+      const body = readFileSync(join(PACKAGE_ROOT_FOR_TEST, src), 'utf8')
+      expect(body).toContain('AGENTS.md')
+      expect(body).toContain(AGENTS_CONTRACT_MARKER)
+      // 계약 본문(통제점 표의 승인 문장)은 복제 금지 — drift 부채.
+      expect(body).not.toContain('branch protection bypass를 사용한 direct push 승인')
+      expect(body).not.toContain('required checks green 확인 후 PR merge 승인')
+    }
+  })
+
+  /**
+   * phase-3a R1 P2 — **복구 지시는 실행 가능해야 한다.**
+   *
+   * 포인터가 "`AGENTS.template.md`를 참조하라"고 하면 막다른 길이다. 그 파일은 **패키지 안에만** 있고
+   * 대상 repo에는 복사되지 않으며, `npx commitgate`는 `node_modules/commitgate/`도 남기지 않는다.
+   * 마커가 없을 때 init이 `AGENTS.commitgate.md`를 함께 놓아야 지시가 성립한다.
+   */
+  it('포인터는 대상 repo에 실재하는 파일(AGENTS.commitgate.md)을 가리킨다', () => {
+    const srcs = [...KIT_AGENT_ENTRYPOINTS.map((e) => e.src), KIT_CLAUDE_TEMPLATE_REL]
+    for (const src of srcs) {
+      const body = readFileSync(join(PACKAGE_ROOT_FOR_TEST, src), 'utf8')
+      expect(body, `${src}가 설치되는 사본을 가리켜야 함`).toContain(KIT_AGENTS_CONTRACT_COPY_REL)
+      // 대상 repo에 없는 파일을 참조하면 안 된다.
+      expect(body, `${src}가 패키지 내부 파일명을 참조하면 안 됨`).not.toContain('AGENTS.template.md')
+    }
+  })
+
+  it('마커 없는 기존 AGENTS.md → 계약 템플릿 사본을 실제로 설치한다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 우리 회사 규칙\n', 'utf8')
+      const r = runInit(OPTS(dir))
+      expect(r.agentsMarkerMissing).toBe(true)
+      expect(r.agentsContractCopyCreated).toBe(true)
+      const copyPath = join(dir, KIT_AGENTS_CONTRACT_COPY_REL)
+      expect(existsSync(copyPath)).toBe(true)
+      // 사본은 패키지의 계약 템플릿과 동일하고 마커를 갖는다.
+      expect(readFileSync(copyPath, 'utf8')).toBe(readFileSync(join(PACKAGE_ROOT_FOR_TEST, 'AGENTS.template.md'), 'utf8'))
+      expect(readFileSync(copyPath, 'utf8')).toContain(AGENTS_CONTRACT_MARKER)
+      // 기존 AGENTS.md는 건드리지 않는다.
+      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toBe('# 우리 회사 규칙\n')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('마커가 있으면 계약 템플릿 사본을 만들지 않는다(잡음 방지)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 계약\n`, 'utf8')
+      const r = runInit(OPTS(dir))
+      expect(r.agentsContractCopyCreated).toBe(false)
+      expect(existsSync(join(dir, KIT_AGENTS_CONTRACT_COPY_REL))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('init이 AGENTS.md를 새로 만들면 사본은 불필요하다', () => {
+    const dir = tmpTarget()
+    try {
+      const r = runInit(OPTS(dir))
+      expect(r.agentsCreated).toBe(true)
+      expect(r.agentsContractCopyCreated).toBe(false)
+      expect(existsSync(join(dir, KIT_AGENTS_CONTRACT_COPY_REL))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--no-agent-entrypoints면 마커 경고도 사본도 없다(포인터가 없으므로)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 우리 회사 규칙\n', 'utf8')
+      const r = runInit(OPTS(dir, { noAgentEntrypoints: true }))
+      expect(r.agentsMarkerMissing).toBe(false)
+      expect(r.agentsContractCopyCreated).toBe(false)
+      expect(existsSync(join(dir, KIT_AGENTS_CONTRACT_COPY_REL))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('dry-run은 계약 템플릿 사본을 쓰지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 우리 회사 규칙\n', 'utf8')
+      const r = runInit(OPTS(dir, { dryRun: true }))
+      expect(r.agentsContractCopyCreated).toBe(true) // 계획상 생성
+      expect(existsSync(join(dir, KIT_AGENTS_CONTRACT_COPY_REL))).toBe(false) // 실제로는 미기록
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('기존 AGENTS.commitgate.md는 --force 없이 덮어쓰지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 우리 회사 규칙\n', 'utf8')
+      writeFileSync(join(dir, KIT_AGENTS_CONTRACT_COPY_REL), '내가 편집한 사본\n', 'utf8')
+      const r = runInit(OPTS(dir))
+      expect(r.agentsContractCopyCreated).toBe(false)
+      expect(readFileSync(join(dir, KIT_AGENTS_CONTRACT_COPY_REL), 'utf8')).toBe('내가 편집한 사본\n')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('기존 진입점 파일은 덮어쓰지 않는다(비파괴)', () => {
+    const dir = tmpTarget()
+    try {
+      mkdirSync(join(dir, '.claude', 'commands'), { recursive: true })
+      writeFileSync(join(dir, '.claude', 'commands', 'req.md'), '내가 쓴 커맨드\n', 'utf8')
+      const r = runInit(OPTS(dir))
+      expect(r.skipped).toContain('.claude/commands/req.md')
+      expect(readFileSync(join(dir, '.claude', 'commands', 'req.md'), 'utf8')).toBe('내가 쓴 커맨드\n')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--force면 진입점을 갱신한다', () => {
+    const dir = tmpTarget()
+    try {
+      mkdirSync(join(dir, '.claude', 'commands'), { recursive: true })
+      writeFileSync(join(dir, '.claude', 'commands', 'req.md'), 'old\n', 'utf8')
+      const r = runInit(OPTS(dir, { force: true }))
+      expect(r.copied).toContain('.claude/commands/req.md')
+      expect(readFileSync(join(dir, '.claude', 'commands', 'req.md'), 'utf8')).toContain('CommitGate')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('기존 CLAUDE.md는 --force로도 덮어쓰지 않는다(사용자 파일)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), '# 내 프로젝트 지침\n', 'utf8')
+      const r = runInit(OPTS(dir, { force: true }))
+      expect(r.claudeMdCreated).toBe(false)
+      expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8')).toBe('# 내 프로젝트 지침\n')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--no-agent-entrypoints면 .claude/·.cursor/·CLAUDE.md를 만들지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      const r = runInit(OPTS(dir, { noAgentEntrypoints: true }))
+      expect(r.agentEntrypointsSkipped).toBe(true)
+      expect(r.claudeMdCreated).toBe(false)
+      for (const d of [...DESTS, 'CLAUDE.md']) expect(existsSync(join(dir, d)), `${d} 미생성`).toBe(false)
+      expect(existsSync(join(dir, '.claude'))).toBe(false)
+      expect(existsSync(join(dir, '.cursor'))).toBe(false)
+      // 코어 설치는 그대로.
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('dry-run은 진입점을 쓰지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      const r = runInit(OPTS(dir, { dryRun: true }))
+      expect(r.copied).toContain('.cursor/rules/commitgate.mdc')
+      for (const d of [...DESTS, 'CLAUDE.md']) expect(existsSync(join(dir, d))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** design R1 observation — 기존 AGENTS.md가 CommitGate 계약이 아니면 포인터가 엉뚱한 SSOT를 가리킨다. */
+  it('기존 AGENTS.md에 마커가 없으면 경고한다(설치는 계속)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 우리 회사 규칙\n', 'utf8')
+      const r = runInit(OPTS(dir))
+      expect(r.agentsCreated).toBe(false)
+      expect(r.agentsMarkerMissing).toBe(true)
+      expect(existsSync(join(dir, '.claude/commands/req.md'))).toBe(true) // 설치는 계속
+      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toBe('# 우리 회사 규칙\n') // 미변경
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('마커가 있는 기존 AGENTS.md면 경고하지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 계약\n`, 'utf8')
+      expect(runInit(OPTS(dir)).agentsMarkerMissing).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('init이 만드는 AGENTS.md는 마커를 포함한다', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toContain(AGENTS_CONTRACT_MARKER)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * preflight→apply 계약: `mkdirSync(recursive)`는 중간 컴포넌트가 파일이면 ENOTDIR로 죽는다.
+   * apply 중에 죽으면 앞의 파일들은 이미 복사된 뒤라 **부분 설치**가 된다. 쓰기 전에 막아야 한다.
+   */
+  it('경로 중간이 파일이면 아무것도 쓰기 전에 throw한다(부분 설치 방지)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.claude'), '나는 파일이다\n', 'utf8')
+      expect(() => runInit(OPTS(dir))).toThrow(/진입점 설치 불가/)
+      // 코어 파일도 쓰이지 않았다(preflight에서 중단).
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
+      expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--no-agent-entrypoints면 그 preflight를 건너뛴다(.claude가 파일이어도 설치 성공)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.claude'), '나는 파일이다\n', 'utf8')
+      expect(() => runInit(OPTS(dir, { noAgentEntrypoints: true }))).not.toThrow()
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true)
     } finally {
       cleanup(dir)
     }

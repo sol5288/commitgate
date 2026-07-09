@@ -44,6 +44,7 @@
     "workflow/req.config.schema.json",
     "workflow/review-persona.md",
     "bin",
+    "templates",
     "AGENTS.template.md",
     "req.config.json.sample",
     "README.md",

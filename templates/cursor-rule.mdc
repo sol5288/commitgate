@@ -1,0 +1,55 @@
+---
+description: CommitGate — 코드 변경은 REQ 티켓 + Codex 리뷰 승인을 거쳐야 커밋된다
+alwaysApply: true
+---
+
+# CommitGate
+
+이 저장소는 **CommitGate**를 쓴다. 코드 변경은 REQ 티켓 단위로 묶이고, Codex가 승인한 staged tree만 커밋된다.
+
+코드를 커밋하게 되는 요청은 **일반 구현으로 처리하지 마라.**
+
+## 계약 (정본)
+
+저장소 루트의 **`AGENTS.md`**가 정본이다. 절대 규칙, 통제점 표, 승인 문장이 거기 있다.
+
+> `AGENTS.md`에 `<!-- commitgate:contract -->` 마커가 없으면 그 파일은 CommitGate 계약이 아니다.
+> 그 경우 저장소 루트의 **`AGENTS.commitgate.md`**(init이 함께 설치한 계약 템플릿 사본)를 계약으로 읽고,
+> 사용자에게 `AGENTS.md`로의 병합을 요청하라.
+
+## 요구사항 받기
+
+아래 네 칸이 채워지지 않으면 먼저 물어라. 추측하지 마라.
+
+```text
+- 무엇을:
+- 왜:
+- 제약:
+- 완료 기준:
+```
+
+## 진행 방법 — `req:next`가 시키는 대로
+
+다음 행동을 스스로 추측하지 마라. 도구가 상태에서 계산한다.
+
+```sh
+npm run req:new -- <slug> --run     # 티켓·브랜치 생성
+npm run req:next -- <REQ-id>        # 그다음은 항상 이것
+```
+
+| kind | 할 일 |
+|---|---|
+| `RUN` | 출력된 명령을 그대로 실행하고 다시 `req:next` |
+| `AGENT` | 구현·문서 작성·`git add` 후 다시 `req:next` |
+| `AWAIT_HUMAN` | **멈춘다.** 출력된 승인 문장을 그대로 받기 전엔 진행 금지 |
+| `DONE` | 도구가 할 일 없음. 통합은 별도 통제점 |
+| `BLOCKED` | 사람에게 보고. 같은 리뷰 재시도 금지 |
+
+이 루프를 끊지 말고 반복한다.
+
+## 반드시 지킬 것
+
+- 리뷰 대상은 `git add` 한 파일뿐이다.
+- `state.json`·`responses/`는 직접 `git add` 하지 않는다.
+- `req:review-codex` exit 3(NEEDS_FIX) → 수정 후 재리뷰. exit 2(BLOCKED) → 재시도 금지, 사람에게 보고.
+- 승인은 받은 문장 그대로만 유효하고 다음 통제점으로 이월되지 않는다.

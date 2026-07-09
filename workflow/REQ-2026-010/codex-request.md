@@ -21,7 +21,68 @@
 
 ---
 
-## 현재 phase 리뷰: `phase-2-req-next`
+## 현재 phase 리뷰: `phase-3a-entrypoint-install`
+
+phase-1a(`e4a3796`)·1b(`acee2eb`)·2(`fdd20de`)가 승인·커밋됐다. 페르소나는 도구가 주입하고(이 프롬프트 첫 블록), `req:next`가 다음 행동을 계산한다 — **이 phase의 대상도 `req:next`가 지목했다.**
+
+이 phase는 P1(진입점)을 설치한다. **본문 SSOT는 `AGENTS.md`이고 여기 깔리는 것은 얇은 포인터다.** 계약 본문을 복제하면 REQ-2026-009에서 겪은 것과 같은 drift 부채가 된다.
+
+staged 변경 (코드 8파일 + `codex-request.md`):
+- `templates/claude-skill.md` → `.claude/skills/commitgate/SKILL.md` (Claude Code 자동 발동 후보)
+- `templates/claude-command.md` → `.claude/commands/req.md` (`/req` 명시 호출)
+- `templates/cursor-rule.mdc` → `.cursor/rules/commitgate.mdc` (`alwaysApply`)
+- `templates/CLAUDE.template.md` → `CLAUDE.md` (**부재 시에만**, `--force`로도 미덮어씀)
+- `AGENTS.template.md` — `<!-- commitgate:contract -->` 마커 + 명령표에 `req:next` + "페르소나는 도구 주입" 명시
+- `bin/init.ts` — `KIT_AGENT_ENTRYPOINTS`(src≠dest) · `copyEntrypoints` · `assertEntrypointPathsUsable`(preflight) · 마커 경고 · `--no-agent-entrypoints`
+- `package.json` — `files[]`에 `templates`
+- `tests/unit/init.test.ts` — 13건 신설
+
+### 설계 대비 구현
+
+| 설계 | 구현 |
+|---|---|
+| D8 `src≠dest` | `copyInto`(레이아웃 재현)를 쓸 수 없어 명시 매핑 복사기 `copyEntrypoints` 신설. 중첩 `.claude/skills/commitgate/`는 `mkdirSync(recursive)` |
+| D8 preflight | `assertEntrypointPathsUsable`이 **쓰기 전에** 경로 중간 컴포넌트가 파일인지 검사. `mkdirSync`가 apply 중 ENOTDIR로 죽으면 앞의 파일은 이미 복사돼 **부분 설치**가 된다 |
+| D7 마커 | `AGENTS_CONTRACT_MARKER`. init이 만드는 `AGENTS.md`엔 포함, 기존 파일에 없으면 **경고**(설치는 계속 — 비파괴 원칙) |
+| D7 opt-out | `--no-agent-entrypoints`. 이 경우 preflight도 건너뛴다(`.claude`가 파일이어도 코어 설치는 성공) |
+| `CLAUDE.md` 정책 | `AGENTS.md`와 동일 — 부재 시에만 생성. **`--force`로도 덮어쓰지 않는다**(사용자 파일) |
+
+### 실행한 검증 (증거)
+
+- `npm run typecheck` → 0 · `npm test` → **622/622 green**(init 42건)
+- `npm pack --dry-run --json`(격리 캐시) → 23파일, `templates/` 4종 포함
+- **실 sandbox**: pack tarball → 임시 git repo `npm i -D` → `commitgate` 실행 → `.claude/skills/commitgate/SKILL.md`·`.claude/commands/req.md`·`.cursor/rules/commitgate.mdc`·`CLAUDE.md`·`AGENTS.md`(마커 포함) 생성 확인. 주입 스크립트 5개(`req:next` 포함).
+- **실 sandbox opt-out**: `--no-agent-entrypoints` → `.claude`/`.cursor`/`CLAUDE.md` 미생성, `scripts/req` 정상.
+- **실 sandbox 마커 경고**: 마커 없는 기존 `AGENTS.md` → 경고 출력, 파일 미변경, 설치 계속.
+
+### phase-3a R1 지적 반영 (라운드 1 → 2)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| P2 | 마커 없는 기존 `AGENTS.md`는 이 phase의 **명시 지원 경로**인데, 그때 설치되는 포인터 4종이 모두 "`AGENTS.template.md`를 참조하라"고 지시한다. 그런데 그 파일은 **패키지 안에만** 있고 대상 repo에 복사되지 않으며, `npx commitgate`는 `node_modules/commitgate/`도 남기지 않는다. 사용자는 참조할 파일을 찾을 수 없다 — **복구 지시가 막다른 길** | 마커가 없을 때 init이 계약 템플릿을 **`AGENTS.commitgate.md`로 대상 repo에 함께 설치**한다(`KIT_AGENTS_CONTRACT_COPY_REL`). 포인터 4종의 문구를 그 파일명으로 교체. 경고 메시지도 "사본을 설치했으니 병합 후 지우라"로 실행 가능하게 |
+
+**정책 정합**: 마커가 있으면(정상) 사본을 만들지 않는다(잡음 방지). init이 `AGENTS.md`를 새로 만드는 경우에도 불필요(마커 포함). `--no-agent-entrypoints`면 포인터가 없으므로 경고도 사본도 없다. 기존 `AGENTS.commitgate.md`는 `--force` 없이 덮어쓰지 않는다.
+
+회귀 7건 + **테스트가 포인터 본문을 직접 검사**한다: 4종 전부 `AGENTS.commitgate.md`를 참조하고 `AGENTS.template.md`(패키지 내부 파일)를 **참조하지 않는지**. 이 단언이 R1의 재발을 막는다.
+
+**실 sandbox 재확인**: 마커 없는 `AGENTS.md`를 미리 둔 repo에 tarball 설치 → 경고 출력 + `AGENTS.commitgate.md` 생성(첫 줄이 마커) + `AGENTS.md` 미변경 + `SKILL.md`의 `AGENTS.template.md` 참조 0건.
+
+이 결함의 형태는 phase-2 R3~R5와 같다: **도구가 내는 지시는 실행 가능해야 한다.** 그때는 렌더링한 명령이었고, 지금은 문서가 가리키는 파일이다.
+
+### 이 phase의 리뷰 포인트
+
+- **preflight가 부분 설치를 정말 막는가**: `assertEntrypointPathsUsable`이 `runInit`의 어느 지점에 있는가? 코어 복사(`copyInto`)보다 **앞**인가? 권한 오류(EACCES)·경합은 여전히 apply 중에 터지는데, 그건 수용 가능한가?
+- **`--force` 시맨틱이 일관되는가**: 진입점 3종은 `--force`로 갱신되고, `CLAUDE.md`·`AGENTS.md`는 안 된다. 이 비대칭이 정당한가? 사용자가 `.cursor/rules/commitgate.mdc`를 편집했다면 `--force`가 그것을 날린다 — `AGENTS.md`와 같은 취급이어야 하지 않나?
+- **포인터가 본문을 복제하지 않는가**: 테스트가 "승인 문장 2개가 없음"만 확인한다. 충분한가? 포인터가 계약을 **잘못 요약**하는 부분은 없는가(예: `AWAIT_HUMAN`에서 멈추라는 지시가 `AGENTS.md`의 통제점 표와 모순되지 않는가)?
+- **마커 판정이 견고한가**: `includes()` 문자열 검사다. 주석 안에 우연히 그 문자열이 있으면? 마커가 코드블록 안에 있으면? 과잉 단순한가?
+- **`.claude/`·`.cursor/`를 남의 repo에 심는 것이 월권은 아닌가**: opt-out이 있지만 **기본이 설치**다. 반대(기본 미설치 + `--agent-entrypoints`)여야 하지 않는가? `npx commitgate`를 다시 돌리는 기존 사용자에게 갑자기 파일 3개가 생긴다.
+- **Claude Code 스킬 frontmatter가 유효한가**: `name`/`description`만으로 자동 발동이 되는가? `description`이 너무 광범위해("코드를 커밋하게 되는 모든 작업") 오발동하지 않는가?
+- **Cursor `.mdc` frontmatter**(`alwaysApply: true`)가 실제 Cursor 버전에서 유효한가? 검증한 근거가 있는가, 아니면 추정인가?
+- 범위 이탈: `bin/uninstall.ts` 미변경(3b), 버전 bump 미수행, README 미변경(4).
+
+---
+
+## 이전 phase 리뷰: `phase-2-req-next` (승인됨, `fdd20de`)
 
 phase-1a(`e4a3796`)·phase-1b(`acee2eb`)가 승인·커밋됐다. persona는 이제 도구가 주입한다 — **이 프롬프트의 첫 블록이 그것이다.**
 

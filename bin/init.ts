@@ -8,6 +8,7 @@
  *   3. `req.config.json` 시드(부재 시): 감지한 packageManager + handoffPath:null(프로젝트별 값은 코어 DEFAULTS가 아니라 config에서 흡수)
  *   4. 대상 `package.json`에 req:* 스크립트·devDeps(ajv/tsx) 주입(기존 키 미덮어씀)
  *   5. `AGENTS.md` 부재 시 템플릿 생성(있으면 스킵 — Codex 계약 보존)
+ *   6. 에이전트 진입점(.claude/skills·.claude/commands·.cursor/rules) 복사 + `CLAUDE.md` 부재 시 생성 (--no-agent-entrypoints로 생략)
  *
  * 코어 승인 바인딩·staged tree 검증은 건드리지 않는다(복사만). 프로젝트 차이는 req.config.json에서만 흡수.
  */
@@ -53,6 +54,40 @@ export const KIT_SCHEMA_RELPATHS = ['workflow/machine.schema.json', 'workflow/re
  */
 export const KIT_COPY_RELPATHS = [...KIT_SCHEMA_RELPATHS, DEFAULT_REVIEW_PERSONA_RELPATH] as const
 
+/**
+ * 에이전트 진입점 (REQ-2026-010 D7·D8). init 복사기와 uninstall planner가 공유하는 SSOT.
+ *
+ * ⚠️ `KIT_COPY_RELPATHS`와 달리 **`src !== dest`**다. `copyInto`는 `relative(PACKAGE_ROOT, src)`로 레이아웃을
+ * 재현하므로 쓸 수 없고, `uninstall`의 `tool` 분류도 `join(PACKAGE_ROOT, rel)`로 원본을 찾을 수 없다.
+ * 두 곳 모두 `src`/`dest`를 분리해 다뤄야 한다.
+ *
+ * 본문 SSOT는 `AGENTS.md`다. 여기 깔리는 파일은 **얇은 포인터**이며 계약 본문을 복제하지 않는다 — 복제하면 drift 부채가 된다.
+ */
+export const KIT_AGENT_ENTRYPOINTS = [
+  { src: 'templates/claude-skill.md', dest: '.claude/skills/commitgate/SKILL.md' },
+  { src: 'templates/claude-command.md', dest: '.claude/commands/req.md' },
+  { src: 'templates/cursor-rule.mdc', dest: '.cursor/rules/commitgate.mdc' },
+] as const
+
+/** `CLAUDE.md`는 `AGENTS.md`와 같은 취급 — **부재 시에만** 생성하고, uninstall에서 `ambiguous`(자동 제거 금지). */
+export const KIT_CLAUDE_TEMPLATE_REL = 'templates/CLAUDE.template.md'
+export const KIT_CLAUDE_DEST_REL = 'CLAUDE.md'
+
+/** `AGENTS.md`가 CommitGate 계약인지 판별하는 마커. 진입점 포인터들이 이 마커로 SSOT를 확인한다. */
+export const AGENTS_CONTRACT_MARKER = '<!-- commitgate:contract -->'
+
+/**
+ * 기존 `AGENTS.md`에 계약 마커가 없을 때 **대상 repo에 함께 놓는** 계약 템플릿 사본 (phase-3a R1 P2).
+ *
+ * ⚠️ 이게 없으면 포인터의 복구 지시가 **막다른 길**이 된다. 진입점 파일들은 "마커가 없으면 계약 템플릿을
+ * 참조해 병합하라"고 하는데, `AGENTS.template.md`는 **패키지 안에만** 있고 대상 repo에는 복사되지 않는다.
+ * `npx commitgate`는 전역/로컬 설치가 아니라 npm 캐시에서 한 번 실행될 뿐이라 `node_modules/commitgate/`도
+ * 남지 않는다. 사용자는 참조할 파일을 찾을 수 없다.
+ *
+ * 그래서 마커가 없을 때만 이 경로로 사본을 놓는다. 마커가 있으면(정상) 이 파일은 만들지 않는다.
+ */
+export const KIT_AGENTS_CONTRACT_COPY_REL = 'AGENTS.commitgate.md'
+
 /** 대상 package.json에 주입할 req:* 스크립트. */
 export const REQ_SCRIPTS: Record<string, string> = {
   'req:new': 'tsx scripts/req/req-new.ts',
@@ -77,6 +112,8 @@ export interface InitOptions {
   force: boolean
   dryRun: boolean
   strict: boolean // cross-spawn 하한 미만이면 WARN 대신 throw(#1)
+  /** `.claude/`·`.cursor/`·`CLAUDE.md`를 건너뛴다. 다른 도구가 그 디렉터리를 쓰는 repo를 위한 opt-out(D7). */
+  noAgentEntrypoints?: boolean
 }
 
 export interface InitResult {
@@ -90,6 +127,10 @@ export interface InitResult {
   packageManager: PackageManager
   crossSpawnFloorWarned: boolean // 기존 cross-spawn이 보안 하한 미만이라 경고(#1)
   dryRun: boolean
+  claudeMdCreated: boolean // CLAUDE.md를 새로 만들었는가(있으면 미덮어씀)
+  agentsMarkerMissing: boolean // 기존 AGENTS.md에 commitgate 계약 마커가 없어 경고했는가
+  agentsContractCopyCreated: boolean // 마커 부재 시 AGENTS.commitgate.md(계약 템플릿 사본)를 놓았는가
+  agentEntrypointsSkipped: boolean // --no-agent-entrypoints
 }
 
 /**
@@ -174,6 +215,54 @@ function copyInto(
     if (opts.dryRun) continue
     mkdirSync(dirname(destAbs), { recursive: true })
     copyFileSync(srcAbs, destAbs)
+  }
+}
+
+/**
+ * 진입점 dest 경로들이 **실제로 만들어질 수 있는지** preflight에서 확인한다 (D8).
+ *
+ * `mkdirSync(recursive)`는 경로 중간 컴포넌트가 **파일**이면 ENOTDIR로 죽는다. apply 단계에서 그러면
+ * 앞의 파일들은 이미 복사된 뒤라 **부분 설치**가 된다. 쓰기 전에 걸러서 preflight→apply 계약을 지킨다.
+ */
+function assertEntrypointPathsUsable(targetRoot: string): void {
+  const dests = [...KIT_AGENT_ENTRYPOINTS.map((e) => e.dest), KIT_CLAUDE_DEST_REL, KIT_AGENTS_CONTRACT_COPY_REL]
+  for (const dest of dests) {
+    const parts = dest.split('/')
+    // 마지막(파일명) 제외한 각 디렉터리 컴포넌트가 파일로 존재하면 mkdir 불가.
+    for (let i = 0; i < parts.length - 1; i++) {
+      const sub = join(targetRoot, ...parts.slice(0, i + 1))
+      if (existsSync(sub) && !statSync(sub).isDirectory())
+        throw new Error(
+          `진입점 설치 불가: ${parts.slice(0, i + 1).join('/')} 가 디렉터리가 아니라 파일입니다(${dest} 를 만들 수 없음).\n` +
+            `  → 해당 파일을 옮기거나, --no-agent-entrypoints 로 이 계층을 건너뛰세요.`,
+        )
+    }
+    const abs = join(targetRoot, dest)
+    if (existsSync(abs) && statSync(abs).isDirectory())
+      throw new Error(`진입점 설치 불가: ${dest} 가 디렉터리로 존재합니다(파일이어야 함).`)
+  }
+}
+
+/**
+ * `src → dest`(경로가 다름) 복사. 기존 파일은 `--force` 없으면 스킵. 중첩 디렉터리를 만든다.
+ * `copyInto`(레이아웃 재현)와 달리 매핑이 명시적이다.
+ */
+function copyEntrypoints(
+  targetRoot: string,
+  opts: InitOptions,
+  copied: string[],
+  skipped: string[],
+): void {
+  for (const { src, dest } of KIT_AGENT_ENTRYPOINTS) {
+    const destAbs = join(targetRoot, dest)
+    if (existsSync(destAbs) && !opts.force) {
+      skipped.push(dest)
+      continue
+    }
+    copied.push(dest)
+    if (opts.dryRun) continue
+    mkdirSync(dirname(destAbs), { recursive: true })
+    copyFileSync(join(PACKAGE_ROOT, src), destAbs)
   }
 }
 
@@ -367,6 +456,21 @@ export function runInit(opts: InitOptions): InitResult {
   const agentsPath = join(targetRoot, 'AGENTS.md')
   const agentsCreated = !existsSync(agentsPath)
 
+  const agentEntrypointsSkipped = opts.noAgentEntrypoints === true
+  if (!agentEntrypointsSkipped) assertEntrypointPathsUsable(targetRoot)
+
+  // 기존 AGENTS.md에 계약 마커가 없으면 진입점 포인터가 **엉뚱한 SSOT**를 가리키게 된다(design R1 observation).
+  // 설치는 계속한다(비파괴 원칙) — 사용자가 병합하도록 알릴 뿐.
+  const agentsMarkerMissing =
+    !agentEntrypointsSkipped && !agentsCreated && !readFileSync(agentsPath, 'utf8').includes(AGENTS_CONTRACT_MARKER)
+
+  const claudeMdPath = join(targetRoot, KIT_CLAUDE_DEST_REL)
+  const claudeMdCreated = !agentEntrypointsSkipped && !existsSync(claudeMdPath)
+
+  // 마커가 없으면 포인터가 참조할 계약 템플릿을 **대상 repo에** 놓는다 — 그러지 않으면 복구 지시가 막다른 길이다.
+  const contractCopyPath = join(targetRoot, KIT_AGENTS_CONTRACT_COPY_REL)
+  const agentsContractCopyCreated = agentsMarkerMissing && (!existsSync(contractCopyPath) || opts.force)
+
   // ══ Apply: 여기부터 쓰기(preflight 전부 통과 후에만) ═════════════════
   const copied: string[] = []
   const skipped: string[] = []
@@ -374,6 +478,7 @@ export function runInit(opts: InitOptions): InitResult {
   // ⚠️ KIT_COPY_RELPATHS는 패키지-상대 = 대상-상대(리터럴 `workflow/`). ticketRoot/schemaPath 설정과 무관 — uninstall planner와 공유하는 SSOT.
   const kitFiles = KIT_COPY_RELPATHS.map((rel) => join(PACKAGE_ROOT, rel))
   copyInto(kitFiles, PACKAGE_ROOT, targetRoot, opts, copied, skipped)
+  if (!agentEntrypointsSkipped) copyEntrypoints(targetRoot, opts, copied, skipped)
 
   if (!opts.dryRun) {
     if (configToWrite) writeFileSync(cfgPath, JSON.stringify(configToWrite, null, 2) + '\n', 'utf8')
@@ -383,7 +488,16 @@ export function runInit(opts: InitOptions): InitResult {
       writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
     }
     if (agentsCreated) copyFileSync(join(PACKAGE_ROOT, 'AGENTS.template.md'), agentsPath)
+    // CLAUDE.md는 AGENTS.md와 동일 정책: **부재 시에만** 생성(--force로도 덮어쓰지 않는다 — 사용자 파일일 수 있다).
+    if (claudeMdCreated) copyFileSync(join(PACKAGE_ROOT, KIT_CLAUDE_TEMPLATE_REL), claudeMdPath)
+    if (agentsContractCopyCreated) copyFileSync(join(PACKAGE_ROOT, 'AGENTS.template.md'), contractCopyPath)
   }
+
+  if (agentsMarkerMissing)
+    console.warn(
+      `⚠️  기존 AGENTS.md에 ${AGENTS_CONTRACT_MARKER} 마커가 없습니다 — .claude/·.cursor/ 진입점이 가리킬 CommitGate 계약이 그 파일에 없습니다.\n` +
+        `   계약 템플릿을 ${KIT_AGENTS_CONTRACT_COPY_REL} 로 함께 설치했습니다. 그 내용을 AGENTS.md에 병합한 뒤 ${KIT_AGENTS_CONTRACT_COPY_REL} 를 지우세요(설치는 계속됩니다).`,
+    )
 
   return {
     targetRoot,
@@ -396,6 +510,10 @@ export function runInit(opts: InitOptions): InitResult {
     packageManager,
     crossSpawnFloorWarned,
     dryRun: opts.dryRun,
+    claudeMdCreated,
+    agentsMarkerMissing,
+    agentsContractCopyCreated,
+    agentEntrypointsSkipped,
   }
 }
 
@@ -404,6 +522,7 @@ export function parseArgs(argv: string[]): InitOptions {
   let force = false
   let dryRun = false
   let strict = false
+  let noAgentEntrypoints = false
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--dir') {
@@ -417,6 +536,8 @@ export function parseArgs(argv: string[]): InitOptions {
       dryRun = true
     } else if (a === '--strict') {
       strict = true
+    } else if (a === '--no-agent-entrypoints') {
+      noAgentEntrypoints = true
     } else if (a === '-h' || a === '--help') {
       printHelp()
       process.exit(0)
@@ -424,7 +545,7 @@ export function parseArgs(argv: string[]): InitOptions {
       throw new Error(`알 수 없는 인자: ${a}`)
     }
   }
-  return { dir: resolve(dir), force, dryRun, strict }
+  return { dir: resolve(dir), force, dryRun, strict, noAgentEntrypoints }
 }
 
 function printHelp(): void {
@@ -439,6 +560,8 @@ function printHelp(): void {
   --force        기존 kit 파일 덮어쓰기(기본: 스킵)
   --dry-run      변경 없이 수행 예정 목록만 출력
   --strict       기존 cross-spawn이 보안 하한(>=7.0.6) 미만이면 경고 대신 중단(fail-closed)
+  --no-agent-entrypoints
+                 .claude/·.cursor/·CLAUDE.md 진입점 설치를 건너뛴다
   -h, --help     도움말
 
 설치 후:
@@ -471,6 +594,11 @@ export function main(argv: string[]): void {
     `${tag}  package.json: ${r.packageJsonAdded.length > 0 ? '추가 ' + r.packageJsonAdded.join(', ') : '변경 없음'}`,
   )
   console.log(`${tag}  AGENTS.md: ${r.agentsCreated ? '템플릿 생성' : '이미 존재(유지)'}`)
+  if (r.agentEntrypointsSkipped) console.log(`${tag}  에이전트 진입점: 건너뜀(--no-agent-entrypoints)`)
+  else {
+    console.log(`${tag}  CLAUDE.md: ${r.claudeMdCreated ? '템플릿 생성' : '이미 존재(유지)'}`)
+    if (r.agentsContractCopyCreated) console.log(`${tag}  ${KIT_AGENTS_CONTRACT_COPY_REL}: 계약 템플릿 사본 생성(AGENTS.md에 병합 후 삭제)`)
+  }
   if (r.crossSpawnFloorWarned) console.log(`${tag}  ⚠️ cross-spawn 버전 하한 경고(위 참조) — 강제 중단은 --strict`)
   if (!r.dryRun) {
     console.log(`\n다음:`)
