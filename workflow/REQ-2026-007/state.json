@@ -3,14 +3,51 @@
   "branch": "feat/req-2026-007-uninstall-planner",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f44dc-f3cc-7fb1-a9a9-f9ac1f0ba174",
+  "review_base_sha": "0cc7299fbedb2d4aa81fc5dd533c8f2c3cf846ac",
+  "review_diff_hash": "fed199ce16b6eeae1d1cb3a98c25e85017c41d58",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "69d7f9d2f89aabf8e145205aeb8983b749a24dc38026dd7d2784df234d7f2c28",
+  "current_phase": "phase-2-docs",
+  "phases": [
+    {
+      "id": "phase-1-planner-core",
+      "approved": true
+    },
+    {
+      "id": "phase-2-docs",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-007/responses/design-r02-approved.json",
+    "response_sha256": "2b93f4d7ec297a31de6c5664875dc1e3a8928622f04d25497f77707069f4043d",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "15dd4b71c5b821c079c860b5cd1ee12c8eace21d",
+    "codex_thread_id": "019f44dc-f3cc-7fb1-a9a9-f9ac1f0ba174",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-09T03:22:45.692Z",
+    "design_hash": "69d7f9d2f89aabf8e145205aeb8983b749a24dc38026dd7d2784df234d7f2c28"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "9b2cc3c0bfa0ede34850170071b1a6e6ef7971c0",
+      "phase_id": "phase-1-planner-core",
+      "consumed_by_commit_sha": "6c6b6942d768c098ef7a161ef66bc92528967f15",
+      "approval_consumed_at": "2026-07-09T03:51:42.992Z"
+    },
+    {
+      "approved_tree": "fed199ce16b6eeae1d1cb3a98c25e85017c41d58",
+      "phase_id": "phase-2-docs",
+      "consumed_by_commit_sha": "9592cec8d57ca41bbe1437d8ab3d891a9fb1e2d7",
+      "approval_consumed_at": "2026-07-09T03:57:15.810Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
