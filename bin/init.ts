@@ -29,10 +29,20 @@ import { createGitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
 import * as semver from 'semver'
 
 /** 이 패키지 루트(bin/ 기준 1단계 위). 복사 원본. */
-const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+export const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+/** kit 소스 디렉터리(패키지-상대 = 대상-상대). copyInto가 이 레이아웃을 그대로 재현. */
+export const KIT_SOURCE_DIR_REL = 'scripts/req'
+
+/**
+ * init이 **실제로 복사하는** 스키마 경로(패키지-상대 = 대상-상대). ⚠️ `req.config.json`의 `ticketRoot`/`schemaPath`와 무관하게
+ * 언제나 리터럴 `workflow/` 아래다 — `copyInto`가 `relative(PACKAGE_ROOT, src)`로 상대경로를 재현하기 때문.
+ * runInit(복사)과 uninstall planner(제거 후보)가 이 상수를 **공유**해야 드리프트가 없다(REQ-2026-007 design R1 P2 / D3b).
+ */
+export const KIT_SCHEMA_RELPATHS = ['workflow/machine.schema.json', 'workflow/req.config.schema.json'] as const
 
 /** 대상 package.json에 주입할 req:* 스크립트. */
-const REQ_SCRIPTS: Record<string, string> = {
+export const REQ_SCRIPTS: Record<string, string> = {
   'req:new': 'tsx scripts/req/req-new.ts',
   'req:review-codex': 'tsx scripts/req/review-codex.ts',
   'req:doctor': 'tsx scripts/req/req-doctor.ts',
@@ -43,7 +53,7 @@ const REQ_SCRIPTS: Record<string, string> = {
 const CROSS_SPAWN_SPEC = '^7.0.6'
 
 /** 대상 package.json에 주입할 devDeps(워크플로 실행 전제). cross-spawn = 복사된 adapters.ts의 안전 spawn(P1) 런타임 의존. */
-const REQ_DEV_DEPS: Record<string, string> = {
+export const REQ_DEV_DEPS: Record<string, string> = {
   ajv: '^8.20.0',
   'cross-spawn': CROSS_SPAWN_SPEC,
   tsx: '^4.19.1',
@@ -72,14 +82,17 @@ export interface InitResult {
 /**
  * 대상이 진짜 git work tree인지 실제 git으로 검증(D5, design R1 P2). `.git` 경로 존재만으론 부족(fake 마커 통과).
  * targetRoot가 repo top-level과 일치해야 함(하위 디렉터리에 스캐폴드 방지). git 미설치/비-repo → throw(fail-closed).
+ *
+ * `run` 주입(REQ-2026-007): uninstall planner가 자신의 감시 runner로 이 검증을 통과시켜
+ * **모든 git 호출을 단일 경계에서 관측**할 수 있게 한다. 미지정 시 기존 quiet runner(동작 불변).
  */
-function assertGitWorkTree(targetRoot: string): void {
+export function assertGitWorkTree(targetRoot: string, run?: GitRunner): void {
   // probe 전용 runner: 비-repo일 때 git이 뱉는 `fatal: not a git repository` stderr를 삼킨다.
   // 우리가 더 명확한 조치 메시지로 대체하므로 raw git stderr는 노이즈일 뿐(design 후속 UX).
   // ⚠️ 전역 GitAdapter 기본(stderr 상속)은 그대로 — 다른 git 호출(req:commit 등)의 진단 손실 방지.
   const quietRunner: GitRunner = (file, args, opts) =>
     execFileSync(file, args, { ...opts, stdio: ['ignore', 'pipe', 'ignore'] })
-  const git = createGitAdapter(targetRoot, quietRunner)
+  const git = createGitAdapter(targetRoot, run ?? quietRunner)
   let inside: string
   let topLevel: string
   try {
@@ -344,8 +357,9 @@ export function runInit(opts: InitOptions): InitResult {
   // ══ Apply: 여기부터 쓰기(preflight 전부 통과 후에만) ═════════════════
   const copied: string[] = []
   const skipped: string[] = []
-  copyInto(walkFiles(join(PACKAGE_ROOT, 'scripts', 'req')), PACKAGE_ROOT, targetRoot, opts, copied, skipped)
-  const schemaFiles = ['machine.schema.json', 'req.config.schema.json'].map((f) => join(PACKAGE_ROOT, 'workflow', f))
+  copyInto(walkFiles(join(PACKAGE_ROOT, KIT_SOURCE_DIR_REL)), PACKAGE_ROOT, targetRoot, opts, copied, skipped)
+  // ⚠️ KIT_SCHEMA_RELPATHS는 패키지-상대 = 대상-상대(리터럴 `workflow/`). ticketRoot/schemaPath 설정과 무관 — uninstall planner와 공유하는 SSOT.
+  const schemaFiles = KIT_SCHEMA_RELPATHS.map((rel) => join(PACKAGE_ROOT, rel))
   copyInto(schemaFiles, PACKAGE_ROOT, targetRoot, opts, copied, skipped)
 
   if (!opts.dryRun) {
@@ -405,6 +419,7 @@ function printHelp(): void {
 
 사용법:
   npx commitgate [--dir <대상repo>] [--force] [--dry-run] [--strict]
+  npx commitgate uninstall [--dir <대상repo>]   # 제거 계획만 출력(아무것도 지우지 않음)
 
 옵션:
   --dir <path>   대상 repo 루트(기본: 현재 디렉터리)

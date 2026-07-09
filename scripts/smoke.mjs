@@ -44,7 +44,11 @@ try {
   // 4) 설치된 패키지 bin 실행(dry-run) — rc=0이어야 통과
   run('npx', ['--no-install', 'commitgate', '--dry-run'], { cwd: target })
 
-  console.log('\n[smoke] ✅ pack tarball 설치본의 commitgate bin 실행 OK')
+  // 5) uninstall verb 해소(REQ-2026-007) — 배포 아티팩트에서 bin/uninstall.ts가 로드되고 rc=0.
+  //    읽기 전용 planner라 target을 변경하지 않는다(미설치 target → "설치 흔적 없음" 계획 출력).
+  run('npx', ['--no-install', 'commitgate', 'uninstall'], { cwd: target })
+
+  console.log('\n[smoke] ✅ pack tarball 설치본의 commitgate bin 실행 OK (init dry-run + uninstall planner)')
 } finally {
   rmSync(packDir, { recursive: true, force: true })
   rmSync(target, { recursive: true, force: true })
