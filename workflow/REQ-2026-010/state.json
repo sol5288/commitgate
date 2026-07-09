@@ -3,14 +3,100 @@
   "branch": "feat/req-2026-010-review-persona-and-agent-entrypoints",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f4695-6b96-72f0-ac53-39387f1d3545",
+  "review_base_sha": "a21abb4259f688a028b2005a18a0ad0460642efe",
+  "review_diff_hash": "3a935db6e2dd01768c19674eae9b899d9328b179",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "3c5c5656e90bd27aa5cd61c7f04534971a61757ebf052c033d09c54e29123cdb",
+  "current_phase": "phase-4-docs-version",
+  "phases": [
+    {
+      "id": "phase-1a-persona-install",
+      "approved": true
+    },
+    {
+      "id": "phase-1b-persona-inject",
+      "approved": true
+    },
+    {
+      "id": "phase-2-req-next",
+      "approved": true
+    },
+    {
+      "id": "phase-3a-entrypoint-install",
+      "approved": true
+    },
+    {
+      "id": "phase-3b-entrypoint-uninstall",
+      "approved": true
+    },
+    {
+      "id": "phase-4-docs-version",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-010/responses/design-r06-approved.json",
+    "response_sha256": "3b550e5b36e34ed9d081196898d0b4d3d21abf7342987f0a4704f2c8c95de14d",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "50b8da645ec6ef5abb6b875cefb091ecbc23b544",
+    "codex_thread_id": "019f4695-6b96-72f0-ac53-39387f1d3545",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-09T11:55:16.795Z",
+    "design_hash": "3c5c5656e90bd27aa5cd61c7f04534971a61757ebf052c033d09c54e29123cdb"
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "4239a75f435958426ae0797fef158d9ec27e60fa",
+      "phase_id": "phase-1a-persona-install",
+      "consumed_by_commit_sha": "e4a3796cde9aaa0f805f7a1e7de3f154146a8b8e",
+      "approval_consumed_at": "2026-07-09T12:35:48.738Z"
+    },
+    {
+      "approved_tree": "737e6706862493eb4985760c5f084a88beef6589",
+      "phase_id": "phase-1b-persona-inject",
+      "consumed_by_commit_sha": "acee2ebd9f10b9d525e34cf76e4def9ed0c83e20",
+      "approval_consumed_at": "2026-07-09T13:02:38.534Z"
+    },
+    {
+      "approved_tree": "0c01e5171a9bd8a6294c0a4f13d5c6538d9766fe",
+      "phase_id": "phase-2-req-next",
+      "consumed_by_commit_sha": "fdd20de9361147706e2426b1db517c8a88a71203",
+      "approval_consumed_at": "2026-07-09T14:19:19.362Z"
+    },
+    {
+      "approved_tree": "089eb57881571c76e414634b41757e38e316a3d7",
+      "phase_id": "phase-3a-entrypoint-install",
+      "consumed_by_commit_sha": "f66d45c14f346f09e21a9f0457c11c97f7a3a7ee",
+      "approval_consumed_at": "2026-07-09T14:42:52.383Z"
+    },
+    {
+      "approved_tree": "b89edc1082c5d2249d5eb24ab6df6aa943cb39ef",
+      "phase_id": "phase-3b-entrypoint-uninstall",
+      "consumed_by_commit_sha": "52d01ea66ac27ad7a64a7be839c9f6ea6ff2396b",
+      "approval_consumed_at": "2026-07-09T14:57:27.844Z"
+    },
+    {
+      "approved_tree": "3a935db6e2dd01768c19674eae9b899d9328b179",
+      "phase_id": "phase-4-docs-version",
+      "consumed_by_commit_sha": "152f95b81dd0d63cfc522998e614056d44bd3b9e",
+      "approval_consumed_at": "2026-07-09T15:12:03.951Z"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-4-docs-version",
+    "outcome": "approved",
+    "compare_hash": "0433d4b36a5b1c80a1e7bbf38644fc3a1d77df3d2c93cc0f0421f6097434e287",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-09T15:09:24.413Z"
+  }
 }
