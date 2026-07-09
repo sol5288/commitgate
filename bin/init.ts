@@ -310,7 +310,7 @@ export function runInit(opts: InitOptions): InitResult {
   const packageManager = detectPackageManager(targetRoot)
 
   // req.config.json 계획(쓰기 없음). handoffPath:null·packageManager를 항상 보장 —
-  // 코어 DEFAULTS의 palm 고유값(handoffPath)이 기존 부분 config에서도 resurface하지 않도록(design R1 P2). 기존 키 보존.
+  // handoffPath는 프로젝트별 값이라 코어 기본이 비활성(null)이다 — 그 비활성을 config에 **명시 기록**한다(암묵 < 명시). 기존 키 보존.
   let configAction: 'created' | 'merged' | 'unchanged' = 'unchanged'
   const configKeysAdded: string[] = []
   let configToWrite: Record<string, unknown> | null = null

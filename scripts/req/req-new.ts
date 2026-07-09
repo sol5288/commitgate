@@ -2,7 +2,7 @@
 /**
  * req:new — AI REQ 워크플로우 1차 (단계 4A): REQ 티켓 + feat/req-* 브랜치 생성.
  *
- * SSOT: palm-kiosk/docs/evaluation/ai-req-workflow-design.md §9.1·§9.2·DEC-WF-020(D11).
+ * 설계 근거: DEC-WF-020(D11) — REQ는 main에서 feat/req-* 브랜치로 시작한다.
  *   - state.json은 **BOM 없이** 생성(Node, review-codex의 writeState 재사용).
  *   - 기본 dry-run(계획 출력), `--run` 시 실제 브랜치 생성·티켓 파일·스캐폴드 커밋.
  *   - REQ id 채번은 registry 미사용(1차) — workflow/REQ-* 디렉터리 스캔으로 max+1.

@@ -2,7 +2,7 @@
 /**
  * req:commit — AI REQ 워크플로우 Phase B (REQ-2026-016). 승인된 phase를 커밋하는 래퍼.
  *
- * SSOT 설계: ../palm-kiosk/docs/evaluation/ai-req-workflow-design.md / 본 티켓 01-design.md D-016-3·3b·7·8·9.
+ * 설계 근거: 본 티켓 01-design.md D-016-3·3b·7·8·9.
  * 책임(전체): req:doctor 통과 게이트 → HIGH 사람확인 게이트 → source 커밋(승인 코드만) →
  *   commit_allowed 소비 → evidence-finalize(approvals.jsonl 매니페스트 append + responses chore 커밋) → 2-커밋.
  *   복구/finalize 모드(pending_evidence_for)·design-finalize 포함.

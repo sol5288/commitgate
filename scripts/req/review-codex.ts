@@ -2,9 +2,7 @@
 /**
  * req:review-codex — AI REQ 워크플로우 1차 (단계 2: 조립·바인딩 캡처 + 기반 검증 로직)
  *
- * SSOT 설계: palm-kiosk/docs/evaluation/ai-req-workflow-design.md
- *   §9.5 호출 문법 · §8.4 staged tree OID 바인딩 · §9.6 구조화 응답·도메인 검증
- * 0차 실측: palm-kiosk-app/workflow/00-spike/00-spike-report.md
+ * 설계 근거: 호출 문법 · staged tree OID 바인딩 · 구조화 응답·도메인 검증.
  * 리뷰 반영(Codex, 2단계): schema 버전 필드·STATUS↔COMMIT 모순 검증·state 부재 명확화·Review Context·AJV(단계3)
  *
  * 단계 2(완료): 조립(handoff·Review Context·request·staged diff) + git 바인딩(staged tree OID) + dry-run 미리보기,
@@ -17,7 +15,7 @@
  * 사용:
  *   pnpm req:review-codex <REQ-id>          # workflow/REQ-<id>/ 대상
  *   pnpm req:review-codex --ticket <dir>    # 임의 티켓 디렉터리
- *   옵션: --handoff <path>  (기본: ../palm-kiosk/docs/evaluation/project-memory/ai-handoff.md, 없으면 생략)
+ *   옵션: --handoff <path>  (미지정 시 req.config.json의 handoffPath. 둘 다 없으면 handoff 블록 생략 — 코어 기본은 비활성)
  */
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'

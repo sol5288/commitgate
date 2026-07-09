@@ -2,7 +2,6 @@
 /**
  * req:doctor — AI REQ 워크플로우 1차 (단계 4B): 일관성 점검(fail-closed).
  *
- * SSOT: palm-kiosk/docs/evaluation/ai-req-workflow-design.md §8.3.
  * 1차 최소셋(registry 비의존): D2·D3·D5·D6·D9·D10·D11 + D13(design 선행·freshness)·D15(NEEDS_FIX actionable). (D1/D7/D7b·D4a 등 registry/merge 의존은 2차)
  * FAIL 1건 이상 → exit 1, 자동 보정 금지(P9). review-codex 헬퍼 재사용.
  *
