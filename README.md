@@ -174,13 +174,17 @@ npx commitgate --no-agent-entrypoints
 npx commitgate --dry-run
 ```
 
-보안 하한 경고를 설치 실패로 취급하려면:
+정합성 경고를 설치 실패로 취급하려면:
 
 ```sh
 npx commitgate --strict
 ```
 
-기존 `cross-spawn`이 검증 하한보다 낮으면 파일을 복사하기 전에 중단합니다.
+**파일을 하나도 쓰기 전에** 중단합니다. 대상은 세 가지입니다.
+
+- 기존 `cross-spawn`이 검증 하한보다 낮을 때
+- 계약 포인터(`.claude/`·`.cursor/`·`AGENTS.md`·`CLAUDE.md`)가 `.gitignore`에 걸려 팀·CI에 공유되지 않을 때
+- 설치 전 워킹트리에 staged 변경이 있거나 설치 산출물과 겹치는 수정이 있어, 설치분만 담은 커밋을 만들 수 없을 때
 
 > `workflow/machine.schema.json`과 `workflow/req.config.schema.json`은 `req.config.json`의 `ticketRoot` 설정과 무관하게 **항상 `workflow/` 아래**에 복사됩니다.
 
@@ -329,7 +333,7 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 |---|---|
 | `npx commitgate` | 프로젝트에 CommitGate 설치 |
 | `npx commitgate --dry-run` | 파일을 쓰지 않고 설치 계획 확인 |
-| `npx commitgate --strict` | 낮은 `cross-spawn` 버전 경고를 설치 실패로 처리 |
+| `npx commitgate --strict` | 정합성 경고를 설치 실패로 처리 (낮은 `cross-spawn`, gitignore된 계약 포인터, 설치 커밋을 안전하게 만들 수 없는 워킹트리) — 파일을 하나도 쓰기 전에 중단 |
 | `npx commitgate --no-agent-entrypoints` | `.claude/`·`.cursor/`·`CLAUDE.md` 설치 건너뛰기 |
 | `npx commitgate uninstall` | 제거 계획 확인 (읽기 전용 — 아무것도 지우지 않음) |
 | `npm run req:new -- <slug> --run` | REQ 티켓, 브랜치, 설계문서 생성 |

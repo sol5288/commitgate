@@ -174,13 +174,13 @@ Preview without writing files:
 npx commitgate --dry-run
 ```
 
-Treat the security floor warning as an install failure:
+Treat integrity warnings as an install failure:
 
 ```sh
 npx commitgate --strict
 ```
 
-If an existing `cross-spawn` is below the verified floor, CommitGate stops before copying files.
+CommitGate stops **before writing any file** if an existing `cross-spawn` is below the verified floor, if a contract pointer would be swallowed by `.gitignore`, or if the working tree makes a safe install commit impossible.
 
 > `workflow/machine.schema.json` and `workflow/req.config.schema.json` are always copied under `workflow/`, regardless of the `ticketRoot` setting in `req.config.json`.
 
