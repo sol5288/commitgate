@@ -15,7 +15,7 @@
  * ⚠️ **강제(enforcement)가 아니라 자문(advisory)이다.** 승인 게이트는 여전히 `req:review-codex`/`req:commit`에 있다.
  * `req:next`가 틀려도 게이트는 뚫리지 않는다. 그래서 애매하면 `RUN` 쪽으로 기운다(fail-forward).
  *
- * 사용: npm run req:next -- <REQ-id> [--json] [--root <path>] [--ticket <dir>]
+ * 사용: req:next <REQ-id> [--json] [--root <path>] [--ticket <dir>]   (저장소 패키지매니저의 실행 형식으로)
  */
 import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -317,6 +317,14 @@ function commitCmd(pm: PackageManager, target: NextTarget): string {
   return buildScriptInvocation(pm, 'req:commit', [...targetArgs(target), '--run']).join(' ')
 }
 
+/**
+ * 대상(REQ id 또는 `--ticket`) 미지정 에러 문구(DEC-011-1). **config 로드 이후**라 pm별로 파생한다.
+ * 리터럴을 박으면 다른 pm 프로젝트의 사용자가 그대로 따라 할 수 없는 명령을 안내받는다.
+ */
+export function missingTargetHint(pm: PackageManager): string {
+  return `REQ id 또는 --ticket <dir> 필요 (예: ${buildScriptInvocation(pm, 'req:next', ['2026-010']).join(' ')})`
+}
+
 interface RunCandidate {
   command: string
   kind: ReviewKind
@@ -585,8 +593,7 @@ function main(): void {
 
   // target은 **사용자가 티켓을 지목한 방식 그대로** 보존한다(R5). `--ticket`으로 읽었으면 후속 명령도 `--ticket`을 쓴다 —
   // 그러지 않으면 `req:review-codex -- <reqId>`가 기본 위치의 **다른 티켓**을 리뷰한다.
-  if (!opts.ticket && !opts.reqId)
-    throw new Error('REQ id 또는 --ticket <dir> 필요 (예: npm run req:next -- 2026-010)')
+  if (!opts.ticket && !opts.reqId) throw new Error(missingTargetHint(cfg.packageManager))
   const target: NextTarget = opts.ticket
     ? { kind: 'ticket', ticketDir: opts.ticket }
     : { kind: 'req', reqId: (opts.reqId as string).replace(/^REQ-/, '') }

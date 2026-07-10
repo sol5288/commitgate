@@ -12,9 +12,9 @@
  * 단계 3B(다음): codex exec/resume 실제 호출(thread_id 파싱) + --output-last-message 캡처 + processResponse 배선 +
  *   resume 후 `git status --porcelain` clean 검사 + machine_schema_version emit 재확인.
  *
- * 사용:
- *   pnpm req:review-codex <REQ-id>          # workflow/REQ-<id>/ 대상
- *   pnpm req:review-codex --ticket <dir>    # 임의 티켓 디렉터리
+ * 사용(저장소 패키지매니저의 실행 형식으로):
+ *   req:review-codex <REQ-id>          # workflow/REQ-<id>/ 대상
+ *   req:review-codex --ticket <dir>    # 임의 티켓 디렉터리
  *   옵션: --handoff <path>  (미지정 시 req.config.json의 handoffPath. 둘 다 없으면 handoff 블록 생략 — 코어 기본은 비활성)
  */
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
@@ -22,7 +22,7 @@ import { resolve, join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
-import { loadConfig, packageRoot, DEFAULTS, type ResolvedConfig } from './lib/config'
+import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager } from './lib/config'
 import {
   createGitAdapter,
   createCodexReviewerAdapter,
@@ -1055,13 +1055,21 @@ export function parseArgs(argv: string[]): Opts {
   return opts
 }
 
+/**
+ * 대상(REQ id 또는 `--ticket`) 미지정 에러 문구(DEC-011-1). **config 로드 이후**라 pm별로 파생한다.
+ * `DEFAULTS.packageManager` 폴백 금지 — 그 값(`'pnpm'`)은 `bin/init.ts`의 감지 폴백(`'npm'`)과 갈라져 있다.
+ */
+export function missingTicketHint(pm: PackageManager): string {
+  return `REQ id 또는 --ticket <dir> 필요 (예: ${buildScriptInvocation(pm, 'req:review-codex', ['2026-001']).join(' ')})`
+}
+
 function resolveTicketDir(opts: Opts, cfg: ResolvedConfig): string {
   if (opts.ticket) return resolve(opts.ticket)
   if (opts.reqId) {
     const id = opts.reqId.replace(/^REQ-/, '')
     return join(cfg.workflowDirAbs, `REQ-${id}`)
   }
-  throw new Error('REQ id 또는 --ticket <dir> 필요 (예: pnpm req:review-codex 2026-001)')
+  throw new Error(missingTicketHint(cfg.packageManager))
 }
 
 function gitStatusLines(): string[] {

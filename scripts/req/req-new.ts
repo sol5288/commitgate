@@ -7,13 +7,13 @@
  *   - 기본 dry-run(계획 출력), `--run` 시 실제 브랜치 생성·티켓 파일·스캐폴드 커밋.
  *   - REQ id 채번은 registry 미사용(1차) — workflow/REQ-* 디렉터리 스캔으로 max+1.
  *
- * 사용: pnpm req:new <slug> [--run] [--risk LOW|HIGH] [--title "..."]
+ * 사용: req:new <slug> [--run] [--risk LOW|HIGH] [--title "..."]   (저장소 패키지매니저의 실행 형식으로)
  */
 import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { writeState, type WorkflowState } from './review-codex'
-import { loadConfig, packageRoot, type DesignDocs } from './lib/config'
+import { loadConfig, packageRoot, buildScriptInvocation, type DesignDocs, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — 현재 동작 보존).
@@ -42,6 +42,18 @@ export function nextReqId(year: number, existingIds: string[]): string {
 
 export function branchName(reqId: string, slug: string, branchPrefix: string): string {
   return `${branchPrefix}${reqId.replace(/^REQ-/, '')}-${slug}`
+}
+
+/**
+ * `--run` 성공 후 다음 단계 안내(DEC-011-1). **config 로드 이후**이므로 pm별 실행 형식으로 파생한다.
+ *
+ * ⚠️ `DEFAULTS.packageManager`(= `'pnpm'`)를 폴백으로 쓰지 마라. `bin/init.ts`의 감지 폴백은 `'npm'`이라
+ * 두 값이 갈라져 있고, 그걸 문구에 끌어오면 npm 프로젝트가 pnpm 명령을 안내받는다 — 이 REQ가 고치는 결함이다.
+ * config가 없는 지점(헤더 주석·early throw)은 pm-중립 bare 표기를 쓴다.
+ */
+export function nextStepHint(pm: PackageManager, reqId: string): string {
+  const id = reqId.replace(/^REQ-/, '')
+  return `코드 변경 → git add → ${buildScriptInvocation(pm, 'req:review-codex', [id, '--run']).join(' ')}`
 }
 
 export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | 'HIGH'): WorkflowState {
@@ -112,7 +124,8 @@ export function parseArgs(argv: string[]): Opts {
 
 function main(): void {
   const o = parseArgs(process.argv.slice(2))
-  if (!o.slug) throw new Error('slug 필요 (예: pnpm req:new camera-hardfail --run)')
+  // ⚠️ loadConfig 이전이라 pm을 모른다 → pm-중립 bare 표기(DEFAULTS 폴백 금지, DEC-011-1).
+  if (!o.slug) throw new Error('slug 필요 (예: req:new camera-hardfail --run)')
   validateSlug(o.slug)
 
   const cfg = loadConfig({ root: o.root })
@@ -166,7 +179,7 @@ function main(): void {
   console.log(`[req:new] 생성 완료: ${reqId}`)
   console.log(`  branch : ${branch} (체크아웃됨)`)
   console.log(`  ticket : ${ticketRel}/  (스캐폴드 커밋)`)
-  console.log(`  다음   : 코드 변경 → git add → pnpm req:review-codex ${reqId.replace(/^REQ-/, '')} --run`)
+  console.log(`  다음   : ${nextStepHint(cfg.packageManager, reqId)}`)
 }
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
