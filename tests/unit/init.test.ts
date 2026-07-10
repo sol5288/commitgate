@@ -100,6 +100,73 @@ describe('[init] 설치 축 SSOT (persona)', () => {
  * 본문 SSOT는 `AGENTS.md`다. 여기 깔리는 것은 **얇은 포인터**이며 계약 본문을 복제하지 않는다.
  * `src !== dest`라 기존 `copyInto`(레이아웃 재현)를 쓸 수 없다 — 명시적 매핑 복사기가 필요하다.
  */
+/**
+ * REQ-2026-011 phase-2 — 진입점 템플릿은 **pm-중립**이어야 한다 (D1 / DEC-011-1·2).
+ *
+ * 회귀 경위: `e09c2f3`이 init stdout을 pm-aware로 고친 **다음 날** `f66d45c`가 진입점 템플릿에
+ * `npm run …` 리터럴을 새로 넣어 같은 결함 클래스를 재도입했다. `runScriptCmd`에는 단위 테스트가
+ * 있었지만 **템플릿 본문을 지키는 테스트가 없어** CI가 잡지 못했다. 이 describe가 그 가드다.
+ *
+ * 왜 치환 렌더링이 아니라 bare 표기인가(DEC-011-2): `bin/uninstall.ts`가 설치본과 패키지 원본의
+ * sha256을 비교해 `removable`/`review`를 판정한다. init이 pm별로 렌더하면 두 바이트열이 영원히
+ * 달라져 uninstall이 자기가 깐 진입점을 지우지 못한다. 아래 byte-identity 테스트가 그 계약을 고정한다.
+ */
+describe('[init] 진입점 템플릿 pm-중립 (REQ-2026-011 D1)', () => {
+  /** 패키지매니저 실행 형식이 박힌 명령. 어느 pm으로 렌더해도 다른 pm 프로젝트에선 틀린다. */
+  const PM_LITERAL = /npm run req|pnpm req:|yarn req:/
+  const TEMPLATE_SRCS = [...KIT_AGENT_ENTRYPOINTS.map((e) => e.src), KIT_CLAUDE_TEMPLATE_REL]
+  const INSTALLED = [...KIT_AGENT_ENTRYPOINTS.map((e) => e.dest), 'CLAUDE.md']
+
+  it.each(TEMPLATE_SRCS)('템플릿 원본 %s 에 pm 실행 형식이 박혀 있지 않다', (src) => {
+    const body = readFileSync(join(PACKAGE_ROOT_FOR_TEST, src), 'utf8')
+    expect(body).not.toMatch(PM_LITERAL)
+    expect(body, 'bare 표기로 워크플로 명령을 안내해야 함').toMatch(/req:next/)
+  })
+
+  it.each(['pnpm-lock.yaml', 'yarn.lock', 'package-lock.json'])(
+    '%s 프로젝트에 설치해도 진입점은 pm 실행 형식을 지시하지 않는다',
+    (lock) => {
+      const dir = tmpTarget({ lock })
+      try {
+        runInit(OPTS(dir))
+        for (const d of INSTALLED) {
+          const body = readFileSync(join(dir, d), 'utf8')
+          expect(body, d).not.toMatch(PM_LITERAL)
+        }
+      } finally {
+        cleanup(dir)
+      }
+    },
+  )
+
+  /**
+   * DEC-011-2의 핵심 계약: 설치본은 패키지 원본과 **바이트가 같다**.
+   * 누군가 치환 렌더링을 도입하면 여기서 깨진다 — uninstall의 `match === 'identical'` 판정이 무너지기 전에.
+   */
+  it('설치본은 패키지 원본과 byte-identical (uninstall의 sha256 비교 계약)', () => {
+    const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
+    try {
+      runInit(OPTS(dir))
+      for (const { src, dest } of KIT_AGENT_ENTRYPOINTS) {
+        expect(readFileSync(join(dir, dest)), `${dest} == ${src}`).toEqual(
+          readFileSync(join(PACKAGE_ROOT_FOR_TEST, src)),
+        )
+      }
+      expect(readFileSync(join(dir, 'CLAUDE.md'))).toEqual(
+        readFileSync(join(PACKAGE_ROOT_FOR_TEST, KIT_CLAUDE_TEMPLATE_REL)),
+      )
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** 실행 형식을 지시하지 않는 대신, **어디서 정확한 형식을 얻는지**는 알려 줘야 한다. */
+  it.each(TEMPLATE_SRCS)('템플릿 %s 는 정확한 실행 형식의 출처를 안내한다', (src) => {
+    const body = readFileSync(join(PACKAGE_ROOT_FOR_TEST, src), 'utf8')
+    expect(body).toContain('패키지매니저')
+  })
+})
+
 describe('[init] 에이전트 진입점 설치', () => {
   const DESTS = ['.claude/skills/commitgate/SKILL.md', '.claude/commands/req.md', '.cursor/rules/commitgate.mdc']
 

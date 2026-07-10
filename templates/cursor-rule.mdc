@@ -33,9 +33,12 @@ alwaysApply: true
 다음 행동을 스스로 추측하지 마라. 도구가 상태에서 계산한다.
 
 ```sh
-npm run req:new -- <slug> --run     # 티켓·브랜치 생성
-npm run req:next -- <REQ-id>        # 그다음은 항상 이것
+req:new <slug> --run     # 티켓·브랜치 생성
+req:next <REQ-id>        # 그다음은 항상 이것
 ```
+
+> 이 명령들은 저장소의 **패키지매니저 실행 형식**으로 돌린다(npm은 `run`과 `--` 구분자가 필요하고, pnpm·yarn은 스크립트 이름을 바로 받는다).
+> `req:next`의 `RUN` 출력이 정확한 형태를 그대로 보여 준다.
 
 | kind | 할 일 |
 |---|---|
