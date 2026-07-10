@@ -6,6 +6,11 @@
 
 AI coding agents can move quickly, but unreviewed changes should not go straight into your history. CommitGate wraps each change in a REQ ticket and only allows the staged tree approved by Codex to be committed. If the code changes after approval, or if evidence is missing, it fails closed.
 
+> **⚠️ Two things to know before you start.**
+>
+> 1. **Review sends your staged diff off-machine.** `req:review-codex` passes the **entire** `git diff --cached` to Codex (OpenAI). Codex reads your repository root under `--sandbox read-only`, so files outside the diff can be read too. There is **no** masking, filtering, or size cap. Check the staged content for credentials, tokens, and personal data before running a review.
+> 2. **No git hook is installed.** Running `git commit` directly instead of `req:commit` bypasses the gate, the approval binding, and the evidence trail. CommitGate's enforcement keeps a **cooperating agent on the contract's rails** — it is not a barrier against a human going around it.
+
 [![CI](https://github.com/sol5288/commitgate/actions/workflows/ci.yml/badge.svg)](https://github.com/sol5288/commitgate/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -113,6 +118,14 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - Approval responses and evidence are kept under `workflow/REQ-.../responses/`.
 
 In short: **approved changes pass, ambiguous changes stop.**
+
+### What It Does *Not* Enforce
+
+So that you do not miscalculate where your real defenses are:
+
+- **This is not hard enforcement.** No git hook is installed, so running `git commit` directly instead of `req:commit` bypasses doctor, the approval binding, and the evidence trail. Your real defense for production is still CI and the deployment pipeline.
+- **It does not keep your staged content secret.** `req:review-codex` transmits the full `git diff --cached` to Codex (OpenAI), and codex reads the repository root under `--sandbox read-only`. There is no masking, scrubbing, or size cap. For payment or credential-bearing codebases, write a "inspect the staged diff before review" step into your contract (`AGENTS.md`).
+- **It does not guarantee anything after the commit.** Approval binds the staged tree at commit time; merge, tag, and publish are each separate control points.
 
 ---
 

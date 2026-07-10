@@ -6,6 +6,11 @@
 
 AI 에이전트가 코드를 빠르게 만들더라도, 리뷰 없이 바로 커밋되면 위험합니다. CommitGate는 변경을 티켓 단위로 묶고, Codex가 승인한 staged tree만 커밋되게 합니다. 승인 후 코드가 바뀌거나 증거가 부족하면 기본적으로 막습니다.
 
+> **⚠️ 시작하기 전에 두 가지를 알아 두세요.**
+>
+> 1. **리뷰는 staged diff를 외부로 전송합니다.** `req:review-codex`는 `git diff --cached` **전문**을 Codex(OpenAI)로 보냅니다. codex는 `--sandbox read-only`로 저장소 루트를 읽으므로 diff에 없는 파일도 읽힐 수 있습니다. 마스킹·필터·길이 상한은 **없습니다.** 리뷰 전에 staged 내용에 자격증명·토큰·개인정보가 없는지 확인하세요.
+> 2. **git hook을 설치하지 않습니다.** `req:commit` 대신 `git commit`을 직접 치면 게이트·승인 바인딩·증거 기록이 전부 우회됩니다. CommitGate의 강제력은 **협조하는 에이전트를 계약 궤도에 유지하는 것**에 있지, 사람의 우회를 막는 데 있지 않습니다.
+
 [![CI](https://github.com/sol5288/commitgate/actions/workflows/ci.yml/badge.svg)](https://github.com/sol5288/commitgate/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -113,6 +118,14 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 - 승인 응답과 증거 파일은 `workflow/REQ-.../responses/`에 남습니다.
 
 한 줄로 말하면, **확실히 승인된 변경만 통과하고 애매하면 멈추는 방식**입니다.
+
+### 보장하지 않는 것
+
+방어선을 잘못 계산하지 않도록, 이 도구가 **하지 않는 일**을 분명히 해 둡니다.
+
+- **하드 강제가 아닙니다.** git hook을 설치하지 않으므로 `req:commit` 대신 `git commit`을 직접 치면 doctor·승인 바인딩·증거 기록이 전부 우회됩니다. 운영 반영의 실제 방어선은 여전히 CI와 배포 파이프라인입니다.
+- **staged 내용의 비밀을 지켜 주지 않습니다.** `req:review-codex`는 `git diff --cached` 전문을 Codex(OpenAI)로 전송하고, codex는 `--sandbox read-only`로 저장소 루트를 읽습니다. 마스킹·스크러빙·길이 상한이 없습니다. 결제·자격증명처럼 민감한 코드베이스라면 리뷰 전 staged diff를 육안으로 확인하는 절차를 계약(`AGENTS.md`)에 명문화하세요.
+- **커밋 이후를 보장하지 않습니다.** 승인은 커밋 시점의 staged tree에 대한 것이고, 머지·태그·publish는 각각 별도 통제점입니다.
 
 ---
 
