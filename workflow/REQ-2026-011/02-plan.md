@@ -101,7 +101,8 @@ DEC-011-5·DEC-011-9·DEC-011-10 적용.
 - (c) lockfile을 `.gitignore`에 넣고 **untracked**인 repo: 경고 없이 `gitIgnoredArtifacts`에만 담기고 `--strict`가 throw하지 **않는다**(계약 포인터가 아니므로).
 - (d) lockfile이 `.gitignore`에 걸리지만 **이미 tracked**인 repo: 제외되지 않는다(DEC-011-10).
 - (e) staged `M src/foo.ts`가 있는 repo: `preexistingDirty.staged`에 담기고, `--strict`가 throw하며 **파일 0건 생성**.
-- (f) unstaged `M package.json`(= 산출물과 겹침)이 있는 repo: `preexistingDirty.overlapping`에 담긴다. `unrelated`에는 담기지 **않는다**.
+- (f) tracked·unstaged `M package.json`(= 산출물과 겹침)이 있는 repo: `preexistingDirty.overlapping`에 담긴다. `unrelated`에는 담기지 **않는다**.
+- (g) **untracked 산출물(`?? package.json`)은 세 목록 어디에도 담기지 않는다.** baseline이 없어 분리할 것이 없기 때문이다. `--strict`도 throw하지 않는다 — 그러지 않으면 README의 `git init && npm init -y && npx commitgate --strict`가 항상 실패한다(phase-5 리뷰 R1 정정).
 
 Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인.
 

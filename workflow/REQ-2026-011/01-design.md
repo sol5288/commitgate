@@ -187,10 +187,23 @@ stage 목록이 완벽해도 **D4의 실패 클래스가 남는다**(R4). 그리
 ```ts
 export interface PreexistingDirty {
   staged: string[]       // 인덱스 ≠ HEAD (porcelain X 열이 공백·'?'가 아님)
-  overlapping: string[]  // unstaged·untracked ∩ planArtifactPaths(plan)
-  unrelated: string[]    // 나머지 (unstaged·untracked, 산출물과 무관)
+  overlapping: string[]  // 산출물과 겹치는 **tracked·unstaged** 변경 (X=' ' && Y∉{' ','?'})
+  unrelated: string[]    // 나머지 dirty (산출물과 무관한 unstaged·untracked)
 }
 ```
+
+**untracked 산출물(`?? package.json`)은 `overlapping`이 아니다** — phase-5 리뷰 R1에서 이 공식을 정정했다.
+
+처음엔 `overlapping = unstaged·untracked ∩ artifacts`로 적었으나, 그 바로 아래 적은 근거("사용자가 `package.json`을 **고쳐 둔** 상태에서 init이 같은 파일에 주입하면 사후 분리 불가")는 **tracked 수정**에만 성립한다. untracked 파일에는 git 상 baseline이 없다 — 분리할 "사용자 변경"과 "설치 변경"이 애초에 존재하지 않고, 파일 전체가 설치 커밋에 들어가는 것이 옳다.
+
+게다가 그 공식대로 차단하면 **README가 지시하는 첫 흐름이 항상 실패한다**:
+
+```sh
+git init && npm init -y     # → `?? package.json` (정의상 untracked)
+npx commitgate --strict     # → 공식대로면 무조건 throw
+```
+
+거짓 차단은 사용자에게 `--strict`를 피하도록 가르친다. D6(트렁크 하드코딩)에서 거짓 경고를 문제 삼은 것과 같은 이유로, 여기서도 차단하지 않는다.
 
 | 분류 | 안전한가 | init의 행동 |
 |---|---|---|
@@ -198,6 +211,7 @@ export interface PreexistingDirty {
 | `overlapping` 비어있지 않음 | ✗ 사후 분리 불가 | 〃 |
 | `unrelated`만 있음 | ✓ 커밋은 인덱스만 담고, 그것들은 인덱스에 없다 | `git add <목록>` 안내 + 설치 커밋 **뒤** `git stash -u`(또는 별도 커밋) 단계 |
 | 전부 비어있음 | ✓ | 평범한 `git add <목록>` 안내 |
+| untracked 산출물(`?? package.json`) | ✓ baseline이 없어 분리할 것이 없다 | 어디에도 담지 않는다. stage 목록에는 들어간다 |
 
 `runInit`은 dirty repo에 설치하는 것 자체를 **막지 않는다**(기본 모드는 비파괴·비-breaking). 막는 것은 **안전하지 않은 안내를 내는 것**이다. 안내가 없으면 사용자는 `git status`를 보고 직접 판단한다 — 잘못된 안내보다 낫다.
 
