@@ -11,6 +11,11 @@ import {
   runScriptCmd,
   parseArgs,
   crossSpawnBelowFloor,
+  stageList,
+  installGuidance,
+  quoteForShell,
+  pathNeedsManualQuoting,
+  unquoteGitPath,
   classifyPreexistingDirty,
   findIgnoredArtifacts,
   KIT_COPY_RELPATHS,
@@ -52,8 +57,16 @@ function gitIn(dir: string, args: string[]): string {
  * - withGit: 'real'(기본) = 실제 `git init` / 'fake' = 빈 `.git` 마커만 / 'none' = git 없음
  * - withPkg: package.json 작성 여부(기본 true)
  */
-function tmpTarget(opts?: { pkg?: object; lock?: string; withGit?: 'real' | 'fake' | 'none'; withPkg?: boolean }): string {
-  const dir = mkdtempSync(join(tmpdir(), 'reqwf-init-'))
+function tmpTarget(opts?: {
+  pkg?: object
+  lock?: string
+  withGit?: 'real' | 'fake' | 'none'
+  withPkg?: boolean
+  spacedName?: boolean
+  pctName?: boolean
+}): string {
+  const prefix = opts?.pctName === true ? 'reqwf %PCT% ' : opts?.spacedName === true ? 'reqwf init ' : 'reqwf-init-'
+  const dir = mkdtempSync(join(tmpdir(), prefix))
   const g = opts?.withGit ?? 'real'
   if (g === 'real') {
     execFileSync('git', ['init', '-q'], { cwd: dir })
@@ -1080,6 +1093,584 @@ describe('[init] 설치 전 dirty 워킹트리 (DEC-011-11)', () => {
       expect(r.preexistingDirty.staged).toEqual([])
       expect(r.preexistingDirty.overlapping).toEqual([])
       expect(r.preexistingDirty.unrelated).not.toContain('package.json')
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-011 phase-6 — 설치 직후 안내 (D4 / DEC-011-7·8·11).
+ *
+ * `runInit`은 스캐폴드를 만들고 `package.json`을 고치지만 `git add`/`commit`은 하지 않는다.
+ * 그래서 설치 직후 워킹트리는 **확정적으로 dirty**한데, 기존 안내의 마지막 줄이
+ * `req:new <slug> --run`이었다. 그 명령은 clean 워킹트리를 요구하므로 **100% 실패**했다.
+ *
+ * 안내에 `git add -A`를 쓰지 않는 이유(DEC-011-7): brownfield repo의 무관한 변경과 `.env`가
+ * 함께 커밋되고, 이어지는 `req:review-codex`가 staged diff 전문을 외부로 전송한다.
+ * 같은 REQ의 D8-B가 줄이려는 위험을 정확히 증폭시킨다.
+ *
+ * `&&`를 쓰지 않는 이유(DEC-011-8): Windows PowerShell 5.1과 cmd.exe에 그 연산자가 없다.
+ * 이 저장소는 PowerShell 5를 명시 대상으로 인정한다(`scripts/req/lib/config.ts`의 BOM 방어).
+ */
+describe('[init] stageList — 산출물에서 무시되는 것만 뺀다', () => {
+  it('gitIgnoredArtifacts를 제외한다', () => {
+    expect(stageList(['a', 'b', 'c'], ['b'])).toEqual(['a', 'c'])
+  })
+  it('제외할 것이 없으면 그대로', () => {
+    expect(stageList(['a'], [])).toEqual(['a'])
+  })
+})
+
+describe('[init] installGuidance — 안내 문구 (D4)', () => {
+  const text = (dir: string, over?: Partial<InitOptions>): string => installGuidance(runInit(OPTS(dir, over))).join('\n')
+  /** 실행될 **명령 줄**만 본다 — 산문 경고가 `-A`를 언급하는 것과 실제 명령을 구분한다. */
+  const commands = (dir: string, over?: Partial<InitOptions>): string[] =>
+    installGuidance(runInit(OPTS(dir, over)))
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('git '))
+
+  it('명령으로 `git add -A` 를 내지 않는다 — brownfield의 .env가 외부로 전송된다', () => {
+    const dir = tmpTarget()
+    try {
+      const cmds = commands(dir)
+      expect(cmds.some((c) => c.startsWith('git add -A') || c.startsWith('git add .'))).toBe(false)
+      expect(
+        cmds.some((c) => c.startsWith('git add --')),
+        '명시적 경로 목록으로 stage 한다',
+      ).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('shell 연산자 `&&` 를 쓰지 않는다 — PowerShell 5.1·cmd 비호환', () => {
+    const dir = tmpTarget()
+    try {
+      expect(text(dir)).not.toContain('&&')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('stage 목록에 설치 산출물이 실제로 들어 있다', () => {
+    const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
+    try {
+      const g = text(dir)
+      expect(g).toContain('scripts/req')
+      expect(g).toContain('req.config.json')
+      expect(g).toContain('package.json')
+      expect(g, 'lockfile — <pm> install 이 갱신한다').toContain('pnpm-lock.yaml')
+      expect(g, '눈으로 확인하는 단계').toContain('git status')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('pm-aware 하고, 마지막 단계가 req:new 다', () => {
+    const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
+    try {
+      const g = text(dir)
+      expect(g).toContain('pnpm install')
+      expect(g).toContain('pnpm req:new')
+      expect(g).not.toContain('npm run req:new')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('gitignore된 진입점은 stage 목록에서 뺀다 — `git add <ignored>` 는 fatal', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.gitignore'), '.claude\n', 'utf8')
+      const g = text(dir)
+      expect(g).not.toContain('.claude/commands/req.md')
+      expect(g, '무시되지 않은 진입점은 남는다').toContain('.cursor/rules/commitgate.mdc')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('마커 없는 기존 AGENTS.md → AGENTS.commitgate.md 가 stage 목록에 있다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 우리 규칙\n', 'utf8')
+      expect(text(dir), '빠지면 untracked로 남아 req:new --run이 죽는다').toContain(KIT_AGENTS_CONTRACT_COPY_REL)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** DEC-011-11: 안전한 커밋 안내를 만들 수 없으면 **내지 않는다.** 잘못된 안내보다 안내 없음이 낫다. */
+  it('staged 변경이 있으면 `git add` 목록을 내지 않고 이유를 밝힌다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'foo.ts'), 'a\n', 'utf8')
+      gitIn(dir, ['add', 'foo.ts'])
+      const g = text(dir)
+      expect(g).not.toContain('git add ')
+      expect(g).toContain('foo.ts')
+      expect(g).toMatch(/staged/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('산출물과 겹치는 tracked 변경이 있으면 `git add` 목록을 내지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '9.9.9' }), 'utf8')
+      const g = text(dir)
+      expect(g).not.toContain('git add ')
+      expect(g).toContain('package.json')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * `-u` 없는 bare `git stash`는 untracked를 두고 간다 → clean-tree 게이트가 여전히 실패한다(design 리뷰 R5).
+   * 반대로 **경로 없는** `git stash -u`는 너무 넓다 — gitignore되지 않은 `node_modules/`까지 쓸어 가
+   * 방금 설치한 `tsx`가 사라지고 `req:new`가 죽는다(실측). 그래서 pathspec을 붙인다.
+   */
+  it('무관한 변경만 있으면 경로를 명시한 `git stash push -u --` 단계를 넣는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, 'notes.txt'), 'x\n', 'utf8')
+      const cmds = commands(dir)
+      expect(cmds.some((c) => c.startsWith('git add --'))).toBe(true)
+      const stash = cmds.find((c) => c.startsWith('git stash'))
+      expect(stash, 'pathspec 없는 stash는 node_modules를 쓸어 간다').toBe('git stash push -u -- notes.txt')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('워킹트리가 깨끗하면 stash 단계가 없다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      expect(text(dir)).not.toContain('git stash')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * `<pm> install`이 만드는 `?? node_modules/`가 clean-tree 게이트를 막는다. README가 지시하는
+   * `git init && npm init -y`에는 `.gitignore`가 없으므로 **문서화된 첫 흐름이 100% 실패한다**(실측).
+   */
+  it('node_modules가 무시되지 않으면 .gitignore 추가를 안내하고 그 파일도 stage 목록에 넣는다', () => {
+    const dir = tmpTarget()
+    try {
+      const g = text(dir)
+      expect(r0(dir).nodeModulesWillDirty).toBe(true)
+      expect(g).toContain('node_modules')
+      expect(g).toContain('.gitignore')
+      const add = commands(dir).find((c) => c.startsWith('git add --')) ?? ''
+      expect(add.split(' ')).toContain('.gitignore')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('node_modules가 이미 무시되면 그 단계가 없고 .gitignore를 stage하지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf8')
+      gitIn(dir, ['add', '.gitignore', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      const r = r0(dir)
+      expect(r.nodeModulesWillDirty).toBe(false)
+      const add = commands(dir).find((c) => c.startsWith('git add --')) ?? ''
+      expect(add.split(' ')).not.toContain('.gitignore')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * phase-6 리뷰 R1: `.gitignore`를 stage 목록에 사후로 밀어 넣으면, tracked `.gitignore`에 이미 있던
+   * unstaged 수정이 설치 커밋에 딸려 들어간다 — `git add -A`를 금지한 이유를 정확히 우회한다.
+   * 그래서 `.gitignore`를 **산출물**로 만들어 3분류 기계를 그대로 태운다.
+   */
+  it('tracked `.gitignore` 에 unstaged 수정이 있으면 overlapping으로 잡고 `git add` 목록을 내지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.gitignore'), 'dist\n', 'utf8') // node_modules는 아직 무시 안 함
+      gitIn(dir, ['add', '.gitignore', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, '.gitignore'), 'dist\ncoverage\n', 'utf8') // 사용자의 무관한 수정
+
+      const r = r0(dir)
+      expect(r.nodeModulesWillDirty).toBe(true)
+      expect(r.artifacts, '.gitignore가 산출물이어야 3분류가 본다').toContain('.gitignore')
+      expect(r.preexistingDirty.overlapping).toContain('.gitignore')
+
+      const cmds = commands(dir)
+      expect(cmds.some((c) => c.startsWith('git add'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('untracked `.gitignore` 는 무해하다 — stage 목록에 넣고 안내를 낸다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, '.gitignore'), 'dist\n', 'utf8') // 커밋된 적 없음
+
+      const r = r0(dir)
+      expect(r.preexistingDirty.overlapping).toEqual([])
+      expect(r.preexistingDirty.unrelated, 'untracked 산출물은 unrelated도 아니다').not.toContain('.gitignore')
+      const add = commands(dir).find((c) => c.startsWith('git add --')) ?? ''
+      expect(add.split(' ')).toContain('.gitignore')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * phase-6 리뷰 R2: `node_modules` 무시 판정이 **커밋되지 않은** `.gitignore`에 의존하면,
+   * 안내가 그 파일을 `git stash push -u` 로 치우는 순간 규칙이 사라져 `?? node_modules/` 가 되살아난다.
+   * 그래서 `.gitignore` 가 dirty하면 무조건 산출물로 편입한다.
+   */
+  it('untracked `.gitignore` 가 node_modules 를 무시해도, 그 파일을 stash 대상으로 두지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf8') // 아직 커밋 안 됨
+
+      const r = r0(dir) // ⚠️ runInit은 한 번만 — 두 번 돌리면 두 번째 계획이 달라진다
+      const cmds = cmdsOf(r)
+      // R6 정정: 규칙이 있어도 그 `.gitignore`가 tracked가 아니면 clone에 따라오지 않는다 → 보장으로 인정 안 함.
+      expect(r.nodeModulesWillDirty, '커밋되지 않은 규칙은 이식되지 않는다').toBe(true)
+      expect(r.artifacts, 'stash되면 규칙이 사라진다 → 설치 커밋에 담아야 한다').toContain('.gitignore')
+      expect(r.preexistingDirty.unrelated, 'stash 목록에 들어가면 안 된다').not.toContain('.gitignore')
+
+      const add = cmds.find((c) => c.startsWith('git add --')) ?? ''
+      expect(add.split(' ')).toContain('.gitignore')
+      expect(cmds.some((c) => c.startsWith('git stash'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('tracked·unstaged `.gitignore` 의 미커밋 수정에 node_modules 규칙이 있으면 안내를 내지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.gitignore'), 'dist\n', 'utf8')
+      gitIn(dir, ['add', '.gitignore', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, '.gitignore'), 'dist\nnode_modules/\n', 'utf8') // 커밋되지 않은 규칙
+
+      const r = r0(dir)
+      expect(r.nodeModulesWillDirty).toBe(false)
+      expect(r.preexistingDirty.overlapping).toContain('.gitignore')
+      expect(cmdsOf(r).some((c) => c.startsWith('git add'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * init은 멱등하다. 커밋 전에 두 번 실행해도 안내가 **방금 깐 kit을 stash 하라고 말하면 안 된다** —
+   * 두 번째 실행에서 kit 파일들은 `skips`가 되므로, 그것이 산출물에서 빠지면 `unrelated`로 분류된다.
+   */
+  it('커밋 전에 두 번 실행해도 안내가 kit 파일을 stash 대상으로 만들지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      runInit(OPTS(dir))
+      const r2 = runInit(OPTS(dir)) // 재실행 — 전부 skip
+
+      expect(r2.copied).toEqual([])
+      expect(r2.skipped.length).toBeGreaterThan(0)
+      expect(r2.artifacts, 'skip된 kit 파일도 설치 커밋에 속한다').toContain('scripts/req/req-new.ts')
+      expect(r2.preexistingDirty.unrelated).not.toContain('scripts/req/req-new.ts')
+      const add = cmdsOf(r2).find((c) => c.startsWith('git add --')) ?? ''
+      expect(add.split(' ')).toContain('scripts/req/req-new.ts')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * phase-6 리뷰 R3: `skips`에는 init이 **보존하려던 사용자 파일**도 섞인다.
+   * 그것을 산출물로 넣으면 설치 커밋이 사용자 파일을 삼킨다 — `git add -A` 금지의 목적을 우회한다.
+   * 소유권 기준은 `bin/uninstall.ts`와 같은 **byte-identity**다.
+   */
+  it('kit 경로에 있던 사용자 파일(내용이 다름)은 stage 목록에 넣지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      mkdirSync(join(dir, '.cursor/rules'), { recursive: true })
+      writeFileSync(join(dir, '.cursor/rules/commitgate.mdc'), '# 내가 쓴 규칙\n', 'utf8')
+
+      const r = r0(dir)
+      expect(r.skipped, 'init은 보존한다').toContain('.cursor/rules/commitgate.mdc')
+      expect(r.artifacts, '사용자 파일은 설치 산출물이 아니다').not.toContain('.cursor/rules/commitgate.mdc')
+      const add = cmdsOf(r).find((c) => c.startsWith('git add --')) ?? ''
+      expect(add.split(' ')).not.toContain('.cursor/rules/commitgate.mdc')
+      // 사용자 파일이므로 무관한 변경으로 분류되어 stash 안내를 받는다.
+      expect(r.preexistingDirty.unrelated).toContain('.cursor/rules/commitgate.mdc')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('바이트가 같은 skip(직전 실행이 깐 것)은 stage 목록에 넣는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      runInit(OPTS(dir))
+      const r2 = runInit(OPTS(dir))
+      expect(r2.skipped).toContain('.cursor/rules/commitgate.mdc')
+      expect(r2.artifacts).toContain('.cursor/rules/commitgate.mdc')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * phase-6 리뷰 R4: 설치 결과는 **저장소에 이식 가능**해야 한다.
+   *
+   * `git check-ignore`는 `.git/info/exclude`와 전역 excludesFile도 인정하지만 그 둘은 clone에
+   * 따라오지 않는다. 설치한 사람의 로컬 설정 때문에 안내가 `.gitignore` 규칙을 빼먹으면,
+   * 팀원의 fresh clone에서 `<pm> install` 후 `?? node_modules/`가 나타나 `req:new`가 막힌다.
+   */
+  it('`.git/info/exclude` 만으로 무시되는 경우는 인정하지 않는다 — clone에 따라오지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, '.git/info/exclude'), 'node_modules/\n', 'utf8')
+
+      const r = r0(dir)
+      expect(r.nodeModulesWillDirty, '로컬 exclude는 이식되지 않는다').toBe(true)
+      expect(r.artifacts).toContain('.gitignore')
+      expect(cmdsOf(r).find((c) => c.startsWith('git add --'))?.split(' ')).toContain('.gitignore')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('저장소 `.gitignore` 에서 온 규칙만 clean-tree 보장으로 인정한다 (tracked여야 한다)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf8')
+      gitIn(dir, ['add', '.gitignore', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      expect(r0(dir).nodeModulesWillDirty).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * phase-6 리뷰 R6: `.gitignore` **자신이** 로컬 exclude로 숨겨져 있으면 그 규칙은 커밋되지 않는다.
+   * `git add .gitignore` 는 fatal이고, 팀원의 fresh clone에서 `?? node_modules/` 가 되살아난다.
+   * 이식 가능한 clean-tree를 보장할 수 없으므로 안내를 내지 않고, `--strict` 는 쓰기 전에 멈춘다.
+   */
+  it('`.gitignore` 자신이 무시되면 안내를 내지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, '.git/info/exclude'), '.gitignore\n', 'utf8')
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf8')
+
+      const r = r0(dir)
+      expect(r.nodeModulesWillDirty, '.gitignore가 tracked가 아니다').toBe(true)
+      expect(r.artifacts).toContain('.gitignore')
+      expect(r.gitIgnoredArtifacts, 'git add 가 fatal이다').toContain('.gitignore')
+      expect(cmdsOf(r).some((c) => c.startsWith('git add'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('`.gitignore` 자신이 무시되면 --strict 는 쓰기 0건으로 멈춘다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, '.git/info/exclude'), '.gitignore\n', 'utf8')
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf8')
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir, { strict: true }))).toThrow(/\.gitignore/)
+      expect(snapshot(dir)).toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * phase-6 리뷰 R5: 경로를 인용 없이 삽입하면 안내가 깨진다.
+   * `cd C:\Work\My Repo` 는 PowerShell 5.1에서 인자 두 개로 쪼개지고,
+   * `git stash push -u -- notes today.txt` 는 pathspec 두 개가 되어 그 파일이 dirty로 남는다.
+   */
+  it('공백이 든 target root 와 파일명을 큰따옴표로 묶는다', () => {
+    const dir = tmpTarget({ spacedName: true })
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, 'notes today.txt'), 'x\n', 'utf8')
+
+      const r = r0(dir)
+      const g = installGuidance(r).map((l) => l.trim())
+      const cd = g.find((l) => /^\d+\. cd /.test(l)) ?? ''
+      expect(cd, 'PowerShell 5.1은 공백에서 인자를 쪼갠다').toBe(`1. cd "${r.targetRoot}"`)
+      const stash = g.find((l) => l.startsWith('git stash')) ?? ''
+      expect(stash).toBe('git stash push -u -- "notes today.txt"')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('공백 없는 경로는 인용하지 않는다(출력 가독성)', () => {
+    expect(quoteForShell('scripts/req/req-new.ts')).toBe('scripts/req/req-new.ts')
+    expect(quoteForShell('C:\\Work\\repo')).toBe('C:\\Work\\repo')
+    expect(quoteForShell('notes today.txt')).toBe('"notes today.txt"')
+  })
+
+  /**
+   * cmd.exe는 **큰따옴표 안에서도** `%VAR%`(환경변수)와 `!VAR!`(지연확장)를 치환한다.
+   * PowerShell은 큰따옴표 안의 `` ` ``·`$`를 확장한다. 어떤 인용으로도 복붙이 안전하지 않다.
+   */
+  it('어떤 셸 인용으로도 안전하지 않은 경로를 식별한다', () => {
+    expect(pathNeedsManualQuoting('a$b.txt')).toBe(true)
+    expect(pathNeedsManualQuoting('a`b.txt')).toBe(true)
+    expect(pathNeedsManualQuoting('notes %USERPROFILE%.txt'), 'cmd.exe 환경변수 확장').toBe(true)
+    expect(pathNeedsManualQuoting('a!b.txt'), 'cmd.exe 지연확장').toBe(true)
+    expect(pathNeedsManualQuoting('a"b.txt')).toBe(true)
+    expect(pathNeedsManualQuoting('notes today.txt')).toBe(false)
+    expect(pathNeedsManualQuoting('scripts/req/req-new.ts')).toBe(false)
+  })
+
+  it('`%VAR%` 가 든 무관한 파일이 있으면 복붙 명령을 내지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf8')
+      gitIn(dir, ['add', '.gitignore'])
+      gitIn(dir, ['commit', '-q', '-m', 'ignore'])
+      writeFileSync(join(dir, 'notes %USERPROFILE%.txt'), 'x\n', 'utf8')
+
+      const r = r0(dir)
+      expect(r.preexistingDirty.unrelated).toContain('notes %USERPROFILE%.txt')
+      const cmds = cmdsOf(r)
+      expect(cmds.some((c) => c.startsWith('git add')), 'cmd.exe가 pathspec을 바꿔치기한다').toBe(false)
+      expect(cmds.some((c) => c.startsWith('git stash'))).toBe(false)
+      expect(installGuidance(r).join('\n')).toContain('notes %USERPROFILE%.txt')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('target root 에 `%` 가 있으면 `cd` 명령 대신 경로만 알려 준다', () => {
+    const dir = tmpTarget({ pctName: true })
+    try {
+      const g = installGuidance(r0(dir)).map((l) => l.trim())
+      expect(g.some((l) => l.startsWith('1. cd '))).toBe(false)
+      expect(g.some((l) => l.startsWith('1. 저장소 루트로 이동:'))).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * `git status --porcelain`은 **공백이 든 경로를 C-인용해서** 준다(`"notes today.txt"`).
+   * `core.quotePath=false`는 비-ASCII 이스케이프만 끄지 이 인용은 끄지 못한다 — 실측으로 확인.
+   * 되돌리지 않으면 경로가 산출물 목록과 매칭되지 않고 안내가 이중 인용을 낸다.
+   */
+  it('porcelain의 C-인용 경로를 되돌린다', () => {
+    expect(unquoteGitPath('"notes today.txt"')).toBe('notes today.txt')
+    expect(unquoteGitPath('package.json')).toBe('package.json')
+    expect(unquoteGitPath('"a\\"b.txt"')).toBe('a"b.txt')
+    expect(unquoteGitPath('"a\\\\b.txt"')).toBe('a\\b.txt')
+    expect(unquoteGitPath('"a\\tb.txt"')).toBe('a\tb.txt')
+  })
+
+  it('공백이 든 경로가 3분류에서 올바로 매칭된다', () => {
+    const d = classifyPreexistingDirty(['?? "notes today.txt"', ' M "my pkg.json"'], ['my pkg.json'])
+    expect(d.unrelated).toEqual(['notes today.txt'])
+    expect(d.overlapping).toEqual(['my pkg.json'])
+  })
+
+  /** `runInit`을 한 번만 돌리는 헬퍼(위 테스트들이 결과 필드를 직접 본다). */
+  function r0(dir: string) {
+    return runInit(OPTS(dir))
+  }
+  /** 이미 얻은 결과에서 명령 줄만 추출(runInit 재호출 금지). */
+  function cmdsOf(r: ReturnType<typeof runInit>): string[] {
+    return installGuidance(r)
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('git '))
+  }
+})
+
+/**
+ * 완료 기준 그 자체: **안내를 순서대로 따르면 `req:new --run` 의 clean-tree 게이트를 통과한다.**
+ * lockfile·`AGENTS.commitgate.md` 중 하나라도 stage 목록에서 빠지면 여기서 잡힌다.
+ */
+describe('[init] 통합 — 안내대로 커밋하면 워킹트리가 clean해진다', () => {
+  it('마커 없는 AGENTS.md + tracked lockfile 이 있는 brownfield repo', () => {
+    const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 우리 규칙\n', 'utf8')
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf8') // 현실적인 brownfield 상태
+      gitIn(dir, ['add', '.gitignore', 'package.json', 'pnpm-lock.yaml', 'AGENTS.md'])
+      gitIn(dir, ['commit', '-q', '-m', 'baseline'])
+
+      const r = runInit(OPTS(dir))
+      expect(r.agentsContractCopyCreated).toBe(true)
+
+      // `<pm> install`이 lockfile을 갱신하는 것을 모사(네트워크 install 없이).
+      writeFileSync(join(dir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n', 'utf8')
+
+      gitIn(dir, ['add', '--', ...stageList(r.artifacts, r.gitIgnoredArtifacts)])
+      gitIn(dir, ['commit', '-q', '-m', 'chore: install commitgate'])
+
+      expect(gitIn(dir, ['status', '--porcelain', '--untracked-files=all']).trim()).toBe('')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('무관한 변경이 있으면 안내대로 커밋 + `git stash -u` 후 clean해진다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'baseline'])
+      writeFileSync(join(dir, 'notes.txt'), 'x\n', 'utf8') // untracked — bare stash로는 안 치워진다
+
+      const r = runInit(OPTS(dir))
+      // 안내 2단계(`<pm> install`)가 lockfile을 만들고, 5단계가 `.gitignore`에 node_modules/를 넣게 한다.
+      // 그 단계들을 건너뛰면 `git add`가 존재하지 않는 경로에서 fatal이 된다 — 안내는 순서대로 따라야 성립한다.
+      const lock = r.lockfileRel
+      expect(lock).toBe('package-lock.json')
+      writeFileSync(join(dir, lock as string), '{}\n', 'utf8')
+      expect(r.nodeModulesWillDirty).toBe(true)
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n', 'utf8')
+
+      gitIn(dir, ['add', '--', ...stageList(r.artifacts, r.gitIgnoredArtifacts)])
+      gitIn(dir, ['commit', '-q', '-m', 'chore: install commitgate'])
+      // 안내가 내는 것과 동일한 pathspec 형태. 경로 없이 stash하면 node_modules까지 딸려 간다.
+      gitIn(dir, ['stash', 'push', '-u', '-q', '--', ...r.preexistingDirty.unrelated])
+
+      expect(gitIn(dir, ['status', '--porcelain', '--untracked-files=all']).trim()).toBe('')
     } finally {
       cleanup(dir)
     }

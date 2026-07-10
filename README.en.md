@@ -33,6 +33,18 @@ codex --version
 codex login status
 ```
 
+Installation writes files but never commits them. `req:new` **requires a clean working tree**, so commit the scaffold first. The installer's `다음:` (next steps) output prints the exact paths to stage.
+
+```sh
+git add -- <the paths the installer printed>
+git status                    # confirm only what you intended is staged
+git commit -m "chore: install commitgate"
+```
+
+> **Do not stage everything (`-A` / `.`).** Unrelated changes and untracked files such as `.env` would be swept into the commit, and the next `req:review-codex` transmits that staged diff in full to an external service.
+> Park any changes that predate the install **by pathspec** after the install commit: `git stash push -u -- <paths>`.
+> Without `-u`, untracked files remain and `req:new` stays blocked; without the pathspec, a bare `git stash -u` also sweeps up directories that are not ignored, such as `node_modules/`. The installer prints that path list too.
+
 **You do not paste a long prompt.** Installation lays down agent entrypoints for you.
 
 | File | Read by |

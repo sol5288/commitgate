@@ -152,7 +152,13 @@ function main(): void {
 
   // 클린 트리 요구(새 브랜치 깨끗이 시작 — 의도 변경 섞임 방지)
   const dirty = git(['-c', 'core.quotePath=false', 'status', '--porcelain'])
-  if (dirty) throw new Error(`워킹트리가 clean이어야 req:new --run 가능:\n${dirty}`)
+  if (dirty)
+    throw new Error(
+      `워킹트리가 clean이어야 req:new --run 가능:\n${dirty}\n` +
+        `힌트: 방금 \`npx commitgate\`를 실행했다면 **설치분만** 먼저 커밋하십시오(\`git add -A\` 금지 —\n` +
+        `      무관한 변경·.env가 함께 커밋되고, 이어지는 req:review-codex가 그것을 외부로 전송합니다).\n` +
+        `      설치 출력의 "다음:" 안내가 stage할 정확한 경로 목록을 알려 줍니다.`,
+    )
   const cur = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   if (cur !== 'main') console.warn(`⚠️  현재 브랜치가 main이 아님(${cur}) — REQ는 main에서 시작 권장(DEC-WF-020)`)
 

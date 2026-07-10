@@ -33,6 +33,18 @@ codex --version
 codex login status
 ```
 
+설치는 파일을 놓기만 하고 커밋하지 않습니다. `req:new`는 **clean 워킹트리를 요구**하므로, 설치분을 먼저 커밋하세요. 설치 출력의 `다음:` 안내가 stage할 정확한 경로 목록을 알려 줍니다.
+
+```sh
+git add -- <설치 출력이 알려 준 경로들>
+git status                    # 의도한 것만 staged 인지 눈으로 확인
+git commit -m "chore: install commitgate"
+```
+
+> **전체를 담는 stage(`-A` / `.`)를 쓰지 마세요.** 기존 프로젝트의 무관한 변경과 `.env` 같은 미추적 파일이 함께 커밋되고, 이어지는 `req:review-codex`가 그 staged diff 전문을 외부로 전송합니다.
+> 설치 전부터 있던 무관한 변경은 설치 커밋 뒤에 **경로를 명시해** 치우세요: `git stash push -u -- <경로들>`.
+> `-u` 없이는 untracked가 남아 `req:new`가 막히고, 경로 없이 `git stash -u`만 쓰면 `node_modules/`처럼 무시되지 않은 디렉터리까지 딸려 갑니다. 설치 출력이 그 경로 목록도 알려 줍니다.
+
 **긴 프롬프트를 붙여넣을 필요가 없습니다.** 설치가 에이전트 진입점을 함께 깝니다.
 
 | 파일 | 읽는 도구 |

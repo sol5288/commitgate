@@ -23,7 +23,8 @@ import {
   realpathSync,
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { resolve, join, dirname, relative } from 'node:path'
+import { createHash } from 'node:crypto'
+import { resolve, join, dirname, relative, isAbsolute } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadConfig, stripBom, DEFAULT_REVIEW_PERSONA_RELPATH, type PackageManager } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
@@ -168,6 +169,10 @@ export interface InitResult {
   artifacts: string[]
   /** `artifacts` 중 gitignore에 걸리고 **untracked**인 것(= `git add`가 fatal인 것). */
   gitIgnoredArtifacts: string[]
+  /** devDeps를 주입해 `<pm> install`이 갱신할 lockfile 경로. 주입이 없으면 null. */
+  lockfileRel: string | null
+  /** `node_modules`가 ignore도 track도 되지 않아 `<pm> install` 후 워킹트리를 dirty하게 만드는가. */
+  nodeModulesWillDirty: boolean
   /** 설치 **전** 워킹트리 상태(쓰기 전 스냅샷). */
   preexistingDirty: PreexistingDirty
   configAction: 'created' | 'merged' | 'unchanged' // req.config.json: 신규 생성 / 누락키 병합 / 변경 없음
@@ -217,13 +222,54 @@ export function assertGitWorkTree(targetRoot: string, run?: GitRunner): void {
  * `git status --porcelain` 한 줄을 `{index, worktree, path}`로 분해. rename(`R  old -> new`)은 새 경로를 쓴다.
  * 파싱 불가면 null(무시) — 진단 목적이라 fail-closed로 만들 이유가 없다.
  */
+/**
+ * git이 C-인용한 경로(`"notes today.txt"`)를 원래 문자열로 되돌린다.
+ *
+ * ⚠️ `git status --porcelain`은 **공백이 든 경로를 큰따옴표로 감싼다.** `core.quotePath=false`는
+ * 비-ASCII 이스케이프만 끄지 이 인용은 끄지 못한다. 되돌리지 않으면 경로가 산출물 목록과 매칭되지 않고,
+ * 안내가 `git stash push -u -- ""notes today.txt""` 처럼 이중 인용을 낸다(phase-6 리뷰 R5 실측).
+ */
+export function unquoteGitPath(p: string): string {
+  if (p.length < 2 || !p.startsWith('"') || !p.endsWith('"')) return p
+  const body = p.slice(1, -1)
+  const SIMPLE: Record<string, string> = {
+    a: '\x07', // BEL — 원시 제어문자를 소스에 두지 않는다(편집 도구가 망가뜨린다)
+    b: '\b',
+    f: '\f',
+    n: '\n',
+    r: '\r',
+    t: '\t',
+    v: '\v',
+    '\\': '\\',
+    '"': '"',
+  }
+  let out = ''
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i] as string
+    if (c !== '\\') {
+      out += c
+      continue
+    }
+    const n = body[++i]
+    if (n === undefined) break
+    const mapped = SIMPLE[n]
+    if (mapped !== undefined) out += mapped
+    else if (n >= '0' && n <= '7') {
+      // `\NNN` 8진 바이트. core.quotePath=false면 비-ASCII는 인용되지 않으므로 실제로는 드물다.
+      out += String.fromCharCode(parseInt(body.slice(i, i + 3), 8))
+      i += 2
+    } else out += n
+  }
+  return out
+}
+
 function parsePorcelainLine(line: string): { index: string; worktree: string; path: string } | null {
   if (line.length < 4) return null
   const index = line[0] as string
   const worktree = line[1] as string
   const rest = line.slice(3)
   const arrow = rest.indexOf(' -> ')
-  return { index, worktree, path: arrow === -1 ? rest : rest.slice(arrow + 4) }
+  return { index, worktree, path: unquoteGitPath(arrow === -1 ? rest : rest.slice(arrow + 4)) }
 }
 
 /**
@@ -262,28 +308,92 @@ export function classifyPreexistingDirty(porcelainLines: readonly string[], arti
  * git 버전차·비정상 상태 때문에 설치를 막는 오탐을 만들지 않는다.
  * 파일이 없어도 규칙 매칭이므로 **쓰기 전에** 판정할 수 있다(preflight 배치의 전제).
  */
+function gitIsIgnored(targetRoot: string, p: string): boolean {
+  try {
+    execFileSync('git', ['check-ignore', '-q', '--', p], { cwd: targetRoot, stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function gitIsTracked(targetRoot: string, p: string): boolean {
+  try {
+    const out = execFileSync('git', ['ls-files', '--', p], {
+      cwd: targetRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    return out.trim().length > 0
+  } catch {
+    return false
+  }
+}
+
 export function findIgnoredArtifacts(targetRoot: string, paths: readonly string[]): string[] {
-  const ignored = (p: string): boolean => {
-    try {
-      execFileSync('git', ['check-ignore', '-q', '--', p], { cwd: targetRoot, stdio: 'ignore' })
-      return true
-    } catch {
-      return false
-    }
+  return paths.filter((p) => gitIsIgnored(targetRoot, p) && !gitIsTracked(targetRoot, p))
+}
+
+/**
+ * `<pm> install`이 만드는 `node_modules/`가 **워킹트리를 dirty하게 만드는가**.
+ * ignore되지도 tracked되지도 않으면 `?? node_modules/`로 나타나 `req:new --run`의 clean-tree 게이트를 막는다.
+ *
+ * README가 지시하는 `git init && npm init -y`에는 `.gitignore`가 없다 — 그 경로는 **100% 재현된다.**
+ * 안내가 이 사실을 짚어 주지 않으면 사용자는 설치분을 다 커밋하고도 첫 명령에서 막힌다(실측).
+ */
+/**
+ * `node_modules/`를 무시하는 규칙이 **저장소에 커밋되는 `.gitignore`**에서 왔는가.
+ *
+ * ⚠️ `git check-ignore`는 `.git/info/exclude`와 전역 `core.excludesFile`도 인정한다. 그 둘은
+ * **clone에 따라오지 않는다.** 설치한 사람의 로컬 설정 때문에 `nodeModulesWillDirty=false`가 되면,
+ * 팀원의 fresh clone에서 `<pm> install` 후 `?? node_modules/`가 나타나 `req:new --run`이 막힌다.
+ * 설치 결과는 **저장소에 이식 가능**해야 한다(phase-6 리뷰 R4).
+ *
+ * `check-ignore -v` 출력은 `<source>:<line>:<pattern>\t<pathname>`이다. source가 repo 내부의
+ * `.gitignore`(상대경로)일 때만 인정한다 — `.git/info/exclude`는 basename이 다르고, 전역 파일은 절대경로다.
+ *
+ * ⚠️ 조회 경로에 후행 슬래시가 필요하다. 가장 흔한 패턴 `node_modules/`는 **디렉터리 전용**이라
+ * `node_modules`(슬래시 없음)로는 매칭되지 않는다 — 경로가 없으면 git이 디렉터리인지 알 수 없기 때문.
+ */
+function nodeModulesIgnoredByRepoGitignore(targetRoot: string): boolean {
+  try {
+    const out = execFileSync('git', ['check-ignore', '-v', '--', 'node_modules/'], {
+      cwd: targetRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    const source = (out.split('\t')[0] ?? '').split(':')[0]?.replace(/\\/g, '/') ?? ''
+    if (source === '' || isAbsolute(source) || source.startsWith('.git/')) return false
+    if (source !== '.gitignore' && !source.endsWith('/.gitignore')) return false
+    // ⚠️ 파일이 있는 것만으론 부족하다 — **tracked**여야 clone에 따라온다.
+    // `.gitignore`가 아직 커밋되지 않았거나(혹은 `.git/info/exclude`로 자신이 숨겨져 있어도)
+    // 그 규칙은 팀원의 fresh clone에 없다(phase-6 리뷰 R6).
+    return gitIsTracked(targetRoot, source)
+  } catch {
+    return false // exit 1 = 무시 안 됨, 128 = 오류(오탐 방지 위해 "무시 안 됨"으로)
   }
-  const tracked = (p: string): boolean => {
-    try {
-      const out = execFileSync('git', ['ls-files', '--', p], {
-        cwd: targetRoot,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      })
-      return out.trim().length > 0
-    } catch {
-      return false
-    }
-  }
-  return paths.filter((p) => ignored(p) && !tracked(p))
+}
+
+function nodeModulesWillDirty(targetRoot: string): boolean {
+  return !nodeModulesIgnoredByRepoGitignore(targetRoot) && !gitIsTracked(targetRoot, 'node_modules/')
+}
+
+/**
+ * `.gitignore`가 설치 커밋에 합류해야 하는가 (phase-6 리뷰 R1·R2).
+ *
+ * 두 경우다:
+ *  1. `node_modules`가 아직 무시되지 않는다 → 사용자가 규칙을 추가해야 하고, 그 수정은 설치 커밋에 담긴다.
+ *  2. **`.gitignore`가 dirty하다** → `node_modules`가 이미 무시되더라도 그 규칙이 **커밋되지 않은**
+ *     `.gitignore`에서 왔을 수 있다. 안내가 그 파일을 `git stash push -u`로 치우는 순간 규칙이 사라져
+ *     `?? node_modules/`가 되살아나고 clean-tree 게이트가 다시 깨진다.
+ *
+ * 산출물로 편입하면 나머지는 기존 3분류가 처리한다 — untracked면 무해(그대로 stage), tracked·unstaged면
+ * overlapping(안내를 내지 않음). dirty `.gitignore`에 무관한 수정만 있는 경우도 보수적으로 막히지만,
+ * `package.json`이 dirty할 때와 같은 정책이라 일관된다: **잘못된 안내보다 안내 없음이 낫다.**
+ */
+function gitignoreJoinsInstall(nodeModulesDirty: boolean, porcelainLines: readonly string[]): boolean {
+  if (nodeModulesDirty) return true
+  return porcelainLines.some((l) => parsePorcelainLine(l)?.path === '.gitignore')
 }
 
 /** 설치 전 워킹트리 상태(쓰기 전). git 실패 시 빈 목록 — 진단이지 게이트가 아니다. */
@@ -344,12 +454,30 @@ function walkFiles(dir: string): string[] {
 export interface InstallPlan {
   copies: { srcAbs: string; destRel: string }[]
   skips: string[]
+  /**
+   * `skips` 중 **패키지 원본과 바이트가 같은** 것 = CommitGate가 소유한다고 확인된 파일
+   * (커밋 전에 init을 두 번 돌렸을 때 생긴다). 안내의 stage 목록에는 이것만 포함한다.
+   *
+   * ⚠️ `skips` 전체를 산출물로 넣으면, init이 **보존하려던 사용자 파일**(예: 원래 있던
+   * `.cursor/rules/commitgate.mdc`)을 설치 커밋에 담게 되어 `git add -A` 금지의 목적을 우회한다
+   * (phase-6 리뷰 R3). 소유권 판정은 `bin/uninstall.ts`의 sha256 비교와 같은 축이다.
+   */
+  ownedSkips: string[]
   configRel: string | null // req.config.json — 생성·병합 시
   packageJsonRel: string | null // package.json — 주입 시
   lockfileRel: string | null // LOCKFILE[pm] — 주입 시(install이 갱신)
   agentsRel: string | null // AGENTS.md — 부재였을 때
   claudeMdRel: string | null // CLAUDE.md — 부재였을 때
   contractCopyRel: string | null // AGENTS.commitgate.md — 기존 AGENTS.md에 마커 없을 때
+  /**
+   * `.gitignore` — init이 쓰지는 않지만, `node_modules`가 무시되지 않아 **사용자가 고치도록 안내하고
+   * 설치 커밋에 함께 담을** 때만 산출물이 된다.
+   *
+   * ⚠️ 산출물에 넣어야 `classifyPreexistingDirty`가 이 파일을 본다. 그러지 않으면 tracked `.gitignore`에
+   * 이미 있던 unstaged 수정이 안내의 `git add`에 딸려 들어가 설치 커밋을 오염시킨다 — `git add -A`를
+   * 금지한 이유(DEC-011-7)를 정확히 우회하게 된다(phase-6 리뷰 R1).
+   */
+  gitignoreRel: string | null
 }
 
 /** `planInstall`이 preflight에서 이미 계산해 둔 사실들(중복 계산 방지). */
@@ -360,12 +488,28 @@ export interface PlanFacts {
   claudeMdWillCreate: boolean
   contractCopyWillCreate: boolean
   agentEntrypointsSkipped: boolean
+  /** `node_modules`가 워킹트리를 dirty하게 만들어 `.gitignore` 수정을 안내해야 하는가. */
+  gitignoreWillJoin: boolean
 }
 
-/** 계획이 만들거나 수정할 repo-상대 경로 전수. ignore 검사와 stage 목록이 공유한다. */
+/**
+ * 계획이 만들거나 수정할 repo-상대 경로 전수. ignore 검사와 stage 목록이 공유한다.
+ *
+ * `skips`(이미 존재해 덮어쓰지 않는 kit 파일)도 포함한다. init은 **멱등**하므로 커밋 전에 두 번
+ * 실행될 수 있는데, 그때 skip된 kit 파일이 산출물에서 빠지면 `unrelated`로 분류되어 안내가
+ * "stash 하십시오"라고 말한다 — 방금 깐 kit을 치우라는 뜻이 된다. 안내도 멱등해야 한다.
+ */
 export function planArtifactPaths(plan: InstallPlan): string[] {
-  const extras = [plan.configRel, plan.packageJsonRel, plan.lockfileRel, plan.agentsRel, plan.claudeMdRel, plan.contractCopyRel]
-  return [...plan.copies.map((c) => c.destRel), ...extras.filter((p): p is string => p !== null)]
+  const extras = [
+    plan.configRel,
+    plan.packageJsonRel,
+    plan.lockfileRel,
+    plan.agentsRel,
+    plan.claudeMdRel,
+    plan.contractCopyRel,
+    plan.gitignoreRel,
+  ]
+  return [...plan.copies.map((c) => c.destRel), ...plan.ownedSkips, ...extras.filter((p): p is string => p !== null)]
 }
 
 /**
@@ -377,9 +521,24 @@ export function planArtifactPaths(plan: InstallPlan): string[] {
 export function planInstall(targetRoot: string, force: boolean, pm: PackageManager, facts: PlanFacts): InstallPlan {
   const copies: { srcAbs: string; destRel: string }[] = []
   const skips: string[] = []
+  const ownedSkips: string[] = []
+  const sha = (p: string): string | null => {
+    try {
+      return createHash('sha256').update(readFileSync(p)).digest('hex')
+    } catch {
+      return null
+    }
+  }
   const add = (srcAbs: string, destRel: string): void => {
-    if (existsSync(join(targetRoot, destRel)) && !force) skips.push(destRel)
-    else copies.push({ srcAbs, destRel })
+    const destAbs = join(targetRoot, destRel)
+    if (existsSync(destAbs) && !force) {
+      skips.push(destRel)
+      // 바이트가 같으면 CommitGate 소유(직전 실행이 깐 것). 다르면 사용자 파일 — 설치 커밋에 담지 않는다.
+      const a = sha(destAbs)
+      if (a !== null && a === sha(srcAbs)) ownedSkips.push(destRel)
+      return
+    }
+    copies.push({ srcAbs, destRel })
   }
   for (const srcAbs of walkFiles(join(PACKAGE_ROOT, KIT_SOURCE_DIR_REL)))
     add(srcAbs, relative(PACKAGE_ROOT, srcAbs).replace(/\\/g, '/'))
@@ -390,6 +549,7 @@ export function planInstall(targetRoot: string, force: boolean, pm: PackageManag
   return {
     copies,
     skips,
+    ownedSkips,
     configRel: facts.configWillWrite ? 'req.config.json' : null,
     packageJsonRel: facts.packageJsonWillWrite ? 'package.json' : null,
     // devDeps를 주입했으면 `<pm> install`이 lockfile을 갱신한다. 안내가 이것을 stage해야 clean-tree가 성립한다.
@@ -397,6 +557,7 @@ export function planInstall(targetRoot: string, force: boolean, pm: PackageManag
     agentsRel: facts.agentsWillCreate ? 'AGENTS.md' : null,
     claudeMdRel: facts.claudeMdWillCreate ? KIT_CLAUDE_DEST_REL : null,
     contractCopyRel: facts.contractCopyWillCreate ? KIT_AGENTS_CONTRACT_COPY_REL : null,
+    gitignoreRel: facts.gitignoreWillJoin ? '.gitignore' : null,
   }
 }
 
@@ -656,6 +817,10 @@ export function runInit(opts: InitOptions): InitResult {
   const contractCopyPath = join(targetRoot, KIT_AGENTS_CONTRACT_COPY_REL)
   const agentsContractCopyCreated = agentsMarkerMissing && (!existsSync(contractCopyPath) || opts.force)
 
+  // 설치 **전** 워킹트리(쓰기 전 스냅샷). `.gitignore`의 dirty 여부 판정에도 쓰이므로 계획보다 먼저 찍는다.
+  const porcelain = gitPorcelain(targetRoot)
+  const nmWillDirty = nodeModulesWillDirty(targetRoot)
+
   // 산출물 계획을 **쓰기 전에** 확정한다(DEC-011-9). ignore 검사·복사·설치 후 안내가 이 하나를 공유한다.
   const plan = planInstall(targetRoot, opts.force, packageManager, {
     configWillWrite: configToWrite !== null,
@@ -664,6 +829,7 @@ export function runInit(opts: InitOptions): InitResult {
     claudeMdWillCreate: claudeMdCreated,
     contractCopyWillCreate: agentsContractCopyCreated,
     agentEntrypointsSkipped,
+    gitignoreWillJoin: gitignoreJoinsInstall(nmWillDirty, porcelain),
   })
   const artifacts = planArtifactPaths(plan)
 
@@ -673,12 +839,24 @@ export function runInit(opts: InitOptions): InitResult {
   const ignoredPointers = gitIgnoredArtifacts.filter((p) => CONTRACT_POINTER_RELPATHS.includes(p))
 
   // 설치 **전** 워킹트리 3분류(DEC-011-11). 쓰기 뒤에 찍으면 CommitGate 산출물과 섞여 구분할 수 없다.
-  const preexistingDirty = classifyPreexistingDirty(gitPorcelain(targetRoot), artifacts)
+  const preexistingDirty = classifyPreexistingDirty(porcelain, artifacts)
 
   if (ignoredPointers.length > 0) {
     const msg = ignoredPointerMessage(ignoredPointers)
     if (opts.strict) throw new Error(`[--strict] ${msg}`)
     console.warn(`⚠️  ${msg}\n    (설치는 계속 — 강제 중단하려면 --strict)`)
+  }
+
+  // `.gitignore`를 설치 커밋에 담아야 하는데 그 파일 **자신이** 무시된다(로컬 exclude·전역 ignore).
+  // `git add`가 fatal이고, 규칙이 커밋되지 않아 팀원의 fresh clone에서 `?? node_modules/`가 되살아난다.
+  // 안전한 안내를 만들 수 없으므로 알리고(기본) 중단한다(--strict) — phase-6 리뷰 R6.
+  if (plan.gitignoreRel !== null && gitIgnoredArtifacts.includes('.gitignore')) {
+    const msg =
+      `.gitignore 자체가 무시되고 있어(.git/info/exclude 또는 전역 ignore) 설치 커밋에 담을 수 없습니다.\n` +
+      `    node_modules 무시 규칙이 팀원의 fresh clone에 따라가지 않아 그쪽 req:new 가 막힙니다.\n` +
+      `    로컬 exclude에서 .gitignore 를 빼고 저장소에 커밋하십시오.`
+    if (opts.strict) throw new Error(`[--strict] ${msg}`)
+    console.warn(`⚠️  ${msg}\n    (설치는 계속 — 커밋 안내는 생략됩니다)`)
   }
   // staged·overlapping이 있으면 **안전한 커밋 안내를 만들 수 없다**(커밋이 인덱스 전체를 담고, 겹침은 사후 분리 불가).
   // 기본 모드는 설치를 막지 않는다(비파괴·비-breaking) — 안내를 내지 않을 뿐. `--strict`는 쓰기 전에 중단한다.
@@ -731,6 +909,8 @@ export function runInit(opts: InitOptions): InitResult {
     skipped,
     artifacts,
     gitIgnoredArtifacts,
+    lockfileRel: plan.lockfileRel,
+    nodeModulesWillDirty: nmWillDirty,
     preexistingDirty,
     configAction,
     configKeysAdded,
@@ -744,6 +924,113 @@ export function runInit(opts: InitOptions): InitResult {
     agentsContractCopyCreated,
     agentEntrypointsSkipped,
   }
+}
+
+/**
+ * 설치 후 `git add` 대상. 산출물 전수에서 **무시되고 untracked인 것**만 뺀다 — `git add <ignored>`는 fatal이다.
+ * `planArtifactPaths`(preflight)와 같은 목록을 소비하므로 두 축이 갈라질 수 없다(DEC-011-9).
+ */
+export function stageList(artifacts: readonly string[], gitIgnoredArtifacts: readonly string[]): string[] {
+  const ignored = new Set(gitIgnoredArtifacts)
+  return artifacts.filter((p) => !ignored.has(p))
+}
+
+/** 인용 없이 안전한 경로(영숫자 + 경로 구분자 + 흔한 구두점). */
+const SHELL_SAFE_PATH = /^[A-Za-z0-9._+\-/\\:@]+$/
+
+/**
+ * 안내에 넣을 경로를 셸에 안전하게 인용한다(phase-6 리뷰 R5).
+ *
+ * 공백이 든 경로를 그대로 인쇄하면 `cd C:\Work\My Repo`가 PowerShell에서 인자 두 개로 쪼개지고,
+ * `git stash push -u -- notes today.txt`는 pathspec 두 개가 되어 그 파일이 dirty로 남는다.
+ * 큰따옴표는 sh·PowerShell·cmd가 모두 경로 묶음으로 인정한다.
+ *
+ * ⚠️ 경로에 `"`·`` ` ``·`$`가 있으면 셸마다 이스케이프 규칙이 달라 **단일 안전 표기가 없다.**
+ * 그럴 땐 묶기만 하고 `pathNeedsManualQuoting`이 사용자에게 수동 확인을 지시하게 한다.
+ */
+export function quoteForShell(p: string): string {
+  return SHELL_SAFE_PATH.test(p) ? p : `"${p}"`
+}
+
+/**
+ * 큰따옴표로도 셸 간 안전을 보장할 수 없는 경로인가.
+ *
+ * - `"` : 인용을 닫는다.
+ * - `` ` ``·`$` : PowerShell이 큰따옴표 **안에서** 확장·이스케이프한다.
+ * - `%`·`!` : **cmd.exe가 큰따옴표 안에서도** 환경변수(`%VAR%`)와 지연확장(`!VAR!`)을 치환한다.
+ *   `notes %USERPROFILE%.txt` 같은 경로는 다른 pathspec으로 바뀌어 엉뚱한 파일을 stash할 수 있다.
+ *
+ * 이런 경로가 하나라도 있으면 복붙 명령을 **내지 않는다** — 잘못된 명령보다 명령 없음이 낫다.
+ */
+export function pathNeedsManualQuoting(p: string): boolean {
+  return /["`$%!]/.test(p)
+}
+
+/**
+ * 설치 직후 "다음:" 안내(D4). **순수 함수** — `InitResult`만 보고 줄 배열을 만든다(테스트 가능).
+ *
+ * 세 가지 규칙:
+ *  1. **`git add -A` 금지**(DEC-011-7). brownfield의 무관한 변경과 `.env`가 함께 커밋되고,
+ *     이어지는 `req:review-codex`가 staged diff 전문을 외부로 전송한다.
+ *  2. **shell 연산자 금지**(DEC-011-8). `&&`는 Windows PowerShell 5.1·cmd.exe에 없다.
+ *  3. **안전한 안내를 만들 수 없으면 내지 않는다**(DEC-011-11). staged 변경은 커밋이 삼키고,
+ *     산출물과 겹치는 tracked 변경은 사후 분리가 불가능하다. 잘못된 안내보다 안내 없음이 낫다.
+ */
+export function installGuidance(r: InitResult): string[] {
+  const { staged, overlapping, unrelated } = r.preexistingDirty
+  // `.gitignore`를 담아야 하는데 그 파일 자신이 무시되면 `git add`가 fatal이고 규칙이 커밋되지 않는다 →
+  // 이식 가능한 clean-tree를 보장할 수 없다. 안내를 내지 않는다(phase-6 리뷰 R6).
+  const gitignoreUnstageable = r.artifacts.includes('.gitignore') && r.gitIgnoredArtifacts.includes('.gitignore')
+  // 어떤 셸 인용으로도 안전하지 않은 경로 — cmd.exe는 큰따옴표 안에서도 `%VAR%`·`!VAR!`를 치환한다(R7).
+  const risky = [r.targetRoot, ...r.artifacts, ...unrelated].filter(pathNeedsManualQuoting)
+  const unsafe = staged.length > 0 || overlapping.length > 0 || gitignoreUnstageable || risky.length > 0
+
+  const cdLine = risky.includes(r.targetRoot) ? `  1. 저장소 루트로 이동: ${r.targetRoot}` : `  1. cd ${quoteForShell(r.targetRoot)}`
+  const out: string[] = ['', '다음:', cdLine, `  2. ${r.packageManager} install`]
+  out.push(`  3. codex --version   # 리뷰 실호출 전제(미설치면 review-codex --run이 fail-closed)`)
+  out.push(`  4. req.config.json 확인(branchPrefix 등)`)
+
+  if (unsafe) {
+    out.push('')
+    out.push('  ⚠️  안전한 커밋 안내를 만들 수 없습니다.')
+    for (const p of staged) out.push(`        staged (커밋에 함께 들어갑니다)      ${p}`)
+    for (const p of overlapping) out.push(`        설치분과 겹침 (사후 분리 불가)      ${p}`)
+    if (gitignoreUnstageable)
+      out.push('        .gitignore 자체가 무시됨 (규칙이 clone에 따라가지 않음)')
+    for (const p of risky)
+      out.push(`        셸 특수문자(" \` $ % !) 포함 — 어떤 인용으로도 복붙이 안전하지 않음: ${p}`)
+    out.push('      위를 커밋하거나 되돌린 뒤, `git status` 로 직접 확인하며 설치분만 커밋하십시오.')
+    out.push(`      그다음: ${runScriptCmd(r.packageManager, 'req:new', '<slug> --run')}`)
+    return out
+  }
+
+  const toStage = stageList(r.artifacts, r.gitIgnoredArtifacts)
+  let n = 5
+  if (r.nodeModulesWillDirty) {
+    // `<pm> install`이 만든 `?? node_modules/`가 clean-tree 게이트를 막는다. README의 `git init && npm init -y`
+    // 경로에는 .gitignore가 없어 **반드시** 걸린다. `.gitignore`는 이미 `artifacts`에 들어 있으므로
+    // stage 목록에 자동으로 포함되고, tracked인데 이미 dirty하면 위의 unsafe 분기가 먼저 막는다.
+    out.push(`  ${n++}. \`node_modules\` 가 .gitignore 되어 있지 않습니다. 2단계 install 이 만든 그 디렉터리가`)
+    out.push(`     워킹트리를 dirty 하게 만들어 req:new 가 막힙니다. .gitignore 에 \`node_modules/\` 를 추가하십시오.`)
+  }
+  out.push(`  ${n++}. 설치분만 stage 하십시오. 전체를 담는 stage(-A / .)는 쓰지 마십시오 — 무관한 변경·.env 가`)
+  out.push(`     함께 커밋되고, 이어지는 req:review-codex 가 staged diff 전문을 외부로 전송합니다.`)
+  if (r.lockfileRel !== null)
+    out.push(`     (2단계 install 을 먼저 실행해야 ${r.lockfileRel} 이 존재합니다. lockfile 을 만들지 않는 설정이라면 그 경로는 빼십시오.)`)
+  out.push(`       git add -- ${toStage.map(quoteForShell).join(' ')}`)
+  out.push(`       git status                    # 의도한 것만 staged 인지 눈으로 확인`)
+  out.push(`       git commit -m "chore: install commitgate"`)
+
+  if (unrelated.length > 0) {
+    // ⚠️ bare `git stash -u`는 너무 넓다 — `node_modules/`처럼 gitignore되지 않은 산출물까지 쓸어 가
+    //    방금 설치한 tsx가 사라지고 req:new가 죽는다(실측). 경로를 명시한다(DEC-011-7과 같은 원칙).
+    //    `-u` 없이는 untracked가 남아 clean-tree 게이트가 여전히 실패한다(design 리뷰 R5).
+    out.push(`  ${n++}. 설치 커밋 뒤, 설치 전부터 있던 아래 무관한 변경을 커밋하거나 치우십시오`)
+    out.push(`     (req:new 는 clean 워킹트리를 요구합니다):`)
+    out.push(`       git stash push -u -- ${unrelated.map(quoteForShell).join(' ')}`)
+  }
+  out.push(`  ${n}. ${runScriptCmd(r.packageManager, 'req:new', '<slug> --run')}`)
+  return out
 }
 
 export function parseArgs(argv: string[]): InitOptions {
@@ -836,13 +1123,7 @@ export function main(argv: string[]): void {
       `${tag}  설치 전 워킹트리: staged ${r.preexistingDirty.staged.length} / 설치분과 겹침 ${r.preexistingDirty.overlapping.length} / 무관 ${r.preexistingDirty.unrelated.length}`,
     )
   if (r.crossSpawnFloorWarned) console.log(`${tag}  ⚠️ cross-spawn 버전 하한 경고(위 참조) — 강제 중단은 --strict`)
-  if (!r.dryRun) {
-    console.log(`\n다음:`)
-    console.log(`  1. cd ${r.targetRoot} && ${r.packageManager} install`)
-    console.log(`  2. codex --version   # 리뷰 실호출 전제(미설치면 review-codex --run이 fail-closed)`)
-    console.log(`  3. req.config.json 확인(branchPrefix 등)`)
-    console.log(`  4. ${runScriptCmd(r.packageManager, 'req:new', '<slug> --run')}`)
-  }
+  if (!r.dryRun) for (const line of installGuidance(r)) console.log(line)
 }
 
 /**
