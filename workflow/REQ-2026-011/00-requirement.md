@@ -49,7 +49,8 @@ f66d45c  2026-07-09  feat(entrypoints): Claude Code·Cursor 진입점 설치 (RE
 - `.claude`를 통짜 무시하는 임시 repo에 `runInit`을 돌리면 경고가 나오고, `--strict`에서는 **파일을 하나도 쓰지 않고** throw한다.
 - init의 "다음:" 안내를 순서대로 따르면 `req:new --run`이 clean-tree 게이트를 통과한다. 안내의 `git add` 목록은 `<pm> install`이 갱신하는 lockfile과, 마커 부재 시 생성되는 `AGENTS.commitgate.md`를 빠뜨리지 않는다.
 - 설치 전 워킹트리에 **무관한 unstaged 변경**만 있으면 안내가 `git stash -u`(bare `git stash` 아님) 단계를 포함해 clean-tree를 만든다.
-- 설치 전 워킹트리에 **staged 변경**이 있거나 **산출물과 겹치는 변경**이 있으면, 안내는 `git add` 목록을 **내지 않고** 그 사실과 해소 방법을 알린다(잘못된 안내보다 안내 없음이 낫다). `--strict`면 파일을 하나도 쓰지 않고 throw한다.
+- 설치 전 워킹트리에 **staged 변경**이 있거나 **산출물과 겹치는 tracked·unstaged 변경**이 있으면, 안내는 `git add` 목록을 **내지 않고** 그 사실과 해소 방법을 알린다(잘못된 안내보다 안내 없음이 낫다). `--strict`면 파일을 하나도 쓰지 않고 throw한다.
+  - **untracked 산출물**(`?? package.json` 등)은 여기에 해당하지 않는다. baseline이 없어 분리할 것이 없고, 차단하면 README의 `git init && npm init -y && npx commitgate --strict`가 항상 실패한다.
 - README·`AGENTS.template.md`에 staged diff 외부 전송 고지가 있다.
 - `npm test` 그린, `npm run typecheck` 그린.
 

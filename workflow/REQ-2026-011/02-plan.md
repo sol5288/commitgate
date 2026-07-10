@@ -81,7 +81,7 @@ DEC-011-5·DEC-011-9·DEC-011-10 적용.
 
 - `planInstall(targetRoot, opts, pm): InstallPlan` — **쓰기 전에** 확정되는 계획(IO는 existsSync/readdirSync만). `planArtifactPaths(plan): string[]`이 산출물 경로 전수를 준다. preflight·apply·안내 셋이 **같은 계획을 읽는다**(R4-P2: `InitResult.copied`는 Apply에서야 채워지므로 preflight가 쓸 수 없다).
 - `runInit`의 Apply는 `plan.copies`를 그대로 복사한다(`walkFiles` 재실행 없음). `copied`/`skipped`는 계획에서 파생.
-- `preexistingDirty: PreexistingDirty` — **쓰기 전에** `git status --porcelain --untracked-files=all`을 찍어 `{staged, overlapping, unrelated}`로 3분류(DEC-011-11). `overlapping = unstaged·untracked ∩ planArtifactPaths(plan)`. 설치 후엔 산출물과 섞여 구분 불가.
+- `preexistingDirty: PreexistingDirty` — **쓰기 전에** `git status --porcelain --untracked-files=all`을 찍어 `{staged, overlapping, unrelated}`로 3분류(DEC-011-11). `overlapping = **tracked·unstaged** 수정 ∩ planArtifactPaths(plan)` — **untracked 산출물은 제외**(baseline이 없어 분리할 것이 없다). 설치 후엔 산출물과 섞여 구분 불가.
 - `--strict`: `staged` 또는 `overlapping`이 비어 있지 않으면 preflight throw(쓰기 0건). 기본 모드는 경고만(비-breaking).
 - `LOCKFILE: Record<PackageManager, string>` = `{ npm: 'package-lock.json', pnpm: 'pnpm-lock.yaml', yarn: 'yarn.lock' }`.
 - `findIgnoredArtifacts(targetRoot, paths)` — 경로별로 `git check-ignore -q -- <path>`(`0`=무시됨, `1`·`128`=무시 안 됨) **그리고** `git ls-files -- <path>`가 비어 있음(=untracked)일 때만 "제외 대상". tracked 파일은 ignore 규칙에 걸려도 `git add`가 되므로 제외하지 않는다.
