@@ -3,14 +3,110 @@
   "branch": "feat/req-2026-011-brownfield-install-hardening",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f49e0-a783-76e0-9e7f-ec08b7cc8500",
+  "review_base_sha": "f547db273834592a04c5cdff7506fe9f295f7af9",
+  "review_diff_hash": "93919dc823677b46579a79cf6cf1ac84c33ff9e0",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "0fd4be96abd6cf1b5e6c42b29ac516beb14d5c6df2c05bd8290e77eacec61bec",
+  "current_phase": "phase-7-docs-version",
+  "phases": [
+    {
+      "id": "phase-1-external-transmission-notice",
+      "approved": true
+    },
+    {
+      "id": "phase-2-pm-neutral-templates",
+      "approved": true
+    },
+    {
+      "id": "phase-3-pm-derived-runtime-strings",
+      "approved": true
+    },
+    {
+      "id": "phase-4-end-of-options",
+      "approved": true
+    },
+    {
+      "id": "phase-5-install-plan-and-gitignore",
+      "approved": true
+    },
+    {
+      "id": "phase-6-install-guidance",
+      "approved": true
+    },
+    {
+      "id": "phase-7-docs-version",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-7-docs-version",
+    "outcome": "approved",
+    "compare_hash": "a3669af44ef6872d1c4b98e44723dfcb0f1aabddb337194b05a2141429fe851f",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-10T11:10:41.125Z"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "94d8657b21cb7fbcd5d0623d9b1376cc9c35cef9",
+      "phase_id": "phase-1-external-transmission-notice",
+      "consumed_by_commit_sha": "5d2ded5fbd1266895fa0d7990554bb9c64ccae4f",
+      "approval_consumed_at": "2026-07-10T07:30:25.437Z"
+    },
+    {
+      "approved_tree": "2b1b07d1cd9257fd1f27271681fd611738a87094",
+      "phase_id": "phase-2-pm-neutral-templates",
+      "consumed_by_commit_sha": "f7af84eb441f2aededd5bfeddb1ac34d3417838e",
+      "approval_consumed_at": "2026-07-10T07:39:03.119Z"
+    },
+    {
+      "approved_tree": "ec99c4802db8a6c2c9e62e299d4db62e85df4952",
+      "phase_id": "phase-3-pm-derived-runtime-strings",
+      "consumed_by_commit_sha": "427f0057976102d30771982854180356313d1fd5",
+      "approval_consumed_at": "2026-07-10T07:54:54.601Z"
+    },
+    {
+      "approved_tree": "d25a039a930fa9e4bdf3b0b4d58f96c2e059fd1f",
+      "phase_id": "phase-4-end-of-options",
+      "consumed_by_commit_sha": "7bc7390a52cc06f55d820b2aa1258e6d05972c2a",
+      "approval_consumed_at": "2026-07-10T08:05:21.504Z"
+    },
+    {
+      "approved_tree": "6be54fccd8b6f785856850efa5146cb8725552ec",
+      "phase_id": "phase-5-install-plan-and-gitignore",
+      "consumed_by_commit_sha": "087e92be82121340692ac11277c86b2798a4ed70",
+      "approval_consumed_at": "2026-07-10T08:38:43.982Z"
+    },
+    {
+      "approved_tree": "e52d068126957c6b13c90ffad51b5858fad4a200",
+      "phase_id": "phase-6-install-guidance",
+      "consumed_by_commit_sha": "11168ac1d0db011e9019dbdf8dbceb6e92f45eb4",
+      "approval_consumed_at": "2026-07-10T11:00:10.222Z"
+    },
+    {
+      "approved_tree": "93919dc823677b46579a79cf6cf1ac84c33ff9e0",
+      "phase_id": "phase-7-docs-version",
+      "consumed_by_commit_sha": "bc3ba1c7ee0f958b835cc359b67e8077ddaf937c",
+      "approval_consumed_at": "2026-07-10T11:12:28.749Z"
+    }
+  ],
+  "user_commit_confirmed": null,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-011/responses/design-r08-approved.json",
+    "response_sha256": "87c056ff9c7258e8346f066a3018b41bb785e4aef7b48b35ce91e4994f45f9c7",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "dee486f636de8a1dec3ad46ff0078813aa7e48da",
+    "codex_thread_id": "019f49e0-a783-76e0-9e7f-ec08b7cc8500",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-10T08:29:12.180Z",
+    "design_hash": "0fd4be96abd6cf1b5e6c42b29ac516beb14d5c6df2c05bd8290e77eacec61bec"
+  }
 }
