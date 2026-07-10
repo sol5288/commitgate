@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join, resolve, dirname } from 'node:path'
+import { join, resolve, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   runInit,
@@ -10,17 +11,41 @@ import {
   runScriptCmd,
   parseArgs,
   crossSpawnBelowFloor,
+  classifyPreexistingDirty,
+  findIgnoredArtifacts,
   KIT_COPY_RELPATHS,
   KIT_SCHEMA_RELPATHS,
   KIT_AGENT_ENTRYPOINTS,
   KIT_CLAUDE_TEMPLATE_REL,
   KIT_AGENTS_CONTRACT_COPY_REL,
   AGENTS_CONTRACT_MARKER,
+  CONTRACT_POINTER_RELPATHS,
+  LOCKFILE,
   type InitOptions,
 } from '../../bin/init'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
 
 const PACKAGE_ROOT_FOR_TEST = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+
+/** repo 전체(.git 제외)의 `경로 → sha256`. "쓰기 0건"을 전수 검증하는 데 쓴다. */
+function snapshot(dir: string): Map<string, string> {
+  const out = new Map<string, string>()
+  const walk = (d: string): void => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.name === '.git') continue
+      const abs = join(d, e.name)
+      if (e.isDirectory()) walk(abs)
+      else out.set(relative(dir, abs).replace(/\\/g, '/'), createHash('sha256').update(readFileSync(abs)).digest('hex'))
+    }
+  }
+  walk(dir)
+  return out
+}
+
+/** 임시 repo에서 git 실행(user 설정 주입 — `git init`만으론 커밋이 안 된다). */
+function gitIn(dir: string, args: string[]): string {
+  return execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: dir, encoding: 'utf8' })
+}
 
 /**
  * 임시 대상 repo 생성.
@@ -789,5 +814,274 @@ describe('[init] runScriptCmd — pm별 유효 실행 커맨드(안내 정확성
     expect(runScriptCmd('npm', 'req:new', '<slug> --run')).toBe('npm run req:new -- <slug> --run')
     expect(runScriptCmd('pnpm', 'req:new', '<slug> --run')).toBe('pnpm req:new <slug> --run')
     expect(runScriptCmd('yarn', 'req:new', '<slug> --run')).toBe('yarn req:new <slug> --run')
+  })
+})
+
+/**
+ * REQ-2026-011 phase-5 — 설치 산출물 계획(`InstallPlan`)과 gitignore preflight
+ * (D5 / DEC-011-5·9·10·11).
+ *
+ * 세 가지가 한 뿌리에서 나온다:
+ *  1. 산출물 목록을 **쓰기 전에** 확정해야 한다. `InitResult.copied`는 Apply에서 채워지므로
+ *     preflight의 ignore 검사가 참조할 수 없다(design 리뷰 R4).
+ *  2. ignore 검사 대상과 stage 목록은 **같은 목록**이어야 한다. 따로 관리하면 어긋난다
+ *     (R2에서 `AGENTS.commitgate.md`, R3에서 lockfile이 빠졌다).
+ *  3. `git add <path>`는 ignored **그리고** untracked일 때만 fatal이다. tracked 파일은 add된다.
+ */
+describe('[init] classifyPreexistingDirty — 설치 전 워킹트리 3분류 (DEC-011-11)', () => {
+  const ARTIFACTS = ['package.json', 'req.config.json', 'pnpm-lock.yaml']
+
+  it('staged 변경은 staged로 분류된다 — `git commit`이 인덱스 전체를 담기 때문', () => {
+    const d = classifyPreexistingDirty(['M  src/foo.ts', 'A  src/bar.ts'], ARTIFACTS)
+    expect(d.staged).toEqual(['src/foo.ts', 'src/bar.ts'])
+    expect(d.overlapping).toEqual([])
+    expect(d.unrelated).toEqual([])
+  })
+
+  it('tracked+unstaged 산출물은 overlapping — 사용자 변경과 설치 변경을 사후 분리할 수 없다', () => {
+    const d = classifyPreexistingDirty([' M package.json'], ARTIFACTS)
+    expect(d.overlapping).toEqual(['package.json'])
+    expect(d.unrelated).toEqual([])
+  })
+
+  it('untracked 산출물은 무해하다 — 파일 전체가 신규라 분리할 것이 없다', () => {
+    const d = classifyPreexistingDirty(['?? package.json', '?? pnpm-lock.yaml'], ARTIFACTS)
+    expect(d.staged).toEqual([])
+    expect(d.overlapping).toEqual([])
+    expect(d.unrelated).toEqual([])
+  })
+
+  it('산출물과 무관한 unstaged/untracked는 unrelated', () => {
+    const d = classifyPreexistingDirty([' M src/foo.ts', '?? notes.txt'], ARTIFACTS)
+    expect(d.unrelated).toEqual(['src/foo.ts', 'notes.txt'])
+    expect(d.staged).toEqual([])
+  })
+
+  it('rename은 화살표 뒤(새 경로)를 쓴다', () => {
+    const d = classifyPreexistingDirty(['R  old.ts -> new.ts'], ARTIFACTS)
+    expect(d.staged).toEqual(['new.ts'])
+  })
+
+  it('빈 입력은 전부 빈 배열', () => {
+    const d = classifyPreexistingDirty([], ARTIFACTS)
+    expect(d).toEqual({ staged: [], overlapping: [], unrelated: [] })
+  })
+})
+
+describe('[init] 설치 산출물 목록(InitResult.artifacts) — ignore 검사와 stage 목록의 SSOT', () => {
+  it('복사분 + req.config.json + package.json + lockfile 을 담는다', () => {
+    const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
+    try {
+      const r = runInit(OPTS(dir))
+      expect(r.artifacts).toContain('scripts/req/req-new.ts')
+      expect(r.artifacts).toContain('req.config.json')
+      expect(r.artifacts).toContain('package.json')
+      // `<pm> install`이 lockfile을 갱신한다(devDeps 주입 때문). stage하지 않으면 clean-tree 게이트가 죽는다.
+      expect(r.artifacts, 'lockfile 누락 시 req:new --run이 clean-tree에서 실패한다').toContain('pnpm-lock.yaml')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it.each(['npm', 'pnpm', 'yarn'] as const)('%s 프로젝트는 그 pm의 lockfile을 담는다', (pm) => {
+    const locks = { npm: 'package-lock.json', pnpm: 'pnpm-lock.yaml', yarn: 'yarn.lock' }
+    const dir = tmpTarget({ lock: locks[pm] })
+    try {
+      const r = runInit(OPTS(dir))
+      expect(r.packageManager).toBe(pm)
+      expect(r.artifacts).toContain(LOCKFILE[pm])
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('기존 AGENTS.md에 마커가 없으면 AGENTS.commitgate.md 도 담는다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 우리 프로젝트 규칙\n', 'utf8')
+      const r = runInit(OPTS(dir))
+      expect(r.agentsContractCopyCreated).toBe(true)
+      expect(r.artifacts, '누락 시 untracked로 남아 req:new --run이 죽는다').toContain(KIT_AGENTS_CONTRACT_COPY_REL)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('AGENTS.md·CLAUDE.md를 새로 만들면 담고, 기존 파일을 보존했으면 담지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      const r = runInit(OPTS(dir))
+      expect(r.artifacts).toContain('AGENTS.md')
+      expect(r.artifacts).toContain('CLAUDE.md')
+    } finally {
+      cleanup(dir)
+    }
+    const dir2 = tmpTarget()
+    try {
+      writeFileSync(join(dir2, 'CLAUDE.md'), '# 기존\n', 'utf8')
+      const r = runInit(OPTS(dir2))
+      expect(r.claudeMdCreated).toBe(false)
+      expect(r.artifacts).not.toContain('CLAUDE.md')
+    } finally {
+      cleanup(dir2)
+    }
+  })
+})
+
+describe('[init] gitignore preflight (D5)', () => {
+  const IGNORED_POINTERS = ['.claude/skills/commitgate/SKILL.md', '.claude/commands/req.md']
+
+  it('CONTRACT_POINTER_RELPATHS는 진입점 3종 + AGENTS/CLAUDE/계약사본을 덮는다', () => {
+    for (const { dest } of KIT_AGENT_ENTRYPOINTS) expect(CONTRACT_POINTER_RELPATHS).toContain(dest)
+    expect(CONTRACT_POINTER_RELPATHS).toContain('AGENTS.md')
+    expect(CONTRACT_POINTER_RELPATHS).toContain('CLAUDE.md')
+    expect(CONTRACT_POINTER_RELPATHS).toContain(KIT_AGENTS_CONTRACT_COPY_REL)
+  })
+
+  it('`.claude` 통짜 무시: 경고하고 설치는 계속한다(기본 모드)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.gitignore'), '.claude\n', 'utf8')
+      const r = runInit(OPTS(dir))
+      for (const p of IGNORED_POINTERS) expect(r.gitIgnoredArtifacts, p).toContain(p)
+      // .cursor는 무시되지 않는다
+      expect(r.gitIgnoredArtifacts).not.toContain('.cursor/rules/commitgate.mdc')
+      // 비파괴: 설치는 계속된다
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * `--strict`는 **어떤 파일도 쓰기 전에** 멈춰야 한다. `.claude/`·`scripts/req/` 부재만 보면
+   * `req.config.json`·`package.json`을 먼저 쓰고 나중에 throw하는 구현을 놓친다(design 리뷰 R1).
+   */
+  it('`--strict`: throw + 신규 0개·수정 0개(전수 스냅샷)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.gitignore'), '.claude\n', 'utf8')
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir, { strict: true }))).toThrow(/gitignore|무시/)
+      expect(snapshot(dir)).toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('lockfile이 무시되면 조용히 제외한다 — 계약 포인터가 아니므로 --strict도 통과', () => {
+    const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
+    try {
+      writeFileSync(join(dir, '.gitignore'), 'pnpm-lock.yaml\n', 'utf8')
+      const r = runInit(OPTS(dir, { strict: true }))
+      expect(r.gitIgnoredArtifacts).toContain('pnpm-lock.yaml')
+      expect(r.gitIgnoredArtifacts).not.toContain('.claude/commands/req.md')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** DEC-011-10: `git check-ignore`는 인덱스를 보지 않는다. tracked 파일은 ignore 규칙에 걸려도 add된다. */
+  it('무시 규칙에 걸려도 이미 tracked면 제외하지 않는다', () => {
+    const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
+    try {
+      writeFileSync(join(dir, '.gitignore'), 'pnpm-lock.yaml\n', 'utf8')
+      gitIn(dir, ['add', '-f', 'pnpm-lock.yaml'])
+      gitIn(dir, ['commit', '-q', '-m', 'lock'])
+      const r = runInit(OPTS(dir))
+      expect(r.gitIgnoredArtifacts).not.toContain('pnpm-lock.yaml')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('findIgnoredArtifacts는 존재하지 않는 경로도 규칙으로 판정한다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, '.gitignore'), '.claude\n', 'utf8')
+      expect(findIgnoredArtifacts(dir, ['.claude/commands/req.md', 'package.json'])).toEqual([
+        '.claude/commands/req.md',
+      ])
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+describe('[init] 설치 전 dirty 워킹트리 (DEC-011-11)', () => {
+  it('staged 변경이 있으면 preexistingDirty.staged에 담고 --strict는 쓰기 0건으로 멈춘다', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'foo.ts'), 'export const a = 1\n', 'utf8')
+      gitIn(dir, ['add', 'foo.ts'])
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir, { strict: true }))).toThrow(/staged/)
+      expect(snapshot(dir)).toEqual(before)
+
+      const r = runInit(OPTS(dir)) // 기본 모드는 설치를 막지 않는다(비-breaking)
+      expect(r.preexistingDirty.staged).toContain('foo.ts')
+      expect(r.preexistingDirty.overlapping).toEqual([])
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('산출물과 겹치는 tracked 변경은 overlapping — 사후 분리 불가', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.1' }, null, 2), 'utf8')
+      const r = runInit(OPTS(dir))
+      expect(r.preexistingDirty.overlapping).toContain('package.json')
+      expect(r.preexistingDirty.unrelated).not.toContain('package.json')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('무관한 변경은 unrelated에만 담기고 설치를 막지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'init'])
+      writeFileSync(join(dir, 'src.ts'), '1\n', 'utf8')
+      const r = runInit(OPTS(dir, { strict: true }))
+      expect(r.preexistingDirty.unrelated).toContain('src.ts')
+      expect(r.preexistingDirty.staged).toEqual([])
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('설치 전에 찍는다 — CommitGate 산출물이 섞이지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      const r = runInit(OPTS(dir))
+      for (const set of [r.preexistingDirty.staged, r.preexistingDirty.overlapping, r.preexistingDirty.unrelated])
+        expect(set).not.toContain('scripts/req/req-new.ts')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * design 리뷰 R7 정정: **untracked 산출물은 세 목록 어디에도 담기지 않는다.**
+   *
+   * baseline이 없어 분리할 "사용자 변경"과 "설치 변경"이 존재하지 않는다. 그리고 이것을 차단하면
+   * README가 지시하는 첫 흐름(`git init && npm init -y && npx commitgate --strict`)이 **항상** 실패한다 —
+   * 그 흐름의 `package.json`은 정의상 untracked이기 때문이다. 거짓 차단은 `--strict`를 피하도록 가르친다.
+   */
+  it('untracked 산출물(`?? package.json`)은 --strict를 막지 않는다 — README quick start 보호', () => {
+    const dir = tmpTarget() // git init 직후 = package.json untracked (npm init -y와 같은 상태)
+    try {
+      const r = runInit(OPTS(dir, { strict: true }))
+      expect(r.artifacts, 'stage 목록에는 들어간다').toContain('package.json')
+      expect(r.preexistingDirty.staged).toEqual([])
+      expect(r.preexistingDirty.overlapping).toEqual([])
+      expect(r.preexistingDirty.unrelated).not.toContain('package.json')
+    } finally {
+      cleanup(dir)
+    }
   })
 })

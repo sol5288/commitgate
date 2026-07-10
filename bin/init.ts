@@ -88,6 +88,33 @@ export const AGENTS_CONTRACT_MARKER = '<!-- commitgate:contract -->'
  */
 export const KIT_AGENTS_CONTRACT_COPY_REL = 'AGENTS.commitgate.md'
 
+/**
+ * pm별 lockfile 이름. `detectPackageManager`(아래)와 **같은 축**이다.
+ *
+ * ⚠️ init이 `package.json`에 devDeps를 주입하므로, 설치 안내 2단계의 `<pm> install`은 **반드시**
+ * lockfile을 갱신한다. 그것을 stage 목록에서 빠뜨리면 설치분을 커밋한 뒤에도 `M pnpm-lock.yaml`이
+ * 남아 `req:new --run`이 clean-tree 게이트에서 죽는다(REQ-2026-011 design R3 P2).
+ */
+export const LOCKFILE: Record<PackageManager, string> = {
+  npm: 'package-lock.json',
+  pnpm: 'pnpm-lock.yaml',
+  yarn: 'yarn.lock',
+}
+
+/**
+ * **계약 포인터** — 이것들이 git에 추적되지 않으면 설치 목적(팀·CI가 계약을 로드)이 조용히 무너진다.
+ * 그래서 gitignore에 걸리면 WARN하고 `--strict`에서 중단한다.
+ *
+ * lockfile 같은 나머지 산출물은 무시되더라도 정당한 repo 정책일 수 있으므로 경고하지 않고
+ * stage 목록에서 조용히 뺀다(REQ-2026-011 DEC-011-10).
+ */
+export const CONTRACT_POINTER_RELPATHS: readonly string[] = [
+  ...KIT_AGENT_ENTRYPOINTS.map((e) => e.dest),
+  'AGENTS.md',
+  KIT_CLAUDE_DEST_REL,
+  KIT_AGENTS_CONTRACT_COPY_REL,
+]
+
 /** 대상 package.json에 주입할 req:* 스크립트. */
 export const REQ_SCRIPTS: Record<string, string> = {
   'req:new': 'tsx scripts/req/req-new.ts',
@@ -116,10 +143,33 @@ export interface InitOptions {
   noAgentEntrypoints?: boolean
 }
 
+/**
+ * 설치 **전** 워킹트리 상태 3분류(DEC-011-11). 쓰기 전에 찍어야 CommitGate 산출물과 섞이지 않는다.
+ *
+ * - `staged`: 인덱스 ≠ HEAD. `git commit`은 인덱스 **전체**를 담으므로, 안내가 `git add`를 아무리
+ *   명시해도 이 변경들이 설치 커밋에 함께 들어간다.
+ * - `overlapping`: 설치 산출물과 겹치는 **tracked·unstaged** 변경. init이 같은 파일을 수정하므로
+ *   사용자 변경과 설치 변경을 사후 분리할 수 없다(예: 이미 고쳐 둔 `package.json`).
+ * - `unrelated`: 나머지 dirty. 인덱스에 없으므로 설치 커밋에 섞이지 않는다 — 커밋 뒤 `git stash -u`로 치우면 된다.
+ *
+ * untracked 산출물(`?? package.json` 등)은 어디에도 담지 않는다. 파일 전체가 신규라 분리할 것이 없다.
+ */
+export interface PreexistingDirty {
+  staged: string[]
+  overlapping: string[]
+  unrelated: string[]
+}
+
 export interface InitResult {
   targetRoot: string
   copied: string[] // repo-상대 경로(신규 복사)
   skipped: string[] // repo-상대 경로(이미 존재 → 미덮어씀)
+  /** init이 만들거나 수정하는 repo-상대 경로 전수. ignore 검사와 설치 후 stage 목록이 **공유**하는 SSOT. */
+  artifacts: string[]
+  /** `artifacts` 중 gitignore에 걸리고 **untracked**인 것(= `git add`가 fatal인 것). */
+  gitIgnoredArtifacts: string[]
+  /** 설치 **전** 워킹트리 상태(쓰기 전 스냅샷). */
+  preexistingDirty: PreexistingDirty
   configAction: 'created' | 'merged' | 'unchanged' // req.config.json: 신규 생성 / 누락키 병합 / 변경 없음
   configKeysAdded: string[] // 병합 시 추가된 키(handoffPath·packageManager)
   packageJsonAdded: string[] // 추가된 script/devDep 키
@@ -163,6 +213,94 @@ export function assertGitWorkTree(targetRoot: string, run?: GitRunner): void {
     throw new Error(`대상이 git repo 최상위가 아님: ${targetRoot} (top-level=${topLevel}) — repo 루트에서 실행.`)
 }
 
+/**
+ * `git status --porcelain` 한 줄을 `{index, worktree, path}`로 분해. rename(`R  old -> new`)은 새 경로를 쓴다.
+ * 파싱 불가면 null(무시) — 진단 목적이라 fail-closed로 만들 이유가 없다.
+ */
+function parsePorcelainLine(line: string): { index: string; worktree: string; path: string } | null {
+  if (line.length < 4) return null
+  const index = line[0] as string
+  const worktree = line[1] as string
+  const rest = line.slice(3)
+  const arrow = rest.indexOf(' -> ')
+  return { index, worktree, path: arrow === -1 ? rest : rest.slice(arrow + 4) }
+}
+
+/**
+ * 설치 전 워킹트리를 3분류(DEC-011-11). **순수 함수** — porcelain 줄과 산출물 목록만 받는다.
+ * 입력은 `git status --porcelain --untracked-files=all`(+`core.quotePath=false`)의 출력 줄.
+ */
+export function classifyPreexistingDirty(porcelainLines: readonly string[], artifacts: readonly string[]): PreexistingDirty {
+  const artifactSet = new Set(artifacts)
+  const out: PreexistingDirty = { staged: [], overlapping: [], unrelated: [] }
+  for (const line of porcelainLines) {
+    const p = parsePorcelainLine(line)
+    if (!p) continue
+    // 인덱스에 올라간 변경(`?`는 untracked 표식이라 staged가 아니다) → 커밋이 삼킨다.
+    if (p.index !== ' ' && p.index !== '?') {
+      out.staged.push(p.path)
+      continue
+    }
+    if (artifactSet.has(p.path)) {
+      // tracked + unstaged 수정만 문제다. untracked 산출물은 파일 전체가 신규라 분리할 것이 없다.
+      if (p.index === ' ' && p.worktree !== ' ' && p.worktree !== '?') out.overlapping.push(p.path)
+      continue
+    }
+    out.unrelated.push(p.path)
+  }
+  return out
+}
+
+/**
+ * `paths` 중 **gitignore에 걸리고 untracked인** 것(= `git add <path>`가 fatal인 것)만 반환한다.
+ *
+ * ⚠️ `git check-ignore`만으로 판정하면 안 된다(DEC-011-10). 그 명령은 **인덱스를 보지 않으므로**,
+ * ignore 규칙에 걸리지만 이미 tracked인 파일(강제 add된 lockfile 등)까지 "무시됨"으로 보고한다.
+ * 그런 파일은 `git add`가 정상 동작하므로 제외 대상이 아니다.
+ *
+ * exit 코드: `0`=무시됨, `1`=무시 안 됨, `128`=오류. **128은 "무시 안 됨"으로 취급**한다 —
+ * git 버전차·비정상 상태 때문에 설치를 막는 오탐을 만들지 않는다.
+ * 파일이 없어도 규칙 매칭이므로 **쓰기 전에** 판정할 수 있다(preflight 배치의 전제).
+ */
+export function findIgnoredArtifacts(targetRoot: string, paths: readonly string[]): string[] {
+  const ignored = (p: string): boolean => {
+    try {
+      execFileSync('git', ['check-ignore', '-q', '--', p], { cwd: targetRoot, stdio: 'ignore' })
+      return true
+    } catch {
+      return false
+    }
+  }
+  const tracked = (p: string): boolean => {
+    try {
+      const out = execFileSync('git', ['ls-files', '--', p], {
+        cwd: targetRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      return out.trim().length > 0
+    } catch {
+      return false
+    }
+  }
+  return paths.filter((p) => ignored(p) && !tracked(p))
+}
+
+/** 설치 전 워킹트리 상태(쓰기 전). git 실패 시 빈 목록 — 진단이지 게이트가 아니다. */
+function gitPorcelain(targetRoot: string): string[] {
+  try {
+    return execFileSync('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all'], {
+      cwd: targetRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .split('\n')
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 /** lockfile로 대상 패키지매니저 감지(없으면 npm — 가장 보편적 기본). */
 export function detectPackageManager(root: string): PackageManager {
   if (existsSync(join(root, 'pnpm-lock.yaml'))) return 'pnpm'
@@ -193,28 +331,72 @@ function walkFiles(dir: string): string[] {
 }
 
 /**
- * srcAbs 파일들을 targetRoot 하위 동일 상대경로로 복사. 기존 파일은 force 없으면 스킵.
- * srcBase는 상대경로 계산 기준(= PACKAGE_ROOT)이라 대상에서도 같은 레이아웃 유지.
+ * init이 만들거나 수정할 것의 **쓰기 전 계획**(REQ-2026-011 DEC-011-9).
+ *
+ * ⚠️ 왜 `InitResult`가 아니라 별도 계획인가: `InitResult.copied`는 Apply 단계에서 채워진다.
+ * preflight의 gitignore 검사가 그것을 볼 수 없고, 검사를 복사 뒤로 옮기면 `--strict`가
+ * `scripts/req/**`·`req.config.json`·`package.json`을 이미 쓴 뒤에 throw하게 되어
+ * "파일을 하나도 쓰지 않고 throw" 계약이 깨진다(design 리뷰 R4).
+ *
+ * preflight(ignore 검사)·apply(복사)·설치 후 안내(stage 목록) **셋이 같은 계획을 읽는다.**
+ * 목록을 따로 관리하면 어긋난다 — R2에서 `AGENTS.commitgate.md`가, R3에서 lockfile이 빠졌다.
  */
-function copyInto(
-  srcFiles: string[],
-  srcBase: string,
-  targetRoot: string,
-  opts: InitOptions,
-  copied: string[],
-  skipped: string[],
-): void {
-  for (const srcAbs of srcFiles) {
-    const rel = relative(srcBase, srcAbs).replace(/\\/g, '/')
-    const destAbs = join(targetRoot, rel)
-    if (existsSync(destAbs) && !opts.force) {
-      skipped.push(rel)
-      continue
-    }
-    copied.push(rel)
-    if (opts.dryRun) continue
-    mkdirSync(dirname(destAbs), { recursive: true })
-    copyFileSync(srcAbs, destAbs)
+export interface InstallPlan {
+  copies: { srcAbs: string; destRel: string }[]
+  skips: string[]
+  configRel: string | null // req.config.json — 생성·병합 시
+  packageJsonRel: string | null // package.json — 주입 시
+  lockfileRel: string | null // LOCKFILE[pm] — 주입 시(install이 갱신)
+  agentsRel: string | null // AGENTS.md — 부재였을 때
+  claudeMdRel: string | null // CLAUDE.md — 부재였을 때
+  contractCopyRel: string | null // AGENTS.commitgate.md — 기존 AGENTS.md에 마커 없을 때
+}
+
+/** `planInstall`이 preflight에서 이미 계산해 둔 사실들(중복 계산 방지). */
+export interface PlanFacts {
+  configWillWrite: boolean
+  packageJsonWillWrite: boolean
+  agentsWillCreate: boolean
+  claudeMdWillCreate: boolean
+  contractCopyWillCreate: boolean
+  agentEntrypointsSkipped: boolean
+}
+
+/** 계획이 만들거나 수정할 repo-상대 경로 전수. ignore 검사와 stage 목록이 공유한다. */
+export function planArtifactPaths(plan: InstallPlan): string[] {
+  const extras = [plan.configRel, plan.packageJsonRel, plan.lockfileRel, plan.agentsRel, plan.claudeMdRel, plan.contractCopyRel]
+  return [...plan.copies.map((c) => c.destRel), ...extras.filter((p): p is string => p !== null)]
+}
+
+/**
+ * 복사 계획 수립(IO는 `existsSync`/`readdirSync`만 — 쓰기 없음). 기존 파일은 `force` 없으면 스킵.
+ *
+ * `scripts/req/**`와 `KIT_COPY_RELPATHS`는 **패키지-상대 = 대상-상대**(리터럴 `workflow/`).
+ * 진입점은 `src !== dest`라 명시적 매핑으로 다룬다.
+ */
+export function planInstall(targetRoot: string, force: boolean, pm: PackageManager, facts: PlanFacts): InstallPlan {
+  const copies: { srcAbs: string; destRel: string }[] = []
+  const skips: string[] = []
+  const add = (srcAbs: string, destRel: string): void => {
+    if (existsSync(join(targetRoot, destRel)) && !force) skips.push(destRel)
+    else copies.push({ srcAbs, destRel })
+  }
+  for (const srcAbs of walkFiles(join(PACKAGE_ROOT, KIT_SOURCE_DIR_REL)))
+    add(srcAbs, relative(PACKAGE_ROOT, srcAbs).replace(/\\/g, '/'))
+  for (const rel of KIT_COPY_RELPATHS) add(join(PACKAGE_ROOT, rel), rel)
+  if (!facts.agentEntrypointsSkipped)
+    for (const { src, dest } of KIT_AGENT_ENTRYPOINTS) add(join(PACKAGE_ROOT, src), dest)
+
+  return {
+    copies,
+    skips,
+    configRel: facts.configWillWrite ? 'req.config.json' : null,
+    packageJsonRel: facts.packageJsonWillWrite ? 'package.json' : null,
+    // devDeps를 주입했으면 `<pm> install`이 lockfile을 갱신한다. 안내가 이것을 stage해야 clean-tree가 성립한다.
+    lockfileRel: facts.packageJsonWillWrite ? LOCKFILE[pm] : null,
+    agentsRel: facts.agentsWillCreate ? 'AGENTS.md' : null,
+    claudeMdRel: facts.claudeMdWillCreate ? KIT_CLAUDE_DEST_REL : null,
+    contractCopyRel: facts.contractCopyWillCreate ? KIT_AGENTS_CONTRACT_COPY_REL : null,
   }
 }
 
@@ -243,27 +425,30 @@ function assertEntrypointPathsUsable(targetRoot: string): void {
   }
 }
 
-/**
- * `src → dest`(경로가 다름) 복사. 기존 파일은 `--force` 없으면 스킵. 중첩 디렉터리를 만든다.
- * `copyInto`(레이아웃 재현)와 달리 매핑이 명시적이다.
- */
-function copyEntrypoints(
-  targetRoot: string,
-  opts: InitOptions,
-  copied: string[],
-  skipped: string[],
-): void {
-  for (const { src, dest } of KIT_AGENT_ENTRYPOINTS) {
-    const destAbs = join(targetRoot, dest)
-    if (existsSync(destAbs) && !opts.force) {
-      skipped.push(dest)
-      continue
-    }
-    copied.push(dest)
-    if (opts.dryRun) continue
+/** 계획대로 복사(중첩 디렉터리 생성). `--dry-run`이면 아무것도 쓰지 않는다. */
+function applyCopies(targetRoot: string, plan: InstallPlan): void {
+  for (const { srcAbs, destRel } of plan.copies) {
+    const destAbs = join(targetRoot, destRel)
     mkdirSync(dirname(destAbs), { recursive: true })
-    copyFileSync(join(PACKAGE_ROOT, src), destAbs)
+    copyFileSync(srcAbs, destAbs)
   }
+}
+
+/**
+ * gitignore된 계약 포인터에 대한 경고 문구. **동작하는 패턴을 제시**해야 한다.
+ *
+ * git 공식 문서(`gitignore(5)`): *"It is not possible to re-include a file if a parent directory of
+ * that file is excluded."* 그래서 `.claude` + `!.claude/skills/**`는 **동작하지 않는다.**
+ * 이 함정을 알려 주지 않으면 사용자는 고쳤다고 믿으면서 여전히 추적되지 않는다.
+ */
+function ignoredPointerMessage(ignored: readonly string[]): string {
+  return (
+    `다음 계약 포인터가 .gitignore로 무시됩니다 — 팀·CI의 fresh clone에 공유되지 않습니다:\n` +
+    ignored.map((p) => `      ${p}`).join('\n') +
+    `\n    git은 부모 디렉터리가 제외되면 하위 부정 패턴을 무시합니다(gitignore(5)).\n` +
+    `    \`.claude\` 대신 아래처럼 바꾸면 설정 파일은 계속 무시하면서 진입점만 추적할 수 있습니다:\n\n` +
+    `      .claude/*\n      !.claude/skills/\n      !.claude/skills/**\n      !.claude/commands/\n      !.claude/commands/**`
+  )
 }
 
 /** JSON 파일을 객체로 파싱(fail-closed). 파싱 실패·비-객체(배열/원시)면 throw. */
@@ -471,16 +656,49 @@ export function runInit(opts: InitOptions): InitResult {
   const contractCopyPath = join(targetRoot, KIT_AGENTS_CONTRACT_COPY_REL)
   const agentsContractCopyCreated = agentsMarkerMissing && (!existsSync(contractCopyPath) || opts.force)
 
+  // 산출물 계획을 **쓰기 전에** 확정한다(DEC-011-9). ignore 검사·복사·설치 후 안내가 이 하나를 공유한다.
+  const plan = planInstall(targetRoot, opts.force, packageManager, {
+    configWillWrite: configToWrite !== null,
+    packageJsonWillWrite: packageJsonAdded.length > 0,
+    agentsWillCreate: agentsCreated,
+    claudeMdWillCreate: claudeMdCreated,
+    contractCopyWillCreate: agentsContractCopyCreated,
+    agentEntrypointsSkipped,
+  })
+  const artifacts = planArtifactPaths(plan)
+
+  // gitignore 판정(D5). 계약 포인터가 무시되면 설치 목적(팀·CI 공유)이 조용히 무너진다 → WARN/strict throw.
+  // 그 밖의 산출물(lockfile 등)은 무시돼도 정당한 정책일 수 있으므로 stage 목록에서만 조용히 뺀다.
+  const gitIgnoredArtifacts = findIgnoredArtifacts(targetRoot, artifacts)
+  const ignoredPointers = gitIgnoredArtifacts.filter((p) => CONTRACT_POINTER_RELPATHS.includes(p))
+
+  // 설치 **전** 워킹트리 3분류(DEC-011-11). 쓰기 뒤에 찍으면 CommitGate 산출물과 섞여 구분할 수 없다.
+  const preexistingDirty = classifyPreexistingDirty(gitPorcelain(targetRoot), artifacts)
+
+  if (ignoredPointers.length > 0) {
+    const msg = ignoredPointerMessage(ignoredPointers)
+    if (opts.strict) throw new Error(`[--strict] ${msg}`)
+    console.warn(`⚠️  ${msg}\n    (설치는 계속 — 강제 중단하려면 --strict)`)
+  }
+  // staged·overlapping이 있으면 **안전한 커밋 안내를 만들 수 없다**(커밋이 인덱스 전체를 담고, 겹침은 사후 분리 불가).
+  // 기본 모드는 설치를 막지 않는다(비파괴·비-breaking) — 안내를 내지 않을 뿐. `--strict`는 쓰기 전에 중단한다.
+  if (opts.strict && (preexistingDirty.staged.length > 0 || preexistingDirty.overlapping.length > 0)) {
+    const lines = [
+      ...preexistingDirty.staged.map((p) => `      staged      ${p}`),
+      ...preexistingDirty.overlapping.map((p) => `      설치분과 겹침 ${p}`),
+    ]
+    throw new Error(
+      `[--strict] 설치 전 워킹트리에 변경이 있어 안전한 설치 커밋을 만들 수 없습니다:\n${lines.join('\n')}\n` +
+        `    staged 변경은 설치 커밋에 함께 들어가고, 겹치는 변경은 사후 분리가 불가능합니다. 먼저 커밋하거나 되돌리세요.`,
+    )
+  }
+
   // ══ Apply: 여기부터 쓰기(preflight 전부 통과 후에만) ═════════════════
-  const copied: string[] = []
-  const skipped: string[] = []
-  copyInto(walkFiles(join(PACKAGE_ROOT, KIT_SOURCE_DIR_REL)), PACKAGE_ROOT, targetRoot, opts, copied, skipped)
-  // ⚠️ KIT_COPY_RELPATHS는 패키지-상대 = 대상-상대(리터럴 `workflow/`). ticketRoot/schemaPath 설정과 무관 — uninstall planner와 공유하는 SSOT.
-  const kitFiles = KIT_COPY_RELPATHS.map((rel) => join(PACKAGE_ROOT, rel))
-  copyInto(kitFiles, PACKAGE_ROOT, targetRoot, opts, copied, skipped)
-  if (!agentEntrypointsSkipped) copyEntrypoints(targetRoot, opts, copied, skipped)
+  const copied = plan.copies.map((c) => c.destRel)
+  const skipped = plan.skips
 
   if (!opts.dryRun) {
+    applyCopies(targetRoot, plan)
     if (configToWrite) writeFileSync(cfgPath, JSON.stringify(configToWrite, null, 2) + '\n', 'utf8')
     if (packageJsonAdded.length > 0) {
       pkg.scripts = scripts
@@ -511,6 +729,9 @@ export function runInit(opts: InitOptions): InitResult {
     targetRoot,
     copied,
     skipped,
+    artifacts,
+    gitIgnoredArtifacts,
+    preexistingDirty,
     configAction,
     configKeysAdded,
     packageJsonAdded,
@@ -607,6 +828,13 @@ export function main(argv: string[]): void {
     console.log(`${tag}  CLAUDE.md: ${r.claudeMdCreated ? '템플릿 생성' : '이미 존재(유지)'}`)
     if (r.agentsContractCopyCreated) console.log(`${tag}  ${KIT_AGENTS_CONTRACT_COPY_REL}: 계약 템플릿 사본 생성(AGENTS.md에 병합 후 삭제)`)
   }
+  if (r.gitIgnoredArtifacts.length > 0)
+    console.log(`${tag}  .gitignore로 제외되는 산출물: ${r.gitIgnoredArtifacts.join(', ')}`)
+  const dirtyCount = r.preexistingDirty.staged.length + r.preexistingDirty.overlapping.length + r.preexistingDirty.unrelated.length
+  if (dirtyCount > 0)
+    console.log(
+      `${tag}  설치 전 워킹트리: staged ${r.preexistingDirty.staged.length} / 설치분과 겹침 ${r.preexistingDirty.overlapping.length} / 무관 ${r.preexistingDirty.unrelated.length}`,
+    )
   if (r.crossSpawnFloorWarned) console.log(`${tag}  ⚠️ cross-spawn 버전 하한 경고(위 참조) — 강제 중단은 --strict`)
   if (!r.dryRun) {
     console.log(`\n다음:`)
