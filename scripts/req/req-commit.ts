@@ -449,7 +449,10 @@ export function parseArgs(argv: string[]): CommitArgs {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === undefined) continue
-    if (a === '--ticket') ticket = argv[++i] ?? null
+    // bare `--`는 POSIX end-of-options 마커(DEC-011-3). ⚠️ 이후 인자도 계속 옵션으로 파싱해야 한다 —
+    // 전부 위치인자로 삼키면 `req:commit <id> -- --run`이 조용히 dry-run으로 끝난다(가장 나쁜 실패).
+    if (a === '--') continue
+    else if (a === '--ticket') ticket = argv[++i] ?? null
     else if (a === '--run') run = true
     else if (a === '--message' || a === '-m') message = argv[++i] ?? null
     else if (a === '--message-file') {

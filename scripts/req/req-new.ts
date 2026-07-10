@@ -98,7 +98,10 @@ export function parseArgs(argv: string[]): Opts {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === undefined) continue
-    if (a === '--run') {
+    // bare `--`는 POSIX end-of-options 마커(DEC-011-3). pnpm/yarn은 이를 스크립트에 그대로 넘긴다.
+    if (a === '--') {
+      continue
+    } else if (a === '--run') {
       o.run = true
     } else if (a === '--root') {
       const v = argv[++i]

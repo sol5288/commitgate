@@ -382,7 +382,9 @@ export function parseArgs(argv: string[]): DoctorArgs {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === undefined) continue
-    if (a === '--ticket') ticket = argv[++i] ?? null
+    // bare `--`는 POSIX end-of-options 마커(DEC-011-3). pnpm/yarn은 이를 스크립트에 그대로 넘긴다.
+    if (a === '--') continue
+    else if (a === '--ticket') ticket = argv[++i] ?? null
     else if (a === '--finalize') finalize = true // B3: D9를 finalize(source tree) 모드로
     else if (a === '--root') {
       const v = argv[++i]

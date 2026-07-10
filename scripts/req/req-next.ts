@@ -561,7 +561,11 @@ export function parseArgs(argv: string[]): Opts {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === undefined) continue
-    if (a === '--json') o.json = true
+    // bare `--`는 옵션이 아니라 POSIX end-of-options 마커다(DEC-011-3). npm은 `npm run x -- a`에서
+    // 이를 제거하지만 pnpm/yarn은 그대로 넘긴다 → 흡수한다. 이후 인자도 계속 옵션으로 파싱한다
+    // (전부 위치인자로 삼키면 `req:commit <id> -- --run`이 조용히 dry-run이 된다).
+    if (a === '--') continue
+    else if (a === '--json') o.json = true
     else if (a === '--ticket') o.ticket = argv[++i] ?? null
     else if (a === '--root') {
       const v = argv[++i]
