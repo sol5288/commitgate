@@ -1,8 +1,15 @@
-# REQ-2026-013 리뷰 요청 (R8 — design R1~R7 반영)
+# REQ-2026-013 리뷰 요청 (R9 — design R1~R8 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)·R5(3)·R6(1)·R7(1)를 반영했다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)·R5(3)·R6(1)·R7(1)·R8(2)를 반영했다.
+
+## design R8 지적 → 반영 (closure)
+
+| R8 지적 | 반영 |
+|---|---|
+| timeout/overflow 경로가 원문 stderr를 마스킹 없이 노출(분류 보존이 redaction보다 우선) | 범용 메시지 = **exit code만**(stderr 미포함); `defaultCodexRunner`가 **모든 kind에 redacted stderr로 메시지 재구성**(분류 보존 + 전-kind redaction)(D5) |
+| D8 생략 표식을 `findings` 배열에 넣으면 read 검증이 불량 판정 | 표식을 배열 밖 **별도 정수 `elided_count`** 필드로. read 검증은 `elided_count≥0`도 확인. 렌더 시 `(+N more elided)`. 초과 스냅샷이 앞 10건을 실제 주입하는 회귀(D8) |
 
 ## design R7 지적 → 반영 (closure)
 
