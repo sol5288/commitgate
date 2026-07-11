@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"00feb746b462b2805cc206d1207ce997662ffd26","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"HIGH","review_kind":"phase","findings":[],"next_action":"Phase 1a를 커밋한 뒤 Phase 1b의 호출부 `-z` 전환과 scratch SSOT 추출을 진행하라.","observations":[]}
