@@ -3,14 +3,80 @@
   "branch": "feat/req-2026-012-scratch-policy",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f4c5b-0732-7140-b4dd-a9a346f96752",
+  "review_base_sha": "e5ccf6591bbf330f7c56339f762171070caa77d8",
+  "review_diff_hash": "afb3ff1ed78c7c11971ad2db0a1a410329b27c77",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "3a7dd1dc8faf139f3476c0b3bdb9beec065935a3ea59d45fafdf98181b270490",
+  "current_phase": "phase-3-req-new-predicate",
+  "phases": [
+    {
+      "id": "phase-1a-porcelain",
+      "approved": true
+    },
+    {
+      "id": "phase-1b-scratch-migration",
+      "approved": true
+    },
+    {
+      "id": "phase-2-gitignore",
+      "approved": true
+    },
+    {
+      "id": "phase-3-req-new-predicate",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-req-new-predicate",
+    "outcome": "approved",
+    "compare_hash": "f08d91df299bc96c4e622d39a0c10d3d9c4391438c893ced356fef82616d5635",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-11T11:41:01.847Z"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-012/responses/design-r04-approved.json",
+    "response_sha256": "a36e1eb416b1aa4c2865a3ff68c7d4ce8a2c98c2c470e123392a39356560be16",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "50c53ffe33913e21160895741b3fb0c3b448fd45",
+    "codex_thread_id": "019f4c5b-0732-7140-b4dd-a9a346f96752",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-10T15:15:19.633Z",
+    "design_hash": "3a7dd1dc8faf139f3476c0b3bdb9beec065935a3ea59d45fafdf98181b270490"
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "957c9cd72a55cfec7d931d4eb090eaaf0e30ebfb",
+      "phase_id": "phase-1a-porcelain",
+      "consumed_by_commit_sha": "b1de2a11fe9f53aae378cbf00b803b2d5ac93460",
+      "approval_consumed_at": "2026-07-11T01:04:29.015Z"
+    },
+    {
+      "approved_tree": "9324b7e16d1f93053c4119d32b788e12aef6bcd7",
+      "phase_id": "phase-1b-scratch-migration",
+      "consumed_by_commit_sha": "c836e4bc46aa9adccfe232f834537ca222a0c2df",
+      "approval_consumed_at": "2026-07-11T02:48:51.126Z"
+    },
+    {
+      "approved_tree": "8b4764ab1c0361d003051ec496e5aa929f5fc3fd",
+      "phase_id": "phase-2-gitignore",
+      "consumed_by_commit_sha": "3003d364c4b3402f928d9b184fe0258ce82b9684",
+      "approval_consumed_at": "2026-07-11T08:40:42.639Z"
+    },
+    {
+      "approved_tree": "afb3ff1ed78c7c11971ad2db0a1a410329b27c77",
+      "phase_id": "phase-3-req-new-predicate",
+      "consumed_by_commit_sha": "56d8f06337223d6847d2120cf9188a510227cfe0",
+      "approval_consumed_at": "2026-07-11T11:42:45.373Z"
+    }
+  ]
 }
