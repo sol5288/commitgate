@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"e5ccf6591bbf330f7c56339f762171070caa77d8","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"HIGH","review_kind":"phase","findings":[],"next_action":"승인된 Phase 3 staged tree를 커밋한 뒤 전체 unit·typecheck·smoke 완료 게이트와 최종 병합 절차로 진행하라.","observations":[]}
