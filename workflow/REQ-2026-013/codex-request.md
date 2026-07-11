@@ -1,8 +1,18 @@
-# REQ-2026-013 리뷰 요청 (R5 — design R1·R2·R3·R4 반영)
+# REQ-2026-013 리뷰 요청 (R6 — design R1~R5 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)를 반영했다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)·R5(3)를 반영했다.
+
+## design R5 지적 → 반영 (closure)
+
+| R5 지적 | 반영 |
+|---|---|
+| D6이 "phase 실측" 의존 → event 형태 다르면 빈-오류 재현 | **실제 codex 실패를 캡처(`error`·`turn.failed`·`item.completed:error` 3형)해 계약을 fixture로 고정**(D6). "구현 후 실측" 의존 제거 |
+| D5 분류 ↔ D6 catch 경계 오류계약 부재 → timeout/ENOBUFS 구분 유실 | `safeSpawnSync`가 **`kind` 태그** 담아 throw, `defaultCodexRunner`는 timeout/overflow는 문구 보존·`exit`만 JSONL 추출(D5) |
+| D8이 write 시점만 검증, read 시 미검증 → 오염 state 주입 | **read 시점 selector·모든 finding 필드 재검증 + 불일치/초과면 전체 미주입(fail-closed)**(D8) |
+
+(R4의 enum 지적은 공식 config-reference 확인으로 반박했고, R5는 재지적하지 않음 — 반박 수용됨.)
 
 ## design R4 지적 → 반영 (closure)
 
