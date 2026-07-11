@@ -1,8 +1,16 @@
-# REQ-2026-013 리뷰 요청 (R2 — design R1 반영)
+# REQ-2026-013 리뷰 요청 (R3 — design R1·R2 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(NEEDS_FIX 10건)을 아래처럼 반영했다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10건)·R2(3건)를 아래처럼 반영했다.
+
+## design R2 지적 → 반영 (closure)
+
+| R2 지적 | 반영 |
+|---|---|
+| reviewReasoningEffort null 탈출구가 `type:['string','null']`+enum으로 성립 안 함(null이 enum 탈락) | **null을 enum 목록에 포함**: `{type:['string','null'], enum:[...5, null]}`. 회귀: `{effort:null}` 통과·`{effort:'higth'}` 거부(D1·D4) |
+| D6 fallback의 '비-비밀 라인'이 미정의 → 미지 이벤트 유출 | **blacklist→allowlist**: 허용 이벤트·허용 문자열 필드만, 미지/중첩/파싱실패 폐기. 허용 없으면 **raw stdout 미포함**(exit+stderr+생략 표식)(D6) |
+| D8 findings 선택에 승인 경계 없음 → 승인된 결함 재주입 | **`state.last_review` 기반**: `outcome==='needs-fix'`+타깃 일치일 때만 직전 응답 findings 주입, 승인 후 리셋(D8) |
 
 ## design R1 지적 → 반영 (closure)
 
