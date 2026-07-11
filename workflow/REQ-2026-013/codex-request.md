@@ -1,8 +1,18 @@
-# REQ-2026-013 리뷰 요청 (R3 — design R1·R2 반영)
+# REQ-2026-013 리뷰 요청 (R4 — design R1·R2·R3 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10건)·R2(3건)를 아래처럼 반영했다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10건)·R2(3건)·R3(3건)를 아래처럼 반영했다.
+
+## design R3 지적 → 반영 (closure)
+
+| R3 지적 | 반영 |
+|---|---|
+| D6 allowlist를 범용 `safeSpawnSync`에 넣어 비-codex 명령(npm/pnpm) stdout도 파싱→유출 | 추출을 **codex 경계 `defaultCodexRunner`로 한정**. `safeSpawnSync`는 stdout 파싱 안 함(원시 필드 담아 throw, 범용 메시지=exit+bounded stderr). stderr도 byte-bounded로 "allowlist만" 충돌 해소(D5·D6) |
+| D8이 selector(state.last_review)와 body(가변 codex-response.json) 동일성 미보장 → 미검증 내용 주입 | 검증된 findings **bounded 스냅샷을 `state.last_review`에 원자적 기록**, 재리뷰는 그 스냅샷만 읽음(가변 파일 안 읽음). 부재 시 fail-closed(D8) |
+| D6 8KiB가 필드별 → 수천 이벤트로 총량 수십 MiB | **총량 상한**: 최대 N 이벤트 + 총 UTF-8 byte ≤ 8KiB, 초과 시 단일 생략 표식(D6) |
+| obs: finding 스키마는 title/summary 아님(severity/file/detail) | 스냅샷 필드를 `{severity, file, detail}`로(D8) |
+| obs: Phase 3 >8파일 | vertical slice 분할 예고(3a reviewModel / 3b effort) |
 
 ## design R2 지적 → 반영 (closure)
 

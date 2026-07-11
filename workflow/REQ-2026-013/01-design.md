@@ -61,15 +61,17 @@ resumeThreadId
 - `SafeSpawnOptions`에 `timeoutMs?`. **`killSignal`은 내부 고정 `'SIGKILL'`**(config 아님) — SIGTERM은 POSIX에서 무시 가능해 "무한 대기 금지" 위반. SIGKILL은 무시 불가(실측: Win 종료, POSIX 계약).
 - timeout 판별은 **`res.error?.code === 'ETIMEDOUT'`만**. `|| res.signal`은 금지(ENOBUFS도 signal=SIGKILL — 실측). ENOBUFS는 **별도 오류**("codex 출력이 상한(64MiB) 초과").
 - exit≠0·timeout·ENOBUFS를 **구분되는 문구**로 throw. `CodexRunner` 시그니처 `(args,input,cwd,opts?:{timeoutMs?})` 확장, `defaultCodexRunner`가 전달.
+- **`safeSpawnSync`는 범용이다**(git·npm·pnpm도 호출, design R3) — 여기서 **stdout을 파싱하지 않는다**. 실패 시 원시 필드(`{status, signal, stdout, stderr}`)를 **담은 오류**를 throw하고, 범용 메시지는 **exit + byte-bounded stderr만**(stdout 미포함 — 임의 명령의 stdout은 데이터/비밀일 수 있고 allowlist가 없다). codex 특화 stdout 추출은 **codex 경계**에서만 한다(D6).
 - 회귀: SIGTERM-무시 자식(`process.on('SIGTERM',()=>{})` + 무한) + 짧은 timeout → **ETIMEDOUT으로 반환**(POSIX CI에서 SIGKILL 종료 증명) · ENOBUFS 자식 → timeout 아님 · 자발적 signal 종료 → timeout 아님.
 - **잔여(정직)**: SIGKILL은 **직접 자식 codex**를 보장한다. codex가 파이프를 쥔 손자를 detach하면 POSIX에서 EOF 대기가 남을 수 있다 — 완전 tree-kill(async+group-kill)은 동기 아키텍처 대개조라 **후속 REQ**. codex exec는 그런 손자를 detach하지 않음(phase 확인). git 경로(`execFileSync`)는 무영향.
 
-**D6. 실패 오류는 allowlist로만 표면화(비밀 안전, design R1·R2 P2).** raw JSONL 꼬리 덤프는 `command_execution.aggregated_output`(명령 출력=비밀 가능)를 영구 로그에 남긴다. **blacklist는 미지의 이벤트·wrapper·중첩 payload를 놓쳐 유출**하므로(R2), **allowlist**로 뒤집는다:
-- stdout JSONL을 라인별 파싱해 **허용 이벤트 타입**(`type ∈ {turn.failed, error, stream_error}` — codex 계약에 맞춰 확정)만 취하고, 그 안에서도 **허용 필드**(예: `error.message`, `message` — 문자열만)만 직렬화한다. 각 값은 **byte 기준(Buffer.byteLength ≤ 8KiB, UTF-8 안전 절단)** 으로 자른다.
-- **그 외는 전부 폐기**: 허용 목록에 없는 이벤트 타입, 중첩 객체/payload, 파싱 실패 라인, 비-문자열 필드. `command_execution`·`agent_message`·`reasoning` 등은 애초에 허용 타입이 아니라 제외된다.
-- **허용 이벤트가 하나도 없으면 raw stdout을 절대 싣지 않는다** — exit code + stderr + `[구조화 오류 없음 — stdout 생략(비밀 안전)]` 표식만. (옛 "비-비밀 라인 tail"은 R2 지적대로 폐기 — 미지 이벤트 유출 벡터.)
-- stderr는 CLI 자체 진단이라 포함(비밀 위험 낮음). 정확한 이벤트/필드명은 codex `--json` JSONL 계약에 의존 — phase에서 실측 확인, 미스매치면 allowlist가 비어 **안전 저하(내용 생략)** 로 fail.
-- 회귀: `turn.failed{error.message}` → message 표면화 · 미지 타입 `{type:'x', message:'token=…'}` → **폐기(표면화 안 됨)** · `command_execution` → 제외 · 다바이트 거대 message → byte 상한.
+**D6. codex 실패는 codex 경계에서 allowlist로만 표면화(비밀 안전, design R1·R2·R3 P2).** 추출을 **범용 `safeSpawnSync`가 아니라 `defaultCodexRunner`**(codex임을 아는 경계)에서 한다 — `safeSpawnSync`가 담아 throw한 `err.stdout`에 대해서만. npm/pnpm 등 비-codex 명령이 우연히 `{"type":"error","message":"token=…"}`를 내도 이 경로를 **안 탄다**(R3 — 범용 함수에 넣으면 유출).
+- **allowlist**: 허용 이벤트(`type ∈ {turn.failed, error, stream_error}` — codex 계약에 맞춰 확정)의 **허용 문자열 필드**(`error.message`·`message`)만 직렬화. 미지 타입·중첩 객체/payload·파싱 실패·비-문자열은 **전부 폐기**(blacklist는 미지 유출 — R2). `command_execution`·`agent_message`·`reasoning`은 허용 타입 아님.
+- **총량 상한(R3)**: 필드별이 아니라 **추출 결과 전체**에 — 최대 **N개 이벤트**(예 20) + **총 UTF-8 byte ≤ 8KiB**(Buffer.byteLength, 다바이트 안전 절단), 초과 시 **단일 생략 표식**(`[…N events elided]`). 수천 개 소형 이벤트가 수십 MiB로 부푸는 것 차단.
+- **허용 이벤트 0개면 raw stdout 미포함** — exit + `[구조화 오류 없음 — stdout 생략]`만.
+- **stderr도 byte-bounded(≤8KiB)** — "allowlist만"과 "raw stderr 포함"의 충돌 해소(R3): stderr는 CLI 진단 채널이라 포함하되 무제한이 아니라 상한.
+- 정확한 이벤트/필드명은 codex `--json` 계약 의존 — phase 실측, 미스매치면 allowlist가 비어 **안전 저하(생략)** 로 fail.
+- 회귀: `turn.failed{error.message}`→표면화 · 미지 `{type:'x',message:'token=…'}`→폐기 · **비-codex 명령의 `{type:'error'}`→codex 경로 안 탐**(범용은 stderr만) · 수천 이벤트→총 byte·개수 상한+생략표식 · 다바이트→byte 안전 절단.
 
 **D7. bounded retry는 이번 범위에서 뺀다.** 비-일시 실패(usage-limit·model-not-found)엔 무익, 600s와 곱해 비용 배증, provider HTTP retry 존재, retryable 분류 계약 부재. D6로 표본 수집 후 별도 REQ.
 
@@ -77,10 +79,11 @@ resumeThreadId
 - `:1182`을 `const isResume = false`로 — **항상 새 스레드**. `codex_thread_id`는 계속 저장(후속 opt-in용)하되 resume에 쓰지 않는다.
 - `--fresh-thread`는 **유지** — blocked 마커 회복(`:1090` `clearBlockedReview`)이 여전히 필요. (thread 강제-fresh 의미는 이제 기본과 같아 사실상 marker-clear 전용.)
 - **resume opt-in·`--resume-thread`는 없다**(비목표). 그래서 design R1의 target-binding(#5)·모순 검사(#6)는 이번 범위 밖 — opt-in을 안 만드니 발생하지 않는다.
-- **연속성 보완 + 승인 경계(design R2)**: resume가 주던 finding 기억을 대체하되, "직전 same-target NEEDS_FIX 아카이브 검색"은 **승인된 결함을 후속 독립 변경에 재주입**할 수 있다(예: `p-r01-needs-fix`→`p-r02-approved` 후, 같은 phase에 독립 변경을 재리뷰하면 r01을 다시 주입 → false closure·drift). 그래서 **아카이브를 검색하지 않고 `state.last_review`를 sequence tracker로 쓴다**:
-  - `state.last_review`(`{outcome, review_kind, phase_id}` — 이미 존재)가 **`outcome==='needs-fix'` 이고 현재 타깃(kind/phase)과 일치**할 때만, **그 직전 응답(`codex-response.json`)의 findings**를 bounded(상위 N건 title/summary, ≤byte)로 `previous_findings_to_close` 블록에 주입.
-  - `outcome==='approved'`(승인 후 리셋)·타깃 불일치·직전 리뷰 없음 → **주입 안 함**. 승인이 경계 역할을 하므로 해소된 findings가 재주입되지 않는다.
-  - 즉 "**즉시 직전 유효 결과만 + 승인 후 리셋**"(design R2 옵션 a). 누적이 아니라 타깃 한정·1라운드 스냅샷이라 goalpost drift 없음. `readPreviousResult`(status 한 단어)를 이 블록으로 대체/보강.
+- **연속성 보완 + 승인 경계 + 원자성(design R2·R3)**: resume가 주던 finding 기억을 대체한다. "직전 same-target NEEDS_FIX 아카이브 검색"은 승인된 결함을 재주입할 수 있고(R2), "`state.last_review` selector + 가변 `codex-response.json` body"는 **둘이 desync**할 수 있다(R3 — 재리뷰가 파일을 덮은 뒤 state 기록 전 실패하면 state는 F1인데 파일은 미검증 R2). 그래서 **selector와 body를 한 곳에 원자적으로** 둔다:
+  - 리뷰 검증 완료 시 `state.last_review`에 `{outcome, review_kind, phase_id}`와 함께 **검증된 findings의 bounded 스냅샷**(`findings: [{severity, file, detail(절단)}...]` — 실제 스키마 필드, title/summary 아님(R3-obs); 상위 N건, 각 detail·전체 byte 상한)을 **같은 state write로** 기록한다.
+  - 재리뷰 프롬프트는 `state.last_review.outcome==='needs-fix'` + 타깃(kind/phase) 일치일 때만 그 **스냅샷**을 `previous_findings_to_close` 블록에 주입. 가변 `codex-response.json`을 읽지 않으므로 desync 불가. 스냅샷 부재 → 주입 안 함(fail-closed).
+  - `outcome==='approved'`(승인 후 리셋)·타깃 불일치·직전 없음 → 주입 안 함. 승인이 경계다.
+  - 즉 "**검증된 직전 결과의 원자적 스냅샷만 + 승인 후 리셋**". 누적 아닌 1라운드 타깃 스냅샷 → drift 없음. `readPreviousResult`(status 한 단어) 대체.
 
 **D9. Phase 순서 = timeout → stdout → model-pin → stateless(bootstrap, design R1 P2).** 이 저장소 명령은 로컬 `tsx`라 staged phase 구현이 **자기 phase 리뷰에 즉시 적용**된다. model-pin(P1)이 먼저면 그 리뷰가 timeout·stdout 안전망 없이 새 고정 모델로 돈다 — 미지원/행이면 진단·중단 수단이 없다. 따라서 **안전망을 먼저** 깐다:
 1. timeout(P2) → 2. stdout(P3) → 3. **model-pin(P1)** → 4. stateless(P4).
