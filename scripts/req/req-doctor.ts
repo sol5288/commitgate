@@ -11,6 +11,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
+import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
+import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
 import {
   loadState,
   validateVerdict,
@@ -18,8 +20,6 @@ import {
   findUnstagedOrUntracked,
   captureDesignBinding,
   designDocPaths,
-  isArchiveFileName,
-  isAllowedResponsesScratch,
   type WorkflowState,
   type Verdict,
   type ApprovalEvidence,
@@ -52,7 +52,7 @@ export interface DoctorInputs {
   // D18 granularity 임계(config, advisory). 미지정 시 GRANULARITY_MAX_FILES(현재 동작). main이 cfg.granularityMaxFiles 주입.
   granularityMaxFiles?: number
   stagedTree: string
-  statusLines: string[]
+  statusEntries: StatusEntry[]
   scratch: string[]
   responseVerdict: Verdict | null
   responseStructureOk: boolean
@@ -189,18 +189,8 @@ function evidenceProblems(
   return r
 }
 
-/**
- * porcelain v1 라인의 **모든** 변경 경로 추출. 비-ASCII는 core.quotePath=false 전제.
- * rename/copy(`R`/`C`, ` -> `)는 [원본, 목적지] **둘 다** 반환 — D13이 양쪽 모두 검사하여
- * 비허용 경로→허용 경로 rename으로 코드 삭제를 우회하는 것을 차단(Codex P2). 그 외는 단일 경로.
- */
-export function statusPaths(line: string): string[] {
-  if (line.length < 4) return []
-  const body = line.slice(3).replace(/\\/g, '/')
-  const arrow = body.indexOf(' -> ')
-  if (arrow >= 0) return [body.slice(0, arrow), body.slice(arrow + 4)]
-  return [body]
-}
+// statusPaths는 lib/porcelain의 entryPaths로 대체(REQ-2026-012). `-z`가 rename의 src·dest를
+// 필드로 확실히 주므로 ` -> ` 분할과 인용 해제가 필요 없다.
 
 /** 순수: 입력으로부터 1차 최소셋 점검 결과 산출(부수효과 없음 — 테스트 용이). */
 export function runChecks(inp: DoctorInputs): Check[] {
@@ -269,8 +259,9 @@ export function runChecks(inp: DoctorInputs): Check[] {
   }
 
   // D10: unstaged/untracked(비-스크래치) — review용 클린. A2: ticketRel 전달 시 responses/ untracked 아카이브만 스크래치 허용(tracked 변조·approvals.jsonl·타 티켓 flag).
-  const dirty = findUnstagedOrUntracked(inp.statusLines, inp.scratch, inp.ticketRel)
-  if (dirty.length) c.push({ id: 'D10', level: 'FAIL', msg: `unstaged/untracked 존재:\n  ${dirty.join('\n  ')}` })
+  const dirty = findUnstagedOrUntracked(inp.statusEntries, inp.scratch, inp.ticketRel)
+  if (dirty.length)
+    c.push({ id: 'D10', level: 'FAIL', msg: `unstaged/untracked 존재:\n  ${dirty.map(formatStatusEntry).join('\n  ')}` })
   else c.push({ id: 'D10', level: 'OK', msg: '워킹트리 클린(staged + 스크래치)' })
 
   // D11: phase≠DONE인데 main 또는 비-<branchPrefix>* 브랜치(DEC-WF-020). branchPrefix=config(기본 feat/req-).
@@ -293,10 +284,10 @@ export function runChecks(inp: DoctorInputs): Check[] {
   // A2(A2-R2-P2-1): 허용된 untracked 응답 아카이브(D10 scratch)는 D13 코드변경 분류에서도 제외 — D10/D13 scratch 정책 일치.
   // (tracked evidence 변조·approvals.jsonl·타 티켓·collapsed dir은 isAllowedResponsesScratch=false라 제외되지 않음 → D10/D13 모두 FAIL 유지.)
   const responsesScratch = inp.ticketRel
-    ? inp.statusLines.filter((l) => isAllowedResponsesScratch(l, inp.ticketRel as string)).flatMap(statusPaths)
+    ? inp.statusEntries.filter((e) => isAllowedResponsesScratch(e, inp.ticketRel as string)).flatMap(entryPaths)
     : []
   const allowD13 = new Set([...inp.ticketDocs, ...inp.scratch, ...responsesScratch].map((p) => p.replace(/\\/g, '/')))
-  const codeChanges = [...new Set(inp.statusLines.flatMap(statusPaths).filter((p) => p !== '' && !allowD13.has(p)))]
+  const codeChanges = [...new Set(inp.statusEntries.flatMap(entryPaths).filter((p) => p !== '' && !allowD13.has(p)))]
   if (!validDesign && codeChanges.length)
     c.push({
       id: 'D13',
@@ -492,13 +483,9 @@ function main(): void {
     branchPrefix: cfg.branchPrefix,
     granularityMaxFiles: cfg.granularityMaxFiles,
     stagedTree: git(['write-tree']),
-    // --untracked-files=all: untracked 디렉터리 collapse(`?? responses/`) 방지 — responses/ 아카이브를 개별 파일로 판단(A2-P2 후속).
-    statusLines: git(['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all']).split('\n').filter(Boolean),
-    scratch: [
-      repoRel(join(ticketDir, 'codex-response.json')),
-      repoRel(join(ticketDir, '.review-preview.txt')),
-      repoRel(join(ticketDir, 'state.json')), // 도구가 쓰는 메타데이터(4C e2e: review-codex 후 unstaged) — D10 제외
-    ],
+    // `-z`: 경로 인용 없음(설계 D11) → core.quotePath 불필요. --untracked-files=all: `?? responses/` collapse 방지.
+    statusEntries: parseStatusZ(git([...STATUS_Z_ARGS])),
+    scratch: reviewScratchPaths(ticketRel),
     responseVerdict,
     responseStructureOk,
     designApproved: state.design_approved === true,

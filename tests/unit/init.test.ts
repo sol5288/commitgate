@@ -15,7 +15,6 @@ import {
   installGuidance,
   quoteForShell,
   pathNeedsManualQuoting,
-  unquoteGitPath,
   classifyPreexistingDirty,
   findIgnoredArtifacts,
   KIT_COPY_RELPATHS,
@@ -29,8 +28,13 @@ import {
   type InitOptions,
 } from '../../bin/init'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
+import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 
 const PACKAGE_ROOT_FOR_TEST = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+
+/** StatusEntry 조립(classifyPreexistingDirty가 이제 parseStatusZ 산출을 받는다). */
+const se = (index: string, worktree: string, path: string, origPath?: string): StatusEntry =>
+  origPath === undefined ? { index, worktree, path } : { index, worktree, path, origPath }
 
 /** repo 전체(.git 제외)의 `경로 → sha256`. "쓰기 0건"을 전수 검증하는 데 쓴다. */
 function snapshot(dir: string): Map<string, string> {
@@ -845,33 +849,33 @@ describe('[init] classifyPreexistingDirty — 설치 전 워킹트리 3분류 (D
   const ARTIFACTS = ['package.json', 'req.config.json', 'pnpm-lock.yaml']
 
   it('staged 변경은 staged로 분류된다 — `git commit`이 인덱스 전체를 담기 때문', () => {
-    const d = classifyPreexistingDirty(['M  src/foo.ts', 'A  src/bar.ts'], ARTIFACTS)
+    const d = classifyPreexistingDirty([se('M', ' ', 'src/foo.ts'), se('A', ' ', 'src/bar.ts')], ARTIFACTS)
     expect(d.staged).toEqual(['src/foo.ts', 'src/bar.ts'])
     expect(d.overlapping).toEqual([])
     expect(d.unrelated).toEqual([])
   })
 
   it('tracked+unstaged 산출물은 overlapping — 사용자 변경과 설치 변경을 사후 분리할 수 없다', () => {
-    const d = classifyPreexistingDirty([' M package.json'], ARTIFACTS)
+    const d = classifyPreexistingDirty([se(' ', 'M', 'package.json')], ARTIFACTS)
     expect(d.overlapping).toEqual(['package.json'])
     expect(d.unrelated).toEqual([])
   })
 
   it('untracked 산출물은 무해하다 — 파일 전체가 신규라 분리할 것이 없다', () => {
-    const d = classifyPreexistingDirty(['?? package.json', '?? pnpm-lock.yaml'], ARTIFACTS)
+    const d = classifyPreexistingDirty([se('?', '?', 'package.json'), se('?', '?', 'pnpm-lock.yaml')], ARTIFACTS)
     expect(d.staged).toEqual([])
     expect(d.overlapping).toEqual([])
     expect(d.unrelated).toEqual([])
   })
 
   it('산출물과 무관한 unstaged/untracked는 unrelated', () => {
-    const d = classifyPreexistingDirty([' M src/foo.ts', '?? notes.txt'], ARTIFACTS)
+    const d = classifyPreexistingDirty([se(' ', 'M', 'src/foo.ts'), se('?', '?', 'notes.txt')], ARTIFACTS)
     expect(d.unrelated).toEqual(['src/foo.ts', 'notes.txt'])
     expect(d.staged).toEqual([])
   })
 
-  it('rename은 화살표 뒤(새 경로)를 쓴다', () => {
-    const d = classifyPreexistingDirty(['R  old.ts -> new.ts'], ARTIFACTS)
+  it('rename은 새 경로(dest)를 쓴다 — `-z`는 path=NEW, origPath=OLD', () => {
+    const d = classifyPreexistingDirty([se('R', ' ', 'new.ts', 'old.ts')], ARTIFACTS)
     expect(d.staged).toEqual(['new.ts'])
   })
 
@@ -1591,20 +1595,11 @@ describe('[init] installGuidance — 안내 문구 (D4)', () => {
   })
 
   /**
-   * `git status --porcelain`은 **공백이 든 경로를 C-인용해서** 준다(`"notes today.txt"`).
-   * `core.quotePath=false`는 비-ASCII 이스케이프만 끄지 이 인용은 끄지 못한다 — 실측으로 확인.
-   * 되돌리지 않으면 경로가 산출물 목록과 매칭되지 않고 안내가 이중 인용을 낸다.
+   * REQ-2026-012: `-z`는 공백이 든 경로를 **인용하지 않는다**(parseStatusZ가 원문을 그대로 준다).
+   * 옛 `unquoteGitPath`는 `--porcelain`의 C-인용을 되돌리려는 것이었으나, `-z` 전환으로 인용 자체가 사라져 삭제됐다.
    */
-  it('porcelain의 C-인용 경로를 되돌린다', () => {
-    expect(unquoteGitPath('"notes today.txt"')).toBe('notes today.txt')
-    expect(unquoteGitPath('package.json')).toBe('package.json')
-    expect(unquoteGitPath('"a\\"b.txt"')).toBe('a"b.txt')
-    expect(unquoteGitPath('"a\\\\b.txt"')).toBe('a\\b.txt')
-    expect(unquoteGitPath('"a\\tb.txt"')).toBe('a\tb.txt')
-  })
-
   it('공백이 든 경로가 3분류에서 올바로 매칭된다', () => {
-    const d = classifyPreexistingDirty(['?? "notes today.txt"', ' M "my pkg.json"'], ['my pkg.json'])
+    const d = classifyPreexistingDirty([se('?', '?', 'notes today.txt'), se(' ', 'M', 'my pkg.json')], ['my pkg.json'])
     expect(d.unrelated).toEqual(['notes today.txt'])
     expect(d.overlapping).toEqual(['my pkg.json'])
   })

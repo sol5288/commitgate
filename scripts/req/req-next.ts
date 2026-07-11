@@ -21,6 +21,8 @@ import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, buildScriptInvocation, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
+import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
+import { reviewScratchPaths } from './lib/scratch'
 import {
   loadState,
   readPhases,
@@ -616,16 +618,9 @@ function main(): void {
     currentDesignHash = null
   }
 
-  const statusLines = roGit(['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all'])
-    .split('\n')
-    .filter(Boolean)
-  // review-codex/doctor와 동일한 스크래치 집합 — 워크플로 도구가 쓰는 메타데이터는 D10 대상이 아니다.
-  const repoRel = (abs: string) => relative(cfg.root, abs).replace(/\\/g, '/')
-  const scratch = [
-    repoRel(join(ticketDir, 'codex-response.json')),
-    repoRel(join(ticketDir, '.review-preview.txt')),
-    repoRel(join(ticketDir, 'state.json')),
-  ]
+  const statusEntries = parseStatusZ(roGit([...STATUS_Z_ARGS]))
+  // review-codex/doctor와 동일한 스크래치 집합(lib/scratch SSOT) — 워크플로 도구가 쓰는 메타데이터는 D10 대상이 아니다.
+  const scratch = reviewScratchPaths(ticketRel)
 
   const action = resolveNext({
     target,
@@ -634,7 +629,7 @@ function main(): void {
     designDocsInIndex: currentDesignHash !== null,
     currentDesignHash,
     hasStagedChanges: roGit(['diff', '--cached', '--name-only']).trim().length > 0,
-    worktreeReviewClean: findUnstagedOrUntracked(statusLines, scratch, ticketRel).length === 0,
+    worktreeReviewClean: findUnstagedOrUntracked(statusEntries, scratch, ticketRel).length === 0,
     currentIndexHash: captureIndexHash(roGit),
   })
 

@@ -29,9 +29,13 @@ import {
   type GitAdapter,
   type ReviewerAdapter,
 } from './lib/adapters'
+import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
+import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
+// isArchiveFileName·isAllowedResponsesScratch는 lib/scratch로 이동(REQ-2026-012). 기존 import 경로 호환용 re-export.
+export { isArchiveFileName, isAllowedResponsesScratch } from './lib/scratch'
 
 // git·codex(reviewer) 경계 = 어댑터(Phase 3, D-017-3/4). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — config 부재 시 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -848,45 +852,39 @@ export function clearBlockedReview(state: WorkflowState): WorkflowState {
 
 /**
  * 허용 스크래치(현재 티켓의 **정확한 repo-relative 경로**) 제외, worktree dirty(Y≠' ') 또는 untracked(X='?')인
- * `git status --porcelain` 라인 반환. status-line "diff"가 아닌 **절대 검사** — 호출 전부터 dirty였던 파일의
+ * status 엔트리 반환. status-line "diff"가 아닌 **절대 검사** — 호출 전부터 dirty였던 파일의
  * 추가 수정도 감지(S2 보강). allowedScratch는 basename/substring이 아닌 **exact path** 매칭(Codex P1: D10 hard gate —
  * `src/codex-response.json.ts`·다른 티켓·`.bak` 변형 오인 방지). 비어 있어야 "리뷰용 클린".
+ *
+ * REQ-2026-012: 입력이 `string[]`(porcelain 라인)에서 `StatusEntry[]`(`parseStatusZ` 산출)로 바뀌었다.
+ * `-z`가 인용을 하지 않으므로 경로가 더는 망가지지 않고, rename의 src·dest를 `entryPaths`로 확실히 둘 다 본다.
  */
 export function findUnstagedOrUntracked(
-  statusLines: string[],
+  entries: StatusEntry[],
   allowedScratch: string[],
   ticketRel?: string,
-): string[] {
+): StatusEntry[] {
   const allowed = new Set(allowedScratch.map((p) => p.replace(/\\/g, '/')))
   const respPrefix = ticketRel
     ? `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
     : null
-  return statusLines.filter((l) => {
-    if (l.length < 3) return false
-    const x = l[0]
-    const y = l[1]
-    const body = l.slice(3).replace(/\\/g, '/')
-    // rename/copy(`R`/`C`)는 "old -> new" — src·dest 둘 다 검사(A2-P2-1: dest로 responses/ 주입 우회 차단).
-    const arrow = body.indexOf(' -> ')
-    if (arrow < 0 && allowed.has(body)) return false
-    const paths = arrow >= 0 ? [body.slice(0, arrow), body.slice(arrow + 4)] : [body]
+  return entries.filter((e) => {
+    // rename/copy(`R`/`C`)는 src·dest 둘 다 검사(A2-P2-1: dest로 responses/ 주입 우회 차단).
+    const paths = entryPaths(e)
+    // 정확 경로 스크래치 허용은 **비-rename**에만 — rename은 아래 responses/·기본 규칙으로 판정한다.
+    if (e.origPath === undefined && allowed.has(e.path)) return false
     // REQ-016 A1/D-016-4: 현재 티켓 responses/ 하위(src 또는 dest)는 **untracked 단일 아카이브만** 스크래치 허용.
     // approvals.jsonl·tracked 수정/삭제/리네임/카피는 무조건 flag(커밋된 증거 변조/주입 차단).
-    if (respPrefix && paths.some((p) => p.startsWith(respPrefix))) return !isAllowedResponsesScratch(l, ticketRel as string)
-    return x === '?' || y !== ' '
+    if (respPrefix && paths.some((p) => p.startsWith(respPrefix))) return !isAllowedResponsesScratch(e, ticketRel as string)
+    return e.index === '?' || e.worktree !== ' '
   })
 }
 
-// ───────────────────────────────── 승인 증거 아카이브/스크래치 (REQ-016 A1) ──
+// ───────────────────────────────── 승인 증거 아카이브 (REQ-016 A1) ──
+// isArchiveFileName·isAllowedResponsesScratch는 lib/scratch로 이동(REQ-2026-012, 상단에서 re-export).
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/** 아카이브 파일명 패턴: `<base>-rNN-(approved|needs-fix).json`(NN≥2자리). approvals.jsonl 등은 불일치. */
-const ARCHIVE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9-]*-r\d{2,}-(approved|needs-fix)\.json$/
-export function isArchiveFileName(name: string): boolean {
-  return ARCHIVE_NAME_RE.test(name)
 }
 
 /** 아카이브 base(round namespace): design은 'design'(phaseId 무시), phase는 phaseId(없으면 'phase'=레거시). */
@@ -912,22 +910,6 @@ export function nextArchiveRound(existingNames: string[], base: string): number 
   return max + 1
 }
 
-/**
- * 스크래치 허용 판정(D-016-4): **현재 티켓 `responses/` 직계 + untracked(`??`) + 아카이브 파일명 패턴**만 true.
- * `approvals.jsonl`·tracked(수정/삭제/리네임)·다른 티켓·중첩경로는 false(=리뷰/doctor에서 flag).
- */
-export function isAllowedResponsesScratch(statusLine: string, ticketRel: string): boolean {
-  if (statusLine.length < 3) return false
-  const x = statusLine[0]
-  const y = statusLine[1]
-  if (x !== '?' || y !== '?') return false // untracked만
-  const path = statusLine.slice(3).replace(/\\/g, '/')
-  const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
-  if (!path.startsWith(prefix)) return false
-  const name = path.slice(prefix.length)
-  if (name.includes('/')) return false // 직계만
-  return isArchiveFileName(name)
-}
 
 /**
  * 승인 증거 객체 생성(순수, D-016-2). 정본=아카이브 파일(`archive.path`/`sha256`).
@@ -1072,10 +1054,10 @@ function resolveTicketDir(opts: Opts, cfg: ResolvedConfig): string {
   throw new Error(missingTicketHint(cfg.packageManager))
 }
 
-function gitStatusLines(): string[] {
-  // core.quotePath=false: 비-ASCII 경로 octal 이스케이프 방지(exact 매칭 정합).
+function gitStatusEntries(): StatusEntry[] {
+  // `-z`: 경로를 인용하지 않는다(설계 D11) → core.quotePath 불필요. rename src·dest를 확실히 둘 다 본다.
   // --untracked-files=all: untracked 디렉터리 collapse(`?? responses/`) 방지 — responses/ 아카이브를 **개별 파일**로 봐야 스크래치 매처가 동작(A2-P2 후속).
-  return git(['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all']).split('\n').filter(Boolean)
+  return parseStatusZ(git([...STATUS_Z_ARGS]))
 }
 
 /**
@@ -1195,7 +1177,7 @@ function main(): void {
   const repoRel = (abs: string) => relative(cfg.root, abs).replace(/\\/g, '/')
   // 워크플로 도구가 쓰는 메타데이터(응답·프리뷰·state)는 리뷰 대상 아님 → exact 경로로 허용(precondition/무수정검증 제외).
   // 특히 state.json은 직전 라운드 writeState로 unstaged가 되므로 resume(2회차) precondition 통과에 필수(4C e2e 발견).
-  const SCRATCH = [repoRel(respPath), repoRel(previewPath), repoRel(join(ticketDir, 'state.json'))]
+  const SCRATCH = reviewScratchPaths(ticketRel)
   // --fresh-thread면 codex_thread_id가 있어도 resume하지 않고 새 exec으로 시작(고착 스레드 회복).
   const isResume = !opts.freshThread && typeof state.codex_thread_id === 'string' && state.codex_thread_id.length > 0
 
@@ -1207,10 +1189,10 @@ function main(): void {
 
   // D10 precondition: 리뷰 전 워킹트리는 staged + 스크래치만 (사후 무수정 검증의 전제 — Codex P1).
   // A2: ticketRel 전달 → 직전 라운드 untracked 아카이브(responses/)는 스크래치 허용, tracked 변조·approvals.jsonl은 flag.
-  const preDirty = findUnstagedOrUntracked(gitStatusLines(), SCRATCH, ticketRel)
+  const preDirty = findUnstagedOrUntracked(gitStatusEntries(), SCRATCH, ticketRel)
   if (preDirty.length)
     throw new Error(
-      `리뷰 전 워킹트리에 unstaged/untracked 존재(D10) — 의도 변경은 git add, 그 외 정리 필요:\n  ${preDirty.join('\n  ')}`,
+      `리뷰 전 워킹트리에 unstaged/untracked 존재(D10) — 의도 변경은 git add, 그 외 정리 필요:\n  ${preDirty.map(formatStatusEntry).join('\n  ')}`,
     )
 
   if (shouldShortCircuitBlockedReview(state, blockedTarget)) {
@@ -1232,9 +1214,9 @@ function main(): void {
   })
 
   // 사후 리뷰어 무수정 검증: worktree 절대검사 + index(staged tree OID) 불변 (content 기반)
-  const postDirty = findUnstagedOrUntracked(gitStatusLines(), SCRATCH, ticketRel)
+  const postDirty = findUnstagedOrUntracked(gitStatusEntries(), SCRATCH, ticketRel)
   if (postDirty.length)
-    throw new Error(`리뷰 호출 후 워킹트리 변경(리뷰어 수정?):\n  ${postDirty.join('\n  ')}`)
+    throw new Error(`리뷰 호출 후 워킹트리 변경(리뷰어 수정?):\n  ${postDirty.map(formatStatusEntry).join('\n  ')}`)
   const afterTree = git(['write-tree'])
   if (afterTree !== reviewTree)
     throw new Error(`리뷰 호출 후 staged tree 변경(리뷰어 index 수정?): ${reviewTree} → ${afterTree}`)

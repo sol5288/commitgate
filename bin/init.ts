@@ -28,6 +28,7 @@ import { resolve, join, dirname, relative, isAbsolute } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadConfig, stripBom, DEFAULT_REVIEW_PERSONA_RELPATH, type PackageManager } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
+import { parseStatusZ, entryPaths, STATUS_Z_ARGS, type StatusEntry } from '../scripts/req/lib/porcelain'
 import * as semver from 'semver'
 
 /** 이 패키지 루트(bin/ 기준 1단계 위). 복사 원본. */
@@ -222,77 +223,28 @@ export function assertGitWorkTree(targetRoot: string, run?: GitRunner): void {
  * `git status --porcelain` 한 줄을 `{index, worktree, path}`로 분해. rename(`R  old -> new`)은 새 경로를 쓴다.
  * 파싱 불가면 null(무시) — 진단 목적이라 fail-closed로 만들 이유가 없다.
  */
-/**
- * git이 C-인용한 경로(`"notes today.txt"`)를 원래 문자열로 되돌린다.
- *
- * ⚠️ `git status --porcelain`은 **공백이 든 경로를 큰따옴표로 감싼다.** `core.quotePath=false`는
- * 비-ASCII 이스케이프만 끄지 이 인용은 끄지 못한다. 되돌리지 않으면 경로가 산출물 목록과 매칭되지 않고,
- * 안내가 `git stash push -u -- ""notes today.txt""` 처럼 이중 인용을 낸다(phase-6 리뷰 R5 실측).
- */
-export function unquoteGitPath(p: string): string {
-  if (p.length < 2 || !p.startsWith('"') || !p.endsWith('"')) return p
-  const body = p.slice(1, -1)
-  const SIMPLE: Record<string, string> = {
-    a: '\x07', // BEL — 원시 제어문자를 소스에 두지 않는다(편집 도구가 망가뜨린다)
-    b: '\b',
-    f: '\f',
-    n: '\n',
-    r: '\r',
-    t: '\t',
-    v: '\v',
-    '\\': '\\',
-    '"': '"',
-  }
-  let out = ''
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i] as string
-    if (c !== '\\') {
-      out += c
-      continue
-    }
-    const n = body[++i]
-    if (n === undefined) break
-    const mapped = SIMPLE[n]
-    if (mapped !== undefined) out += mapped
-    else if (n >= '0' && n <= '7') {
-      // `\NNN` 8진 바이트. core.quotePath=false면 비-ASCII는 인용되지 않으므로 실제로는 드물다.
-      out += String.fromCharCode(parseInt(body.slice(i, i + 3), 8))
-      i += 2
-    } else out += n
-  }
-  return out
-}
-
-function parsePorcelainLine(line: string): { index: string; worktree: string; path: string } | null {
-  if (line.length < 4) return null
-  const index = line[0] as string
-  const worktree = line[1] as string
-  const rest = line.slice(3)
-  const arrow = rest.indexOf(' -> ')
-  return { index, worktree, path: unquoteGitPath(arrow === -1 ? rest : rest.slice(arrow + 4)) }
-}
+// unquoteGitPath·parsePorcelainLine은 삭제(REQ-2026-012). `-z`는 인용을 하지 않으므로 되돌릴 게 없다 —
+// 파싱은 lib/porcelain의 parseStatusZ 하나로 통일한다.
 
 /**
- * 설치 전 워킹트리를 3분류(DEC-011-11). **순수 함수** — porcelain 줄과 산출물 목록만 받는다.
- * 입력은 `git status --porcelain --untracked-files=all`(+`core.quotePath=false`)의 출력 줄.
+ * 설치 전 워킹트리를 3분류(DEC-011-11). **순수 함수** — status 엔트리와 산출물 목록만 받는다.
+ * 입력은 `parseStatusZ`(= `git status --porcelain=v1 -z --untracked-files=all`)의 산출.
  */
-export function classifyPreexistingDirty(porcelainLines: readonly string[], artifacts: readonly string[]): PreexistingDirty {
+export function classifyPreexistingDirty(entries: readonly StatusEntry[], artifacts: readonly string[]): PreexistingDirty {
   const artifactSet = new Set(artifacts)
   const out: PreexistingDirty = { staged: [], overlapping: [], unrelated: [] }
-  for (const line of porcelainLines) {
-    const p = parsePorcelainLine(line)
-    if (!p) continue
+  for (const e of entries) {
     // 인덱스에 올라간 변경(`?`는 untracked 표식이라 staged가 아니다) → 커밋이 삼킨다.
-    if (p.index !== ' ' && p.index !== '?') {
-      out.staged.push(p.path)
+    if (e.index !== ' ' && e.index !== '?') {
+      out.staged.push(e.path)
       continue
     }
-    if (artifactSet.has(p.path)) {
+    if (artifactSet.has(e.path)) {
       // tracked + unstaged 수정만 문제다. untracked 산출물은 파일 전체가 신규라 분리할 것이 없다.
-      if (p.index === ' ' && p.worktree !== ' ' && p.worktree !== '?') out.overlapping.push(p.path)
+      if (e.index === ' ' && e.worktree !== ' ' && e.worktree !== '?') out.overlapping.push(e.path)
       continue
     }
-    out.unrelated.push(p.path)
+    out.unrelated.push(e.path)
   }
   return out
 }
@@ -391,21 +343,21 @@ function nodeModulesWillDirty(targetRoot: string): boolean {
  * overlapping(안내를 내지 않음). dirty `.gitignore`에 무관한 수정만 있는 경우도 보수적으로 막히지만,
  * `package.json`이 dirty할 때와 같은 정책이라 일관된다: **잘못된 안내보다 안내 없음이 낫다.**
  */
-function gitignoreJoinsInstall(nodeModulesDirty: boolean, porcelainLines: readonly string[]): boolean {
+function gitignoreJoinsInstall(nodeModulesDirty: boolean, entries: readonly StatusEntry[]): boolean {
   if (nodeModulesDirty) return true
-  return porcelainLines.some((l) => parsePorcelainLine(l)?.path === '.gitignore')
+  // rename의 src·dest 어느 쪽이 `.gitignore`여도 그 파일은 dirty다(entryPaths로 둘 다 본다).
+  return entries.some((e) => entryPaths(e).includes('.gitignore'))
 }
 
 /** 설치 전 워킹트리 상태(쓰기 전). git 실패 시 빈 목록 — 진단이지 게이트가 아니다. */
-function gitPorcelain(targetRoot: string): string[] {
+function gitStatusEntries(targetRoot: string): StatusEntry[] {
   try {
-    return execFileSync('git', ['-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all'], {
+    const raw = execFileSync('git', [...STATUS_Z_ARGS], {
       cwd: targetRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     })
-      .split('\n')
-      .filter(Boolean)
+    return parseStatusZ(raw)
   } catch {
     return []
   }
@@ -818,7 +770,7 @@ export function runInit(opts: InitOptions): InitResult {
   const agentsContractCopyCreated = agentsMarkerMissing && (!existsSync(contractCopyPath) || opts.force)
 
   // 설치 **전** 워킹트리(쓰기 전 스냅샷). `.gitignore`의 dirty 여부 판정에도 쓰이므로 계획보다 먼저 찍는다.
-  const porcelain = gitPorcelain(targetRoot)
+  const porcelain = gitStatusEntries(targetRoot)
   const nmWillDirty = nodeModulesWillDirty(targetRoot)
 
   // 산출물 계획을 **쓰기 전에** 확정한다(DEC-011-9). ignore 검사·복사·설치 후 안내가 이 하나를 공유한다.
