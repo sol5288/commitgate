@@ -76,7 +76,16 @@ resumeThreadId
   이 **정확한 (event type, string 필드) 쌍**만 추출한다. 그 외 event type·비-error item·중첩 객체·비-문자열·파싱 실패는 **전부 폐기**(blacklist는 미지 유출 — R2). `stream_error`는 실측에 없어 뺀다. 추출 결과에도 stderr와 **같은 비밀 마스킹(redaction)** 을 적용(오류 메시지가 auth 오류 등 비밀을 담을 수 있음 — 방어심층).
 - **총량 상한(R3)**: 필드별이 아니라 **추출 결과 전체**에 — 최대 **N개 이벤트**(예 20) + **총 UTF-8 byte ≤ 8KiB**(Buffer.byteLength, 다바이트 안전 절단), 초과 시 **단일 생략 표식**(`[…N events elided]`). 수천 개 소형 이벤트가 수십 MiB로 부푸는 것 차단.
 - **허용 이벤트 0개면 raw stdout 미포함** — exit + `[구조화 오류 없음 — stdout 생략]`만.
-- **stderr는 redaction + byte-bounded(≤4KiB)** — byte 상한은 기밀성 보장이 아니므로(R4), stderr는 자유형식이라 구조 파싱은 불가하나 **best-effort 비밀 마스킹**을 적용한다: `(?i)(token|api[-_]?key|secret|password|authorization|bearer)\s*[=:]\s*\S+` → `$1=[redacted]`, `sk-[A-Za-z0-9_-]{8,}` → `[redacted]` 등 알려진 패턴 마스킹 후 ≤4KiB 절단, `[stderr, redacted]` 표식. **redaction은 best-effort(모든 비밀 형식을 잡는 보장 아님)** — 이 한계를 문서화. codex 정상 경로는 stderr가 대개 비어 진단 손실 적음.
+- **stderr(및 추출 메시지)는 redaction + byte-bounded(≤4KiB)** — byte 상한은 기밀성 보장이 아니므로(R4), **best-effort 비밀 마스킹**을 적용한다. **정규식은 JavaScript 문법**(R6 — `(?i)` 인라인 플래그는 JS에서 `SyntaxError`; `g`+`i` 플래그 사용)이고, **Bearer 토큰은 공백 뒤까지 소비**한다(R6 — `\S+`가 `Authorization: Bearer <jwt>`에서 `Bearer`까지만 잡아 토큰이 새던 버그):
+  ```js
+  const REDACTIONS = [
+    [/\b(token|api[-_]?key|apikey|secret|password|passwd|pwd)\b\s*[=:]\s*\S+/gi, '$1=[redacted]'],
+    [/\b(authorization)\b\s*[=:]\s*bearer\s+\S+/gi, '$1: Bearer [redacted]'], // 공백 뒤 토큰까지 소비
+    [/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]'],                 // bare bearer
+    [/\bsk-[A-Za-z0-9_-]{8,}/gi, '[redacted]'],
+  ]
+  ```
+  적용 후 ≤4KiB 절단, `[redacted]` 표식. **best-effort(모든 비밀 형식 보장 아님)** — 한계 문서화. codex 정상 경로는 stderr가 대개 비어 진단 손실 적음. 회귀: `token=abc`·`Authorization: Bearer x.y.z`(**뒤 토큰까지** 마스킹)·`sk-…` 각각 후 byte 절단.
 - **계약을 fixture로 고정(R5)**: 위 실측 캡처를 회귀 fixture로 저장하고 allowlist를 그것으로 검증한다 — "구현 후 phase에서 실측" 의존을 없앤다. codex가 event type/필드를 바꾸면 fixture 테스트가 실패해 드러난다. (설계가 지원하는 CLI 계약 = 이 캡처 형태.)
 - 회귀(fixture 기반): `error{message}`·`turn.failed{error.message}`·`item.completed{item.type:'error',message}` 3형 → 표면화 · `item.completed{item.type:'command_execution', aggregated_output:'token=…'}` → **폐기(비-error item)** · 미지 `{type:'x',message:'token=…'}` → 폐기 · **비-codex 명령의 `{type:'error'}` → codex 경로 안 탐**(범용은 stderr만) · 수천 이벤트 → 총 byte·개수 상한+생략표식 · 추출 메시지의 `token=…` → redaction.
 
@@ -95,38 +104,42 @@ resumeThreadId
   - 즉 "**검증된 직전 결과의 원자적 스냅샷만 + 승인 후 리셋**". 누적 아닌 1라운드 타깃 스냅샷 → drift 없음. `readPreviousResult`(status 한 단어) 대체.
 
 **D9. Phase 순서 = timeout → stdout → model-pin → stateless(bootstrap, design R1 P2).** 이 저장소 명령은 로컬 `tsx`라 staged phase 구현이 **자기 phase 리뷰에 즉시 적용**된다. model-pin(P1)이 먼저면 그 리뷰가 timeout·stdout 안전망 없이 새 고정 모델로 돈다 — 미지원/행이면 진단·중단 수단이 없다. 따라서 **안전망을 먼저** 깐다:
-1. timeout(P2) → 2. stdout(P3) → 3. **model-pin(P1)** → 4. stateless(P4).
+1. timeout(P2) → 2. stdout(P3) → 3. **model-pin(P1)** → 4. stateless(P4) → 5. 문서(D10).
 - model-pin phase의 **자기 리뷰가 고정 모델로 성공 = exec effective 검증**(별도 probe 불필요). 실패하면 이미 깔린 timeout이 bound하고 stdout이 사유를 표면화.
 - 첫 slice(timeout) 리뷰가 도구 자기 코드를 타는 부트스트랩은 **사람 감시(--run 통제점, 행이면 Ctrl-C)** 가 회복 경로 — 문서화.
 
-**D10. 사용자 문서를 변경 범위에 포함.** 신규 키·`null` 탈출구·timeout 조정을 `req.config.json.sample` + README(KR `README.md`/EN `README.en.md`) config 표 + `CHANGELOG`에 반영. 각 phase가 자기 키의 문서를 함께 갱신.
+**D10. 사용자 문서를 변경 범위에 포함 — 전용 Phase 5.** 신규 키·`null` 탈출구·timeout 조정·stateless 동작을 `req.config.json.sample` + README(KR `README.md`/EN `README.en.md`) config 표 + `CHANGELOG`에 반영한다. 문서는 **최종 Phase 5로 분리**한다(R6-obs) — 코드 phase(1~4)의 검토 단위를 좁히고(각 config key phase가 sample·README×2·CHANGELOG까지 삼키면 8파일 초과), 문서를 한 번에 일관되게 정리한다. (REQ-2026-011의 phase-7 docs 패턴과 동일.)
 
 **D11. 테스트 이음새.** 실 어댑터 + 주입 `CodexRunner`(args 캡처) · `FakeReviewerAdapter.requests`(DTO 전파) · `loadConfig`(null 보존·enum 거부·패턴 거부·두 축 동기화) · `safeSpawnSync` 실-spawn(`process.execPath`: SIGTERM-무시→ETIMEDOUT·ENOBUFS→비-timeout·큰 stdout→구조화 추출/byte 절단) · stateless(항상 fresh·`--fresh-thread` marker-clear 배선·findings 주입).
 
 ## Phase별 구현 (재정렬)
 
 ### Phase 1 — codex timeout (`phase-1-timeout`)
-config `reviewTimeoutMs`(D1) + `SafeSpawnOptions.timeoutMs` + 내부 `killSignal='SIGKILL'` + `safeSpawnSync` ETIMEDOUT/ENOBUFS 판별·구분 오류(D5) + `CodexRunner` 확장 + 실-spawn 테스트. 문서: sample/README에 `reviewTimeoutMs`.
+config `reviewTimeoutMs`(D1) + `SafeSpawnOptions.timeoutMs` + 내부 `killSignal='SIGKILL'` + `safeSpawnSync` ETIMEDOUT/ENOBUFS 판별·`kind` 태그·구분 오류(D5) + `CodexRunner` 확장 + 실-spawn 테스트.
 
 ### Phase 2 — 진단성: 구조화 stdout 표면화 (`phase-2-stdout-surface`)
-`safeSpawnSync` 실패 오류에 구조화 오류 이벤트 추출 + 비밀 이벤트 제외 + byte 이중 상한 fallback(D6) + 테스트. **retry 없음(D7).**
+`defaultCodexRunner`(codex 경계)에서 분류 보존(D5) + 실측-고정 allowlist 추출 + 비밀 이벤트 제외 + 총량 상한 + JS redaction(D6) + fixture 테스트. **retry 없음(D7).**
 
 ### Phase 3 — 모델·추론강도 고정 (`phase-3-model-effort-pin`)
-config `reviewModel`(패턴)·`reviewReasoningEffort`(enum)(D1·D4, null 보존) + `ReviewRequest`·`callReviewer`·`review()` `-c` 주입(D2·D2-1) + 테스트(args 캡처·null 보존·enum/패턴 거부·DTO). 자기 리뷰 성공 = exec 검증(D9). 문서: sample/README에 두 키 + `null` 탈출구.
+config `reviewModel`(패턴)·`reviewReasoningEffort`(enum+null)(D1·D4, null 보존) + `ReviewRequest`·`callReviewer`·`review()` `-c` 주입(D2·D2-1) + 테스트(args 캡처·null 보존·enum/패턴 거부·DTO). 자기 리뷰 성공 = exec 검증(D9). **문서 제외(Phase 5)** → ≤8파일.
 
 ### Phase 4 — 재리뷰 stateless (`phase-4-stateless`)
-`isResume=false`(D8) + `--fresh-thread` marker-clear 보존 + bounded findings 주입(D8) + 테스트(항상 fresh·marker-clear 배선·findings 주입·drift 없음). 문서: stateless 동작 변경 note.
+`isResume=false`(D8) + `--fresh-thread` marker-clear 보존 + bounded findings 스냅샷·read 검증·주입(D8) + 테스트(항상 fresh·marker-clear 배선·findings 주입·read 검증·drift 없음).
+
+### Phase 5 — 문서 (`phase-5-docs`)
+`req.config.json.sample`·`README.md`·`README.en.md`·`CHANGELOG`에 신규 키 3종·`null` 탈출구·timeout·stateless 반영(D10). 코드 phase에서 분리(R6-obs).
 
 ## 변경 파일
 
 | Phase | 파일 |
 |---|---|
-| 1 | `config.ts`·`req.config.schema.json`·`req.config.json.sample`·`README*.md`(reviewTimeoutMs) · `adapters.ts`(SafeSpawnOptions·safeSpawnSync·CodexRunner) · `tests/unit/adapters.test.ts` · `req-commit.test.ts`(cfgStub) |
-| 2 | `adapters.ts`(구조화 표면화) · `tests/unit/adapters.test.ts` |
-| 3 | `config.ts`·`req.config.schema.json`·`req.config.json.sample`·`README*.md`(reviewModel·effort) · `adapters.ts`(ReviewRequest·주입) · `review-codex.ts`(callReviewer) · `tests/unit/`(adapters·review-codex·req-config) |
-| 4 | `review-codex.ts`(isResume·findings 주입) · `tests/unit/req-review-codex.test.ts` · `CHANGELOG` |
+| 1 | `config.ts`·`req.config.schema.json`(reviewTimeoutMs) · `adapters.ts`(SafeSpawnOptions·safeSpawnSync·CodexRunner·kind) · `tests/unit/adapters.test.ts` · `req-commit.test.ts`(cfgStub) |
+| 2 | `adapters.ts`(defaultCodexRunner 추출·redaction) · `tests/unit/adapters.test.ts` |
+| 3 | `config.ts`·`req.config.schema.json`(reviewModel·effort) · `adapters.ts`(ReviewRequest·주입) · `review-codex.ts`(callReviewer) · `tests/unit/`(adapters·review-codex·req-config) · `req-commit.test.ts`(cfgStub) |
+| 4 | `review-codex.ts`(isResume·findings 스냅샷·read 검증) · `tests/unit/req-review-codex.test.ts` |
+| 5 | `req.config.json.sample`·`README.md`·`README.en.md`·`CHANGELOG` |
 
-각 phase ≤8파일. 초과 시 vertical slice로 분할(config-only 분할 금지 — dead-config).
+각 phase ≤8파일(문서를 Phase 5로 분리해 달성). 초과 시 vertical slice로 분할(config-only 분할 금지 — dead-config).
 
 ## 하위호환·안전
 

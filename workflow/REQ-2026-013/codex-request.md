@@ -1,8 +1,15 @@
-# REQ-2026-013 리뷰 요청 (R6 — design R1~R5 반영)
+# REQ-2026-013 리뷰 요청 (R7 — design R1~R6 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)·R5(3)를 반영했다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)·R5(3)·R6(1)를 반영했다.
+
+## design R6 지적 → 반영 (closure)
+
+| R6 지적 | 반영 |
+|---|---|
+| D6 redaction 정규식 `(?i)…`가 JS 문법 아님(SyntaxError) + `Authorization: Bearer <jwt>`에서 토큰 새어나감 | **JS 정규식(`gi` 플래그)으로 명시 + Bearer 공백 뒤 토큰까지 소비**. `node`로 컴파일·마스킹 실측 검증(D6): `Bearer x.y.z` 전체 마스킹 확인 |
+| obs: Phase 3 3a/3b 파일 배정 미정 | **문서를 최종 Phase 5로 분리** → Phase 3=코드+config 7파일(≤8), 억지 분할 불필요(D10·Phase 5) |
 
 ## design R5 지적 → 반영 (closure)
 
