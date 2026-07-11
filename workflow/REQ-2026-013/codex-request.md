@@ -1,28 +1,42 @@
-# REQ-2026-013 리뷰 요청
+# REQ-2026-013 리뷰 요청 (R2 — design R1 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 사용자 전역 `~/.codex/config.toml`(`model_reasoning_effort="ultra"`)을 상속해 리뷰 1회 11~13분·토큰 과다·수렴 안 됨·exit=1 통째 실패. 원인 P1~P4를 현재 코드(main=`2ca2934`)에서 파일:라인으로 대조·확정했다. 이번 REQ는 리뷰어 호출을 도구가 명시 통제한다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(NEEDS_FIX 10건)을 아래처럼 반영했다.
 
-## 변경 요약
+## design R1 지적 → 반영 (closure)
 
-- **P1**: config `reviewModel`(slug 패턴, 기본 `gpt-5.6-terra`)·`reviewReasoningEffort`(enum `minimal|low|medium|high|xhigh`, 기본 `high`) 신설, codex 인자 exec·resume 양쪽에 `-c model=`·`-c model_reasoning_effort=` 주입. 두 키 `null`=전역 상속 탈출구(`!== undefined` 병합으로 보존).
-- **P2**: config `reviewTimeoutMs`(기본 600s), `safeSpawnSync`에 timeout+killSignal, 초과 시 fail-closed.
-- **P3**: 실패 오류에 stdout 꼬리(20줄+8KiB 이중 상한) 포함해 빈-오류 제거. **retry는 이번 범위 제외**(후속 REQ).
-- **P4**: 재리뷰 기본 stateless(`reviewResume` 기본 false), `--resume-thread` opt-in, `--fresh-thread` 회복 의미 보존, 둘 동시 지정은 fail-closed.
+| R1 지적 | 반영 |
+|---|---|
+| P1 timeout이 SIGTERM hard-kill 아님 | **killSignal 내부 고정 SIGKILL**(무시 불가, 실측) + SIGTERM-무시 자식 회귀 테스트. 완전 tree-kill(detached 손자)은 **후속 REQ**로 정직 분리(D5 잔여) |
+| P2 `\|\| res.signal` timeout 오판(ENOBUFS) | timeout 판별 **`err.code==='ETIMEDOUT'`만**, ENOBUFS 별도 오류(실측 확인) |
+| P2 D6 raw 덤프 비밀 유출 | 구조화 오류 이벤트(`turn.failed`/`error`)만 추출, `command_execution`/`aggregated_output` 제외, byte(Buffer.byteLength) 이중 상한 fallback |
+| P2 stateless 연속성 근거 오류(status 한 단어) | 직전 same-target NEEDS_FIX **findings를 bounded 주입**(D8), `readPreviousResult` 대체 |
+| P2 resume가 리뷰 대상 미바인딩(#5) | **resume opt-in을 이번 범위에서 제외** → stateless 전용. target-binding opt-in은 후속 REQ(#5·#6 원천 제거) |
+| P3 모순 검사 위치(dry-run 우회, #6) | opt-in 제거로 `--resume-thread` 자체가 없어 해당 없음 |
+| P2 Phase bootstrap(tsx가 워킹트리) | **Phase 재정렬 timeout→stdout→model-pin→stateless**, model-pin 자기 리뷰=exec 검증, 첫 slice는 사람 감시 회복 |
+| P2 사용자 문서 누락 | `req.config.json.sample`·README(KR/EN)·CHANGELOG 변경 범위 포함(D10) |
+| P3 `eslint0` exit인데 ESLint 없음 | exit 기준을 `typecheck·vitest·smoke`로 |
+| obs: 8KiB byte 기준 | Buffer.byteLength 기준 절단 |
+| obs: cfgStub 갱신 | `req-commit.test.ts` cfgStub 변경 파일에 포함 |
+| obs: `--ignore-user-config` | 후속 후보로 비목표에 기록 |
+
+## 변경 요약 (config 키 3)
+
+- **P2 timeout**(Phase 1): `reviewTimeoutMs`(600s), SIGKILL, ETIMEDOUT 판별.
+- **P3 stdout**(Phase 2): 구조화 오류 추출·비밀 제외·byte 상한. retry 제외.
+- **P1 model-pin**(Phase 3): `reviewModel`(slug, gpt-5.6-terra)·`reviewReasoningEffort`(enum, high), exec·resume `-c` 주입, null 탈출구.
+- **P4 stateless**(Phase 4): `isResume=false`, `--fresh-thread` 보존, bounded findings 주입.
 
 ## 리뷰 포인트
 
-1. **`-c` 주입 정확성(D2·D2-1)**: exec·resume 양쪽에서 `-c model="…"`·`-c model_reasoning_effort="…"`가 codex에 존중되는가? resume는 `--sandbox`를 거부하지만 `-c sandbox_mode`는 받는 것이 실측인데, `-c model`도 동일하다고 가정했다 — 이 가정의 위험과 phase-1 live 확인 방법.
-2. **주입 안전이 스키마 제약에 의존(D2-1)**: `reviewModel` slug 패턴 + `reviewReasoningEffort` enum이 `"`·개행을 막으므로 조립부 escaping을 생략했다. 이 의존이 견고한가, 아니면 조립부에서도 방어(escape/재검증)해야 하는가?
-3. **timeout 판별(D5)**: `spawnSync` timeout이 `res.error`(ETIMEDOUT)로 오는가 `res.signal`로 오는가 — 양쪽 검사가 충분한가? cross-spawn이 이를 그대로 전달하는가? 기본 600s는 타당한가(정상 리뷰 11~13분 실측 대비)?
-4. **stdout 이중 상한(D6)**: 20줄+8KiB가 진단에 충분하면서 안전한가? codex 오류가 stdout JSONL의 어느 위치에 오는지(마지막 줄 보장?) — 꼬리 절단이 오류 사유를 놓칠 위험.
-5. **resume 기본 뒤집기의 안전(D8)**: 기본 stateless가 `previous_codex_result`(프롬프트)만으로 연속성을 충분히 전달하는가? `--resume-thread`+`--fresh-thread` 모순을 fail-closed로 throw하는 것과, config `reviewResume:true` + `--fresh-thread`(비-모순)의 경계가 명확한가?
-6. **null 병합 보존(D1)**: nullable 두 키를 `!== undefined`로 병합해 명시적 `null`이 기본값으로 복귀하지 않게 했다(`??` 금지). 이 구분이 `handoffPath`·`reviewPersonaPath`와 일관되는가?
-7. **config 두 축 동기화(D1)**: `CONFIG_SCHEMA`와 `workflow/req.config.schema.json` 둘 다 갱신 + `req-config.test.ts` 가드로 드리프트를 막는 계획이 맞는가?
-8. **범위 규율**: retry·P5(컨텍스트 스코핑)·P6(phase durability)·P7을 비목표로 분리한 것이 타당한가? 특히 retry 제외로 인해 이번 REQ만으로 안정성이 충분히 개선되는가(D6 표면화 + D5 timeout으로).
-9. **D3 코어 기본값**: `reviewModel="gpt-5.6-terra"`를 `DEFAULTS` 중립성 예외로 두는 근거가 충분한가? (사용자 확정 방향 — 다운스트림 override/`null` 탈출구 유지.)
+1. **timeout 잔여의 수용성(D5)**: SIGKILL이 직접 codex를 보장하고 detached-손자-파이프를 후속으로 분리한 것이 "무한 대기 금지" 수용기준을 이 REQ 범위에서 충족하는가? codex exec가 파이프-홀딩 손자를 detach하지 않는다는 전제의 위험.
+2. **D6 이벤트 계약 의존**: `turn.failed`/`error`/`stream_error` 추출 + 비밀 이벤트 제외가 codex JSONL 계약과 맞는가? 미스매치 시 fallback(byte 상한 비-비밀 tail)이 안전 저하로 충분한가?
+3. **stateless 연속성(D8)**: bounded findings 주입이 finding closure를 충분히 전달하면서 goalpost drift(누적)를 피하는가? 주입 크기·선택(직전 NEEDS_FIX만)이 타당한가?
+4. **Phase 순서/부트스트랩(D9)**: timeout→stdout→model-pin이 자기-리뷰 함정을 실제로 해소하는가? 첫 slice(timeout)의 자기 리뷰가 timeout 코드 자체를 타는 잔여 위험 — 사람 감시 회복이 충분한가?
+5. **null 병합·주입 안전(D1·D2-1)**: `!== undefined` 병합 + 패턴/enum 입력단 차단으로 TOML 주입을 막는 것이 견고한가?
+6. **범위 규율**: resume opt-in·완전 tree-kill·retry·P5~P7을 후속으로 분리한 경계가 타당한가?
 
-## 확정된 방향 (사용자 검토 반영)
+## 확정된 방향 (사용자 검토)
 
-- D3 코어 기본 `gpt-5.6-terra` 유지 · D4 문자열→**공식 enum** · D7 retry **제외**(후속) · timeout 기본 **600s** · reviewModel **slug 패턴** · stdout **20줄+8KiB** · resume 모순 **fail-closed** · null **`!== undefined` 보존**.
+Fork1=A(SIGKILL+잔여 후속) · Fork2=A(stateless 전용, opt-in 후속) · Fork3=A(bounded findings 주입). D3 코어 기본 gpt-5.6-terra 유지 · D4 공식 enum.
