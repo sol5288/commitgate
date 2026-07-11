@@ -15,7 +15,7 @@
 
 ## Phase 2 — 진단성: codex stdout 구조화 표면화 (`phase-2-stdout-surface`)
 범위: P3 (설계 D6·D11). **retry 없음(D7).**
-- `adapters.ts` **`defaultCodexRunner`(codex 경계)**: `safeSpawnSync`가 담아 throw한 `err.stdout`을 catch하여 JSONL 라인 파싱 → **allowlist**(`type ∈ {turn.failed,error,stream_error}`의 문자열 필드 `error.message`/`message`만) 직렬화. **미지·중첩·파싱실패·비-문자열 폐기.** **총량 상한: 최대 N 이벤트 + 총 UTF-8 byte ≤ 8KiB**(초과 시 단일 `[…N events elided]`). 허용 이벤트 0개 → raw stdout 미포함(exit + `[stdout 생략]`). stderr byte-bounded(≤8KiB). **범용 `safeSpawnSync`에는 JSONL 파싱 없음**(비-codex 명령 유출 방지).
+- `adapters.ts` **`defaultCodexRunner`(codex 경계)**: `safeSpawnSync`가 담아 throw한 `err.stdout`을 catch하여 JSONL 라인 파싱 → **allowlist**(`type ∈ {turn.failed,error,stream_error}`의 문자열 필드 `error.message`/`message`만) 직렬화. **미지·중첩·파싱실패·비-문자열 폐기.** **총량 상한: 최대 N 이벤트 + 총 UTF-8 byte ≤ 8KiB**(초과 시 단일 `[…N events elided]`). 허용 이벤트 0개 → raw stdout 미포함(exit + `[stdout 생략]`). **stderr는 best-effort redaction(token/key/secret/bearer/sk- 패턴 마스킹) + ≤4KiB**. **범용 `safeSpawnSync`에는 JSONL 파싱 없음**(비-codex 명령 유출 방지).
 - 테스트: `turn.failed{error.message}` → 표면화 · 미지 `{type:'x',message:'token=…'}` → 폐기 · **비-codex 명령(npm 흉내)이 `{type:'error'}` 출력 → codex 경로 안 탐(범용 stderr만)** · 수천 이벤트 → 총 byte·개수 상한+생략표식 · 다바이트 거대 message → byte 안전 절단.
 회귀 고정: 빈-오류 제거 · allowlist 밖 유출 없음 · 비-codex 경로 미적용 · 총량 상한.
 > 정확한 이벤트/필드명은 codex `--json` JSONL 계약 의존 — 구현 시 실측, 미스매치면 allowlist가 비어 안전 저하(생략).
@@ -33,7 +33,7 @@
 ## Phase 4 — 재리뷰 stateless (`phase-4-stateless`)
 범위: P4 (설계 D8·D11).
 - `review-codex.ts`: `isResume=false`(항상 새 스레드). `codex_thread_id`는 계속 저장하되 resume에 안 씀. `--fresh-thread`의 `clearBlockedReview`·새 스레드 의미 보존. **resume opt-in·`--resume-thread` 없음**(비목표).
-- **연속성 보완(승인 경계·원자성)**: 리뷰 검증 완료 시 `state.last_review`에 `{outcome, review_kind, phase_id}`와 함께 **검증된 findings의 bounded 스냅샷**(`[{severity, file, detail(절단)}...]` 실제 스키마 필드, 상위 N건·전체 byte 상한)을 **같은 write로** 기록. 재리뷰는 `last_review`가 `needs-fix` + 타깃 일치일 때만 **그 스냅샷**을 `previous_findings_to_close`에 주입(가변 `codex-response.json` 안 읽음 — desync 방지). 승인·불일치·부재 → 미주입(리셋). `readPreviousResult`(status) 대체.
+- **연속성 보완(승인 경계·desync 제거)**: 리뷰 검증 완료 시 `state.last_review`에 `{outcome, review_kind, phase_id}`와 함께 **검증된 findings 스냅샷**(`[{severity, file, detail}]` 실제 스키마 필드, **최대 10건·각 detail ≤300B·총 ≤4KiB**, 초과 생략 표식 — 코드 상수)을 **같은 `writeState`로** 기록. 재리뷰는 `last_review`가 `needs-fix` + 타깃 일치일 때만 **그 스냅샷**을 `previous_findings_to_close`에 주입(가변 `codex-response.json` 안 읽음). 승인·불일치·부재 → 미주입. `readPreviousResult`(status) 대체. (state.json crash-durability(temp+rename)는 기존 이슈 — 별도 REQ; 이번엔 selector/body desync만 제거.)
 - 테스트: 기본(thread_id 있어도) → resume 안 함 · `--fresh-thread` marker-clear가 실제 reviewer 호출까지 도달(순수+배선) · **last_review=needs-fix(same target) → 주입** · **last_review=approved → 미주입(승인 경계)** · 타깃 불일치 → 미주입 · 누적 없음.
 - 문서: `CHANGELOG`에 stateless 전환·신규 키 요약. README에 재리뷰 동작 note.
 회귀 고정: 기본 fresh 전환 · marker-clear 불변 · findings closure 전달.

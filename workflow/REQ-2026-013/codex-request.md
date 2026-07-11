@@ -1,8 +1,17 @@
-# REQ-2026-013 리뷰 요청 (R4 — design R1·R2·R3 반영)
+# REQ-2026-013 리뷰 요청 (R5 — design R1·R2·R3·R4 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10건)·R2(3건)·R3(3건)를 아래처럼 반영했다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)를 반영했다.
+
+## design R4 지적 → 반영 (closure)
+
+| R4 지적 | 반영 |
+|---|---|
+| enum이 `minimal` 허용·`none`/`max` 거부 → 잘못 | **반박**: 공식 config-reference(WebFetch 확인)가 `minimal\|low\|medium\|high\|xhigh`로 명시(`xhigh` model-dependent). R4의 `none\|max`는 문서 불일치 → enum 유지, D4에 검증 근거 명기 |
+| D8 스냅샷 N·byte 상한 미확정 → 대량 재주입 위험 | **경계 확정**: 최대 10건·각 detail ≤300B·총 ≤4KiB·초과 생략 표식(코드 상수·회귀 판정)(D8) |
+| state write가 실제로 원자적 아님(writeFileSync 직접 덮어씀) | **원자성 범위 정밀화**: "같은 `writeState` 호출로 selector·body 동시 기록(desync 제거)"으로 축소. state.json crash-durability(temp+rename)는 기존 공통 이슈 → 별도 REQ(D8) |
+| stderr가 allowlist/검증 없이 8KiB 포함 → 유출 | stderr **best-effort redaction(비밀 패턴 마스킹) + ≤4KiB**, best-effort 한계 명시(D6) |
 
 ## design R3 지적 → 반영 (closure)
 
