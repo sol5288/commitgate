@@ -66,7 +66,8 @@ function isAllDigits(s: string): boolean {
 export function isToolOutputScratch(entry: StatusEntry, ticketRoot: string): boolean {
   if (!isUntracked(entry)) return false
   const root = normDir(ticketRoot)
-  const prefix = `${root}/`
+  // ticketRoot='.' 또는 canonical repo-root('')도 유효하다. 이때 Git 경로에는 './' 접두사가 없다.
+  const prefix = root === '' || root === '.' ? '' : `${root}/`
   if (!entry.path.startsWith(prefix)) return false
   const rest = entry.path.slice(prefix.length) // `REQ-2026-001/codex-response.json`
   const slash = rest.indexOf('/')

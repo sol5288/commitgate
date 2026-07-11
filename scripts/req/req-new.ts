@@ -15,12 +15,25 @@ import { pathToFileURL } from 'node:url'
 import { writeState, type WorkflowState } from './review-codex'
 import { loadConfig, packageRoot, buildScriptInvocation, type DesignDocs, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
+import { parseStatusZ, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
+import { isToolOutputScratch } from './lib/scratch'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 
 function git(args: string[]): string {
   return gitAdapter.exec(args)
+}
+
+/**
+ * `req:new` 전용 clean-tree 위반 목록(REQ-2026-012 D7·D8).
+ *
+ * 허용하는 것은 기존 티켓 직계의 **untracked 도구 산출물** 두 종류뿐이다. `state.json`, `responses/**`,
+ * staged-only 변경, rename/copy 등 그 밖의 모든 상태는 그대로 위반이다. review용
+ * `findUnstagedOrUntracked`는 staged-only(`M `)를 통과시키므로 여기서 재사용하지 않는다.
+ */
+export function findReqNewDirtyEntries(rawStatusZ: string, ticketRoot: string): StatusEntry[] {
+  return parseStatusZ(rawStatusZ).filter((entry) => !isToolOutputScratch(entry, ticketRoot))
 }
 
 /** slug 검증: kebab-case(a-z0-9, '-' 구분). */
@@ -139,6 +152,8 @@ function main(): void {
   const reqId = nextReqId(year, listExistingReqIds(cfg.workflowDirAbs))
   const branch = branchName(reqId, o.slug, cfg.branchPrefix)
   const ticketDir = join(cfg.workflowDirAbs, reqId)
+  // config 문자열이 `.`·`workflow/.`처럼 같은 위치를 다르게 표현해도 Git이 내는 canonical repo-relative 경로와 맞춘다.
+  const ticketRootRel = relative(cfg.root, cfg.workflowDirAbs).replace(/\\/g, '/')
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
 
   if (!o.run) {
@@ -150,15 +165,18 @@ function main(): void {
     return
   }
 
-  // 클린 트리 요구(새 브랜치 깨끗이 시작 — 의도 변경 섞임 방지)
-  const dirty = git(['-c', 'core.quotePath=false', 'status', '--porcelain'])
-  if (dirty)
+  // 클린 트리 요구(새 브랜치 깨끗이 시작 — 의도 변경 섞임 방지).
+  // 단, gitignore 규칙이 없는 레거시 설치본도 기존 티켓의 순수 untracked 도구 산출물만 좁게 허용한다(D6·D7).
+  const dirtyEntries = findReqNewDirtyEntries(git([...STATUS_Z_ARGS]), ticketRootRel)
+  if (dirtyEntries.length > 0) {
+    const dirty = dirtyEntries.map(formatStatusEntry).join('\n')
     throw new Error(
       `워킹트리가 clean이어야 req:new --run 가능:\n${dirty}\n` +
         `힌트: 방금 \`npx commitgate\`를 실행했다면 **설치분만** 먼저 커밋하십시오(\`git add -A\` 금지 —\n` +
         `      무관한 변경·.env가 함께 커밋되고, 이어지는 req:review-codex가 그것을 외부로 전송합니다).\n` +
         `      설치 출력의 "다음:" 안내가 stage할 정확한 경로 목록을 알려 줍니다.`,
     )
+  }
   const cur = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   if (cur !== 'main') console.warn(`⚠️  현재 브랜치가 main이 아님(${cur}) — REQ는 main에서 시작 권장(DEC-WF-020)`)
 

@@ -83,6 +83,11 @@ describe('isToolOutputScratch — req:new 예외 술어 (설계 D7)', () => {
     // ticketRoot 접두가 부분일치해도(workflow2) false여야 — prefix는 슬래시 경계
     expect(isToolOutputScratch(u('workflow2/REQ-2026-011/codex-response.json'), ROOT)).toBe(false)
   })
+  it("ticketRoot='.' 또는 canonical root('')면 repo 루트 직계 REQ를 허용", () => {
+    const entry = u('REQ-2026-001/codex-response.json')
+    expect(isToolOutputScratch(entry, '.')).toBe(true)
+    expect(isToolOutputScratch(entry, '')).toBe(true)
+  })
   it('basename이 도구 산출물이 아니면 false (오타·유사)', () => {
     expect(isToolOutputScratch(u('workflow/REQ-2026-011/codex-response.json.bak'), ROOT)).toBe(false)
     expect(isToolOutputScratch(u('workflow/REQ-2026-011/other.json'), ROOT)).toBe(false)
