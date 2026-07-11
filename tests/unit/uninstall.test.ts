@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, resolve, relative, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runInit, KIT_COPY_RELPATHS, KIT_AGENT_ENTRYPOINTS } from '../../bin/init'
+import { runInit, KIT_COPY_RELPATHS, KIT_AGENT_ENTRYPOINTS, KIT_GITIGNORE } from '../../bin/init'
 import { planUninstall, renderPlan, runUninstall, parseArgs } from '../../bin/uninstall'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
 import type { GitRunner } from '../../scripts/req/lib/adapters'
@@ -275,7 +275,7 @@ describe('[uninstall] 커밋 전/후 안내 분기', () => {
       execFileSync('git', ['rm', '-r', '-q', 'scripts/req'], { cwd: dir })
       execFileSync('git', ['rm', '-q', ...KIT_COPY_RELPATHS], { cwd: dir })
       execFileSync('git', ['rm', '-q', ...KIT_AGENT_ENTRYPOINTS.map((e) => e.dest)], { cwd: dir })
-      execFileSync('git', ['rm', '-q', 'req.config.json', 'AGENTS.md', 'CLAUDE.md'], { cwd: dir })
+      execFileSync('git', ['rm', '-q', 'req.config.json', 'AGENTS.md', 'CLAUDE.md', KIT_GITIGNORE.dest], { cwd: dir })
       execFileSync('git', ['commit', '-qm', 'chore: remove commitgate'], { cwd: dir })
 
       // 3) 오늘 다시 설치 — 아직 git add 하지 않음
@@ -736,6 +736,38 @@ describe('[uninstall] 깨진 req.config.json', () => {
       expect(plan.facts.configError).toBeTruthy()
       expect(plan.facts.ticketRoot).toBe('workflow')
       expect(text).toMatch(/기본값|DEFAULTS/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-012 — workflow/.gitignore(kit 파일)는 tool artifact(src≠dest).
+ * 템플릿과 identical이면 removable, 사용자가 편집(differs)하면 review(자동 제거 금지).
+ */
+describe('[uninstall] workflow/.gitignore (REQ-2026-012)', () => {
+  const WG = KIT_GITIGNORE.dest
+
+  it('init이 깐 그대로면(identical) removable로 분류', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const plan = planUninstall({ dir })
+      expect(plan.removable.map((t) => t.path)).toContain(WG)
+      expect(plan.review.map((t) => t.path)).not.toContain(WG)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('사용자가 편집하면(differs) review로 — 자동 제거하지 않는다', () => {
+    const dir = tmpRepo({ files: { [WG]: '# 내 규칙\nmy-pattern\n' } })
+    try {
+      install(dir) // 기존 파일 보존(D12)
+      const plan = planUninstall({ dir })
+      expect(plan.removable.map((t) => t.path)).not.toContain(WG)
+      expect(plan.review.find((t) => t.path === WG)?.match).toBe('differs')
     } finally {
       cleanup(dir)
     }

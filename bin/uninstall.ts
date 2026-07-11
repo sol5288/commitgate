@@ -29,6 +29,7 @@ import {
   KIT_SCHEMA_RELPATHS,
   KIT_COPY_RELPATHS,
   KIT_AGENT_ENTRYPOINTS,
+  KIT_GITIGNORE,
   KIT_CLAUDE_TEMPLATE_REL,
   KIT_CLAUDE_DEST_REL,
   KIT_AGENTS_CONTRACT_COPY_REL,
@@ -220,6 +221,8 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
     ...KIT_AGENT_ENTRYPOINTS.map((e) => ({ destRel: e.dest, srcRel: e.src })),
     // 마커 없는 AGENTS.md 경로에서만 설치되는 계약 템플릿 사본. 부재가 정상이므로 present=false여도 문제 없다.
     { destRel: KIT_AGENTS_CONTRACT_COPY_REL, srcRel: 'AGENTS.template.md' },
+    // workflow/.gitignore(REQ-2026-012): src≠dest. identical이면 제거 대상, differs면 review(사용자 편집 보존). 부재 정상.
+    { destRel: KIT_GITIGNORE.dest, srcRel: KIT_GITIGNORE.src },
   ]
   const tool: ToolArtifact[] = toolEntries.map(({ destRel, srcRel }) => {
     const dest = join(targetRoot, destRel)

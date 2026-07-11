@@ -1,0 +1,8 @@
+# CommitGate 워크플로 스크래치 산출물(티켓 내부) — commitgate init이 대상 repo의 workflow/.gitignore로 설치.
+#
+# ⚠️ 이 패턴은 **이 .gitignore 파일이 있는 디렉터리(= workflow/) 기준 상대경로**다(중첩 .gitignore, gitignore(5)).
+#    루트 .gitignore가 쓰는 `workflow/**/…` 형태를 여기 그대로 복사하면 `workflow/workflow/…`를 찾아 무효가 된다.
+#    `/REQ-*/…`로 **앵커드**해 티켓 직계만 무시한다 — 티켓 밖에 흘러든 동명 파일까지 숨기지 않는다(fail-closed 정합).
+/REQ-*/codex-response.json
+/REQ-*/.review-preview.txt
+/REQ-*/.codex-*.tmp

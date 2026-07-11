@@ -19,6 +19,7 @@ import {
   mkdirSync,
   readdirSync,
   statSync,
+  lstatSync,
   copyFileSync,
   realpathSync,
 } from 'node:fs'
@@ -74,6 +75,18 @@ export const KIT_AGENT_ENTRYPOINTS = [
 /** `CLAUDE.md`는 `AGENTS.md`와 같은 취급 — **부재 시에만** 생성하고, uninstall에서 `ambiguous`(자동 제거 금지). */
 export const KIT_CLAUDE_TEMPLATE_REL = 'templates/CLAUDE.template.md'
 export const KIT_CLAUDE_DEST_REL = 'CLAUDE.md'
+
+/**
+ * `workflow/.gitignore` — 티켓 내부 scratch(codex-response.json 등)를 무시하는 **중첩 .gitignore** (REQ-2026-012).
+ *
+ * ⚠️ 세 가지가 이 파일을 특별하게 만든다:
+ *   1. **`src ≠ dest`**(`KIT_AGENT_ENTRYPOINTS`처럼). npm이 tarball에서 `.gitignore` 이름을 제외하므로
+ *      패키지엔 `templates/workflow.gitignore`(비-점 이름)로 두고 `workflow/.gitignore`로 복사한다(설계 D5·D11).
+ *   2. `.gitignore`는 git 관례상 **사용자 소유**다 → `AGENTS.md`/`CLAUDE.md`와 동일: **부재 시에만** 생성,
+ *      `--force`로도 덮지 않는다(설계 D12). `add()`(=`KIT_COPY_RELPATHS`)를 타지 않는다 — 거긴 `--force`가 덮는다.
+ *   3. **`--no-agent-entrypoints`와 무관**(설계 D13). 그 옵션은 `.claude/`·`.cursor/`·`CLAUDE.md`만 생략한다.
+ */
+export const KIT_GITIGNORE = { src: 'templates/workflow.gitignore', dest: 'workflow/.gitignore' } as const
 
 /** `AGENTS.md`가 CommitGate 계약인지 판별하는 마커. 진입점 포인터들이 이 마커로 SSOT를 확인한다. */
 export const AGENTS_CONTRACT_MARKER = '<!-- commitgate:contract -->'
@@ -187,6 +200,11 @@ export interface InitResult {
   agentsMarkerMissing: boolean // 기존 AGENTS.md에 commitgate 계약 마커가 없어 경고했는가
   agentsContractCopyCreated: boolean // 마커 부재 시 AGENTS.commitgate.md(계약 템플릿 사본)를 놓았는가
   agentEntrypointsSkipped: boolean // --no-agent-entrypoints
+  workflowGitignoreCreated: boolean // workflow/.gitignore를 새로 만들었는가(있으면 보존, --force로도 미덮어씀)
+  /** 기존 workflow/.gitignore가 kit과 달라 보존했는가(사용자 정책 파일). stash 안내에서 제외 대상(phase-2 리뷰 P4). */
+  workflowGitignoreUserDiffers: boolean
+  /** workflow/.gitignore가 ignored∧untracked라 설치 커밋에 못 담기고 fresh clone에 scratch 정책이 없다(phase-2 리뷰 P2). */
+  workflowGitignorePolicyAtRisk: boolean
 }
 
 /**
@@ -287,6 +305,36 @@ export function findIgnoredArtifacts(targetRoot: string, paths: readonly string[
 }
 
 /**
+ * `destRel`의 **모든 상위 컴포넌트**를 `lstat`으로 검사해 symlink·비-디렉터리를 거부한다(phase-2 리뷰 P1).
+ *
+ * ⚠️ `realpath`는 링크를 **따라가므로** 저장소 **내부**를 가리키는 symlink를 통과시키고(git이 그 아래를
+ *    정상 stage하지 못한다), dangling symlink는 ENOENT라 "부재"로 오인한다. 그래서 컴포넌트별 `lstat`으로:
+ *      - 실제 부재(ENOENT) → 그 하위는 targetRoot 안에 새로 생성됨(안전) → 통과.
+ *      - symlink/junction → 목적지(내부·외부·dangling) **무관하게 거부**. `copyFileSync`가 밖에 쓰거나 git이 못 읽는다.
+ *      - 디렉터리 아님(파일·특수) → 하위를 만들 수 없다 → 거부.
+ *      - 그 밖의 오류(EACCES 등) → fail-closed throw.
+ *    `workflow/.gitignore`로 preflight에서 돌리면 같은 `workflow/`를 쓰는 스키마 복사도 함께 보호된다.
+ */
+function assertConfinedDest(targetRoot: string, destRel: string): void {
+  const segs = destRel.split('/')
+  let cur = targetRoot
+  for (let i = 0; i < segs.length - 1; i++) {
+    // 마지막(파일명) 제외한 상위 컴포넌트만
+    cur = join(cur, segs[i] as string)
+    let st: ReturnType<typeof lstatSync>
+    try {
+      st = lstatSync(cur)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return // 실제 부재 → 하위를 targetRoot 안에 새로 만든다(안전)
+      throw new Error(`${destRel} 상위 경로 확인 실패(${(e as Error).message}) — fail-closed.`)
+    }
+    if (st.isSymbolicLink())
+      throw new Error(`${destRel} 의 상위 '${segs[i]}' 가 symlink/junction 입니다 — confinement 위반(밖에 쓰거나 git이 못 읽음).`)
+    if (!st.isDirectory()) throw new Error(`${destRel} 의 상위 '${segs[i]}' 가 디렉터리가 아닙니다 — confinement 위반.`)
+  }
+}
+
+/**
  * `<pm> install`이 만드는 `node_modules/`가 **워킹트리를 dirty하게 만드는가**.
  * ignore되지도 tracked되지도 않으면 `?? node_modules/`로 나타나 `req:new --run`의 clean-tree 게이트를 막는다.
  *
@@ -347,6 +395,18 @@ function gitignoreJoinsInstall(nodeModulesDirty: boolean, entries: readonly Stat
   if (nodeModulesDirty) return true
   // rename의 src·dest 어느 쪽이 `.gitignore`여도 그 파일은 dirty다(entryPaths로 둘 다 본다).
   return entries.some((e) => entryPaths(e).includes('.gitignore'))
+}
+
+function sha256File(abs: string): string {
+  return createHash('sha256').update(readFileSync(abs)).digest('hex')
+}
+
+/** kit `workflow/.gitignore` 템플릿의 규칙 라인(주석·빈 줄 제외). differs WARN에서 사용자가 병합할 실제 규칙을 보여 준다. */
+function kitGitignoreRules(): string[] {
+  return readFileSync(join(PACKAGE_ROOT, KIT_GITIGNORE.src), 'utf8')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '' && !l.startsWith('#'))
 }
 
 /** 설치 전 워킹트리 상태(쓰기 전). git 실패 시 빈 목록 — 진단이지 게이트가 아니다. */
@@ -430,6 +490,8 @@ export interface InstallPlan {
    * 금지한 이유(DEC-011-7)를 정확히 우회하게 된다(phase-6 리뷰 R1).
    */
   gitignoreRel: string | null
+  /** `workflow/.gitignore` — 부재라 새로 생성할 때(설계 D4). AGENTS.md 모델: 생성 시에만 산출물. */
+  workflowGitignoreRel: string | null
 }
 
 /** `planInstall`이 preflight에서 이미 계산해 둔 사실들(중복 계산 방지). */
@@ -440,8 +502,12 @@ export interface PlanFacts {
   claudeMdWillCreate: boolean
   contractCopyWillCreate: boolean
   agentEntrypointsSkipped: boolean
-  /** `node_modules`가 워킹트리를 dirty하게 만들어 `.gitignore` 수정을 안내해야 하는가. */
+  /** `node_modules`가 워킹트리를 dirty하게 만들어 (루트) `.gitignore` 수정을 안내해야 하는가. */
   gitignoreWillJoin: boolean
+  /** `workflow/.gitignore`(kit 파일)가 부재라 새로 생성하는가. `--no-agent-entrypoints`와 무관(D13). */
+  workflowGitignoreWillCreate: boolean
+  /** 기존 `workflow/.gitignore`가 템플릿과 바이트 동일(= 직전 실행이 깐 것). ownedSkips에 직접 편입(D4 축). */
+  workflowGitignoreOwnedSkip: boolean
 }
 
 /**
@@ -460,6 +526,7 @@ export function planArtifactPaths(plan: InstallPlan): string[] {
     plan.claudeMdRel,
     plan.contractCopyRel,
     plan.gitignoreRel,
+    plan.workflowGitignoreRel,
   ]
   return [...plan.copies.map((c) => c.destRel), ...plan.ownedSkips, ...extras.filter((p): p is string => p !== null)]
 }
@@ -497,6 +564,9 @@ export function planInstall(targetRoot: string, force: boolean, pm: PackageManag
   for (const rel of KIT_COPY_RELPATHS) add(join(PACKAGE_ROOT, rel), rel)
   if (!facts.agentEntrypointsSkipped)
     for (const { src, dest } of KIT_AGENT_ENTRYPOINTS) add(join(PACKAGE_ROOT, src), dest)
+  // workflow/.gitignore는 add()를 타지 않는다(D12: --force가 사용자 파일을 덮으면 안 됨). 바이트 동일 재실행분은
+  // 여기서 ownedSkips에 **직접** 편입 — 그러지 않으면 stageList에서 빠져 unrelated로 오분류된다(phase-2 리뷰 R1).
+  if (facts.workflowGitignoreOwnedSkip) ownedSkips.push(KIT_GITIGNORE.dest)
 
   return {
     copies,
@@ -510,6 +580,8 @@ export function planInstall(targetRoot: string, force: boolean, pm: PackageManag
     claudeMdRel: facts.claudeMdWillCreate ? KIT_CLAUDE_DEST_REL : null,
     contractCopyRel: facts.contractCopyWillCreate ? KIT_AGENTS_CONTRACT_COPY_REL : null,
     gitignoreRel: facts.gitignoreWillJoin ? '.gitignore' : null,
+    // D13: --no-agent-entrypoints와 무관하게 산출물에 편입 → stageList가 설치 커밋에 담아 팀·CI에 전파.
+    workflowGitignoreRel: facts.workflowGitignoreWillCreate ? KIT_GITIGNORE.dest : null,
   }
 }
 
@@ -769,6 +841,43 @@ export function runInit(opts: InitOptions): InitResult {
   const contractCopyPath = join(targetRoot, KIT_AGENTS_CONTRACT_COPY_REL)
   const agentsContractCopyCreated = agentsMarkerMissing && (!existsSync(contractCopyPath) || opts.force)
 
+  // workflow/.gitignore(kit 파일, REQ-2026-012). AGENTS.md 정책: **부재 시에만** 생성, --force로도 안 덮음(D12).
+  // --no-agent-entrypoints와 무관(D13).
+  const workflowGitignorePath = join(targetRoot, KIT_GITIGNORE.dest)
+  const workflowGitignoreSrcAbs = join(PACKAGE_ROOT, KIT_GITIGNORE.src)
+  // confinement: workflow/(또는 그 상위)가 symlink면 copyFileSync가 밖에 쓰거나 git이 경로를 stage하지 못한다.
+  // 상위 컴포넌트를 lstat으로 검사해 내부·외부·dangling 링크를 모두 거부한다(P1).
+  // preflight라 스키마 복사(같은 workflow/ 경유)보다 먼저 돌아 함께 보호된다.
+  assertConfinedDest(targetRoot, KIT_GITIGNORE.dest)
+  // fail-closed: 존재하면 반드시 **일반 파일**이어야 한다(P1). lstat로 symlink를 안 따라간다 —
+  //   symlink면 copyFileSync가 링크 대상을 따라 쓰고 git도 링크된 .gitignore를 규칙으로 안 읽는다. 디렉터리·특수파일도 복사 불가.
+  //   ⚠️ **ENOENT만** 부재로 인정한다 — EACCES·ELOOP 등을 부재로 삼키면 apply로 넘어가 늦게 실패한다.
+  let wgLstat: ReturnType<typeof lstatSync> | null = null
+  try {
+    wgLstat = lstatSync(workflowGitignorePath)
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT')
+      throw new Error(`${KIT_GITIGNORE.dest} 상태 확인 실패(${(e as Error).message}) — fail-closed.`)
+    wgLstat = null
+  }
+  if (wgLstat !== null && !wgLstat.isFile())
+    throw new Error(`${KIT_GITIGNORE.dest} 가 일반 파일이 아닙니다(symlink·디렉터리·특수파일) — 그 경로를 옮기고 재시도하십시오.`)
+  const workflowGitignoreExists = wgLstat !== null // isFile 보장
+  const workflowGitignoreCreated = !workflowGitignoreExists
+  // 존재 & 바이트 동일 = 직전 실행이 깐 것(소유). ⚠️ add()를 타지 않으므로(D12) ownedSkips를 **직접** 채운다 —
+  //   아니면 커밋 전 재실행 시 stageList에서 빠져 unrelated로 오분류된다(설계 D4 축, phase-2 리뷰 R1).
+  const workflowGitignoreOwnedSkip = workflowGitignoreExists && sha256File(workflowGitignorePath) === sha256File(workflowGitignoreSrcAbs)
+  // 존재하지만 다름 = 사용자 파일(보존). **효과를 판정하지 않고 보수적으로 WARN**한다(phase-2 리뷰 P2·P3):
+  //   check-ignore 효과 판정은 로컬 전용 소스(.git/info/exclude·전역)를 이식 가능으로 오인하고,
+  //   단일 샘플은 scoped negation(`!/REQ-2026-...`)을 놓친다. 그래서 "다르면 무조건 안내".
+  const workflowGitignoreUserDiffers = workflowGitignoreExists && !workflowGitignoreOwnedSkip
+  // 정책 파일이 fresh clone·CI에 전달되지 못하는가(설치 커밋에 못 담김) — ignored∧untracked면 `git add`가 fatal이다.
+  // 소유(생성/ownedSkip)든 사용자 파일(differs)이든, scratch 정책이 팀에 없으면 안전한 설치 안내를 낼 수 없다(phase-2 리뷰 P2).
+  const workflowGitignorePolicyAtRisk =
+    (workflowGitignoreCreated || workflowGitignoreOwnedSkip || workflowGitignoreUserDiffers) &&
+    gitIsIgnored(targetRoot, KIT_GITIGNORE.dest) &&
+    !gitIsTracked(targetRoot, KIT_GITIGNORE.dest)
+
   // 설치 **전** 워킹트리(쓰기 전 스냅샷). `.gitignore`의 dirty 여부 판정에도 쓰이므로 계획보다 먼저 찍는다.
   const porcelain = gitStatusEntries(targetRoot)
   const nmWillDirty = nodeModulesWillDirty(targetRoot)
@@ -782,6 +891,8 @@ export function runInit(opts: InitOptions): InitResult {
     contractCopyWillCreate: agentsContractCopyCreated,
     agentEntrypointsSkipped,
     gitignoreWillJoin: gitignoreJoinsInstall(nmWillDirty, porcelain),
+    workflowGitignoreWillCreate: workflowGitignoreCreated,
+    workflowGitignoreOwnedSkip,
   })
   const artifacts = planArtifactPaths(plan)
 
@@ -809,6 +920,18 @@ export function runInit(opts: InitOptions): InitResult {
       `    로컬 exclude에서 .gitignore 를 빼고 저장소에 커밋하십시오.`
     if (opts.strict) throw new Error(`[--strict] ${msg}`)
     console.warn(`⚠️  ${msg}\n    (설치는 계속 — 커밋 안내는 생략됩니다)`)
+  }
+
+  // workflow/.gitignore가 ignored∧untracked면 설치 커밋에 못 담겨 팀·CI에 scratch 정책이 없다(phase-2 리뷰 R3·R6).
+  // ⚠️ `workflowGitignorePolicyAtRisk`로 통합 판정 — created/ownedSkip(산출물)뿐 아니라 **user-differs**(artifacts에 없고
+  //    porcelain에도 안 나타나는 사용자 파일)도 포함한다. 이것을 빼면 --strict가 그 상태에서 쓰기 전에 안 막는다(R6 gap).
+  if (workflowGitignorePolicyAtRisk) {
+    const msg =
+      `${KIT_GITIGNORE.dest} 가 무시되고 있어(예: 루트 규칙의 \`**/.gitignore\`) 설치 커밋에 담을 수 없습니다.\n` +
+      `    티켓 scratch 무시 규칙이 팀원의 fresh clone·CI에 따라가지 않습니다.\n` +
+      `    그 파일을 무시하는 규칙을 걷어내고 저장소에 커밋하십시오.`
+    if (opts.strict) throw new Error(`[--strict] ${msg}`)
+    console.warn(`⚠️  ${msg}\n    (설치는 계속 — 안전한 커밋 안내는 생략됩니다)`)
   }
   // staged·overlapping이 있으면 **안전한 커밋 안내를 만들 수 없다**(커밋이 인덱스 전체를 담고, 겹침은 사후 분리 불가).
   // 기본 모드는 설치를 막지 않는다(비파괴·비-breaking) — 안내를 내지 않을 뿐. `--strict`는 쓰기 전에 중단한다.
@@ -839,7 +962,19 @@ export function runInit(opts: InitOptions): InitResult {
     // CLAUDE.md는 AGENTS.md와 동일 정책: **부재 시에만** 생성(--force로도 덮어쓰지 않는다 — 사용자 파일일 수 있다).
     if (claudeMdCreated) copyFileSync(join(PACKAGE_ROOT, KIT_CLAUDE_TEMPLATE_REL), claudeMdPath)
     if (agentsContractCopyCreated) copyFileSync(join(PACKAGE_ROOT, 'AGENTS.template.md'), contractCopyPath)
+    // workflow/.gitignore도 부재 시에만 생성(--force로도 안 덮음, D12). workflow/는 KIT_COPY_RELPATHS 복사로 이미 존재.
+    if (workflowGitignoreCreated) {
+      mkdirSync(dirname(workflowGitignorePath), { recursive: true })
+      copyFileSync(workflowGitignoreSrcAbs, workflowGitignorePath)
+    }
   }
+
+  if (workflowGitignoreUserDiffers)
+    console.warn(
+      `⚠️  기존 ${KIT_GITIGNORE.dest} 가 kit 템플릿과 다릅니다(보존 — --force로도 덮지 않음).\n` +
+        `    아래 규칙이 (뒤에 \`!\` 부정 override 없이) 있는지 확인·병합하십시오 — 없으면 티켓 scratch가 git status에 계속 잡힙니다:\n` +
+        kitGitignoreRules().map((r) => `      ${r}`).join('\n'),
+    )
 
   if (agentsMarkerMissing) {
     // phase-3a R1 observation: 사본을 **새로 놓았을 때**와 **기존 것을 보존했을 때**의 문구가 달라야 한다.
@@ -875,6 +1010,9 @@ export function runInit(opts: InitOptions): InitResult {
     agentsMarkerMissing,
     agentsContractCopyCreated,
     agentEntrypointsSkipped,
+    workflowGitignoreCreated,
+    workflowGitignoreUserDiffers,
+    workflowGitignorePolicyAtRisk,
   }
 }
 
@@ -935,7 +1073,8 @@ export function installGuidance(r: InitResult): string[] {
   const gitignoreUnstageable = r.artifacts.includes('.gitignore') && r.gitIgnoredArtifacts.includes('.gitignore')
   // 어떤 셸 인용으로도 안전하지 않은 경로 — cmd.exe는 큰따옴표 안에서도 `%VAR%`·`!VAR!`를 치환한다(R7).
   const risky = [r.targetRoot, ...r.artifacts, ...unrelated].filter(pathNeedsManualQuoting)
-  const unsafe = staged.length > 0 || overlapping.length > 0 || gitignoreUnstageable || risky.length > 0
+  const unsafe =
+    staged.length > 0 || overlapping.length > 0 || gitignoreUnstageable || risky.length > 0 || r.workflowGitignorePolicyAtRisk
 
   const cdLine = risky.includes(r.targetRoot) ? `  1. 저장소 루트로 이동: ${r.targetRoot}` : `  1. cd ${quoteForShell(r.targetRoot)}`
   const out: string[] = ['', '다음:', cdLine, `  2. ${r.packageManager} install`]
@@ -949,6 +1088,8 @@ export function installGuidance(r: InitResult): string[] {
     for (const p of overlapping) out.push(`        설치분과 겹침 (사후 분리 불가)      ${p}`)
     if (gitignoreUnstageable)
       out.push('        .gitignore 자체가 무시됨 (규칙이 clone에 따라가지 않음)')
+    if (r.workflowGitignorePolicyAtRisk)
+      out.push(`        ${KIT_GITIGNORE.dest} 가 무시됨 — 설치 커밋에 못 담겨 fresh clone·CI에 scratch 정책이 없습니다`)
     for (const p of risky)
       out.push(`        셸 특수문자(" \` $ % !) 포함 — 어떤 인용으로도 복붙이 안전하지 않음: ${p}`)
     out.push('      위를 커밋하거나 되돌린 뒤, `git status` 로 직접 확인하며 설치분만 커밋하십시오.')
@@ -973,13 +1114,22 @@ export function installGuidance(r: InitResult): string[] {
   out.push(`       git status                    # 의도한 것만 staged 인지 눈으로 확인`)
   out.push(`       git commit -m "chore: install commitgate"`)
 
-  if (unrelated.length > 0) {
+  // ⚠️ 사용자 소유 workflow/.gitignore(differs)는 stash 대상에서 뺀다(phase-2 리뷰 P4). stash하면 그 정책 파일이
+  //    사라져 fresh clone에서 scratch가 다시 나타나고 다음 req:new가 막힌다. 별도로 확인·커밋하도록 안내한다.
+  const userGitignoreDirty = r.workflowGitignoreUserDiffers && unrelated.includes(KIT_GITIGNORE.dest)
+  const stashUnrelated = userGitignoreDirty ? unrelated.filter((p) => p !== KIT_GITIGNORE.dest) : unrelated
+
+  if (userGitignoreDirty) {
+    out.push(`  ${n++}. ${KIT_GITIGNORE.dest} 는 당신의 파일입니다(미커밋). stash 하지 말고 —`)
+    out.push(`     kit 규칙이 있는지 확인한 뒤 **직접 커밋**하십시오(fresh clone·CI에 scratch 정책이 있어야 합니다).`)
+  }
+  if (stashUnrelated.length > 0) {
     // ⚠️ bare `git stash -u`는 너무 넓다 — `node_modules/`처럼 gitignore되지 않은 산출물까지 쓸어 가
     //    방금 설치한 tsx가 사라지고 req:new가 죽는다(실측). 경로를 명시한다(DEC-011-7과 같은 원칙).
     //    `-u` 없이는 untracked가 남아 clean-tree 게이트가 여전히 실패한다(design 리뷰 R5).
     out.push(`  ${n++}. 설치 커밋 뒤, 설치 전부터 있던 아래 무관한 변경을 커밋하거나 치우십시오`)
     out.push(`     (req:new 는 clean 워킹트리를 요구합니다):`)
-    out.push(`       git stash push -u -- ${unrelated.map(quoteForShell).join(' ')}`)
+    out.push(`       git stash push -u -- ${stashUnrelated.map(quoteForShell).join(' ')}`)
   }
   out.push(`  ${n}. ${runScriptCmd(r.packageManager, 'req:new', '<slug> --run')}`)
   return out
@@ -1067,6 +1217,8 @@ export function main(argv: string[]): void {
     console.log(`${tag}  CLAUDE.md: ${r.claudeMdCreated ? '템플릿 생성' : '이미 존재(유지)'}`)
     if (r.agentsContractCopyCreated) console.log(`${tag}  ${KIT_AGENTS_CONTRACT_COPY_REL}: 계약 템플릿 사본 생성(AGENTS.md에 병합 후 삭제)`)
   }
+  // workflow/.gitignore는 --no-agent-entrypoints와 무관하게 보고(D13).
+  console.log(`${tag}  ${KIT_GITIGNORE.dest}: ${r.workflowGitignoreCreated ? '생성' : '이미 존재(유지)'}`)
   if (r.gitIgnoredArtifacts.length > 0)
     console.log(`${tag}  .gitignore로 제외되는 산출물: ${r.gitIgnoredArtifacts.join(', ')}`)
   const dirtyCount = r.preexistingDirty.staged.length + r.preexistingDirty.overlapping.length + r.preexistingDirty.unrelated.length

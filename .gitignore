@@ -7,6 +7,7 @@ dist/
 .tmp/
 
 # req 워크플로 스크래치 산출물(티켓 내부)
+workflow/**/codex-response.json
 workflow/**/.review-preview.txt
 workflow/**/.codex-*.tmp
 

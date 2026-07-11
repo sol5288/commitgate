@@ -73,6 +73,19 @@ describe('[payload] 공개 패키지에 사설 프로젝트 참조가 없다', (
     expect(rels).toContain('workflow/review-persona.md')
   })
 
+  /**
+   * REQ-2026-012 — kit gitignore는 **비-점 이름**으로 실려야 한다.
+   * npm은 tarball에서 `.gitignore`라는 이름을 제외한다(files[]에 넣어도). 그래서 패키지엔
+   * `templates/workflow.gitignore`로 두고 init이 `workflow/.gitignore`로 복사한다(설계 D5·D11).
+   * 누가 이 파일을 `.gitignore` 이름으로 바꾸면 tarball에서 조용히 사라져 설치본이 규칙을 못 받는다.
+   */
+  it('kit gitignore가 비-점 이름으로 payload에 실린다', () => {
+    const rels = files.map((f) => relative(PACKAGE_ROOT, f).replace(/\\/g, '/'))
+    expect(rels).toContain('templates/workflow.gitignore')
+    // 점으로 시작하는 basename은 npm이 제외할 수 있으므로 kit 파일명에 두지 않는다.
+    expect(rels.some((r) => r.startsWith('templates/') && r.split('/').pop()?.startsWith('.'))).toBe(false)
+  })
+
   it('열거된 payload 파일 중 텍스트는 전부 스캔된다(건너뛴 텍스트 0개)', () => {
     const skipped = files.filter((f) => readTextOrNull(f) === null)
     // 현재 payload는 전부 텍스트다. 바이너리가 생기면 여기서 드러난다.
