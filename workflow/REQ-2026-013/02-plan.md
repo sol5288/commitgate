@@ -15,10 +15,10 @@
 
 ## Phase 2 — 진단성: codex stdout 구조화 표면화 (`phase-2-stdout-surface`)
 범위: P3 (설계 D6·D11). **retry 없음(D7).**
-- `adapters.ts` **`defaultCodexRunner`(codex 경계)**: `safeSpawnSync`가 담아 throw한 오류를 catch. **분류 보존(R5)**: `err.kind==='timeout'`/`'buffer-overflow'`면 문구 그대로 재-throw(JSONL 추출 안 붙임); `'exit'`일 때만 `err.stdout` JSONL 파싱. **allowlist(실측 고정)**: `{type:'error'}→message`·`{type:'turn.failed'}→error.message`·`{type:'item.completed', item.type==='error'}→item.message` 3형의 문자열만. **미지 event·비-error item·중첩·파싱실패·비-문자열 폐기.** **총량 상한: 최대 N 이벤트 + 총 UTF-8 byte ≤ 8KiB**(초과 시 단일 `[…N events elided]`). 허용 이벤트 0개 → raw stdout 미포함(exit + `[stdout 생략]`). **추출 메시지·stderr 모두 best-effort redaction + byte 상한(≤4KiB)** — **JS 정규식**(`(?i)` 금지·`gi` 플래그, R6), **Bearer는 공백 뒤 토큰까지 소비**. **범용 `safeSpawnSync`에는 JSONL 파싱 없음**(비-codex 명령 유출 방지).
+- `adapters.ts` **`defaultCodexRunner`(codex 경계)**: `safeSpawnSync`가 담아 throw한 오류를 catch. **분류 보존(R5)**: `err.kind==='timeout'`/`'buffer-overflow'`면 문구 그대로 재-throw(JSONL 추출 안 붙임); `'exit'`일 때만 `err.stdout` JSONL 파싱. **allowlist(실측 고정)**: `{type:'error'}→message`·`{type:'turn.failed'}→error.message`·`{type:'item.completed', item.type==='error'}→item.message` 3형의 문자열만. **미지 event·비-error item·중첩·파싱실패·비-문자열 폐기.** **총량 상한: 최대 N 이벤트 + 총 UTF-8 byte ≤ 8KiB**(초과 시 단일 `[…N events elided]`). 허용 이벤트 0개: **stdout 비어있음 → `[구조화 오류 없음]`; stdout 있는데 0건 → 원문 생략 + `[codex 진단: 인식 못한 형태 — 계약 변경/버전 불일치 가능]` 표면화**(R7 — 정적 fixture가 못 잡는 live drift 탐지). **추출 메시지·stderr 모두 best-effort redaction + byte 상한(≤4KiB)** — **JS 정규식**(`(?i)` 금지·`gi` 플래그, R6), **Bearer는 공백 뒤 토큰까지 소비**. **범용 `safeSpawnSync`에는 JSONL 파싱 없음**(비-codex 명령 유출 방지).
 - 테스트(캡처 fixture 기반): 3형 오류(`error`·`turn.failed`·`item.completed:error`) → 표면화 · `item.completed{command_execution, aggregated_output:'token=…'}` → 폐기 · **`err.kind==='timeout'` → JSONL 안 붙고 timeout 문구 보존** · 비-codex 명령의 `{type:'error'}` → codex 경로 안 탐 · 수천 이벤트 → 총 상한+생략 · 추출/stderr redaction: `token=…`·**`Authorization: Bearer x.y.z`(뒤 토큰까지 마스킹)**·`sk-…` → 각 마스킹 후 byte 절단.
-회귀 고정: 빈-오류 제거 · **timeout/overflow/exit 분류 보존** · allowlist 밖 유출 없음 · 비-codex 미적용 · 총량 상한.
-> event type/필드는 **실측 캡처를 fixture로 고정** — "구현 후 실측" 의존 제거. codex 계약 변경 시 fixture 테스트 실패로 드러냄.
+회귀 고정: 빈-오류 제거 · **timeout/overflow/exit 분류 보존** · allowlist 밖 유출 없음 · 비-codex 미적용 · 총량 상한 · **stdout 있으나 허용 이벤트 0건 → 불일치 진단(빈 stdout과 구분, 원문 미노출)**.
+> event type/필드는 **실측 캡처를 fixture로 고정**(파서 회귀). fixture는 파서만 검증하지 **live 계약 drift는 못 잡는다**(R7) — drift는 **런타임 불일치 진단**(stdout 있으나 허용 이벤트 0건 → "인식 못한 형태·버전 불일치 가능" 표면화, 원문 생략)이 드러냄. 지원 codex 버전 기록.
 
 ## Phase 3 — 모델·추론강도 고정 (`phase-3-model-effort-pin`)
 범위: P1 (설계 D1·D2·D2-1·D3·D4·D11). **안전망(P1·P2) 뒤 — 부트스트랩 함정 해소(D9).**

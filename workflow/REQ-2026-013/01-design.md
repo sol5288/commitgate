@@ -75,7 +75,9 @@ resumeThreadId
   - `{"type":"item.completed", "item":{"type":"error", "message":<string>}}` → `item.message` (**`item.type==='error'`일 때만** — `command_execution`·`agent_message`·`reasoning` 등 다른 item type은 제외)
   이 **정확한 (event type, string 필드) 쌍**만 추출한다. 그 외 event type·비-error item·중첩 객체·비-문자열·파싱 실패는 **전부 폐기**(blacklist는 미지 유출 — R2). `stream_error`는 실측에 없어 뺀다. 추출 결과에도 stderr와 **같은 비밀 마스킹(redaction)** 을 적용(오류 메시지가 auth 오류 등 비밀을 담을 수 있음 — 방어심층).
 - **총량 상한(R3)**: 필드별이 아니라 **추출 결과 전체**에 — 최대 **N개 이벤트**(예 20) + **총 UTF-8 byte ≤ 8KiB**(Buffer.byteLength, 다바이트 안전 절단), 초과 시 **단일 생략 표식**(`[…N events elided]`). 수천 개 소형 이벤트가 수십 MiB로 부푸는 것 차단.
-- **허용 이벤트 0개면 raw stdout 미포함** — exit + `[구조화 오류 없음 — stdout 생략]`만.
+- **허용 이벤트 0개 처리 — 두 경우를 구분한다(계약 drift 탐지, R7)**:
+  - **stdout이 비어 있음** → `exit + [구조화 오류 없음]`.
+  - **stdout이 비어있지 않은데(≥1 non-blank JSONL 라인) 허용 이벤트가 0건** → 원문은 계속 **생략**(비밀 안전)하되, **불일치 진단**을 별도로 표면화: `[codex 진단: stdout <N>줄이 있으나 인식된 오류 이벤트 없음 — codex JSONL 계약 변경/버전 불일치 가능. 안전상 원문 생략]`. 이로써 codex가 event 형태를 바꿔 allowlist가 조용히 0건이 되는 P3 퇴행을 **운영에서 드러낸다**(정적 fixture만으론 못 잡는 live drift). 참고 지원 버전: fixture 캡처 시점 codex(설계에 버전 기록).
 - **stderr(및 추출 메시지)는 redaction + byte-bounded(≤4KiB)** — byte 상한은 기밀성 보장이 아니므로(R4), **best-effort 비밀 마스킹**을 적용한다. **정규식은 JavaScript 문법**(R6 — `(?i)` 인라인 플래그는 JS에서 `SyntaxError`; `g`+`i` 플래그 사용)이고, **Bearer 토큰은 공백 뒤까지 소비**한다(R6 — `\S+`가 `Authorization: Bearer <jwt>`에서 `Bearer`까지만 잡아 토큰이 새던 버그):
   ```js
   const REDACTIONS = [
@@ -86,7 +88,7 @@ resumeThreadId
   ]
   ```
   적용 후 ≤4KiB 절단, `[redacted]` 표식. **best-effort(모든 비밀 형식 보장 아님)** — 한계 문서화. codex 정상 경로는 stderr가 대개 비어 진단 손실 적음. 회귀: `token=abc`·`Authorization: Bearer x.y.z`(**뒤 토큰까지** 마스킹)·`sk-…` 각각 후 byte 절단.
-- **계약을 fixture로 고정(R5)**: 위 실측 캡처를 회귀 fixture로 저장하고 allowlist를 그것으로 검증한다 — "구현 후 phase에서 실측" 의존을 없앤다. codex가 event type/필드를 바꾸면 fixture 테스트가 실패해 드러난다. (설계가 지원하는 CLI 계약 = 이 캡처 형태.)
+- **계약을 fixture로 고정(R5) — 단, fixture는 파서 회귀만 검증(R7)**: 위 실측 캡처를 회귀 fixture로 저장하고 allowlist 파서를 그것으로 검증한다 — "구현 후 phase에서 실측" 의존을 없앤다. **주의(R7 정정)**: 정적 fixture는 **내 파서가 이 캡처 형태를 옳게 처리하는지**만 본다 — 실제 codex가 나중에 event type/필드를 바꿔도 fixture는 그대로라 테스트는 녹색이다(live 계약 drift를 fixture가 잡지 못한다). live drift는 위 **불일치 진단**(stdout 있으나 허용 이벤트 0건)이 운영에서 드러낸다. 설계가 지원하는 CLI 계약 = 이 캡처 형태(codex 버전 기록).
 - 회귀(fixture 기반): `error{message}`·`turn.failed{error.message}`·`item.completed{item.type:'error',message}` 3형 → 표면화 · `item.completed{item.type:'command_execution', aggregated_output:'token=…'}` → **폐기(비-error item)** · 미지 `{type:'x',message:'token=…'}` → 폐기 · **비-codex 명령의 `{type:'error'}` → codex 경로 안 탐**(범용은 stderr만) · 수천 이벤트 → 총 byte·개수 상한+생략표식 · 추출 메시지의 `token=…` → redaction.
 
 **D7. bounded retry는 이번 범위에서 뺀다.** 비-일시 실패(usage-limit·model-not-found)엔 무익, 600s와 곱해 비용 배증, provider HTTP retry 존재, retryable 분류 계약 부재. D6로 표본 수집 후 별도 REQ.
