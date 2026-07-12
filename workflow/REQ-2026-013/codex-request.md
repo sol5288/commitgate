@@ -1,8 +1,14 @@
-# REQ-2026-013 리뷰 요청 (R10 — design R1~R9 반영)
+# REQ-2026-013 리뷰 요청 (R11 — design R1~R10 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)·R5(3)·R6(1)·R7(1)·R8(2)·R9(1)를 반영했다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1~R10 반영(각 10/3/3/4/3/1/1/2/1/1).
+
+## design R10 지적 → 반영 (closure)
+
+| R10 지적 | 반영 |
+|---|---|
+| D8이 기존 `state.last_review` marker(`compare_hash`·`count`·`errors`·`at`) 보존을 명시 안 함 → 교체 시 `req:next` G2 회로차단기 깨져 동일 대상 재호출 | **기존 marker 필드 보존 + findings·elided_count를 additive로만** 추가(D8). `req:next` G2 회귀(NEEDS_FIX 재호출 차단·invalid 반복 차단·approved 불변) 고정(Phase 4) |
 
 ## design R9 지적 → 반영 (closure)
 
