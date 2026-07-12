@@ -1,4 +1,11 @@
-# REQ-2026-013 리뷰 요청 (R15 — 범위 재설정: P1+P4만)
+# REQ-2026-013 리뷰 요청 (R16 — P1+P4, R15 반영)
+
+## design R15 지적 → 반영 (closure)
+
+| R15 지적 | 반영 |
+|---|---|
+| bogus-model live는 `model` 존중만 증명, `model_reasoning_effort` 존중은 미증명 → effort 무시 시 P1 핵심(ultra 상속) 미해결 | **bogus-effort live 검증 추가**: 유효 모델 + `-c model_reasoning_effort="__bogus__"` → codex가 `[reasoning.effort] invalid_enum_value` 거부(존중 증명). exec·resume 각각. 실측 확인(R15). 부가: 거부 메시지가 지원값 `none|minimal|low|medium|high|xhigh` 명시 → **enum에 `none` 추가**(문서 누락, 실측 정본) |
+
 
 ## 배경
 

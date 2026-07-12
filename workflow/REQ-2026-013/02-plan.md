@@ -9,11 +9,11 @@
 
 ## Phase 1 — 모델·추론강도 고정 (`phase-1-model-effort-pin`)
 범위: P1 (설계 D1·D2·D2-1·D3·D4·D9).
-- `config.ts`: `reviewModel`(`string|null`, slug 패턴)·`reviewReasoningEffort`(`{type:['string','null'], enum:[...5, null]}` — **null을 enum에 포함**)를 `RawConfig`·`ResolvedConfig`·`DEFAULTS`(gpt-5.6-terra/high)·`CONFIG_SCHEMA`·`merged` 다섯 지점. **두 키 `!== undefined` 병합**(null 보존). `req.config.schema.json` 동기화. `req-commit.test.ts` `cfgStub` 갱신.
+- `config.ts`: `reviewModel`(`string|null`, slug 패턴)·`reviewReasoningEffort`(`{type:['string','null'], enum:['none','minimal','low','medium','high','xhigh', null]}` — **`none` 포함(실측 R15)·null 포함**)를 `RawConfig`·`ResolvedConfig`·`DEFAULTS`(gpt-5.6-terra/high)·`CONFIG_SCHEMA`·`merged` 다섯 지점. **두 키 `!== undefined` 병합**(null 보존). `req.config.schema.json` 동기화. `req-commit.test.ts` `cfgStub` 갱신.
 - `adapters.ts`: `ReviewRequest`에 `model`·`reasoningEffort`. `review()`가 non-null일 때 `-c model="…"`·`-c model_reasoning_effort="…"`를 **exec·resume 양쪽** args에 삽입(주입 안전=패턴/enum 제약, 주석 고정).
 - `review-codex.ts`: `callReviewer` `ReviewRequest`에 `cfg.reviewModel`·`cfg.reviewReasoningEffort`.
 - 테스트: (a) 주입 `CodexRunner` 실제 args에 `-c` 포함(exec·resume)·null이면 없음, (b) `FakeReviewerAdapter` 전파, (c) `req-config.test.ts` 두 축 동기화·기본값 해소·**null 복귀 안 함**·enum 밖 throw·패턴 위반 throw.
-- **override 존중(수동/smoke)**: `-c model="__bogus__"` on exec(--fresh-thread)·resume(prior thread_id) → "Model not found"(존중 증명). exec는 R5 캡처로 확인.
+- **override 존중(수동/smoke, model·effort 각각)**: `-c model="__bogus__"`→"Model not found"; 유효 모델 + `-c model_reasoning_effort="__bogus__"`→`[reasoning.effort] invalid_enum_value` 거부(effort 존중=P1 핵심). **exec(--fresh-thread)·resume(prior thread_id) 각각**. 둘 다 R5·R15 캡처로 실측.
 회귀 고정: null override → `-c` 생략(전역 상속) · exec·resume 둘 다 · 오타/따옴표 config-load 거부.
 문서(sample·README)는 **Phase 3**.
 

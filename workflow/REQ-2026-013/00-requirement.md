@@ -29,8 +29,8 @@ palm-backend가 설계-전용 REQ(문서 5개)를 4라운드 리뷰하며 관측
 **P1(모델·추론강도 고정)**
 - 조립된 codex 인자(exec·resume 양쪽)에 `-c model="<reviewModel>"` `-c model_reasoning_effort="<reviewReasoningEffort>"`가 포함된다. 주입 `CodexRunner`로 실제 args를 캡처해 단언(도구가 인자를 넘김).
 - 미설정 시 `gpt-5.6-terra`/`high` 해소. **명시적 `null`은 기본값으로 복귀하지 않는다**(`!== undefined` 병합) → 해당 `-c` 생략(전역 상속). 회귀로 고정.
-- `reviewReasoningEffort`는 **enum**(`minimal|low|medium|high|xhigh` **+ null**)이라 오타는 config-load에서 거부, `null`은 통과. `reviewModel`은 **slug 패턴**이라 따옴표·개행 거부(TOML `model="…"` 주입 안전; null은 vacuously 통과).
-- **override를 codex가 실제로 존중함**을 bogus-model live 검증(수동/smoke 1회): `-c model="__bogus__"` on exec·resume 각각 → "Model … not found"(도달·해석 증명). 자기-리뷰 성공은 override 무시와 구분 못 하므로 필수. exec는 R5 캡처로 이미 확인.
+- `reviewReasoningEffort`는 **enum**(`none|minimal|low|medium|high|xhigh` **+ null** — 실측 확정 R15)이라 오타는 config-load에서 거부, `null`은 통과. `reviewModel`은 **slug 패턴**이라 따옴표·개행 거부(TOML `model="…"` 주입 안전; null은 vacuously 통과).
+- **override를 codex가 실제로 존중함**을 **model·effort 각각** bogus-값 live 검증(수동/smoke, exec·resume 각각): `-c model="__bogus__"`→"Model not found", **유효 모델 + `-c model_reasoning_effort="__bogus__"`→`[reasoning.effort] invalid_enum_value` 거부**(effort 존중 = P1 핵심; 무시하면 `high` 고정이 무의미). 자기-리뷰 성공·arg-캡처는 존중을 증명 못 하므로 필수. 둘 다 R5·R15 캡처로 실측 확인.
 
 **P4(재리뷰 stateless)**
 - 재리뷰가 **항상 새 스레드**다(`codex_thread_id`가 있어도 resume 안 함). `--fresh-thread`의 blocked-마커 회복은 보존.
