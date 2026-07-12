@@ -1,8 +1,14 @@
-# REQ-2026-013 리뷰 요청 (R9 — design R1~R8 반영)
+# REQ-2026-013 리뷰 요청 (R10 — design R1~R9 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)·R5(3)·R6(1)·R7(1)·R8(2)를 반영했다.
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1(10)·R2(3)·R3(3)·R4(4)·R5(3)·R6(1)·R7(1)·R8(2)·R9(1)를 반영했다.
+
+## design R9 지적 → 반영 (closure)
+
+| R9 지적 | 반영 |
+|---|---|
+| "Phase 3 자기 리뷰 성공 = exec 검증"이 틀림 — prior thread_id로 resume 경로를 타고, 성공은 override 무시(ultra 상속)와 구분 못 함 | 거짓 주장 정정. **override 존중은 bogus-model live 검증**으로: `-c model="__bogus__"` → "Model not found"가 exec·resume 각각 나오면 존중 증명(수동/smoke). exec는 R5 캡처로 이미 확인, resume는 Phase 3(D9) |
 
 ## design R8 지적 → 반영 (closure)
 

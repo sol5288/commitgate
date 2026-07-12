@@ -27,7 +27,7 @@
 - `adapters.ts`: `ReviewRequest`에 `model`·`reasoningEffort`. `review()`가 non-null일 때 `-c model="…"`·`-c model_reasoning_effort="…"`를 exec·resume 양쪽 삽입(주입 안전=패턴/enum 제약, 주석 고정).
 - `review-codex.ts`: `callReviewer` `ReviewRequest`에 `cfg.reviewModel`·`cfg.reviewReasoningEffort`.
 - 테스트: (a) 주입 `CodexRunner` 실제 args에 `-c` 포함(exec·resume)·null이면 없음, (b) `FakeReviewerAdapter` 전파, (c) `req-config.test.ts` 두 축 동기화·기본값 해소, (d) **null이 기본값 복귀 안 함**, (e) enum 밖 → throw, (f) 패턴 위반(`a"b`·개행) → throw.
-- **exec 검증**: 이 phase의 자기 리뷰가 `gpt-5.6-terra`로 성공 = exec effective 확인(별도 probe 불필요, D9).
+- **override 존중 검증(D9, R9 정정)**: 자기-리뷰 성공은 "override 적용"과 "무시하고 ultra 상속"을 구분 못 하고, Phase 1·2가 남긴 `codex_thread_id` 때문에 일반 실행은 resume 경로다. 그래서 **bogus-model live 검증**을 수동/smoke 1회로 수행 — `-c model="__bogus__"` on **exec(--fresh-thread)와 resume 각각** → codex가 "Model … not found"(존중 증명). exec는 R5 캡처가 이미 증명, resume는 여기서 확인. arg-캡처 단위 테스트(도구가 인자 넘김) + 이 live 검증(codex가 존중)을 함께 수용기준에.
 회귀 고정: null override → `-c` 생략(전역 상속) · exec·resume 둘 다 · 오타/따옴표는 config-load 거부.
 
 ## Phase 4 — 재리뷰 stateless (`phase-4-stateless`)

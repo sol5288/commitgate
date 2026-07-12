@@ -107,7 +107,8 @@ resumeThreadId
 
 **D9. Phase 순서 = timeout → stdout → model-pin → stateless(bootstrap, design R1 P2).** 이 저장소 명령은 로컬 `tsx`라 staged phase 구현이 **자기 phase 리뷰에 즉시 적용**된다. model-pin(P1)이 먼저면 그 리뷰가 timeout·stdout 안전망 없이 새 고정 모델로 돈다 — 미지원/행이면 진단·중단 수단이 없다. 따라서 **안전망을 먼저** 깐다:
 1. timeout(P2) → 2. stdout(P3) → 3. **model-pin(P1)** → 4. stateless(P4) → 5. 문서(D10).
-- model-pin phase의 **자기 리뷰가 고정 모델로 성공 = exec effective 검증**(별도 probe 불필요). 실패하면 이미 깔린 timeout이 bound하고 stdout이 사유를 표면화.
+- **override 효력 검증은 자기-리뷰로 안 된다(R9 정정)**: Phase 1·2 리뷰가 state에 `codex_thread_id`를 남기므로 Phase 3의 일반 실행은 **resume 경로**를 타고(fresh exec 아님), 게다가 리뷰 **성공은 "override 적용"과 "override 무시하고 ultra 상속"을 구분 못 한다**(둘 다 성공). arg-캡처 단위 테스트도 도구가 인자를 **넘기는지**만 보지 codex가 **존중하는지**는 못 본다.
+  - 그래서 **override 존중은 bogus-model live 검증으로** 고정한다: `-c model="__bogus__"`를 주면 codex가 `item.completed{type:error}`·`turn.failed`로 **"Model … not found / not supported"** 를 낸다(= override가 codex에 도달·해석됨 증명). **exec·resume 양쪽** 각각 확인한다. **exec는 R5 캡처가 이미 증명**(`__nonexistent_model_xyz__ not found`), resume는 Phase 3에서 동일 확인. 이건 auth·비용이 드는 non-hermetic 검증이라 **수동/smoke 1회**(CI 단위 아님)로 두고 수용기준에 명시.
 - 첫 slice(timeout) 리뷰가 도구 자기 코드를 타는 부트스트랩은 **사람 감시(--run 통제점, 행이면 Ctrl-C)** 가 회복 경로 — 문서화.
 
 **D10. 사용자 문서를 변경 범위에 포함 — 전용 Phase 5.** 신규 키·`null` 탈출구·timeout 조정·stateless 동작을 `req.config.json.sample` + README(KR `README.md`/EN `README.en.md`) config 표 + `CHANGELOG`에 반영한다. 문서는 **최종 Phase 5로 분리**한다(R6-obs) — 코드 phase(1~4)의 검토 단위를 좁히고(각 config key phase가 sample·README×2·CHANGELOG까지 삼키면 8파일 초과), 문서를 한 번에 일관되게 정리한다. (REQ-2026-011의 phase-7 docs 패턴과 동일.)
@@ -123,7 +124,7 @@ config `reviewTimeoutMs`(D1) + `SafeSpawnOptions.timeoutMs` + 내부 `killSignal
 `defaultCodexRunner`(codex 경계)에서 분류 보존(D5) + 실측-고정 allowlist 추출 + 비밀 이벤트 제외 + 총량 상한 + JS redaction(D6) + fixture 테스트. **retry 없음(D7).**
 
 ### Phase 3 — 모델·추론강도 고정 (`phase-3-model-effort-pin`)
-config `reviewModel`(패턴)·`reviewReasoningEffort`(enum+null)(D1·D4, null 보존) + `ReviewRequest`·`callReviewer`·`review()` `-c` 주입(D2·D2-1) + 테스트(args 캡처·null 보존·enum/패턴 거부·DTO). 자기 리뷰 성공 = exec 검증(D9). **문서 제외(Phase 5)** → ≤8파일.
+config `reviewModel`(패턴)·`reviewReasoningEffort`(enum+null)(D1·D4, null 보존) + `ReviewRequest`·`callReviewer`·`review()` `-c` 주입(D2·D2-1) + 테스트(args 캡처·null 보존·enum/패턴 거부·DTO). **override 존중은 bogus-model live 검증**(exec·resume, D9 — 자기-리뷰 성공은 override 무시와 구분 못 함). **문서 제외(Phase 5)** → ≤8파일.
 
 ### Phase 4 — 재리뷰 stateless (`phase-4-stateless`)
 `isResume=false`(D8) + `--fresh-thread` marker-clear 보존 + bounded findings 스냅샷·read 검증·주입(D8) + 테스트(항상 fresh·marker-clear 배선·findings 주입·read 검증·drift 없음).
