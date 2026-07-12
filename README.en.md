@@ -360,8 +360,14 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `packageManager` | auto-detected | `npm`, `pnpm`, or `yarn` |
 | `designDocs` | `00/01/02` docs | Design document filenames |
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it |
+| `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
+| `reviewReasoningEffort` | `"high"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
 
 Empty `branchPrefix` values and paths that escape the project root are rejected.
+
+**Pinned review model & effort**: `req:review-codex` injects `-c model=` and `-c model_reasoning_effort=` into the codex arguments to **pin the model and reasoning effort**. Without pinning, a review inherits your global `~/.codex/config.toml` (e.g. `model_reasoning_effort="ultra"`), making a single review take minutes and burn tokens. The defaults are `gpt-5.6-terra`/`high`; if your codex doesn't support that model, change it in `req.config.json` or set it to `null` to inherit the global config. Whether the overrides are actually honored can be checked with `npm run verify:overrides` (requires the codex CLI).
+
+**Stateless re-reviews**: each re-review starts a **fresh codex thread** (it does not resume/accumulate the prior conversation — which drove token growth and goalpost drift). Only the previous same-target NEEDS_FIX findings are carried into the prompt as reference data, to confirm closure.
 
 ---
 

@@ -6,6 +6,8 @@
   "branchPrefix": "feat/req-",
   "packageManager": "npm",
   "granularityMaxFiles": 8,
+  "reviewModel": "gpt-5.6-terra",
+  "reviewReasoningEffort": "high",
   "designDocs": {
     "requirement": "00-requirement.md",
     "design": "01-design.md",

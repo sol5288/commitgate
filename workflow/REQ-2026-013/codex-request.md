@@ -77,3 +77,19 @@ PASS  resume + bogus effort → codex 거부
 **검증**: 이 phase 리뷰 자체가 **stateless(새 스레드) + 고정 모델**로 실행된다(staged 코드 적용). 단위 테스트: 스냅샷 경계·truncateUtf8·additive marker(G2)·read 검증·same-target 게이팅·교차-대상 미주입·프롬프트 주입 데이터-구획·delimiter 중화·elided 렌더. `typecheck` 0 · `vitest` 전체 **848 통과** · `smoke` 0.
 
 **리뷰 포인트**: (1) stateless 전환이 완전한가(resume 경로가 실제로 안 타는가)? (2) findings 스냅샷의 프롬프트-주입 구획·delimiter 중화가 충분한가? (3) additive marker가 G2를 불변으로 두는가? (4) 교차-대상(다른 kind/phase) 미주입이 확실한가?
+
+---
+
+## Phase 3 리뷰 — 문서 (docs)
+
+> **⚠️ 이 phase(`phase-3-docs`)의 범위는 사용자 문서다.** P1(모델 고정)·P4(stateless)는 이미 커밋됐다. 이 phase의 staged diff는 **문서·버전**만 담는다.
+
+**변경(설계 D8·D10)**:
+- `req.config.json.sample`: `reviewModel`·`reviewReasoningEffort` 추가(기본 gpt-5.6-terra/high).
+- `README.md`·`README.en.md`: config 표에 2키 + 기본값 + `null` 전역-상속 탈출구 + **리뷰 모델·추론강도 고정** 설명 + **재리뷰 stateless** 설명. `verify:overrides` 안내.
+- `CHANGELOG.md`: 0.6.0 항목(모델·추론강도 고정 + stateless; P2/P3 후속 분리 명시).
+- `package.json`: 버전 0.5.0 → 0.6.0.
+
+**검증**: `typecheck` 0 · `req.config.json.sample`이 `loadConfig` 통과(req-config 테스트) · README/sample이 tarball payload에 실림(package-payload 테스트) · `vitest` 전체·`smoke` 그린.
+
+**리뷰 포인트**: (1) sample·README·CHANGELOG가 신규 키·null 탈출구·stateless 동작을 정확히 문서화하는가? (2) enum 값(`none` 포함)이 코드/스키마와 일치하는가? (3) 버전 bump가 적절한가(behavior 변경 있으나 config 하위호환 — minor)?
