@@ -10,6 +10,7 @@
 범위: P2 (설계 D1·D5·D11).
 - config `reviewTimeoutMs`(integer ≥1000, 기본 **600000**, `??` 병합) — `config.ts` 다섯 지점 + `req.config.schema.json`(두 스키마 축). `req-commit.test.ts` `cfgStub` 갱신. (sample·README 문서는 **Phase 5**.)
 - `adapters.ts`: `SafeSpawnOptions.timeoutMs?`. **`killSignal` 내부 고정 `'SIGKILL'`**(config 아님). `safeSpawnSync`가 `spawn.sync`에 timeout 전달 + 판별: `res.error?.code==='ETIMEDOUT'` → timeout 오류 · `res.error?.code==='ENOBUFS'` → 버퍼초과 오류(별도) · 그 외 exit≠0 → 기존. **`safeSpawnSync`는 범용 유지 — stdout 파싱·redaction 안 함**; 실패 시 **분류 태그 + 원시 필드**(`{kind:'timeout'|'buffer-overflow'|'exit', status,signal,stdout,stderr}`)를 담은 오류 throw, **범용 메시지 = exit code만**(stderr·stdout는 error 객체에만, 메시지 미포함 — R8: 메시지에 원문 stderr 넣으면 redaction 없이 유출). `CodexRunner` `(args,input,cwd,opts?)` 확장, `defaultCodexRunner`·`review()` 배선. (`kind`·원시 필드는 Phase 2가 분류 보존·redaction에 사용.)
+- **end-to-end 배선(R11 — 필수)**: `ReviewRequest.timeoutMs` 추가 + `review-codex.ts`의 `callReviewer`가 `cfg.reviewTimeoutMs`를 `ReviewRequest`에 채움 + `review()`가 runner에 전달. 이게 없으면 `{reviewTimeoutMs:1000}` 설정이 runner까지 안 가고 기본값만 쓴다. 회귀: **default·override 각각에서 runner가 받는 timeoutMs 캡처**(config값이 실제 호출까지 도달).
 - 테스트(실-spawn, `process.execPath`): SIGTERM-무시 자식+짧은 timeout → **ETIMEDOUT으로 반환**(POSIX CI에서 SIGKILL 종료 증명) · ENOBUFS 자식 → timeout 아님(구분 문구) · 자발적 signal 종료 → timeout 아님.
 회귀 고정: `|| res.signal` 오판 방지 · 세 실패 유형 구분 문구 · git 경로 무영향.
 

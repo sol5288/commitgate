@@ -1,8 +1,15 @@
-# REQ-2026-013 리뷰 요청 (R11 — design R1~R10 반영)
+# REQ-2026-013 리뷰 요청 (R12 — design R1~R11 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1~R10 반영(각 10/3/3/4/3/1/1/2/1/1).
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1~R11 반영(각 10/3/3/4/3/1/1/2/1/1/2).
+
+## design R11 지적 → 반영 (closure)
+
+| R11 지적 | 반영 |
+|---|---|
+| redaction이 JSON 형태 비밀(`{"token":"abc"}`) 못 막음(key-: 사이 따옴표) | JSON-quoted key/value 규칙 추가. 추출 메시지는 `error.message`를 JSON.parse로 디코드한 값(실제 따옴표)에 적용 → JSON 규칙이 잡음. node 실측 검증(D6) |
+| Phase 1이 `reviewTimeoutMs`를 runner까지 전달 못 함(ReviewRequest·callReviewer 배선이 Phase 3) | timeout **config→DTO→runner end-to-end 배선을 Phase 1로**: `ReviewRequest.timeoutMs`+`callReviewer` cfg 배선 포함, `review-codex.ts`를 Phase 1 변경 파일에. default·override runner 캡처 회귀(D2·Phase 1) |
 
 ## design R10 지적 → 반영 (closure)
 
