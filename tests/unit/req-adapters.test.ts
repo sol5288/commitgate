@@ -88,7 +88,7 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
       writeFileSync(p, '{"status":"STEP_COMPLETE"}') // codex가 쓰는 --output-last-message를 테스트가 대신 기록
       return '{"type":"thread.started","thread_id":"tid-1"}\n{"type":"other"}'
     }
-    const r = createCodexReviewerAdapter(run).review({ prompt: 'PROMPT', schemaPath, resumeThreadId: null, cwd: '/repo' })
+    const r = createCodexReviewerAdapter(run).review({ prompt: 'PROMPT', schemaPath, resumeThreadId: null, cwd: '/repo', model: null, reasoningEffort: null })
     expect(seen!.args).toContain('--sandbox')
     expect(seen!.args).toContain('read-only')
     expect(seen!.args).toContain('--output-schema')
@@ -112,7 +112,7 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
       writeFileSync(p, 'RESP')
       return '' // resume은 thread.started 없음
     }
-    const r = createCodexReviewerAdapter(run).review({ prompt: 'P', schemaPath, resumeThreadId: 'tid-existing', cwd: '/r' })
+    const r = createCodexReviewerAdapter(run).review({ prompt: 'P', schemaPath, resumeThreadId: 'tid-existing', cwd: '/r', model: null, reasoningEffort: null })
     expect(captured.slice(0, 3)).toEqual(['exec', 'resume', 'tid-existing'])
     // R9(REQ-2026-006): resume은 --sandbox 플래그를 거부하므로 read-only를 -c sandbox_mode config override로 강제(spike 검증).
     expect(captured).not.toContain('--sandbox') // 플래그 형태는 여전히 미사용(resume이 거부)
@@ -129,7 +129,7 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
     const rv = createCodexReviewerAdapter(() => {
       throw new Error('codex ENOENT')
     })
-    expect(() => rv.review({ prompt: 'P', schemaPath, resumeThreadId: null, cwd: '/r' })).toThrow(/codex ENOENT/)
+    expect(() => rv.review({ prompt: 'P', schemaPath, resumeThreadId: null, cwd: '/r', model: null, reasoningEffort: null })).toThrow(/codex ENOENT/)
   })
 
   it('[REQ-005] deriveStrictOutputSchema: root.required = properties 전체 키(strict), 나머지 불변', () => {
@@ -146,16 +146,78 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
     // 순수 함수 — 입력 문자열의 원본 required는 그대로(부수효과 없음, 어댑터가 파일 원본을 덮어쓰지 않음)
     expect(JSON.parse(original).required).toEqual(['a', 'b'])
   })
+
+  // ── REQ-2026-013 P1: 리뷰 모델·추론강도 -c 주입 ──
+  const captureArgs = (): { run: CodexRunner; get: () => string[] } => {
+    let captured: string[] = []
+    const run: CodexRunner = (args) => {
+      captured = args
+      const p = args[args.indexOf('--output-last-message') + 1] as string
+      writeFileSync(p, '{"status":"STEP_COMPLETE"}')
+      return '{"type":"thread.started","thread_id":"t"}'
+    }
+    return { run, get: () => captured }
+  }
+  /** args에서 `-c <value>` 쌍의 value가 존재하고 바로 앞이 `-c`인지. */
+  const hasCPair = (args: string[], value: string): boolean => {
+    const i = args.indexOf(value)
+    return i > 0 && args[i - 1] === '-c'
+  }
+
+  it('[P1] exec: model·effort override가 `-c` 쌍으로 주입', () => {
+    const c = captureArgs()
+    createCodexReviewerAdapter(c.run).review({
+      prompt: 'P', schemaPath: writeValidationSchema(), resumeThreadId: null, cwd: '/r',
+      model: 'gpt-5.6-terra', reasoningEffort: 'high',
+    })
+    expect(hasCPair(c.get(), 'model="gpt-5.6-terra"')).toBe(true)
+    expect(hasCPair(c.get(), 'model_reasoning_effort="high"')).toBe(true)
+  })
+
+  it('[P1] resume: model·effort override 주입 + 기존 sandbox_mode `-c` 유지', () => {
+    const c = captureArgs()
+    createCodexReviewerAdapter(c.run).review({
+      prompt: 'P', schemaPath: writeValidationSchema(), resumeThreadId: 'tid', cwd: '/r',
+      model: 'gpt-5.6-terra', reasoningEffort: 'high',
+    })
+    const a = c.get()
+    expect(a.slice(0, 3)).toEqual(['exec', 'resume', 'tid'])
+    expect(hasCPair(a, 'sandbox_mode="read-only"')).toBe(true) // read-only 강제 유지(R9)
+    expect(hasCPair(a, 'model="gpt-5.6-terra"')).toBe(true)
+    expect(hasCPair(a, 'model_reasoning_effort="high"')).toBe(true)
+  })
+
+  it('[P1] null override는 해당 `-c`를 생략(전역 상속)', () => {
+    const c = captureArgs()
+    createCodexReviewerAdapter(c.run).review({
+      prompt: 'P', schemaPath: writeValidationSchema(), resumeThreadId: null, cwd: '/r',
+      model: null, reasoningEffort: null,
+    })
+    const a = c.get()
+    expect(a.some((x) => x.startsWith('model='))).toBe(false)
+    expect(a.some((x) => x.startsWith('model_reasoning_effort='))).toBe(false)
+  })
+
+  it('[P1] 부분 override(model만): effort `-c`는 없음', () => {
+    const c = captureArgs()
+    createCodexReviewerAdapter(c.run).review({
+      prompt: 'P', schemaPath: writeValidationSchema(), resumeThreadId: null, cwd: '/r',
+      model: 'gpt-5.6-terra', reasoningEffort: null,
+    })
+    const a = c.get()
+    expect(hasCPair(a, 'model="gpt-5.6-terra"')).toBe(true)
+    expect(a.some((x) => x.startsWith('model_reasoning_effort='))).toBe(false)
+  })
 })
 
 // ───────────────────────────────────────── FakeReviewerAdapter ──
 describe('Phase 3 — FakeReviewerAdapter(createFakeReviewerAdapter)', () => {
   it('canned 응답 반환 + 받은 요청 기록', () => {
     const rv = createFakeReviewerAdapter({ rawStdout: 'R', lastMessage: 'L', threadId: 'T' })
-    const r = rv.review({ prompt: 'P', schemaPath: '/s', resumeThreadId: 'rt', cwd: '/c' })
+    const r = rv.review({ prompt: 'P', schemaPath: '/s', resumeThreadId: 'rt', cwd: '/c', model: null, reasoningEffort: null })
     expect(r).toEqual({ rawStdout: 'R', lastMessage: 'L', threadId: 'T' })
     expect(rv.requests).toHaveLength(1)
-    expect(rv.requests[0]).toEqual({ prompt: 'P', schemaPath: '/s', resumeThreadId: 'rt', cwd: '/c' })
+    expect(rv.requests[0]).toEqual({ prompt: 'P', schemaPath: '/s', resumeThreadId: 'rt', cwd: '/c', model: null, reasoningEffort: null })
   })
 })
 
@@ -176,17 +238,17 @@ describe('Phase 3 — callReviewer(review-codex 플로 이음새)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'req-cr-'))
     const respPath = join(dir, 'codex-response.json')
     const rv = createFakeReviewerAdapter({ rawStdout: '', lastMessage: '{"status":"STEP_COMPLETE"}', threadId: 'tid-1' })
-    const { threadId } = callReviewer(rv, { prompt: 'P', schemaPath: '/s', resumeThreadId: null, cwd: dir, respPath })
+    const { threadId } = callReviewer(rv, { prompt: 'P', schemaPath: '/s', resumeThreadId: null, cwd: dir, respPath, model: null, reasoningEffort: null })
     expect(threadId).toBe('tid-1')
     expect(readFileSync(respPath, 'utf8')).toBe('{"status":"STEP_COMPLETE"}')
-    expect(rv.requests[0]).toEqual({ prompt: 'P', schemaPath: '/s', resumeThreadId: null, cwd: dir })
+    expect(rv.requests[0]).toEqual({ prompt: 'P', schemaPath: '/s', resumeThreadId: null, cwd: dir, model: null, reasoningEffort: null })
   })
 
   it('threadId 없으면(exec에서 thread.started 누락) fail-closed throw', () => {
     const dir = mkdtempSync(join(tmpdir(), 'req-cr-'))
     const rv = createFakeReviewerAdapter({ rawStdout: '', lastMessage: 'X', threadId: null })
     expect(() =>
-      callReviewer(rv, { prompt: 'P', schemaPath: '/s', resumeThreadId: null, cwd: dir, respPath: join(dir, 'r.json') }),
+      callReviewer(rv, { prompt: 'P', schemaPath: '/s', resumeThreadId: null, cwd: dir, respPath: join(dir, 'r.json'), model: null, reasoningEffort: null }),
     ).toThrow(/thread_id/)
   })
 })

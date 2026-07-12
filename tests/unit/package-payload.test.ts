@@ -86,6 +86,15 @@ describe('[payload] 공개 패키지에 사설 프로젝트 참조가 없다', (
     expect(rels.some((r) => r.startsWith('templates/') && r.split('/').pop()?.startsWith('.'))).toBe(false)
   })
 
+  /**
+   * REQ-2026-013 P1 — `verify:overrides` npm 스크립트가 배포본에서 동작하려면 대상 `.mjs`가 payload에 있어야 한다.
+   * `scripts/req`(디렉터리)만 files에 있으면 `scripts/verify-review-overrides.mjs`는 빠져 publish된 tarball에서 명령이 실패한다.
+   */
+  it('[REQ-2026-013] verify:overrides 스크립트가 payload에 실린다', () => {
+    const rels = files.map((f) => relative(PACKAGE_ROOT, f).replace(/\\/g, '/'))
+    expect(rels).toContain('scripts/verify-review-overrides.mjs')
+  })
+
   it('열거된 payload 파일 중 텍스트는 전부 스캔된다(건너뛴 텍스트 0개)', () => {
     const skipped = files.filter((f) => readTextOrNull(f) === null)
     // 현재 payload는 전부 텍스트다. 바이너리가 생기면 여기서 드러난다.

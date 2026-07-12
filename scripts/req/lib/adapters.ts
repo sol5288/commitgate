@@ -76,6 +76,10 @@ export interface ReviewRequest {
   schemaPath: string
   resumeThreadId: string | null
   cwd: string
+  /** REQ-2026-013 P1: codex `-c model=` override. null = 생략(전역 상속). */
+  model: string | null
+  /** REQ-2026-013 P1: codex `-c model_reasoning_effort=` override. null = 생략. */
+  reasoningEffort: string | null
 }
 export interface ReviewResult {
   rawStdout: string
@@ -136,15 +140,22 @@ export function deriveStrictOutputSchema(schemaText: string): string {
  */
 export function createCodexReviewerAdapter(run: CodexRunner = defaultCodexRunner): ReviewerAdapter {
   return {
-    review({ prompt, schemaPath, resumeThreadId, cwd }) {
+    review({ prompt, schemaPath, resumeThreadId, cwd, model, reasoningEffort }) {
       const tmpDir = mkdtempSync(join(tmpdir(), 'req-codex-'))
       const lastPath = join(tmpDir, 'last.json')
       // 원본(검증 SSOT)을 읽어 strict copy 파생 → temp에 기록 → --output-schema로 전달(archive 검증엔 원본 사용).
       const outputSchemaPath = join(tmpDir, 'output-schema.json')
       writeFileSync(outputSchemaPath, deriveStrictOutputSchema(readFileSync(schemaPath, 'utf8')), 'utf8')
+      // REQ-2026-013 P1: 리뷰 모델·추론강도 override(D2·D2-1). null이면 생략(전역 상속).
+      // 값은 TOML 문자열 리터럴(`sandbox_mode="read-only"`와 동형). 주입 안전은 스키마 제약(model=slug 패턴·effort=enum)이
+      // `"`·개행을 입력단에서 차단하므로 조립부 escaping 불필요 — 이 안전은 config.ts CONFIG_SCHEMA에 의존한다.
+      const overrideArgs: string[] = []
+      if (model) overrideArgs.push('-c', `model="${model}"`)
+      if (reasoningEffort) overrideArgs.push('-c', `model_reasoning_effort="${reasoningEffort}"`)
+      // exec·resume 양쪽에 동일 주입(codex `-c`는 두 서브커맨드 모두 받음 — 실측).
       const args = resumeThreadId
-        ? ['exec', 'resume', resumeThreadId, '-c', 'sandbox_mode="read-only"', '--json', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
-        : ['exec', '--json', '--sandbox', 'read-only', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
+        ? ['exec', 'resume', resumeThreadId, '-c', 'sandbox_mode="read-only"', ...overrideArgs, '--json', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
+        : ['exec', ...overrideArgs, '--json', '--sandbox', 'read-only', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
       const rawStdout = run(args, prompt, cwd)
       const threadId = resumeThreadId ?? parseThreadId(rawStdout)
       const lastMessage = existsSync(lastPath) ? readFileSync(lastPath, 'utf8') : ''

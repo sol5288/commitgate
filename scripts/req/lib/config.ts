@@ -21,6 +21,12 @@ export interface DesignDocs {
   plan: string
 }
 
+/**
+ * codex 리뷰어의 추론강도(REQ-2026-013 P1). 실측 확정(R15): codex의 invalid-effort 거부 메시지가
+ * `none|minimal|low|medium|high|xhigh`를 지원값으로 명시. `null`은 override 생략(전역 상속) 탈출구.
+ */
+export type ReviewReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
 /** 사용자가 `req.config.json`에 줄 수 있는 부분 config(전부 선택). */
 export interface RawConfig {
   ticketRoot?: string
@@ -32,6 +38,10 @@ export interface RawConfig {
   packageManager?: PackageManager
   granularityMaxFiles?: number
   designDocs?: Partial<DesignDocs>
+  /** codex 리뷰 모델(REQ-2026-013 P1). null = `-c model=` 생략(전역 상속). 미지정 = DEFAULTS. */
+  reviewModel?: string | null
+  /** codex 리뷰 추론강도(REQ-2026-013 P1). null = `-c model_reasoning_effort=` 생략. 미지정 = DEFAULTS. */
+  reviewReasoningEffort?: ReviewReasoningEffort | null
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -45,6 +55,8 @@ export interface ResolvedConfig {
   packageManager: PackageManager
   granularityMaxFiles: number
   designDocs: DesignDocs
+  reviewModel: string | null
+  reviewReasoningEffort: ReviewReasoningEffort | null
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -87,6 +99,11 @@ export const DEFAULTS = {
   packageManager: 'pnpm' as PackageManager,
   granularityMaxFiles: 8,
   designDocs: { requirement: '00-requirement.md', design: '01-design.md', plan: '02-plan.md' } as DesignDocs,
+  // REQ-2026-013 P1: 리뷰어 모델·추론강도 고정. 코어 기본은 DEFAULTS 중립성의 의도적 예외(D3) —
+  // 리뷰어 모델은 게이트 무결성 핵심이라 미고정 시 전역 ultra 상속이 곧 결함. 미지원 CLI는 config override/null.
+  // `as ... | null`은 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
+  reviewModel: 'gpt-5.6-terra' as string | null,
+  reviewReasoningEffort: 'high' as ReviewReasoningEffort | null,
 }
 
 const BASENAME_RE = '^[A-Za-z0-9][A-Za-z0-9._-]*$' // basename만(슬래시·백슬래시·선행 `.`(→`..`) 금지)
@@ -104,6 +121,10 @@ export const CONFIG_SCHEMA = {
     branchPrefix: { type: 'string', minLength: 1 }, // 빈 prefix는 D11 무력화 → 금지
     packageManager: { type: 'string', enum: ['pnpm', 'npm', 'yarn'] },
     granularityMaxFiles: { type: 'integer', minimum: 1 },
+    // REQ-2026-013 P1. null=override 생략(전역 상속). model은 slug 패턴(따옴표·개행 거부 → TOML `model="…"` 주입 안전; null은 pattern에 vacuously 통과).
+    reviewModel: { type: ['string', 'null'], pattern: BASENAME_RE },
+    // effort는 실측 확정 enum(R15) + null. null을 enum에 포함해야 `{effort:null}`이 통과(JSON Schema enum은 타입 무관 전체 적용).
+    reviewReasoningEffort: { type: ['string', 'null'], enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', null] },
     designDocs: {
       type: 'object',
       additionalProperties: false,
@@ -184,6 +205,10 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     packageManager: raw.packageManager ?? DEFAULTS.packageManager,
     granularityMaxFiles: raw.granularityMaxFiles ?? DEFAULTS.granularityMaxFiles,
     designDocs: { ...DEFAULTS.designDocs, ...(raw.designDocs ?? {}) },
+    // REQ-2026-013 P1: nullable — 명시적 null 보존을 위해 `!== undefined`(`??` 금지: null이 기본값으로 복귀해 탈출구가 깨짐).
+    reviewModel: raw.reviewModel !== undefined ? raw.reviewModel : DEFAULTS.reviewModel,
+    reviewReasoningEffort:
+      raw.reviewReasoningEffort !== undefined ? raw.reviewReasoningEffort : DEFAULTS.reviewReasoningEffort,
   }
 
   // repo-내부 자원(ticketRoot·schemaPath·reviewPersonaPath)은 **상대경로 + root 하위**만(절대경로·탈출 금지 → portable).

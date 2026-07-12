@@ -374,6 +374,8 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   packageManager: 'pnpm',
   granularityMaxFiles: 8,
   designDocs: { requirement: '00-requirement.md', design: '01-design.md', plan: '02-plan.md' },
+  reviewModel: 'gpt-5.6-terra',
+  reviewReasoningEffort: 'high',
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,

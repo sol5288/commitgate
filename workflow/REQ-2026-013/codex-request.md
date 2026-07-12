@@ -36,3 +36,29 @@
 ## 확정된 방향 (사용자)
 
 범위 = P1+P4(P2·P3 후속) · D3 코어 기본 gpt-5.6-terra 유지 · D4 공식 enum+null · stateless 전용(resume opt-in 후속).
+
+---
+
+## Phase 1 재리뷰 — 검증 증적 (phase review R1·R2·R3 반영)
+
+> **⚠️ 이 phase의 범위는 P1(모델·추론강도 고정) 전용이다.** REQ 전체 범위는 P1+P4지만 **phase로 분해**했다: **`phase-1-model-effort-pin`=P1만**, `phase-2-stateless`=P4(stateless·`isResume=false`·`previous_codex_result` 제거·findings 스냅샷), `phase-3-docs`=문서. 따라서 **이 phase의 staged diff는 P1만 담는다** — resume 기본 동작·`previous_codex_result`가 아직 남아 있는 것은 정상이며, P4는 다음 phase에서 구현·검증한다(설계 D5·D6·Phase 2 계획). (phase-1 R3 지적 — REQ 범위와 phase 범위 혼동 — 반영.)
+
+**phase-1 R1 지적**: arg-캡처 단위 테스트만으론 codex가 `model_reasoning_effort`를 존중하는지 증명 못 함(무시하고 ultra 상속해도 통과) — bogus model·effort의 재현 가능한 live 검증(exec·resume 각각)과 실행 증적 필요.
+**R1 반영**: `scripts/verify-review-overrides.mjs`(`npm run verify:overrides`) 신설 — bogus model·bogus effort를 exec·resume 각각에 주고 codex 거부를 확인(어댑터와 동일한 `-c` 조립 사용). ⚠️ codex CLI+인증 필요라 CI 게이트 아닌 수동/로컬 검증.
+
+**phase-1 R2 지적**: `verify:overrides` npm 스크립트를 등록했으나 `scripts/verify-review-overrides.mjs`가 npm `files` allowlist(=`scripts/req`만)에 없어 배포 tarball에서 명령 실패.
+**R2 반영**: `scripts/verify-review-overrides.mjs`를 `package.json` `files`에 추가(pack에 4.8kB로 포함 확인) + `package-payload.test.ts`에 payload 포함 회귀 단언.
+
+**실행 증적(codex 0.144.1)**:
+```
+PASS  exec  + bogus model  → codex 거부
+PASS  exec  + bogus effort → codex 거부
+PASS  resume + bogus model  → codex 거부
+PASS  resume + bogus effort → codex 거부
+4/4 통과
+```
+즉 codex가 `-c model=`·`-c model_reasoning_effort=`를 **exec·resume 양쪽에서 존중**함이 확인됨(bogus를 400으로 거부 = override가 codex에 도달·해석). **이 phase 리뷰 자체가 고정 `gpt-5.6-terra`/`high`로 실행됐다**(tsx가 staged 코드를 탐).
+
+**게이트 증적**: `typecheck` exit 0 · `vitest run` **전체 통과(exit 0, 321s)** · `smoke` exit 0. (리뷰어 sandbox의 Vitest EPERM은 환경 이슈 — 로컬 결과 첨부.)
+
+**Phase 1 변경**: `config.ts`·`req.config.schema.json`(reviewModel slug·reviewReasoningEffort enum+none+null, `!== undefined` 병합) · `adapters.ts`(`ReviewRequest`+`review()` `-c` 주입) · `review-codex.ts`(`callReviewer` cfg 배선) · 단위 테스트(주입 4·config 6·fixture) · `scripts/verify-review-overrides.mjs`+`package.json`.

@@ -1067,13 +1067,23 @@ function gitStatusEntries(): StatusEntry[] {
  */
 export function callReviewer(
   rv: ReviewerAdapter,
-  opts: { prompt: string; schemaPath: string; resumeThreadId: string | null; cwd: string; respPath: string },
+  opts: {
+    prompt: string
+    schemaPath: string
+    resumeThreadId: string | null
+    cwd: string
+    respPath: string
+    model: string | null
+    reasoningEffort: string | null
+  },
 ): { threadId: string } {
   const { lastMessage, threadId } = rv.review({
     prompt: opts.prompt,
     schemaPath: opts.schemaPath,
     resumeThreadId: opts.resumeThreadId,
     cwd: opts.cwd,
+    model: opts.model,
+    reasoningEffort: opts.reasoningEffort,
   })
   if (!threadId) throw new Error('thread_id 파싱 실패 (codex exec --json에 thread.started 없음)')
   writeFileSync(opts.respPath, lastMessage, 'utf8')
@@ -1211,6 +1221,9 @@ function main(): void {
     resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
     cwd: cfg.root,
     respPath,
+    // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
+    model: cfg.reviewModel,
+    reasoningEffort: cfg.reviewReasoningEffort,
   })
 
   // 사후 리뷰어 무수정 검증: worktree 절대검사 + index(staged tree OID) 불변 (content 기반)

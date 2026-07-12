@@ -36,10 +36,12 @@
     "req:commit": "tsx scripts/req/req-commit.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "verify:overrides": "node scripts/verify-review-overrides.mjs"
   },
   "files": [
     "scripts/req",
+    "scripts/verify-review-overrides.mjs",
     "workflow/machine.schema.json",
     "workflow/req.config.schema.json",
     "workflow/review-persona.md",
