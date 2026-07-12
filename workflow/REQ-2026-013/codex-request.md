@@ -1,8 +1,18 @@
-# REQ-2026-013 리뷰 요청 (R13 — design R1~R12 반영)
+# REQ-2026-013 리뷰 요청 (R13 — design R1~R12 반영 + 선제 감사)
 
 ## 배경
 
 다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1~R12 반영(각 10/3/3/4/3/1/1/2/1/1/2/1).
+
+## 선제 감사(R12 후, 사용자 지시 — 반복 결함-클래스 전수 sweep)
+
+반응형 1건/라운드를 끊기 위해, 리뷰가 지적하던 클래스를 코드로 전수 확인·선제 수정했다(01-design 하위호환·안전 "선제 감사"):
+1. **config→DTO→runner end-to-end**: 3키 모두 배선 확인(reviewTimeoutMs=Phase 1, model/effort=Phase 3), default·override 캡처 회귀.
+2. **프롬프트 prior-state 필드**: `reviewContext`에서 `previous_codex_result`만 prior-state였고 제거(R12). 나머지는 현재 리뷰 바인딩(오염 아님) — 코드로 확인.
+3. **state 필드 보존**: `state.json`은 strict AJV 검증 없음 → `last_review` additive(`findings`/`elided_count`) 안전. 기존 marker 보존.
+4. **비밀 형태 커버리지**: key=val·key:val·**JSON `"k":"v"`**·Bearer(뒤 토큰)·`sk-`·**URL basic-auth** — node 실측(오탐 없음).
+5. **범용 stderr 진단 유지(개선)**: `safeSpawnSync`가 stderr를 **범용 redaction**(npm/pnpm 진단 유지+마스킹) — R8의 "exit만"이 진단을 잃던 것 개선. JSONL 추출만 codex 경계.
+6. **resume-form 주입 dormant**(Phase 4 후) 명시 — Phase 3에서 verify, 후속 opt-in 위해 retain.
 
 ## design R12 지적 → 반영 (closure)
 
