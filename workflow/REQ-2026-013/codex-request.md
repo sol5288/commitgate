@@ -1,4 +1,10 @@
-# REQ-2026-013 리뷰 요청 (R13 — design R1~R12 반영 + 선제 감사)
+# REQ-2026-013 리뷰 요청 (R14 — design R1~R13 반영 + 선제 감사)
+
+## design R13 지적 → 반영 (closure)
+
+| R13 지적 | 반영 |
+|---|---|
+| `safeSpawnSync` 오류 객체가 원시 stdout/stderr를 필드로 실어, 메시지 마스킹해도 상위 로거의 오류 객체 직렬화로 유출 | **두 진입점 분리(R13)**: `safeSpawnCaptured`(throw 안 함, 원시 반환, codex 전용 지역) + `safeSpawnSync`(범용, 깨끗한 오류만 throw — 원시 필드 없음, 메시지=exit+redacted stderr). codex 경계는 captured의 지역 원시로 추출 후 깨끗한 오류 throw. 회귀: throw된 오류 enumerable 필드에 원문 없음(D5·D6) |
 
 ## 배경
 
