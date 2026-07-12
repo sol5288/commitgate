@@ -1,8 +1,14 @@
-# REQ-2026-013 리뷰 요청 (R12 — design R1~R11 반영)
+# REQ-2026-013 리뷰 요청 (R13 — design R1~R12 반영)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1~R11 반영(각 10/3/3/4/3/1/1/2/1/1/2).
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1~R12 반영(각 10/3/3/4/3/1/1/2/1/1/2/1).
+
+## design R12 지적 → 반영 (closure)
+
+| R12 지적 | 반영 |
+|---|---|
+| D8이 findings만 same-target 게이팅, 프롬프트는 여전히 `previous_codex_result`(대상 무관 codex-response.json status)를 무조건 주입 → 대상 간 오염 | **무조건 `previous_codex_result`(`:110`) 라인 제거**. 연속성은 same-target 게이팅된 `previous_findings_to_close`뿐. 교차-대상(다른 kind/phase) → status·findings 어느 것도 미전달 회귀(D8·Phase 4) |
 
 ## design R11 지적 → 반영 (closure)
 
