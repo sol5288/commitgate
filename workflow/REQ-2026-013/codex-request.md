@@ -1,140 +1,24 @@
-# REQ-2026-013 리뷰 요청 (R14 — design R1~R13 반영 + 선제 감사)
-
-## design R13 지적 → 반영 (closure)
-
-| R13 지적 | 반영 |
-|---|---|
-| `safeSpawnSync` 오류 객체가 원시 stdout/stderr를 필드로 실어, 메시지 마스킹해도 상위 로거의 오류 객체 직렬화로 유출 | **두 진입점 분리(R13)**: `safeSpawnCaptured`(throw 안 함, 원시 반환, codex 전용 지역) + `safeSpawnSync`(범용, 깨끗한 오류만 throw — 원시 필드 없음, 메시지=exit+redacted stderr). codex 경계는 captured의 지역 원시로 추출 후 깨끗한 오류 throw. 회귀: throw된 오류 enumerable 필드에 원문 없음(D5·D6) |
+# REQ-2026-013 리뷰 요청 (R15 — 범위 재설정: P1+P4만)
 
 ## 배경
 
-다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨·무응답/exit=1 실패. 원인 P1~P4를 현재 코드에서 대조·실측 확정. design R1~R12 반영(각 10/3/3/4/3/1/1/2/1/1/2/1).
+다운스트림 2차 요청서로 착수. 리뷰 codex 호출이 전역 `ultra`를 상속해 11~13분·토큰 과다·수렴 안 됨. 원인 P1~P4를 코드에서 대조·실측 확정.
 
-## 선제 감사(R12 후, 사용자 지시 — 반복 결함-클래스 전수 sweep)
+**범위 재설정(R14 후)**: 설계 리뷰 14라운드에서 지적이 전부 **P2(timeout)·P3(오류 진단)** 에 집중됐다 — Windows `cmd.exe` wrapper의 프로세스-트리 종료, 비밀-안전 오류 추출이 본질적으로 어렵다. 반면 **P1(모델 고정)·P4(stateless)는 안정**적이고 다운스트림 핵심 고통을 해결한다. 그래서 **P2·P3을 후속 REQ로 분리**하고 이번은 **P1+P4만** 출하한다. (P2/P3의 R1~R14 설계 작업은 이 REQ git 이력에 보존.)
 
-반응형 1건/라운드를 끊기 위해, 리뷰가 지적하던 클래스를 코드로 전수 확인·선제 수정했다(01-design 하위호환·안전 "선제 감사"):
-1. **config→DTO→runner end-to-end**: 3키 모두 배선 확인(reviewTimeoutMs=Phase 1, model/effort=Phase 3), default·override 캡처 회귀.
-2. **프롬프트 prior-state 필드**: `reviewContext`에서 `previous_codex_result`만 prior-state였고 제거(R12). 나머지는 현재 리뷰 바인딩(오염 아님) — 코드로 확인.
-3. **state 필드 보존**: `state.json`은 strict AJV 검증 없음 → `last_review` additive(`findings`/`elided_count`) 안전. 기존 marker 보존.
-4. **비밀 형태 커버리지**: key=val·key:val·**JSON `"k":"v"`**·Bearer(뒤 토큰)·`sk-`·**URL basic-auth** — node 실측(오탐 없음).
-5. **범용 stderr 진단 유지(개선)**: `safeSpawnSync`가 stderr를 **범용 redaction**(npm/pnpm 진단 유지+마스킹) — R8의 "exit만"이 진단을 잃던 것 개선. JSONL 추출만 codex 경계.
-6. **resume-form 주입 dormant**(Phase 4 후) 명시 — Phase 3에서 verify, 후속 opt-in 위해 retain.
+## 변경 요약 (config 키 2)
 
-## design R12 지적 → 반영 (closure)
-
-| R12 지적 | 반영 |
-|---|---|
-| D8이 findings만 same-target 게이팅, 프롬프트는 여전히 `previous_codex_result`(대상 무관 codex-response.json status)를 무조건 주입 → 대상 간 오염 | **무조건 `previous_codex_result`(`:110`) 라인 제거**. 연속성은 same-target 게이팅된 `previous_findings_to_close`뿐. 교차-대상(다른 kind/phase) → status·findings 어느 것도 미전달 회귀(D8·Phase 4) |
-
-## design R11 지적 → 반영 (closure)
-
-| R11 지적 | 반영 |
-|---|---|
-| redaction이 JSON 형태 비밀(`{"token":"abc"}`) 못 막음(key-: 사이 따옴표) | JSON-quoted key/value 규칙 추가. 추출 메시지는 `error.message`를 JSON.parse로 디코드한 값(실제 따옴표)에 적용 → JSON 규칙이 잡음. node 실측 검증(D6) |
-| Phase 1이 `reviewTimeoutMs`를 runner까지 전달 못 함(ReviewRequest·callReviewer 배선이 Phase 3) | timeout **config→DTO→runner end-to-end 배선을 Phase 1로**: `ReviewRequest.timeoutMs`+`callReviewer` cfg 배선 포함, `review-codex.ts`를 Phase 1 변경 파일에. default·override runner 캡처 회귀(D2·Phase 1) |
-
-## design R10 지적 → 반영 (closure)
-
-| R10 지적 | 반영 |
-|---|---|
-| D8이 기존 `state.last_review` marker(`compare_hash`·`count`·`errors`·`at`) 보존을 명시 안 함 → 교체 시 `req:next` G2 회로차단기 깨져 동일 대상 재호출 | **기존 marker 필드 보존 + findings·elided_count를 additive로만** 추가(D8). `req:next` G2 회귀(NEEDS_FIX 재호출 차단·invalid 반복 차단·approved 불변) 고정(Phase 4) |
-
-## design R9 지적 → 반영 (closure)
-
-| R9 지적 | 반영 |
-|---|---|
-| "Phase 3 자기 리뷰 성공 = exec 검증"이 틀림 — prior thread_id로 resume 경로를 타고, 성공은 override 무시(ultra 상속)와 구분 못 함 | 거짓 주장 정정. **override 존중은 bogus-model live 검증**으로: `-c model="__bogus__"` → "Model not found"가 exec·resume 각각 나오면 존중 증명(수동/smoke). exec는 R5 캡처로 이미 확인, resume는 Phase 3(D9) |
-
-## design R8 지적 → 반영 (closure)
-
-| R8 지적 | 반영 |
-|---|---|
-| timeout/overflow 경로가 원문 stderr를 마스킹 없이 노출(분류 보존이 redaction보다 우선) | 범용 메시지 = **exit code만**(stderr 미포함); `defaultCodexRunner`가 **모든 kind에 redacted stderr로 메시지 재구성**(분류 보존 + 전-kind redaction)(D5) |
-| D8 생략 표식을 `findings` 배열에 넣으면 read 검증이 불량 판정 | 표식을 배열 밖 **별도 정수 `elided_count`** 필드로. read 검증은 `elided_count≥0`도 확인. 렌더 시 `(+N more elided)`. 초과 스냅샷이 앞 10건을 실제 주입하는 회귀(D8) |
-
-## design R7 지적 → 반영 (closure)
-
-| R7 지적 | 반영 |
-|---|---|
-| "codex 계약 변경 시 fixture 테스트 실패" 주장이 거짓 — 정적 fixture는 파서 회귀만 검증, live drift 못 잡음 → allowlist 0건으로 P3 조용한 퇴행 | 주장 정정 + **런타임 불일치 진단 추가**: exit≠0인데 stdout 있으나 허용 이벤트 0건이면 원문 생략하되 `[인식 못한 형태 — 계약 변경/버전 불일치 가능]` 표면화(빈 stdout과 구분). 지원 codex 버전 기록(D6·Phase 2) |
-
-## design R6 지적 → 반영 (closure)
-
-| R6 지적 | 반영 |
-|---|---|
-| D6 redaction 정규식 `(?i)…`가 JS 문법 아님(SyntaxError) + `Authorization: Bearer <jwt>`에서 토큰 새어나감 | **JS 정규식(`gi` 플래그)으로 명시 + Bearer 공백 뒤 토큰까지 소비**. `node`로 컴파일·마스킹 실측 검증(D6): `Bearer x.y.z` 전체 마스킹 확인 |
-| obs: Phase 3 3a/3b 파일 배정 미정 | **문서를 최종 Phase 5로 분리** → Phase 3=코드+config 7파일(≤8), 억지 분할 불필요(D10·Phase 5) |
-
-## design R5 지적 → 반영 (closure)
-
-| R5 지적 | 반영 |
-|---|---|
-| D6이 "phase 실측" 의존 → event 형태 다르면 빈-오류 재현 | **실제 codex 실패를 캡처(`error`·`turn.failed`·`item.completed:error` 3형)해 계약을 fixture로 고정**(D6). "구현 후 실측" 의존 제거 |
-| D5 분류 ↔ D6 catch 경계 오류계약 부재 → timeout/ENOBUFS 구분 유실 | `safeSpawnSync`가 **`kind` 태그** 담아 throw, `defaultCodexRunner`는 timeout/overflow는 문구 보존·`exit`만 JSONL 추출(D5) |
-| D8이 write 시점만 검증, read 시 미검증 → 오염 state 주입 | **read 시점 selector·모든 finding 필드 재검증 + 불일치/초과면 전체 미주입(fail-closed)**(D8) |
-
-(R4의 enum 지적은 공식 config-reference 확인으로 반박했고, R5는 재지적하지 않음 — 반박 수용됨.)
-
-## design R4 지적 → 반영 (closure)
-
-| R4 지적 | 반영 |
-|---|---|
-| enum이 `minimal` 허용·`none`/`max` 거부 → 잘못 | **반박**: 공식 config-reference(WebFetch 확인)가 `minimal\|low\|medium\|high\|xhigh`로 명시(`xhigh` model-dependent). R4의 `none\|max`는 문서 불일치 → enum 유지, D4에 검증 근거 명기 |
-| D8 스냅샷 N·byte 상한 미확정 → 대량 재주입 위험 | **경계 확정**: 최대 10건·각 detail ≤300B·총 ≤4KiB·초과 생략 표식(코드 상수·회귀 판정)(D8) |
-| state write가 실제로 원자적 아님(writeFileSync 직접 덮어씀) | **원자성 범위 정밀화**: "같은 `writeState` 호출로 selector·body 동시 기록(desync 제거)"으로 축소. state.json crash-durability(temp+rename)는 기존 공통 이슈 → 별도 REQ(D8) |
-| stderr가 allowlist/검증 없이 8KiB 포함 → 유출 | stderr **best-effort redaction(비밀 패턴 마스킹) + ≤4KiB**, best-effort 한계 명시(D6) |
-
-## design R3 지적 → 반영 (closure)
-
-| R3 지적 | 반영 |
-|---|---|
-| D6 allowlist를 범용 `safeSpawnSync`에 넣어 비-codex 명령(npm/pnpm) stdout도 파싱→유출 | 추출을 **codex 경계 `defaultCodexRunner`로 한정**. `safeSpawnSync`는 stdout 파싱 안 함(원시 필드 담아 throw, 범용 메시지=exit+bounded stderr). stderr도 byte-bounded로 "allowlist만" 충돌 해소(D5·D6) |
-| D8이 selector(state.last_review)와 body(가변 codex-response.json) 동일성 미보장 → 미검증 내용 주입 | 검증된 findings **bounded 스냅샷을 `state.last_review`에 원자적 기록**, 재리뷰는 그 스냅샷만 읽음(가변 파일 안 읽음). 부재 시 fail-closed(D8) |
-| D6 8KiB가 필드별 → 수천 이벤트로 총량 수십 MiB | **총량 상한**: 최대 N 이벤트 + 총 UTF-8 byte ≤ 8KiB, 초과 시 단일 생략 표식(D6) |
-| obs: finding 스키마는 title/summary 아님(severity/file/detail) | 스냅샷 필드를 `{severity, file, detail}`로(D8) |
-| obs: Phase 3 >8파일 | vertical slice 분할 예고(3a reviewModel / 3b effort) |
-
-## design R2 지적 → 반영 (closure)
-
-| R2 지적 | 반영 |
-|---|---|
-| reviewReasoningEffort null 탈출구가 `type:['string','null']`+enum으로 성립 안 함(null이 enum 탈락) | **null을 enum 목록에 포함**: `{type:['string','null'], enum:[...5, null]}`. 회귀: `{effort:null}` 통과·`{effort:'higth'}` 거부(D1·D4) |
-| D6 fallback의 '비-비밀 라인'이 미정의 → 미지 이벤트 유출 | **blacklist→allowlist**: 허용 이벤트·허용 문자열 필드만, 미지/중첩/파싱실패 폐기. 허용 없으면 **raw stdout 미포함**(exit+stderr+생략 표식)(D6) |
-| D8 findings 선택에 승인 경계 없음 → 승인된 결함 재주입 | **`state.last_review` 기반**: `outcome==='needs-fix'`+타깃 일치일 때만 직전 응답 findings 주입, 승인 후 리셋(D8) |
-
-## design R1 지적 → 반영 (closure)
-
-| R1 지적 | 반영 |
-|---|---|
-| P1 timeout이 SIGTERM hard-kill 아님 | **killSignal 내부 고정 SIGKILL**(무시 불가, 실측) + SIGTERM-무시 자식 회귀 테스트. 완전 tree-kill(detached 손자)은 **후속 REQ**로 정직 분리(D5 잔여) |
-| P2 `\|\| res.signal` timeout 오판(ENOBUFS) | timeout 판별 **`err.code==='ETIMEDOUT'`만**, ENOBUFS 별도 오류(실측 확인) |
-| P2 D6 raw 덤프 비밀 유출 | 구조화 오류 이벤트(`turn.failed`/`error`)만 추출, `command_execution`/`aggregated_output` 제외, byte(Buffer.byteLength) 이중 상한 fallback |
-| P2 stateless 연속성 근거 오류(status 한 단어) | 직전 same-target NEEDS_FIX **findings를 bounded 주입**(D8), `readPreviousResult` 대체 |
-| P2 resume가 리뷰 대상 미바인딩(#5) | **resume opt-in을 이번 범위에서 제외** → stateless 전용. target-binding opt-in은 후속 REQ(#5·#6 원천 제거) |
-| P3 모순 검사 위치(dry-run 우회, #6) | opt-in 제거로 `--resume-thread` 자체가 없어 해당 없음 |
-| P2 Phase bootstrap(tsx가 워킹트리) | **Phase 재정렬 timeout→stdout→model-pin→stateless**, model-pin 자기 리뷰=exec 검증, 첫 slice는 사람 감시 회복 |
-| P2 사용자 문서 누락 | `req.config.json.sample`·README(KR/EN)·CHANGELOG 변경 범위 포함(D10) |
-| P3 `eslint0` exit인데 ESLint 없음 | exit 기준을 `typecheck·vitest·smoke`로 |
-| obs: 8KiB byte 기준 | Buffer.byteLength 기준 절단 |
-| obs: cfgStub 갱신 | `req-commit.test.ts` cfgStub 변경 파일에 포함 |
-| obs: `--ignore-user-config` | 후속 후보로 비목표에 기록 |
-
-## 변경 요약 (config 키 3)
-
-- **P2 timeout**(Phase 1): `reviewTimeoutMs`(600s), SIGKILL, ETIMEDOUT 판별.
-- **P3 stdout**(Phase 2): 구조화 오류 추출·비밀 제외·byte 상한. retry 제외.
-- **P1 model-pin**(Phase 3): `reviewModel`(slug, gpt-5.6-terra)·`reviewReasoningEffort`(enum, high), exec·resume `-c` 주입, null 탈출구.
-- **P4 stateless**(Phase 4): `isResume=false`, `--fresh-thread` 보존, bounded findings 주입.
+- **P1 모델·추론강도 고정**: config `reviewModel`(slug, 기본 `gpt-5.6-terra`)·`reviewReasoningEffort`(enum `minimal|low|medium|high|xhigh`+null, 기본 `high`). codex 인자 exec·resume 양쪽에 `-c model=`·`-c model_reasoning_effort=` 주입. `null`=전역 상속 탈출구(`!== undefined` 병합 보존). override 존중은 bogus-model live 검증.
+- **P4 재리뷰 stateless**: `isResume=false`(항상 새 스레드), 무조건 `previous_codex_result` 라인 제거(대상-무관 오염), 직전 same-target NEEDS_FIX findings를 bounded 스냅샷으로 `state.last_review`에 additive 기록·주입(승인 경계·read 검증·G2 marker 보존).
 
 ## 리뷰 포인트
 
-1. **timeout 잔여의 수용성(D5)**: SIGKILL이 직접 codex를 보장하고 detached-손자-파이프를 후속으로 분리한 것이 "무한 대기 금지" 수용기준을 이 REQ 범위에서 충족하는가? codex exec가 파이프-홀딩 손자를 detach하지 않는다는 전제의 위험.
-2. **D6 이벤트 계약 의존**: `turn.failed`/`error`/`stream_error` 추출 + 비밀 이벤트 제외가 codex JSONL 계약과 맞는가? 미스매치 시 fallback(byte 상한 비-비밀 tail)이 안전 저하로 충분한가?
-3. **stateless 연속성(D8)**: bounded findings 주입이 finding closure를 충분히 전달하면서 goalpost drift(누적)를 피하는가? 주입 크기·선택(직전 NEEDS_FIX만)이 타당한가?
-4. **Phase 순서/부트스트랩(D9)**: timeout→stdout→model-pin이 자기-리뷰 함정을 실제로 해소하는가? 첫 slice(timeout)의 자기 리뷰가 timeout 코드 자체를 타는 잔여 위험 — 사람 감시 회복이 충분한가?
-5. **null 병합·주입 안전(D1·D2-1)**: `!== undefined` 병합 + 패턴/enum 입력단 차단으로 TOML 주입을 막는 것이 견고한가?
-6. **범위 규율**: resume opt-in·완전 tree-kill·retry·P5~P7을 후속으로 분리한 경계가 타당한가?
+1. **범위 분리의 타당성**: P2(timeout)·P3(오류 진단)을 후속으로 분리하고 P1+P4만 출하하는 것이 맞는가? P1이 핵심(전역 ultra 상속)을 해결하고, timeout 없는 부트스트래핑을 사람 감시로 커버하는 것이 수용 가능한가?
+2. **`-c` 주입·null 병합**: exec·resume 양쪽 `-c` 주입, `!== undefined` 병합으로 null 탈출구, enum에 null 포함이 견고한가?
+3. **stateless 연속성**: 무조건 `previous_codex_result` 제거 + same-target 게이팅 스냅샷만으로 대상 간 오염이 없고 closure가 유지되는가?
+4. **`last_review` additive**: 기존 marker(compare_hash 등) 보존 + findings/elided_count additive가 `req:next` G2를 불변으로 두는가? read 시점 검증·경계가 충분한가?
+5. **override 존중 검증**: bogus-model live(exec·resume)가 "도구가 인자를 넘김"을 넘어 "codex가 존중함"을 증명하는 올바른 방법인가?
 
-## 확정된 방향 (사용자 검토)
+## 확정된 방향 (사용자)
 
-Fork1=A(SIGKILL+잔여 후속) · Fork2=A(stateless 전용, opt-in 후속) · Fork3=A(bounded findings 주입). D3 코어 기본 gpt-5.6-terra 유지 · D4 공식 enum.
+범위 = P1+P4(P2·P3 후속) · D3 코어 기본 gpt-5.6-terra 유지 · D4 공식 enum+null · stateless 전용(resume opt-in 후속).

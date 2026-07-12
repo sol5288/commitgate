@@ -1,59 +1,52 @@
 # REQ-2026-013 요구사항
 
-리뷰 codex 호출이 사용자 전역 프로필에 위임돼 느리고·토큰이 많고·결과가 수렴하지 않고·무응답/일시 오류에 통째 실패한다. 리뷰어 호출을 도구가 **명시적으로 통제**한다.
+리뷰 codex 호출이 사용자 전역 프로필을 상속해 **느리고·토큰이 많고·재리뷰가 수렴하지 않는다.** 리뷰어의 **모델·추론강도를 고정**하고 재리뷰를 **stateless**로 바꾼다.
+
+> **범위(R14 후 재설정)**: 이번 REQ는 **P1(모델·추론강도 고정) + P4(재리뷰 stateless)** 만 한다. P2(codex timeout)·P3(오류 진단 표면화)는 본질적으로 어려운 문제(Windows `cmd.exe` wrapper의 프로세스-트리 종료, 비밀-안전 오류 추출)라 **별도 후속 REQ**로 분리한다 — 그 설계 작업(R1~R14)은 이 REQ의 git 이력에 보존돼 후속의 출발점이 된다. P1·P4가 다운스트림의 핵심 고통(전역 `ultra` 상속 → 11~13분·토큰 과다·수렴 안 됨)을 해결한다.
 
 ## 배경 — 다운스트림 2차 요청서
 
-palm-backend가 CommitGate를 이식해 설계-전용 REQ 1건(문서 5개)을 4라운드 리뷰하며 관측한 실측치(`D:\Vue\palm-backend\claudedocs\commitgate-perf-request-2026-07-11.md`):
-
-| 라운드 | 결과 | 소요 |
-|---|---|---|
-| 3차(resume) | NEEDS_FIX 9건 | ~11.5분 |
-| 4차-a/-b | codex exit=1(빈 stderr) | 실패 |
-| 4차-c(resume) | NEEDS_FIX 10건 | ~13.1분 |
-| 직접 codex exec | 무응답 | ~75분(사용자 중단) |
-
-findings가 수렴하지 않고 라운드마다 더 깊고 다른 지점으로 이동(11→9→9→10), 프롬프트 26KB.
+palm-backend가 설계-전용 REQ(문서 5개)를 4라운드 리뷰하며 관측: 라운드당 **11~13분**, 누적 토큰 급증, findings가 수렴 대신 심화·이동(11→9→9→10), 프롬프트 26KB. 원인은 전역 `~/.codex/config.toml`의 `model_reasoning_effort="ultra"` 상속(P1)과 resume 기본 누적(P4).
 
 ## 근본 원인 (현재 코드에서 검증됨)
 
-- **P1** 리뷰 codex 인자(`adapters.ts:145-147`)에 `-c model`·`-c model_reasoning_effort` override **없음** → 전역 `ultra` 상속.
-- **P2** `SafeSpawnOptions`(`:20-25`)·`safeSpawnSync`(`:34-47`)에 **timeout 없음** → 무한 블로킹(75분).
-- **P3** 실패 시 `res.stderr`만 읽고 `res.stdout` 버림(`:42-45`) → codex `--json` 오류가 stdout에 있어 **빈 오류**.
-- **P4** `isResume = !opts.freshThread && codex_thread_id 존재`(`review-codex.ts:1182`) → 재리뷰 **기본 resume** → 이전 대화 누적, 수렴 대신 심화.
+- **P1**: `createCodexReviewerAdapter`가 조립하는 codex 인자(`adapters.ts:145-147`)에 `-c model`·`-c model_reasoning_effort` override가 **없어** 전역 `ultra` 프로필을 그대로 상속.
+- **P4**: `isResume = !opts.freshThread && codex_thread_id 존재`(`review-codex.ts:1182`)라 재리뷰가 **기본 resume** → 이전 대화 누적 위에 매 라운드 full 프롬프트를 얹어 토큰 단조 증가·goalpost drift. 또 프롬프트의 `previous_codex_result`(`:110`)가 `readPreviousResult`(`:532-541`, `codex-response.json` status)를 **대상 무관 무조건** 싣는다.
 
 ## 목표
 
 1. 리뷰 codex 호출의 **모델·추론강도를 도구가 명시 고정**한다. 기본값 `gpt-5.6-terra` / `high`, `req.config.json`으로 override(`null`=전역 상속 탈출구).
-2. codex 호출에 **timeout**을 걸어 무응답을 fail-closed로 끝낸다(기본 600s). **`killSignal='SIGKILL'`로 hard-kill**(무시 불가) — SIGTERM은 POSIX에서 자식이 무시하면 timeout 후에도 반환하지 않는다(실측·Node 계약).
-3. 실패 시 codex JSONL의 **구조화된 오류 이벤트(`turn.failed`/`error`)를 추출**해 오류에 넣는다(빈-오류 제거). raw 덤프는 비밀 유출 위험이라 하지 않는다.
-4. 재리뷰를 **stateless(새 스레드 + 현재 스냅샷)로 고정**한다. 직전 same-target NEEDS_FIX findings를 **bounded로 프롬프트에 주입**해 closure를 잃지 않는다.
+2. 재리뷰를 **stateless(항상 새 스레드)** 로 고정한다. 대상 간 상태 오염을 없애고, 직전 same-target NEEDS_FIX findings를 **bounded로 프롬프트에 주입**해 closure를 잃지 않는다.
 
 ## 비목표 (이번 REQ에서 하지 않음 — 각 후속 REQ)
 
-- **resume opt-in.** 재리뷰 연속성이 필요할 때만 이전 스레드를 재개하는 opt-in은, 전역 `codex_thread_id`가 리뷰 대상(kind/phase)에 바인딩돼야 안전한데(안 그러면 design→phase-1 재개로 옛 컨텍스트 누적 재발) 이는 state 스키마 변경을 요한다. 이번 REQ는 **stateless 전용**으로 고정하고, target-binding을 갖춘 resume opt-in은 별도 REQ.
-- **완전한 process-tree hard-kill.** SIGKILL은 **직접 자식(codex)** 을 확실히 죽인다(실측). codex가 파이프를 쥔 손자를 detach하는 병적 경로에선 POSIX `spawnSync`가 EOF를 더 기다릴 수 있다 — 완전 차단은 async spawn + process-group kill(동기 아키텍처 대개조)이라 후속. codex exec는 그런 손자를 detach하지 않음(phase 확인).
-- **외부 bounded retry.** usage-limit·model-not-found까지 재호출하고 timeout과 곱해 비용 배증, retryable(network/5xx) 분류 계약 부재, codex provider에 이미 HTTP retry 존재. D6(원인 표면화)로 표본을 모은 뒤 "retryable 분류 + backoff/jitter"를 별도 REQ.
-- **P5 컨텍스트 스코핑·P6 phase durability·P7 worktree 선검사.** 각 독립 REQ.
-- **`--ignore-user-config`.** 전역 plugin/feature 상속을 끊는 codex 공식 확장점(관찰). `null` 상속 계약과의 상호작용 검토가 필요 — 후속 후보로 기록.
+- **P2 codex timeout.** 무응답(75분 관측)을 fail-closed로 끝내는 것. 어려운 이유: Windows에서 `codex`는 `.cmd` shim이라 cross-spawn이 `cmd.exe /c`로 감싼다 → `spawnSync` timeout의 SIGKILL이 `cmd.exe`만 죽이고 codex는 생존. 진짜 종료는 async spawn + 프로세스-트리 kill(job object/taskkill /T)이 필요. **별도 REQ**(R1~R14 설계 이력 참조).
+- **P3 오류 진단 표면화.** codex 실패 시 빈-오류를 없애고 사유를 안전하게 표면화. 어려운 이유: 비밀-안전한 구조화 추출(allowlist·redaction·오류 객체 유출 차단)이 미묘. **별도 REQ**(R1~R14 설계 이력 참조 — 실측 이벤트 계약·JS redaction·safeSpawnCaptured 경계 등).
+- **resume opt-in**(target-binding 필요), **retry**, **P5 컨텍스트 스코핑·P6 phase durability·P7 worktree 선검사**, **`--ignore-user-config`**.
 
 ## 수용 기준
 
+**P1(모델·추론강도 고정)**
 - 조립된 codex 인자(exec·resume 양쪽)에 `-c model="<reviewModel>"` `-c model_reasoning_effort="<reviewReasoningEffort>"`가 포함된다. 주입 `CodexRunner`로 실제 args를 캡처해 단언(도구가 인자를 넘김).
-- **override를 codex가 실제로 존중함**을 bogus-model live 검증으로 확인(수동/smoke 1회): `-c model="__bogus__"` on **exec·resume 각각** → codex가 "Model … not found"(도달·해석 증명). 자기-리뷰 성공은 override 무시(ultra 상속)와 구분 못 하므로 이 검증이 필수(R9). exec는 R5 캡처로 이미 확인.
-- 미설정 시 `gpt-5.6-terra`/`high` 해소. **명시적 `null`은 기본값으로 복귀하지 않는다**(`!== undefined` 병합) → 해당 `-c` 생략(전역 상속). 회귀 테스트로 고정.
-- `reviewReasoningEffort`는 **enum**(`minimal|low|medium|high|xhigh` **+ null**)이라 오타는 **config-load에서 거부**되고, `null`은 통과한다(enum 목록에 null 포함 — 아니면 탈출구가 깨짐, R2). `reviewModel`은 **slug 패턴**이라 따옴표·개행을 거부(TOML `model="…"` 주입 안전; null은 pattern에 vacuously 통과).
-- `reviewTimeoutMs`(기본 600s) 초과 시 명확한 timeout 오류(`err.code==='ETIMEDOUT'` 기준)로 throw. **maxBuffer 초과(ENOBUFS)를 timeout으로 오인하지 않는다.** **SIGTERM을 무시하는 자식도 timeout에 종료**된다(SIGKILL) — 회귀 테스트.
-- codex exit≠0 오류는 **codex 경계(`defaultCodexRunner`)에서** **allowlist**로만 표면화한다(범용 `safeSpawnSync`는 stdout 파싱 안 함 — 비-codex 명령 유출 방지). **실측 캡처로 고정한 오류 이벤트 3형**(`error`→message · `turn.failed`→error.message · `item.completed{item.type:error}`→message)의 문자열만, **총량 상한**(최대 N 이벤트 + 총 UTF-8 byte ≤ 8KiB, 초과 생략 표식). timeout/buffer-overflow는 **분류 보존**(JSONL 안 붙임). 미지·중첩·파싱 실패는 **폐기**. 허용 이벤트 0개면 raw stdout 미포함 — 단 **stdout이 비어있음 vs 있는데 인식 0건을 구분**해, 후자는 원문 생략하되 `[인식 못한 형태 — 계약 변경/버전 불일치 가능]` **불일치 진단을 표면화**(P3 조용한 퇴행 방지, R7). **throw되는 오류 객체 어디에도(메시지·enumerable 필드) 원시 stdout/stderr가 남지 않는다**(R13 — 상위 로거 직렬화 유출 차단; 원시는 codex 전용 지역 변수로만). 추출 메시지·stderr 모두 **best-effort redaction(JS 정규식·Bearer 토큰까지·JSON `"k":"v"`·URL basic-auth) + byte-bounded**(byte 상한은 기밀성 보장 아님). **stderr는 `safeSpawnSync`가 범용 redaction**(모든 명령 — npm/pnpm 진단 유지+마스킹), 그래서 timeout·buffer-overflow·exit 어느 kind든 stderr가 마스킹된다(분류는 보존, 감사 개선).
-- 재리뷰가 **항상 새 스레드**다(`codex_thread_id`가 있어도 resume 안 함). `--fresh-thread`의 blocked-마커 회복은 보존. 검증된 findings의 **bounded 스냅샷을 `state.last_review`에 같은 `writeState`로 기록**(가변 `codex-response.json` 아님 — selector/body desync 방지). 스냅샷 경계 확정: **최대 10건·각 detail ≤300B·총 ≤4KiB**(초과분은 배열 밖 정수 `elided_count`; 렌더 시 `(+N more elided)`). read 검증이 findings + `elided_count`를 확인. **기존 `last_review` marker(`compare_hash`·`count`·`errors`·`at`)를 보존한 채 additive로만 기록** — `req:next` G2(NEEDS_FIX 재호출 차단 등) 동작 불변(R10). 재리뷰는 `last_review`가 직전 same-target NEEDS_FIX일 때만 주입, **승인 후 재주입 안 함**(경계). (state.json 자체 crash-durability는 기존 이슈 — 별도 REQ.)
-- **Phase 순서**: timeout → stdout → model-pin → stateless → **문서(Phase 5)**. model-pin 리뷰가 timeout·stdout 안전망 뒤에 온다(bootstrap 함정 해소). 문서는 코드 phase에서 분리(≤8파일).
-- 새 config 키가 **두 스키마 축**(`CONFIG_SCHEMA` + `workflow/req.config.schema.json`)에 있고 `req-config.test.ts` 가드 통과. `req.config.json.sample`·README(KR/EN)·CHANGELOG에 신규 키·`null` 탈출구 문서화.
-- `npm run typecheck`·`npm test`(vitest)·`npm run smoke` 그린. (저장소에 ESLint 없음 — exit 기준은 이 셋.)
+- 미설정 시 `gpt-5.6-terra`/`high` 해소. **명시적 `null`은 기본값으로 복귀하지 않는다**(`!== undefined` 병합) → 해당 `-c` 생략(전역 상속). 회귀로 고정.
+- `reviewReasoningEffort`는 **enum**(`minimal|low|medium|high|xhigh` **+ null**)이라 오타는 config-load에서 거부, `null`은 통과. `reviewModel`은 **slug 패턴**이라 따옴표·개행 거부(TOML `model="…"` 주입 안전; null은 vacuously 통과).
+- **override를 codex가 실제로 존중함**을 bogus-model live 검증(수동/smoke 1회): `-c model="__bogus__"` on exec·resume 각각 → "Model … not found"(도달·해석 증명). 자기-리뷰 성공은 override 무시와 구분 못 하므로 필수. exec는 R5 캡처로 이미 확인.
 
-## 조사 결과 — 코드 대조·실측으로 확정
+**P4(재리뷰 stateless)**
+- 재리뷰가 **항상 새 스레드**다(`codex_thread_id`가 있어도 resume 안 함). `--fresh-thread`의 blocked-마커 회복은 보존.
+- 무조건 `previous_codex_result` 라인 **제거**(대상 무관 status 주입 → 오염). 연속성은 same-target 게이팅된 스냅샷뿐.
+- 검증된 findings **bounded 스냅샷을 `state.last_review`에 additive로 기록**(기존 marker `compare_hash`·`count`·`errors`·`at` 보존 → `req:next` G2 불변). 경계: **최대 10건·각 detail ≤300B·총 ≤4KiB**(초과분은 배열 밖 정수 `elided_count`). read 시점 검증 + 불일치/초과면 전체 미주입(fail-closed).
+- `last_review`가 직전 same-target NEEDS_FIX일 때만 주입, **승인 후 재주입 안 함**. 직전이 다른 kind/phase면 status·findings 어느 것도 미전달.
 
-- **spawnSync 실측**(Node20): `SIGTERM 무시 자식 + timeout` → SIGKILL이라야 종료·`err.code=ETIMEDOUT`. `maxBuffer 초과` → `err.code=ENOBUFS, signal=SIGKILL`. ∴ timeout 판별은 **ETIMEDOUT 기준**(초안의 `|| res.signal`은 ENOBUFS 오판).
-- **`readPreviousResult`(`review-codex.ts:532-541`)는 `v.status` 한 단어만 반환** → stateless가 findings를 잃는다. bounded findings 주입으로 보완(목표 4).
-- **어댑터는 config 없는 모듈-레벨 싱글턴**(`review-codex.ts:43`) → config를 `ReviewRequest` DTO로 엮는다.
-- **`DEFAULTS` 중립성 원칙**(`config.ts:71-74`)과 `reviewModel="gpt-5.6-terra"`는 긴장 → 의도적 예외로 기록(리뷰어도 모델·enum 유효 확인).
-- **config 스키마 두 축** + `req.config.json.sample`·README 2종 존재 → 신규 키는 이 전부를 거친다. `ResolvedConfig` 필드 추가 시 `req-commit.test.ts`의 `cfgStub`도 갱신해야 typecheck 통과.
+**공통**
+- 새 config 키가 **두 스키마 축**(`CONFIG_SCHEMA` + `workflow/req.config.schema.json`) + `req.config.json.sample`·README(KR/EN)에. `req-config.test.ts` 가드.
+- `npm run typecheck`·`npm test`(vitest)·`npm run smoke` 그린. (저장소에 ESLint 없음.)
+
+## 조사 결과 — 코드 대조로 확정
+
+- 어댑터는 config 없는 모듈-레벨 싱글턴(`review-codex.ts:43`) → config를 `ReviewRequest` DTO로 엮는다.
+- `reviewReasoningEffort` 유효값은 공식 config-reference가 `minimal|low|medium|high|xhigh`로 명시(WebFetch 확인). `reviewModel="gpt-5.6-terra"`는 유효 공식 모델.
+- `DEFAULTS` 중립성 원칙(`config.ts:71-74`)과 `reviewModel="gpt-5.6-terra"`는 긴장 → 의도적 예외로 기록.
+- `readPreviousResult`(`:532-541`)는 `v.status` 한 단어만 반환 → stateless가 finding 연속성을 잃음. bounded 스냅샷 주입으로 보완.
+- `state.json`은 strict AJV 검증이 없어 `last_review` additive(`findings`/`elided_count`)가 안전. `req:next` G2가 `last_review.compare_hash`로 재호출을 차단하므로 기존 marker 보존 필수.
+- `ResolvedConfig` 필드 추가 시 `req-commit.test.ts`의 `cfgStub`도 갱신해야 typecheck 통과.
