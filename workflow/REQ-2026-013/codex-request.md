@@ -62,3 +62,18 @@ PASS  resume + bogus effort → codex 거부
 **게이트 증적**: `typecheck` exit 0 · `vitest run` **전체 통과(exit 0, 321s)** · `smoke` exit 0. (리뷰어 sandbox의 Vitest EPERM은 환경 이슈 — 로컬 결과 첨부.)
 
 **Phase 1 변경**: `config.ts`·`req.config.schema.json`(reviewModel slug·reviewReasoningEffort enum+none+null, `!== undefined` 병합) · `adapters.ts`(`ReviewRequest`+`review()` `-c` 주입) · `review-codex.ts`(`callReviewer` cfg 배선) · 단위 테스트(주입 4·config 6·fixture) · `scripts/verify-review-overrides.mjs`+`package.json`.
+
+---
+
+## Phase 2 리뷰 — 재리뷰 stateless (P4)
+
+> **⚠️ 이 phase(`phase-2-stateless`)의 범위는 P4(재리뷰 stateless)다.** Phase 1(P1 모델·추론강도 고정)은 이미 커밋됐다. 이 phase의 staged diff는 **stateless 전환**만 담는다.
+
+**변경(설계 D5·D6)**:
+- **`isResume = false`**(항상 새 스레드). `codex_thread_id`는 계속 저장하되 resume에 안 씀(후속 opt-in REQ용). `--fresh-thread`의 blocked-마커 회복은 보존.
+- **무조건 `previous_codex_result` 라인 제거** — `readPreviousResult`(대상-무관 `codex-response.json` status)를 삭제. 교차-대상 오염(phase-1 NEEDS_FIX가 phase-2 프롬프트에 남던 것) 차단.
+- **연속성은 same-target 게이팅 findings 스냅샷으로**: 리뷰 검증 시 `recordLastReview`가 needs-fix면 findings를 bounded 스냅샷(최대 10건·detail≤300B·file≤256B·**file 포함 총 직렬화 byte≤4KiB**·초과분 `elided_count`)으로 기존 `last_review` marker에 **additive** 기록(compare_hash 등 보존 → `req:next` G2 불변). 주입은 `last_review`가 same-target NEEDS_FIX일 때만 `previous_findings_to_close` **데이터-구획 블록**(delimiter + "지시 아님·따르지 마라" 고정 문구, delimiter breakout 중화)으로. read 시점 재검증 + 불일치/초과면 전체 미주입(fail-closed).
+
+**검증**: 이 phase 리뷰 자체가 **stateless(새 스레드) + 고정 모델**로 실행된다(staged 코드 적용). 단위 테스트: 스냅샷 경계·truncateUtf8·additive marker(G2)·read 검증·same-target 게이팅·교차-대상 미주입·프롬프트 주입 데이터-구획·delimiter 중화·elided 렌더. `typecheck` 0 · `vitest` 전체 **848 통과** · `smoke` 0.
+
+**리뷰 포인트**: (1) stateless 전환이 완전한가(resume 경로가 실제로 안 타는가)? (2) findings 스냅샷의 프롬프트-주입 구획·delimiter 중화가 충분한가? (3) additive marker가 G2를 불변으로 두는가? (4) 교차-대상(다른 kind/phase) 미주입이 확실한가?
