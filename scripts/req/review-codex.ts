@@ -1203,8 +1203,8 @@ export function callReviewer(
   return { threadId }
 }
 
-function main(): void {
-  const opts = parseArgs(process.argv.slice(2))
+export function main(argv: string[] = process.argv.slice(2)): void {
+  const opts = parseArgs(argv)
   const cfg = loadConfig({ root: opts.root })
   gitAdapter = createGitAdapter(cfg.root) // 모든 git 호출 cwd = config.root
   const ticketDir = resolveTicketDir(opts, cfg)
@@ -1408,6 +1408,16 @@ function main(): void {
   )
   printOutcomeDetails(outcome, result)
   if (exitCode !== 0) process.exit(exitCode)
+}
+
+/** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). 직접 `tsx` 실행은 아래 `if (isMain) main()`이 그대로 담당(하위호환). */
+export function runCli(argv: string[]): void {
+  try {
+    main(argv)
+  } catch (err) {
+    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
+    process.exitCode = 1
+  }
 }
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href

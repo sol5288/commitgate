@@ -645,8 +645,8 @@ function designFinalize(args: {
   console.log('[req:commit] ✅ design-finalize 완료 — approvals.jsonl 기록')
 }
 
-function main(): void {
-  const opts = parseArgs(process.argv.slice(2))
+export function main(argv: string[] = process.argv.slice(2)): void {
+  const opts = parseArgs(argv)
   const cfg = loadConfig({ root: opts.root })
   gitRoot = cfg.root // runDoctor(pnpm/npm) cwd
   pkgManager = cfg.packageManager
@@ -789,6 +789,16 @@ function main(): void {
   // 5) evidence-finalize(멱등) + 소비(마지막).
   finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state, ev, existing, archiveNames, validPhaseIds, sourceSha })
   console.log(`[req:commit] ✅ 완료 — source=${sourceSha.slice(0, 8)} · evidence-finalize · commit_allowed 소비됨`)
+}
+
+/** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). 직접 `tsx` 실행은 아래 `if (isMain) main()`이 그대로 담당(하위호환). */
+export function runCli(argv: string[]): void {
+  try {
+    main(argv)
+  } catch (err) {
+    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
+    process.exitCode = 1
+  }
 }
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href

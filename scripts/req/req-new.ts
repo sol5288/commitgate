@@ -138,8 +138,8 @@ export function parseArgs(argv: string[]): Opts {
   return o
 }
 
-function main(): void {
-  const o = parseArgs(process.argv.slice(2))
+export function main(argv: string[] = process.argv.slice(2)): void {
+  const o = parseArgs(argv)
   // ⚠️ loadConfig 이전이라 pm을 모른다 → pm-중립 bare 표기(DEFAULTS 폴백 금지, DEC-011-1).
   if (!o.slug) throw new Error('slug 필요 (예: req:new camera-hardfail --run)')
   validateSlug(o.slug)
@@ -207,6 +207,16 @@ function main(): void {
   console.log(`  branch : ${branch} (체크아웃됨)`)
   console.log(`  ticket : ${ticketRel}/  (스캐폴드 커밋)`)
   console.log(`  다음   : ${nextStepHint(cfg.packageManager, reqId)}`)
+}
+
+/** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). 직접 `tsx` 실행은 아래 `if (isMain) main()`이 그대로 담당(하위호환). */
+export function runCli(argv: string[]): void {
+  try {
+    main(argv)
+  } catch (err) {
+    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
+    process.exitCode = 1
+  }
 }
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
