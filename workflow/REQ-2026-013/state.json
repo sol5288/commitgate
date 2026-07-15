@@ -3,14 +3,72 @@
   "branch": "feat/req-2026-013-review-codex-hardening",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f54f1-d700-7c00-a3d7-ef7a05a2aa05",
+  "review_base_sha": "21709bf2dab42ba6b38794d038b315e235039919",
+  "review_diff_hash": "680caf8b0766d4750dbbdbdc56f7bb48fd2fbd0a",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "acd45ebb7536aa6fb24f4455b5a9889e763108c9315c93c40437e0ec4d3f87ef",
+  "current_phase": "phase-3-docs",
+  "phases": [
+    {
+      "id": "phase-1-model-effort-pin",
+      "approved": true
+    },
+    {
+      "id": "phase-2-stateless",
+      "approved": true
+    },
+    {
+      "id": "phase-3-docs",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-docs",
+    "outcome": "approved",
+    "compare_hash": "11d5fc9cca52566f74602b54ea4ad6837f848274261048614386cc8a28b63704",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-12T06:10:35.298Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-013/responses/design-r17-approved.json",
+    "response_sha256": "20255bd53e0fee43053020a8eefe2b6aad211c78f692e33d5ebaac1392af2584",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "e8faf70754383c59e4e195276dc6f418f083374e",
+    "codex_thread_id": "019f540a-d494-74d1-862a-1e6954f506c7",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-12T01:58:31.510Z",
+    "design_hash": "acd45ebb7536aa6fb24f4455b5a9889e763108c9315c93c40437e0ec4d3f87ef"
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "d34e9f592b436f4c927f57c06e2954be5d668b7a",
+      "phase_id": "phase-1-model-effort-pin",
+      "consumed_by_commit_sha": "f01867d8d604f9a441f7502a2680022f6b4c3105",
+      "approval_consumed_at": "2026-07-12T02:56:52.081Z"
+    },
+    {
+      "approved_tree": "314c9c0a44d93b85529cc10cce602465328917ac",
+      "phase_id": "phase-2-stateless",
+      "consumed_by_commit_sha": "a753ea9869298f599f6df24db937ed93759721b0",
+      "approval_consumed_at": "2026-07-12T06:01:44.247Z"
+    },
+    {
+      "approved_tree": "680caf8b0766d4750dbbdbdc56f7bb48fd2fbd0a",
+      "phase_id": "phase-3-docs",
+      "consumed_by_commit_sha": "9c9fa571ec07e590fdf013c1151aecfa2cc8f7b8",
+      "approval_consumed_at": "2026-07-12T06:13:08.564Z"
+    }
+  ]
 }
