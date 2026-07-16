@@ -182,6 +182,75 @@ describe('[uninstall] 읽기 전용 계약', () => {
       expect(src).not.toContain(banned)
     }
   })
+
+  /**
+   * REQ-2026-014 R4: Stage B에서 런타임 제거는 `npm uninstall -D commitgate`가 담당하고, uninstall planner는
+   * 그것을 **문자열로 출력만** 한다. 파일 헤더가 "npm을 spawn하지 않는다"고 선언하지만 그 절은 지금까지
+   * **테스트로 고정돼 있지 않았다** — 그리고 런타임 제거 안내를 다루는 이 phase가 바로 spawn 유혹이 생기는 지점이다.
+   *
+   * git 호출은 주입된 `GitAdapter`(read-only allowlist — 위 테스트가 검증)를 통과한다. 이 파일이 **직접**
+   * 프로세스를 띄우면 그 경계가 무너진다.
+   */
+  it('bin/uninstall.ts 가 프로세스를 직접 띄우지 않는다 — npm spawn 금지(구조적 불변식)', () => {
+    const src = readFileSync(join(PACKAGE_ROOT, 'bin', 'uninstall.ts'), 'utf8')
+    expect(src).not.toMatch(/from\s+['"]node:child_process['"]/)
+    expect(src).not.toMatch(/require\(\s*['"](?:node:)?child_process['"]\s*\)/)
+    // `spawn`·`exec` 단어 자체는 금지하지 않는다 — 주석·`cross-spawn` 문자열·GitAdapter의 `git.exec`가 정당하게 쓴다.
+    for (const banned of ['execFileSync', 'execSync', 'spawnSync', 'safeSpawnSync', 'spawn(']) {
+      expect(src, `${banned} 은 프로세스 실행 API다 — planner는 읽기 전용이어야 한다`).not.toContain(banned)
+    }
+  })
+})
+
+/** REQ-2026-014 R4 — Stage B 런타임 제거 안내(읽기 전용: 안내만, 실행 안 함). */
+describe('[uninstall][Stage B] 런타임 패키지 제거 안내', () => {
+  it('devDependencies.commitgate 선언이 있으면 `npm uninstall -D commitgate` 를 안내한다', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const plan = planUninstall({ dir })
+      expect(plan.facts.commitgateDevDependency).toBe('^0.6.0')
+      const text = renderPlan(plan)
+      expect(text).toContain('npm uninstall -D commitgate')
+      expect(text).toContain('node_modules/commitgate')
+      // 안내일 뿐 실행이 아니다 — planner는 아무것도 바꾸지 않는다.
+      expect(text).toContain('읽기 전용')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('선언이 없으면 Stage B 런타임이 아니라고 표시한다(잘못된 제거 명령을 내지 않는다)', () => {
+    const dir = tmpRepo()
+    try {
+      installStageA(dir)
+      // Stage A 픽스처에서 commitgate devDep 선언을 제거 — 실제 Stage A repo의 상태.
+      const pkgPath = join(dir, 'package.json')
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { devDependencies?: Record<string, string> }
+      delete pkg.devDependencies?.['commitgate']
+      writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
+      const plan = planUninstall({ dir })
+      expect(plan.facts.commitgateDevDependency).toBeNull()
+      const text = renderPlan(plan)
+      expect(text).toContain('Stage B 런타임 패키지로 설치된 상태가 아닙니다')
+      expect(text).not.toContain('npm uninstall -D commitgate')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('안내를 내도 대상 tree는 그대로다(읽기 전용 — 전후 snapshot 동일)', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      commitAll(dir)
+      const before = snapshot(dir)
+      renderPlan(planUninstall({ dir }))
+      expect(snapshot(dir)).toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
 })
 
 describe('[uninstall] ambiguous 아티팩트는 자동 제거 대상이 아니다', () => {

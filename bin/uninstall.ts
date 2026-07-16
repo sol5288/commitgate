@@ -97,6 +97,13 @@ export interface UninstallFacts {
    * 사용자가 직접 넣은 파일일 수 있으므로 제거 후보에 넣지 않고, 디렉터리 통삭제도 제안하지 않는다.
    */
   unknownKitFiles: string[]
+  /**
+   * 대상 `package.json`의 `devDependencies.commitgate` **선언값**(없으면 null) — REQ-2026-014 R4.
+   *
+   * Stage B 런타임 제거 안내(`npm uninstall -D commitgate`)를 낼지 판정하는 데만 쓴다. **진단용 표시**이고
+   * 이 값으로 무엇을 삭제하지 않는다. 값의 형태는 검증하지 않는다(`file:…tgz`·`workspace:*` 전부 정당한 설치 형태).
+   */
+  commitgateDevDependency: string | null
 }
 
 export type UninstallMode = 'not-installed' | 'uncommitted' | 'committed' | 'mixed'
@@ -338,6 +345,9 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
   const packageJsonDirty = existsSync(pkgAbs) && git.exec(['status', '--porcelain', '--', 'package.json']).length > 0
   const installed = tool.some((t) => t.present) || ambiguous.some((a) => a.present)
 
+  // Stage B 런타임 제거 안내용(REQ-2026-014 R4) — 선언값 표시만. 값 형태는 검증하지 않는다.
+  const commitgateDevDependency = devDeps['commitgate'] ?? null
+
   return {
     targetRoot,
     ticketRoot,
@@ -350,6 +360,7 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
     evidence,
     info,
     unknownKitFiles,
+    commitgateDevDependency,
   }
 }
 
@@ -464,7 +475,11 @@ export function renderPlan(plan: UninstallPlan): string {
   L.push(...renderRevertSection(plan))
   L.push('')
 
-  L.push('## 5. 잔여물 경고')
+  L.push('## 5. 런타임 패키지 제거 (Stage B)')
+  L.push(...renderRuntimeRemovalSection(plan))
+  L.push('')
+
+  L.push('## 6. 잔여물 경고')
   L.push('   - git은 빈 디렉터리를 추적하지 않습니다. 위 파일을 지운 뒤 `git status`가 clean이어도')
   L.push(`     빈 디렉터리(scripts/ · ${facts.ticketRoot}/ · .claude/ · .cursor/)가 파일시스템에 남을 수 있습니다.`)
   L.push('   - node_modules의 ajv · cross-spawn · tsx 는 다른 패키지도 쓸 수 있어 제거를 권하지 않습니다.')
@@ -472,6 +487,30 @@ export function renderPlan(plan: UninstallPlan): string {
 
   L.push(renderNpxSection())
   return L.join('\n')
+}
+
+/**
+ * **Stage B 런타임 제거 안내**(REQ-2026-014 R4). Stage B에서 실행 코드는 이 저장소가 아니라
+ * `node_modules/commitgate`에 있으므로, 런타임 제거는 **package manager의 책임**이다.
+ *
+ * ⚠️ **문자열로 출력만 한다 — npm을 spawn하지 않는다.** 이 파일의 읽기 전용 불변식이다(`node:fs` 조회 API만 쓰고
+ *    `node:child_process`를 import하지 않는다). 이 안내를 실제 실행으로 바꾸지 말 것.
+ */
+function renderRuntimeRemovalSection(plan: UninstallPlan): string[] {
+  const declared = plan.facts.commitgateDevDependency
+  const L: string[] = []
+  if (declared !== null) {
+    L.push(`   package.json 에 devDependencies.commitgate = "${declared}" 가 선언돼 있습니다(Stage B 런타임).`)
+    L.push('   실행 코드(scripts/req/**)는 이 저장소가 아니라 node_modules/commitgate 에 있습니다.')
+    L.push('   런타임 제거는 package manager 가 담당합니다 — 이 명령은 실행하지 않습니다. 직접 실행하세요:')
+    L.push('     npm uninstall -D commitgate       (pnpm: pnpm remove -D commitgate · yarn: yarn remove commitgate)')
+    L.push('   그러면 devDependencies 선언 · node_modules · lockfile 항목이 함께 정리됩니다.')
+  } else {
+    L.push('   devDependencies.commitgate 선언이 없습니다 — Stage B 런타임 패키지로 설치된 상태가 아닙니다.')
+    L.push('   (Stage A vendored 설치본이거나 `npx commitgate` 일회 실행인 경우입니다 — 아래 npx 캐시 항목 참고.)')
+  }
+  L.push('   package.json 의 req:* 스크립트는 **수동 정리 후보**입니다 — 이 명령은 고치지 않습니다(2번 항목 참조).')
+  return L
 }
 
 function renderRevertSection(plan: UninstallPlan): string[] {

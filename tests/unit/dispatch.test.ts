@@ -6,7 +6,9 @@ import { resolveDispatch, VERB_MODULES } from '../../bin/dispatch.mjs'
  *
  * launcher는 알려진 verb를 해당 모듈로 보내고(verb 토큰 소비), init 옵션(`-` 시작)·verb 없음은 init에
  * argv 전체를 넘긴다(하위호환: `npx commitgate --dry-run`). 그 외 비-옵션 토큰은 fail-closed(`unknown`).
- * `migrate`는 Phase 3에서 등록되므로 지금은 미지 토큰으로 취급된다(깨진 import 노출 방지).
+ *
+ * `migrate`는 **Phase 3에서 `bin/migrate.ts` 생성과 동시에 등록**됐다. Phase 1의 "미등록 → unknown" 단언은
+ * 그때까지 깨진 import를 노출하지 않기 위한 **의도된 tripwire**였고, 등록과 함께 이 파일에서 갱신됐다.
  */
 describe('[dispatch] resolveDispatch — 알려진 req:* verb 라우팅(verb 토큰 소비)', () => {
   const cases: Array<[string, string]> = [
@@ -26,6 +28,15 @@ describe('[dispatch] resolveDispatch — 알려진 req:* verb 라우팅(verb 토
   it('uninstall / init verb 라우팅(토큰 소비)', () => {
     expect(resolveDispatch(['uninstall', '--dir', 'x'])).toEqual({ entry: 'uninstall.ts', rest: ['--dir', 'x'] })
     expect(resolveDispatch(['init', '--strict'])).toEqual({ entry: 'init.ts', rest: ['--strict'] })
+  })
+
+  it('migrate verb 라우팅 — Phase 3에서 파일 생성과 동시에 등록(인자 통과)', () => {
+    expect('migrate' in VERB_MODULES).toBe(true)
+    expect(resolveDispatch(['migrate'])).toEqual({ entry: 'migrate.ts', rest: [] })
+    expect(resolveDispatch(['migrate', '--apply', '--dir', 'x'])).toEqual({
+      entry: 'migrate.ts',
+      rest: ['--apply', '--dir', 'x'],
+    })
   })
 
   it('verb 뒤 bare `--`는 그대로 전달된다(스트립은 각 스크립트 parseArgs의 몫)', () => {
@@ -54,9 +65,8 @@ describe('[dispatch] fail-closed — 비-옵션 미지 토큰', () => {
     expect(resolveDispatch(['bogus'])).toEqual({ unknown: 'bogus' })
   })
 
-  it('`migrate`는 Phase 1에서 미등록 → unknown(깨진 import 아님)', () => {
-    expect('migrate' in VERB_MODULES).toBe(false)
-    expect(resolveDispatch(['migrate', '--dry-run'])).toEqual({ unknown: 'migrate' })
+  it('오타난 migrate도 조용히 init으로 가지 않는다', () => {
+    expect(resolveDispatch(['migrat', '--apply'])).toEqual({ unknown: 'migrat' })
   })
 
   it('오타난 req 접두 명령도 조용히 init으로 가지 않는다', () => {

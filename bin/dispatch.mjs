@@ -5,7 +5,10 @@
  * 설계 D3(REQ-2026-014 Stage B):
  *   - 알려진 verb → 해당 모듈(verb 토큰 소비).
  *   - argv 없음 **또는 첫 인자가 `-` 옵션** → init에 argv 전체 전달(하위호환: `npx commitgate --dry-run` 등).
- *   - 그 외 비-옵션 미지 토큰 → `unknown`(호출부가 fail-closed). `migrate`는 Phase 3에서 등록.
+ *   - 그 외 비-옵션 미지 토큰 → `unknown`(호출부가 fail-closed).
+ *
+ * `migrate`는 **파일 생성과 동시에**(Phase 3) 등록했다. Phase 1이 미리 등록하지 않은 이유는, 등록만 하고 모듈이 없으면
+ * 깨진 동적 import가 raw unhandled rejection으로 터지기 때문이다(`unknown` 분기의 친절한 1줄 오류가 낫다).
  */
 
 /** verb → 대상 모듈(binDir 기준 상대). req:* 는 패키지의 scripts/req/*.ts 에서 실행(Stage B: 대상 프로젝트에 복사하지 않음). */
@@ -16,6 +19,7 @@ export const VERB_MODULES = {
   'req:doctor': '../scripts/req/req-doctor.ts',
   'req:commit': '../scripts/req/req-commit.ts',
   uninstall: 'uninstall.ts',
+  migrate: 'migrate.ts',
   init: 'init.ts',
 }
 
