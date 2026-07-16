@@ -3,14 +3,52 @@
   "branch": "feat/req-2026-018-review-severity-p1-only",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f6b04-e240-7421-bb7a-6df63118d48e",
+  "review_base_sha": "9c51eca84bd30afdddc8918559d9ce4973627d6c",
+  "review_diff_hash": "c9f6d6a0853b41ff3afc627ca12a1f202b26262d",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "80773f3f35b82fd0558233780e3ba17bb5d8f3d85274444179f90b5aaf9fd7ac",
+  "current_phase": "phase-1-severity-wiring",
+  "phases": [
+    {
+      "id": "phase-1-severity-wiring",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "user_commit_confirmed": null,
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-severity-wiring",
+    "outcome": "approved",
+    "compare_hash": "babd13fb63ab1d2f5d93825330bba4eef09ffcf07d8b4a94ab2125596aa88337",
+    "count": 2,
+    "errors": [],
+    "at": "2026-07-16T13:03:40.209Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-018/responses/design-r03-approved.json",
+    "response_sha256": "99f3a5200452528c83d4df83e8a254158e7a87003a82ccd9fd416e58fd2322fb",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "9c51eca84bd30afdddc8918559d9ce4973627d6c",
+    "codex_thread_id": "019f6aed-7da5-7263-9fda-8c62e2542527",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-16T12:38:07.634Z",
+    "design_hash": "80773f3f35b82fd0558233780e3ba17bb5d8f3d85274444179f90b5aaf9fd7ac"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "c9f6d6a0853b41ff3afc627ca12a1f202b26262d",
+      "phase_id": "phase-1-severity-wiring",
+      "consumed_by_commit_sha": "0f7125863078e0cfee59ba859decaa18267eb8a9",
+      "approval_consumed_at": "2026-07-16T13:04:43.373Z"
+    }
+  ]
 }
