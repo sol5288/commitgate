@@ -113,18 +113,55 @@ const defaultCodexRunner: CodexRunner = (args, input, cwd) =>
   // ⚠️ 과거 `shell:true`는 args(schemaPath·resumeThreadId 등)의 메타문자로 **명령 주입**이 가능했고 공백 경로도 깨졌음 — P1 수정.
   safeSpawnSync('codex', args, { cwd, input, maxBuffer: 64 * 1024 * 1024 })
 
+/** unknown → 평범한 객체(배열·null 제외). 스키마 경로 탐색용. */
+function asPlainObject(v: unknown): Record<string, unknown> | null {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+}
+
 /**
- * Codex `--output-schema`용 **strict copy** 파생(REQ-2026-005). OpenAI structured-outputs strict mode는
- * root `required`가 `properties`의 **모든 키**를 포함해야 한다 — optional 필드(예: observations)가 있으면 400 invalid_json_schema.
- * 원본 스키마(`workflow/machine.schema.json`)는 **검증 SSOT로 불변**(observations optional → 기존 archive 하위호환)이고,
- * codex 호출 직전에만 root.required를 `properties` 전체로 확장한 copy를 파생한다. 응답/archive 검증은 계속 원본으로 한다.
- * 중첩 객체(findings/observations items)는 이미 모든 필드 required + additionalProperties:false라 root만 확장하면 충분.
+ * 출력 스키마의 `findings[].severity`를 **P1만** 허용하도록 좁힌다(REQ-2026-018 D2).
+ *
+ * **왜 출력 스키마에서만 강제하는가(D1)**: 검증 SSOT(`machine.schema.json`)의 enum을 P1로 좁히면 P2/P3를 담은
+ * **기존 archive가 전부 invalid**가 된다(하위호환 파괴). 반면 목표는 "리뷰어가 P2를 findings에 **낼 수 없게**"이므로
+ * 리뷰어가 실제로 보는 출력 스키마 한 곳만 좁히면 충분하다. 그러면 비차단 지적은 `observations`로 갈 수밖에 없고,
+ * `classifyReview`의 "findings 있으면 차단"은 고칠 필요 없이 그대로 옳아진다.
+ *
+ * **왜 조용히 건너뛰지 않고 throw하는가(D3)**: 건너뛰면 P2가 다시 차단 채널로 들어오는 **정책 구멍**이 열리는데,
+ * 그 구멍은 스키마가 깨진 순간에만 열려 아무도 눈치채지 못한다. throw는 리뷰 실패 = 승인 불가 = fail-closed.
+ * `machine_schema_version`이 `1.1`로 고정된 MANAGED 파일이므로 정상 경로에서 이 throw는 발생하지 않는다.
+ */
+function narrowFindingsSeverityToP1(schema: Record<string, unknown>): void {
+  const properties = asPlainObject(schema.properties)
+  const findings = asPlainObject(properties?.findings)
+  const items = asPlainObject(findings?.items)
+  const itemProps = asPlainObject(items?.properties)
+  const severity = asPlainObject(itemProps?.severity)
+  if (!severity || !Array.isArray(severity.enum)) {
+    throw new Error(
+      '출력 스키마 파생 실패: `properties.findings.items.properties.severity.enum` 경로가 없음 — ' +
+        'findings를 P1 전용(차단)으로 강제할 수 없어 중단합니다(REQ-2026-018 D3, fail-closed).',
+    )
+  }
+  severity.enum = ['P1']
+}
+
+/**
+ * Codex `--output-schema`용 **strict copy** 파생(REQ-2026-005 + REQ-2026-018). 원본 스키마
+ * (`workflow/machine.schema.json`)는 **검증 SSOT로 불변**이고, codex 호출 직전에만 아래 두 가지를 적용한 copy를 파생한다.
+ * 응답/archive 검증은 계속 원본으로 한다.
+ *
+ * 1. **root `required` = `properties` 전체 키**(REQ-2026-005) — OpenAI structured-outputs strict mode는 root required가
+ *    properties의 모든 키를 포함해야 한다. optional 필드(예: observations)가 있으면 400 invalid_json_schema.
+ *    중첩 객체(findings/observations items)는 이미 모든 필드 required + additionalProperties:false라 root만 확장하면 충분.
+ * 2. **`findings[].severity` = `["P1"]`**(REQ-2026-018) — 차단 채널에 P2/P3가 들어오지 못하게 구조적으로 막는다.
+ *    상세 근거는 `narrowFindingsSeverityToP1` 참조.
  */
 export function deriveStrictOutputSchema(schemaText: string): string {
   const schema = JSON.parse(schemaText) as { properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown }
   if (schema && typeof schema === 'object' && schema.properties && typeof schema.properties === 'object') {
     schema.required = Object.keys(schema.properties)
   }
+  narrowFindingsSeverityToP1(schema)
   return JSON.stringify(schema)
 }
 

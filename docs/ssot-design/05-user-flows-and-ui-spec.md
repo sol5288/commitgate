@@ -23,6 +23,8 @@ flowchart LR
 
 핵심 원리: **다음 행동을 추측하지 않는다.** `req:next`가 state+git에서 계산해 준다. `RUN`이면 출력 명령을 그대로 실행, `AGENT`면 그 작업 후 `git add`, `AWAIT_HUMAN`이면 멈춰 승인 문장을 받는다([scripts/req/req-next.ts](../../scripts/req/req-next.ts)).
 
+> 다이어그램의 `DESIGN_REVIEW`·`PHASE_IMPL`·`DONE`은 **사용자 여정을 설명하는 논리 상태**다. 현재 CLI가 `state.json.phase`를 이 값들로 갱신하지 않는다. 실제 분기는 여러 state 필드와 git 상태에서 파생된다([03](03-domain-and-data-model.md) §2, [07](07-business-rules-and-state-machines.md) §4).
+
 ## 2. 화면 A — 설치 `npx commitgate`
 
 - **진입 조건**: 대상 폴더가 git repo이고 `package.json` 존재. 아니면 fail-closed throw([bin/init.ts](../../bin/init.ts) `assertGitWorkTree`).
@@ -79,6 +81,7 @@ flowchart LR
 - **dry-run**: 모드·`commit_allowed`·risk·HIGH 게이트·finalize 적용성·증거 개수·manifest 검증 출력, **부작용 0**.
 - **exit**: 성공 0, 게이트 실패 시 throw로 비-0.
 - **접근 제어**: HIGH 커밋은 통제점(사람 확인). **이 명령 자체가 통제점**이며, 사용자가 직접 실행하는 것이 가장 강한 보장.
+- **내구성 경계**: 소비 후 바뀐 `state.json`은 자동으로 커밋되지 않는다. source/evidence 두 커밋이 성공해도 다른 clone이 최신 실행 상태 뷰를 자동 복원하지 못한다. 최종 state의 수동 보존은 관찰 사례이지 이 명령의 부작용이 아니다.
 
 ## 8. 화면 G — 제거 계획 `npx commitgate uninstall`
 
@@ -96,7 +99,22 @@ flowchart LR
 | 미스테이지·미추적 존재 | 리뷰/커밋 D10 FAIL. |
 | 중복 요청(idempotent) | `req:review-codex --phase` 재실행은 이미 승인돼도 안전, evidence-finalize는 중복 시 skip. |
 | 권한 거부(통제점) | 승인 문장 없으면 진행하지 않음. |
+| source 커밋 뒤 evidence-finalize 중단 | `pending_evidence_for`를 기준으로 `req:commit --finalize`; source tree가 승인 tree와 다르면 복구 차단. |
+| `state.json` 분실·fresh clone | 자동 rebuild 명령 없음. 아카이브·`approvals.jsonl`·git을 사람이 대조해야 하며 추정 승인 금지(G-09). |
+| 리뷰가 계속 NEEDS_FIX | 횟수 상한 없음. 현재는 사람이 범위 축소·중단을 결정해야 하며 자동 escalation 없음(G-06a). |
 
 ## 10. 국제화·접근성·반응형
 - **국제화**: 사용자 대면 문자열은 한국어 고정. 다국어 리소스 시스템 없음(`해당 없음`).
 - **접근성/반응형**: GUI가 없어 `해당 없음`. CLI 출력은 ASCII 기호 + 이모지(⚠️/✅) 사용.
+
+## 11. 현재 UX의 가치와 마찰
+
+| 영역 | 잘 해결된 점 | 남은 마찰 |
+|---|---|---|
+| 다음 행동 | `req:next`가 에이전트의 추측을 줄임 | 오류 원인과 복구 명령이 여러 명령 출력에 분산 |
+| 승인 | tree 바인딩으로 “무엇을 승인했는가”가 정확 | HIGH 확인 레코드를 사람이 JSON에 직접 기록 |
+| 리뷰 | 구조화 판정·P1 전용 차단 채널 | timeout·라운드 상한·delta review 없음 |
+| 설치 | 한 번의 `npx`, 기존 파일 보존 | 설치 원장·업그레이드 plan 없음 |
+| 감사 | 승인 응답과 소비 커밋 연결 | fresh clone 상태 재구축·통합 CI verifier 없음 |
+
+UX 개선은 게이트를 숨기는 자동화가 아니라 **왜 멈췄는지, 무엇이 외부로 나가는지, 어떤 정확한 명령이 복구하는지**를 한 번에 설명하는 방향이어야 한다([14](14-product-strategy-and-roadmap.md) STR-09).

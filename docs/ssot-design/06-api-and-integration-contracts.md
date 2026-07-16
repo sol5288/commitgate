@@ -24,6 +24,8 @@ CommitGate에는 HTTP API·웹훅·메시지 큐가 없다(`해당 없음`). "AP
 | 출력 | `kind`(RUN/AGENT/AWAIT_HUMAN/DONE/BLOCKED) + 명령/승인문장/diagnostics; `--json` 지원 |
 | exit | RUN 0, AGENT 0, BLOCKED 2, AWAIT_HUMAN 10, DONE 11 |
 
+`DONE`은 계산 결과이지 state 전이 이벤트가 아니다. 명령은 `state.phase`를 포함한 어떤 파일도 쓰지 않는다.
+
 ### 1.3 `req:review-codex`([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts))
 | 항목 | 값 |
 |---|---|
@@ -50,6 +52,8 @@ CommitGate에는 HTTP API·웹훅·메시지 큐가 없다(`해당 없음`). "AP
 | 배타 | `--finalize`와 `--finalize-design` 동시 금지; `-m`과 `--message-file` 동시 금지 |
 | exit | 성공 0, 게이트 실패 throw 비-0 |
 
+정상 성공 뒤 `consumeState`는 로컬 `state.json`을 쓰지만 그 변경을 자동 커밋하지 않는다. 두 git 커밋의 성공과 실행 상태 뷰의 원격 내구화는 별개다.
+
 ### 1.6 설치기 `commitgate` / `commitgate uninstall`
 | 명령 | 인자 | 부작용 |
 |---|---|---|
@@ -72,7 +76,16 @@ override 인자(모델/추론강도)는 값이 있을 때만 주입: `-c model="
 - **현재 라이브 경로는 항상 exec(stateless)**: `main()`이 `isResume=false` 고정([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) 주석 — resume 누적이 토큰 증가·목표 이동을 유발해 비활성). resume argv는 향후 opt-in용으로 보존.
 
 ### 2.2 출력 스키마(strict)
-`deriveStrictOutputSchema`가 원본 스키마의 `required`를 `Object.keys(properties)` 전체로 설정한다(OpenAI structured-outputs strict 모드는 모든 키를 required로 요구). 원본 `machine.schema.json`은 검증 SSOT로 남아 `observations`가 선택으로 유지된다.
+`deriveStrictOutputSchema`([scripts/req/lib/adapters.ts](../../scripts/req/lib/adapters.ts))가 원본을 파싱→수정→직렬화한 **파생 copy**를 만들어 `--output-schema`로 넘긴다. 원본 `machine.schema.json`은 **검증 SSOT로 불변**이며, 응답·아카이브 검증에는 계속 원본을 쓴다. 파생은 두 가지를 적용한다.
+
+1. **root `required` = `Object.keys(properties)` 전체**(REQ-2026-005) — OpenAI structured-outputs strict 모드는 모든 키를 required로 요구한다. 원본은 검증 SSOT로 남아 `observations`가 선택으로 유지된다.
+2. **`findings[].severity.enum` = `["P1"]`**(REQ-2026-018) — 리뷰어가 P2/P3를 차단 채널에 낼 수 없게 한다. 검증 enum(`P1|P2|P3`)은 그대로 두어 기존 아카이브 하위호환을 유지한다 → [03 §4.2](03-domain-and-data-model.md).
+
+파생이 스키마를 **통째로 복사**하므로 `description`도 함께 전달된다. P1 정의(4요소)와 `commit_approved` 승인 규칙이 리뷰어에게 닿는 경로가 바로 이것이다 — 별도 배선이 없다.
+
+**경로 부재 시 throw(fail-closed)**: `properties.findings.items.properties.severity.enum`이 없으면 파생이 조용히 건너뛰지 않고 throw한다 → 리뷰 실패 = 승인 불가. 건너뛰면 P2가 다시 차단 채널로 들어오는 **정책 구멍**이 스키마가 깨진 순간에만 열려 아무도 눈치채지 못한다. `machine_schema_version`이 `1.1`로 고정된 MANAGED 파일이므로 정상 경로에서 이 throw는 발생하지 않는다.
+
+> **하위호환 주의**: 구버전 스키마(severity description·MANAGED 갱신 이전)를 가진 기존 설치본은 이 강제가 **적용되지 않을 뿐** 리뷰는 계속 동작한다.
 
 ### 2.3 스레드·응답 파싱
 `parseThreadId`가 JSONL에서 `type==='thread.started'`의 `thread_id`를 추출. null이면 `thread_id 파싱 실패`로 throw. `lastMessage`는 `--output-last-message` 파일에서 읽음.
@@ -124,3 +137,13 @@ override 인자(모델/추론강도)는 값이 있을 때만 주입: `-c model="
 | `req:commit` | 조건부(evidence-finalize 중복 skip) | 없음 | 2커밋·state |
 | `commitgate`(install) | 예(기존 보존, 재실행 skip) | 없음 | 파일 복사·주입 |
 | `commitgate uninstall` | 예(읽기 전용) | 없음 | 없음 |
+
+## 6. 목표 API와 현재 API의 경계
+
+[14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md)의 `commitgate verify`, `req:repair`, `req:report`, `commitgate status --explain`, `commitgate upgrade --plan`은 **제안된 인터페이스**이며 0.6.0에는 존재하지 않는다. 재구현 시 위 §1의 실제 명령에 임의로 추가하지 않는다. 구현될 때는 다음 공통 계약을 먼저 고정해야 한다.
+
+- 안정적 machine-readable 오류 코드와 전 명령 JSON envelope
+- evidence/event schema version 및 하위호환 정책
+- read-only 명령의 git capability allowlist
+- 외부 전송 manifest와 호출 전 정책 결과
+- dry-run과 live-run의 동일 판정 코어

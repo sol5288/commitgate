@@ -1,0 +1,60 @@
+{
+  "id": "REQ-2026-017",
+  "branch": "feat/req-2026-017-atomic-review-attempt-cap-core",
+  "phase": "INTAKE",
+  "risk_level": "HIGH",
+  "codex_thread_id": "019f6aa9-5df4-7181-81dc-da92ec2d81bb",
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": false,
+  "design_approved_hash": null,
+  "current_phase": null,
+  "phases": [
+    {
+      "id": "phase-1-series-state",
+      "approved": false
+    },
+    {
+      "id": "phase-2-atomic-reserve",
+      "approved": false
+    },
+    {
+      "id": "phase-3-cap-escalation",
+      "approved": false
+    },
+    {
+      "id": "phase-4-docs",
+      "approved": false
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "needs-fix",
+    "compare_hash": "ced63020b9fd646aa2b0807116c03d26b64d9bf49c5ed4235597a479e7e63f8e",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-16T11:23:54.735Z",
+    "findings": [
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-017/01-design.md",
+        "detail": "공유 lock만 common-dir에 두고 count/pending 정본은 각 worktree의 versioned `state.json`에 둔다. 예를 들어 worktree A에서 count=2인 호출이 예약·확정되어 count=3/escalation을 기록하고 unlock한 뒤, 아직 count=0인 worktree B가 같은 ticket을 실행하면 B는 "
+      },
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-017/01-design.md",
+        "detail": "§3.2-7의 '다시 읽어 일치 확인 후 temp→atomic rename'은 실제 CAS가 아니다. A가 자신의 pending 일치를 읽고 확인한 직후, human recovery가 epoch을 올려 pending을 제거하고 B가 새 pending을 기록할 수 있다. 그 뒤 A의 atomic rename은 이미 확인한 "
+      },
+      {
+        "severity": "P2",
+        "file": "workflow/REQ-2026-017/02-plan.md",
+        "detail": "Phase 2가 이미 `--run`의 예약·외부 호출 흐름을 도입하지만, 상한 preflight와 기본 `reReviewLimit=3` 설정은 Phase 3에 배치되어 있다. phase별 승인·커밋 사이에 Phase 2 코드가 사용되면 count가 증가해도 cap 없이 계속 외부 호출할 수 있다. "
+      }
+    ],
+    "elided_count": 0
+  }
+}

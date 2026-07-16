@@ -10,12 +10,60 @@ AI 코딩 에이전트는 코드를 빠르게 생성하지만, 리뷰 없이 바
 
 즉 막는 대상은 단순 명령 실수가 아니라 **"리뷰받지 않은 변경이 커밋되는 상황"**이다.
 
+### 1.1 미션과 제품 가치
+
+CommitGate의 미션은 **AI가 만든 변경을 사람이 통제 가능한 증거 단위로 변환하는 것**이다. 이 제품은 코드 생성 품질 자체를 높이는 모델이 아니라, 생성 이후의 의사결정과 변경 무결성을 다루는 거버넌스 계층이다.
+
+| 사용자 문제 | CommitGate가 만드는 가치 | 현재 구현 증거 |
+|---|---|---|
+| Builder가 자기 변경을 곧바로 커밋 | 역할이 분리된 Codex Reviewer 판정을 요구 | `review-codex` + persona + 구조화 응답 |
+| “리뷰했다”는 말과 실제 커밋 대상이 다를 수 있음 | 승인을 staged tree OID/design hash에 바인딩 | `approved_diff_hash`, `design_approved_hash` |
+| 승인 뒤 작은 수정으로 검토 범위가 바뀜 | stale 승인을 거부하고 재리뷰 요구 | doctor D9 + `req:commit` tree 재검사 |
+| 승인 근거가 대화에만 남아 추적 불가 | 응답·sha256·소비 커밋을 감사 체인으로 보존 | archive + `approvals.jsonl` |
+| 에이전트가 다음 단계를 임의 추측 | state+git에서 다음 행동을 결정적으로 계산 | `req:next` |
+
+이 가치의 핵심 차별점은 “리뷰를 호출한다”가 아니라 **리뷰 대상과 커밋 대상이 동일하다는 것을 기계적으로 증명한다**는 점이다.
+
+### 1.2 목표 사용자와 핵심 작업
+
+- **1차 사용자**: AI 코딩 에이전트를 일상적으로 쓰는 1인 개발자. 사람의 반복 확인 부담을 줄이되 최종 통제권을 잃지 않으려는 사용자.
+- **2차 사용자**: AI 변경의 승인 근거와 재현 가능한 감사 이력이 필요한 소규모 팀.
+- **확장 사용자**: 외부 전송 정책·CI 강제·복구성을 요구하는 보안 민감 팀. 이 사용자에게 필요한 일부 기능은 아직 미구현이다([14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md) STR-01~04).
+
+핵심 Job-to-be-Done은 다음 한 문장으로 요약된다.
+
+> “AI가 만든 변경을 빠르게 활용하되, 정확히 그 변경만 독립적으로 승인받고, 문제가 생기면 누가 무엇을 근거로 통과시켰는지 재현하고 싶다.”
+
+### 1.3 제품 원칙
+
+1. **정확한 아티팩트가 설명보다 우선한다.** 승인 문자열보다 git OID·sha256을 신뢰한다.
+2. **불확실하면 차단한다.** 응답 부재·스키마 오류·stale·증거 불일치는 승인으로 완화하지 않는다.
+3. **차단과 개선 제안을 분리한다.** P1만 `findings`, 나머지는 `observations`로 보내 리뷰가 유한하게 수렴해야 한다.
+4. **사람의 승인은 통제점별로 분리한다.** commit·integration·release 승인을 서로 이월하지 않는다.
+5. **현재 보장 경계를 숨기지 않는다.** 로컬 CLI·단일 active worktree·협조적 작업자 모델을 절대적 보안 시스템처럼 표현하지 않는다.
+6. **외부 전송을 명시한다.** Reviewer 호출은 코드 처리 기능인 동시에 데이터 경계다.
+
+### 1.4 가치가 성립하지 않는 실패 조건
+
+다음 중 하나가 발생하면 명령이 성공했더라도 제품 목적은 달성되지 않은 것이다.
+
+- 승인된 tree와 다른 tree가 커밋된다.
+- 증거가 변조·재사용되거나 source commit과 연결되지 않는다.
+- 비차단 의견이 계속 차단 채널로 들어가 리뷰가 무한 반복된다.
+- 사용자가 인지하지 못한 코드·문서가 외부 Reviewer로 전송된다.
+- scratch 상태가 사라졌을 때 기존 증거로 진행 상태를 복구하지 못한다.
+- 로컬 게이트를 우회한 커밋이 protected branch에서 탐지되지 않는다.
+
+앞의 두 항목은 현재 구현이 강하게 방어한다. 뒤의 네 항목은 부분 방어 또는 미구현이며 [gaps-and-decisions.md](gaps-and-decisions.md)와 [14](14-product-strategy-and-roadmap.md)의 최우선 개선 대상이다.
+
 ### 명시적 비보장(설계 경계)
-[README.md](../../README.md) "보장하지 않는 것"에 근거한 3대 한계. 재구현 시 방어선을 오산하지 않도록 반드시 유지한다.
+[README.md](../../README.md) "보장하지 않는 것"의 3대 한계와 코드 분석에서 확인한 운영 한계다. 재구현 시 방어선을 오산하지 않도록 반드시 유지한다.
 
 1. **하드 강제가 아니다.** git hook을 설치하지 않는다. `req:commit` 대신 `git commit`을 직접 치면 게이트·승인 바인딩·증거 기록이 전부 우회된다. 강제력은 "협조하는 에이전트를 계약 궤도에 유지"하는 데 있다.
 2. **staged 비밀을 지켜 주지 않는다.** `req:review-codex`는 리뷰 대상을 Codex(OpenAI)로 전송한다 — **phase 리뷰는 `git diff --cached` 전문**을, **design 리뷰는 git 인덱스의 00/01/02 문서 본문**을 보낸다([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) `main`). 두 경우 모두 codex는 `--sandbox read-only`로 저장소 루트를 읽으므로 diff/문서에 없는 파일도 읽힐 수 있다. 마스킹·스크러빙·길이 상한이 없다.
 3. **커밋 이후를 보장하지 않는다.** 승인은 커밋 시점 staged tree에 대한 것이고, merge·tag·publish는 각각 별도 통제점이다.
+4. **진행 상태의 자동 내구 복구를 보장하지 않는다.** `state.json`의 런타임 변경은 scratch이며 정상 `req:commit`이 커밋하지 않는다. 수동 최종 상태 커밋 사례는 있으나 제품 명령 계약이 아니므로 fresh clone에서 동일 진행 판정을 자동 복원한다고 약속할 수 없다([03-domain-and-data-model.md](03-domain-and-data-model.md) §8, [gaps-and-decisions.md](gaps-and-decisions.md) G-09).
+5. **리뷰가 유한 시간·횟수 안에 끝난다고 보장하지 않는다.** codex timeout과 NEEDS_FIX 라운드 상한·escalation이 없다(G-01, G-06a).
 
 ## 2. 핵심 사용자와 행위자
 
@@ -83,5 +131,11 @@ flowchart TB
 | **이식성(크로스 플랫폼)** | CI가 `{ubuntu,macos,windows} × {Node 18,20,22}` 9-leg([.github/workflows/ci.yml](../../.github/workflows/ci.yml)). BOM·경로·shell 연산자 회피([bin/init.ts](../../bin/init.ts)). |
 | **관측성** | 텔레메트리 없음. 신호는 exit code + stderr 텍스트([10-operations-deployment-and-observability.md](10-operations-deployment-and-observability.md)). |
 | **비용 통제(리뷰 토큰)** | 리뷰 모델·추론강도를 `-c`로 고정(기본 `gpt-5.6-terra`/`high`)해 전역 설정 상속으로 인한 토큰 과다를 방지([scripts/req/lib/config.ts](../../scripts/req/lib/config.ts) `DEFAULTS`). |
+| **복구성** | evidence-finalize 중단은 `pending_evidence_for` + `req:commit --finalize`로 복구. 단 scratch `state.json` 전체를 fresh clone에서 재구축하는 기능은 없음. |
+| **수렴성** | BLOCKED 2회 회로차단과 stateless 재리뷰가 있으나 NEEDS_FIX 절대 상한은 없음. |
 
 성능 SLA·처리량 목표는 저장소에 명시되어 있지 않다 — `확인 불가`. 실질 성능 요인은 Codex 리뷰 왕복 시간(모델·추론강도 의존)이다.
+
+## 6. 제품 성과 기준의 현재 공백
+
+현재 저장소는 기능 정확성 테스트는 풍부하지만 온보딩 시간, 리뷰 라운드 P50/P95, 승인까지의 대기 시간, fresh-clone 복구율, CI 증거 검증률을 집계하지 않는다. 따라서 “사용자에게 얼마나 획기적인가”를 릴리즈 버전이나 테스트 개수만으로 판단할 수 없다. 목표 지표와 수집 원칙은 [14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md) §4에 정의하며, 구현 전까지는 `확인 불가`다.
