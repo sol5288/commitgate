@@ -31,7 +31,11 @@
         "additionalProperties": false,
         "required": ["severity", "detail", "file"],
         "properties": {
-          "severity": { "type": "string", "enum": ["P1", "P2", "P3"] },
+          "severity": {
+            "type": "string",
+            "enum": ["P1", "P2", "P3"],
+            "description": "Blocking severity. ONLY P1 belongs in findings, and the output schema you are given permits P1 only — P2/P3 remain in this enum solely so previously archived reviews still validate, and you MUST NOT emit them. A defect is P1 only when ALL THREE hold. (1) CATEGORY: it is a requirement violation, data loss or corruption, a security hole, a monetary error, or a fail-closed bypass. (2) NORMAL PATH: it reproduces on the normal supported usage path — this project supports a single active worktree and a cooperative worker, so rare recovery races, multi-worktree divergence and full distributed consistency are outside the supported model. (3) EVIDENCE: you state a concrete reproduction path or failure scenario ('with this input/state, this wrong result occurs'). EXCLUSION RULE: if it is not in the CATEGORY list it is NOT P1 — even if it reproduces on the normal path, and even if it is genuinely worth fixing. Portability, structure, maintainability, readability, naming, future extensibility, scope-adjacent improvements and follow-up debt all belong in observations, never in findings. If you are guessing or it 'might' be a problem, that is observations too. Putting non-P1 remarks in findings is the failure mode this field exists to prevent: it blocks approval indefinitely and the review never converges."
+          },
           "detail": { "type": "string" },
           "file": { "type": ["string", "null"] }
         }

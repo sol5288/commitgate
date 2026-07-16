@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { writeFileSync, readFileSync, mkdtempSync } from 'node:fs'
+import { writeFileSync, readFileSync, mkdtempSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import Ajv from 'ajv'
 import {
   createGitAdapter,
   createCodexReviewerAdapter,
@@ -12,6 +14,23 @@ import {
   type CodexRunner,
 } from '../../scripts/req/lib/adapters'
 import { callReviewer } from '../../scripts/req/review-codex'
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+
+/** 모든 REQ 티켓의 `responses` 아카이브(.json)를 repo-relative 경로로 수집(REQ-2026-018 R3용). */
+function listReviewArchives(): string[] {
+  const workflowDir = join(REPO_ROOT, 'workflow')
+  const out: string[] = []
+  for (const ticket of readdirSync(workflowDir)) {
+    if (!ticket.startsWith('REQ-')) continue
+    const responses = join(workflowDir, ticket, 'responses')
+    if (!existsSync(responses)) continue
+    for (const f of readdirSync(responses)) {
+      if (f.endsWith('.json')) out.push(join('workflow', ticket, 'responses', f))
+    }
+  }
+  return out
+}
 
 // ─────────────────────────────── safeSpawnSync 명령 주입 방어 (P1) ──
 describe('[P1] safeSpawnSync — shell 메타문자 인자 주입 차단', () => {
@@ -70,7 +89,16 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
         type: 'object',
         additionalProperties: false,
         required: ['status'],
-        properties: { status: { type: 'string' }, observations: { type: 'array' } },
+        // findings[].severity 경로는 필수 — 어댑터의 출력 스키마 파생이 이를 P1 전용으로 좁히고,
+        // 경로가 없으면 fail-closed로 throw한다(REQ-2026-018 D2·D3).
+        properties: {
+          status: { type: 'string' },
+          observations: { type: 'array' },
+          findings: {
+            type: 'array',
+            items: { type: 'object', properties: { severity: { type: 'string', enum: ['P1', 'P2', 'P3'] } } },
+          },
+        },
       }),
       'utf8',
     )
@@ -132,19 +160,94 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
     expect(() => rv.review({ prompt: 'P', schemaPath, resumeThreadId: null, cwd: '/r', model: null, reasoningEffort: null })).toThrow(/codex ENOENT/)
   })
 
+  /** findings[].severity 경로를 갖춘 최소 합성 스키마(REQ-2026-018 이후 파생의 전제). */
+  const synthSchema = (extra: Record<string, unknown> = {}) => ({
+    type: 'object',
+    additionalProperties: false,
+    required: ['a', 'b'],
+    properties: {
+      a: { type: 'string' },
+      b: { type: 'string' },
+      observations: { type: 'array' },
+      findings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { severity: { type: 'string', enum: ['P1', 'P2', 'P3'] } },
+        },
+      },
+      ...extra,
+    },
+  })
+
   it('[REQ-005] deriveStrictOutputSchema: root.required = properties 전체 키(strict), 나머지 불변', () => {
-    const original = JSON.stringify({
-      type: 'object',
-      additionalProperties: false,
-      required: ['a', 'b'],
-      properties: { a: { type: 'string' }, b: { type: 'string' }, observations: { type: 'array' } },
-    })
+    const original = JSON.stringify(synthSchema())
     const strict = JSON.parse(deriveStrictOutputSchema(original))
-    expect(strict.required.sort()).toEqual(['a', 'b', 'observations'])
+    expect(strict.required.sort()).toEqual(['a', 'b', 'findings', 'observations'])
     expect(strict.additionalProperties).toBe(false)
-    expect(Object.keys(strict.properties).sort()).toEqual(['a', 'b', 'observations'])
+    expect(Object.keys(strict.properties).sort()).toEqual(['a', 'b', 'findings', 'observations'])
     // 순수 함수 — 입력 문자열의 원본 required는 그대로(부수효과 없음, 어댑터가 파일 원본을 덮어쓰지 않음)
     expect(JSON.parse(original).required).toEqual(['a', 'b'])
+  })
+
+  // ── REQ-2026-018: findings=P1만 차단 ──
+  it('[REQ-018 R1] 파생 출력 스키마의 findings[].severity.enum이 ["P1"]로 좁혀진다 — 리뷰어가 P2를 낼 수 없다', () => {
+    const schemaText = readFileSync(join(REPO_ROOT, 'workflow/machine.schema.json'), 'utf8')
+    const strict = JSON.parse(deriveStrictOutputSchema(schemaText))
+    expect(strict.properties.findings.items.properties.severity.enum).toEqual(['P1'])
+    // 순수 함수 — 원본 문자열은 불변(SSOT 파일을 덮어쓰지 않는다)
+    expect(JSON.parse(schemaText).properties.findings.items.properties.severity.enum).toEqual(['P1', 'P2', 'P3'])
+  })
+
+  it('[REQ-018 R2] machine.schema.json의 severity.description이 P1 정의 4요소를 모두 명시한다', () => {
+    const schema = JSON.parse(readFileSync(join(REPO_ROOT, 'workflow/machine.schema.json'), 'utf8'))
+    const desc: string = schema.properties.findings.items.properties.severity.description ?? ''
+    expect(desc.length).toBeGreaterThan(0)
+    // (a) 카테고리 한정 — 이게 빠지면 "정상 경로에서 재현되는 개선"이 전부 P1이 되어 억제가 무너진다.
+    for (const anchor of ['requirement violation', 'data loss', 'security', 'monetary', 'fail-closed bypass']) {
+      expect(desc.toLowerCase()).toContain(anchor.toLowerCase())
+    }
+    // (b) 정상 경로 요건
+    expect(desc.toLowerCase()).toContain('normal path')
+    // (c) 재현 증거 필수
+    expect(desc.toLowerCase()).toContain('reproduction path')
+    expect(desc.toLowerCase()).toContain('failure scenario')
+    // (d) 배제 규칙 — 카테고리 밖이면 정상 경로 재현이어도 P1이 아니고 observations로.
+    expect(desc.toLowerCase()).toContain('exclusion rule')
+    expect(desc.toLowerCase()).toContain('observations')
+  })
+
+  it('[REQ-018 R3] 검증 SSOT의 enum은 P1|P2|P3 유지 — 기존 P2/P3 아카이브가 전부 검증을 통과한다', () => {
+    const schema = JSON.parse(readFileSync(join(REPO_ROOT, 'workflow/machine.schema.json'), 'utf8'))
+    expect(schema.properties.findings.items.properties.severity.enum).toEqual(['P1', 'P2', 'P3'])
+
+    const archives = listReviewArchives()
+    expect(archives.length).toBeGreaterThan(0)
+
+    const ajv = new Ajv({ allErrors: true, strict: false })
+    const validate = ajv.compile(schema)
+    const severities = new Set<string>()
+    const invalid: string[] = []
+    for (const rel of archives) {
+      const doc = JSON.parse(readFileSync(join(REPO_ROOT, rel), 'utf8'))
+      for (const f of doc.findings ?? []) severities.add(f.severity)
+      if (!validate(doc)) invalid.push(`${rel}: ${ajv.errorsText(validate.errors)}`)
+    }
+    expect(invalid).toEqual([])
+    // 이 회귀가 실효적이려면 아카이브 집합에 P2/P3가 실제로 있어야 한다(0건이면 하위호환을 고정하지 못한다).
+    expect(severities).toContain('P2')
+    expect(severities).toContain('P3')
+  })
+
+  it('[REQ-018 D3] severity 경로가 없는 스키마는 조용히 통과하지 않고 throw한다(fail-closed)', () => {
+    const noFindings = JSON.stringify({ type: 'object', properties: { a: { type: 'string' } } })
+    expect(() => deriveStrictOutputSchema(noFindings)).toThrow(/severity/)
+    // findings는 있으나 severity.enum이 없는 파손 스키마도 동일하게 차단.
+    const brokenSeverity = JSON.stringify({
+      type: 'object',
+      properties: { findings: { type: 'array', items: { type: 'object', properties: { severity: { type: 'string' } } } } },
+    })
+    expect(() => deriveStrictOutputSchema(brokenSeverity)).toThrow(/severity/)
   })
 
   // ── REQ-2026-013 P1: 리뷰 모델·추론강도 -c 주입 ──
