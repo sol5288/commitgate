@@ -24,7 +24,7 @@ import {
   type Verdict,
   type ApprovalEvidence,
 } from './review-codex'
-import { loadConfig, packageRoot, type ResolvedConfig } from './lib/config'
+import { loadConfig, packageRoot, stripBom, type ResolvedConfig } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — config 부재 시 현재 동작 보존).
@@ -72,6 +72,15 @@ export interface DoctorInputs {
   // B3: finalize(복구) 모드. D9 비교 대상을 staged tree → pending_evidence_for.source_commit_sha의 source 커밋 tree로 교체(우회 아님).
   finalize?: boolean
   finalizeSourceTree?: string | null // git rev-parse <pending.source_commit_sha>^{tree}
+  /**
+   * D19(REQ-2026-014): 대상 `package.json`의 `scripts` 맵. main()이 읽어 채운다(runChecks는 순수).
+   *   - `undefined` = main()이 조회하지 않음(legacy/2-arg 호출) → OK '점검 불요'
+   *   - `null`      = package.json 없음/파손 → OK '점검 불요'(읽기 전용 advisory라 FAIL 아님)
+   *   - object      = 파싱된 scripts 맵
+   * ⚠️ **optional이어야 한다** — required면 `tests/unit/req-doctor.test.ts`의 `const base: DoctorInputs = {…}`
+   *    리터럴이 즉시 tsc 오류가 난다(기존 optional 필드 관례와 동일).
+   */
+  reqScripts?: Record<string, string> | null
 }
 
 /**
@@ -112,6 +121,48 @@ export function phaseGranularityWarnings(codeFiles: string[], maxFiles: number):
   if (codeFiles.length > maxFiles)
     return [`phase 코드 변경 ${codeFiles.length}파일 > 권고 ${maxFiles} — 리뷰 면적 큼, 다음부터 phase 분할 권고(granularity 정책)`]
   return []
+}
+
+/** 설치 모드(REQ-2026-014 D19 진단). `req:*` 스크립트 **값의 형태**로만 판정한다. */
+export type InstallMode = 'stage-a' | 'stage-b' | 'mixed' | 'none' | 'custom'
+
+/**
+ * 진단 대상 `req:*` 키.
+ *
+ * 설치 축의 SSOT는 `bin/init.ts`의 `REQ_SCRIPTS`지만 여기서 import하지 않는다(아래 `classifyInstallMode` 주석 — 레이어 역전).
+ * 키가 늘면 이 목록도 늘려야 한다. 드리프트가 나도 이 검사는 **advisory(WARN 상한)** 라 게이트를 깨지 않는다.
+ */
+const REQ_SCRIPT_KEYS = ['req:new', 'req:next', 'req:review-codex', 'req:doctor', 'req:commit'] as const
+
+/** Stage A 형태: `tsx scripts/req/<file>.ts` (과거 vendored scaffold가 주입하던 모양). */
+const STAGE_A_SCRIPT_RE = /^tsx\s+scripts\/req\/[A-Za-z0-9._-]+\.ts$/
+/** Stage B 형태: `commitgate <verb>` (설치된 패키지 bin dispatch). */
+const STAGE_B_SCRIPT_RE = /^commitgate\s+req:[A-Za-z0-9-]+$/
+
+/**
+ * 설치 모드 진단(REQ-2026-014 D19 — doctor D19, 순수).
+ *
+ * **`package.json`의 `req:*` 값 형태만** 본다. manifest·lockfile·node_modules·버전에 의존하지 않는다.
+ *
+ * ⚠️ **`bin/init.ts`를 import하지 않는다**(레이어 역전 방지). init.ts는 cross-spawn·semver·git spawn을 끌고 오는
+ * ~1250줄 설치 CLI이고, 매 커밋 게이트로 도는 이 스크립트가 그것을 로드해선 안 된다. 그래서 바이트 일치(`REQ_SCRIPTS`)가
+ * 아니라 **shape**로 판정한다 — 요구(R7)도 "script 형태를 기준으로"다.
+ *
+ * ⚠️ **migrate와의 비대칭은 의도적이다**: `bin/migrate.ts`의 전환은 **쓰기**라 `REQ_SCRIPTS` 바이트 정확 일치를
+ * 요구한다(사용자 값을 덮지 않기 위해). 이 진단은 **읽기 전용 advisory**라 shape로 충분하다. 강도를 바꿔야 하는 쪽은 migrate다.
+ *
+ * @param scripts `package.json`의 `scripts` 맵. `undefined`/`null`이면 판정 불가 → 호출부가 '점검 불요'.
+ */
+export function classifyInstallMode(scripts: Record<string, string>): InstallMode {
+  const values = REQ_SCRIPT_KEYS.map((k) => scripts[k]).filter((v): v is string => typeof v === 'string')
+  if (values.length === 0) return 'none'
+  const a = values.filter((v) => STAGE_A_SCRIPT_RE.test(v)).length
+  const b = values.filter((v) => STAGE_B_SCRIPT_RE.test(v)).length
+  if (a > 0 && b > 0) return 'mixed'
+  if (a > 0 && a === values.length) return 'stage-a'
+  if (b > 0 && b === values.length) return 'stage-b'
+  // Stage A/B 형태가 하나도 없거나(전부 사용자 값), 일부만 kit 형태이고 나머지는 사용자 값.
+  return 'custom'
 }
 
 /** 승인 증거 아카이브 파일의 온디스크 검사(main이 읽어 채움 — runChecks는 순수). */
@@ -352,7 +403,35 @@ export function runChecks(inp: DoctorInputs): Check[] {
     }
   } else c.push({ id: 'D17', level: 'OK', msg: 'design_approved=false(점검 불요)' })
 
+  // D19(REQ-2026-014): 설치 모드 진단 — `req:*` 값의 **형태**만 본다(manifest·lockfile·node_modules 미사용).
+  //
+  // 🔴 **level 상한은 WARN — 절대 FAIL이 아니다.** CommitGate 자신의 package.json이 Stage A 형태이고(개발 repo가
+  //    자기 스크립트를 직접 실행하므로 정상), `req:commit`이 이 doctor를 exit≠0에 throw하는 하드 게이트로 spawn한다.
+  //    FAIL이면 **이 저장소 자신의 커밋과 정당한 Stage A 소비자 전원의 커밋이 영구 차단**된다.
+  //    Stage A는 결함이 아니라 지원되는 설치 형태다 → mixed만 WARN한다.
+  if (inp.reqScripts === undefined || inp.reqScripts === null) {
+    c.push({ id: 'D19', level: 'OK', msg: 'package.json scripts 미조회/없음(점검 불요)' })
+  } else {
+    const mode = classifyInstallMode(inp.reqScripts)
+    if (mode === 'mixed')
+      c.push({
+        id: 'D19',
+        level: 'WARN',
+        msg: 'req:* 스크립트에 Stage A(tsx scripts/req/*.ts)와 Stage B(commitgate <verb>) 형태가 섞여 있습니다 — `commitgate migrate` 로 전환하세요(형태 기준 진단)',
+      })
+    else c.push({ id: 'D19', level: 'OK', msg: `설치 모드: ${INSTALL_MODE_LABEL[mode]}(req:* 스크립트 형태 기준)` })
+  }
+
   return c
+}
+
+/** D19 메시지용 라벨. */
+const INSTALL_MODE_LABEL: Record<InstallMode, string> = {
+  'stage-a': 'Stage A(vendored — scripts/req/** 를 직접 실행)',
+  'stage-b': 'Stage B(런타임 패키지 — commitgate <verb> dispatch)',
+  mixed: 'mixed',
+  none: 'req:* 스크립트 없음',
+  custom: '사용자 정의 req:* 값(kit 형태 아님)',
 }
 
 // ──────────────────────────────────────────────────────────────── CLI ──
@@ -385,6 +464,31 @@ export function parseArgs(argv: string[]): DoctorArgs {
     else reqId = a
   }
   return { ticket, reqId, finalize, root }
+}
+
+/**
+ * D19(REQ-2026-014): 대상 `package.json`의 `scripts` 맵을 읽는다. 없거나 파손이면 `null`(→ D19는 '점검 불요' OK).
+ *
+ * **읽기 전용 advisory이므로 throw하지 않는다** — package.json이 깨졌다는 사실은 다른 게이트(init·migrate)가
+ * fail-closed로 알린다. 여기서 throw하면 무관한 이유로 `req:commit`의 doctor 게이트가 죽는다.
+ *
+ * `stripBom` 필수: PowerShell `Set-Content -Encoding UTF8`이 만든 BOM'd package.json은 이 플랫폼에서 실제로
+ * 발생하는 실패다. 없으면 정상 파일을 '파손'으로 오분류한다.
+ */
+function readReqScripts(root: string): Record<string, string> | null {
+  const p = join(root, 'package.json')
+  if (!existsSync(p)) return null
+  try {
+    const raw: unknown = JSON.parse(stripBom(readFileSync(p, 'utf8')))
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+    const s = (raw as { scripts?: unknown }).scripts
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return null
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(s as Record<string, unknown>)) if (typeof v === 'string') out[k] = v
+    return out
+  } catch {
+    return null
+  }
 }
 
 function resolveTicketDir(opts: DoctorArgs, cfg: ResolvedConfig): string {
@@ -501,6 +605,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     liveResponseSha256,
     finalize,
     finalizeSourceTree,
+    reqScripts: readReqScripts(cfg.root),
   }
 
   const checks = runChecks(inp)

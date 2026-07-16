@@ -1,65 +1,65 @@
-# REQ-2026-014 리뷰 요청 (phase-3-uninstall-migrate)
+# REQ-2026-014 리뷰 요청 (phase-4-repro-pm)
 
 ## 배경
 
-설계는 design-r21에서 findings 0건 승인됐다(축소 범위 — [00-requirement.md](00-requirement.md) §4가 비목표를 명시 열거).
-Phase 1(dispatch, `95d94b8`)·Phase 2(Stage B init, `46b740e`)는 각각 findings 0건으로 승인·커밋됐다.
+설계는 design-r21에서 findings 0건 승인됐다. Phase 1(dispatch `95d94b8`)·Phase 2(Stage B init `46b740e`)·
+Phase 3(migrate/uninstall `e141ac3`)는 각각 findings 0건으로 승인·커밋됐다.
 
-이 phase는 **비파괴 전환 경로**를 완성한다: `commitgate migrate` 신설 + verb 등록 + uninstall의 Stage B 런타임 제거 안내.
+이 phase는 **설치 모드 진단(doctor D19)** 하나만 추가한다. 지원 경계(pnpm/yarn·PnP·workspace·lockfile 권고)는
+**문서로 확정**하며 Phase 5(README)에서 반영한다 — 코드는 이 검사 1건뿐이다.
 
-## 변경 요약 (staged diff = 6파일)
+## 변경 요약 (staged diff = 2파일)
 
-**신규 `bin/migrate.ts`** — 계약은 하나다: `package.json`의 `req:*` 중 **현재 값이 정확히 Stage A 주입값인 키만**
-`commitgate <verb>`로 바꾼다.
+**`scripts/req/req-doctor.ts`** — doctor **D19** 신설(현재 구현 최대가 D18. `D1/D4/D4a/D7/D7b/D8/D12/D14`는 예약 결번이라 재사용하지 않았다):
 
-- **기본 dry-run**(쓰기 0건). `--apply`에서만 **`package.json` 한 파일**을 쓴다 → 다중 파일 rollback 프레임워크 불필요(D11 제거와 일관).
-- **비파괴**: `scripts/req/**`·schema·persona·config·진입점·`workflow/REQ-*` 증거를 **삭제하지 않는다**. 안내만 한다.
-- **사용자 정의 값 미덮어씀**: 바이트 정확 일치가 아니면 보존 + 수동 조치 안내.
-- **`--apply` 전 `devDependencies.commitgate` 키 존재만 확인**(init D14와 같은 축소 규칙 — 값 형태 검증 없음).
-- **동기(sync) 구현**: launcher가 `runCli`를 await하지 않는다(기존 7개 runCli 전부 sync `void`) — async면 promise가 버려져 exit code가 소실된다.
-- **대상 root는 `--dir`(기본 cwd)로만 해소** — `resolveRoot`는 config 부재 시 **패키지 자신의 root**를 반환하므로,
-  package.json을 쓰는 이 명령이 그 fallback을 타면 CommitGate 자신의 package.json을 재작성한다. init/uninstall과 같은 방식.
-- exact-match 판정은 `REQ_SCRIPTS`를 `./init`에서 직접 import(= `bin/uninstall.ts:295`의 `cur === injected`와 같은 계약, SSOT 1개).
+- **`classifyInstallMode(scripts)`** 순수 export — `req:*` **값의 형태만** 본다:
+  `stage-a`(`tsx scripts/req/*.ts`) / `stage-b`(`commitgate <verb>`) / `mixed`(둘 공존) / `none` / `custom`.
+  **manifest·lockfile·node_modules·버전에 의존하지 않는다.**
+- 🔴 **level 상한은 WARN — 절대 FAIL이 아니다.** **CommitGate 자신의 `package.json`이 Stage A 형태**이고
+  (개발 repo가 자기 스크립트를 직접 실행하므로 정상), `req:commit`이 이 doctor를 **exit≠0에 throw하는 하드 게이트로 spawn**한다.
+  FAIL이면 **이 저장소 자신의 커밋과 정당한 Stage A 소비자 전원의 커밋이 영구 차단**된다.
+  Stage A는 결함이 아니라 지원되는 설치 형태다 → **mixed만 WARN**.
+- 🔴 **`bin/init.ts`를 import하지 않는다**(레이어 역전 방지). init.ts는 cross-spawn·semver·git spawn을 끌고 오는
+  ~1250줄 설치 CLI다. 그래서 바이트 일치(`REQ_SCRIPTS`)가 아니라 **shape**로 판정한다 — 요구(R7)도 "script 형태를 기준으로"다.
+  **migrate와의 비대칭은 의도적이다**: migrate의 전환은 **쓰기**라 바이트 정확 일치를 요구하고(사용자 값 미덮어씀),
+  이 진단은 **읽기 전용 advisory**라 shape로 충분하다.
+- `DoctorInputs.reqScripts?`는 **optional**(required면 `req-doctor.test.ts`의 `const base: DoctorInputs = {…}` 리터럴이 즉시 tsc 오류).
+  `undefined`=미조회 / `null`=없음·파손 / object=파싱 결과. 셋 다 **모든 경로에서 정확히 1개 Check를 push**한다.
+- IO는 `main()`에서만(`runChecks`는 순수 계약). package.json 읽기에 **`stripBom` 적용** — BOM'd package.json은
+  이 플랫폼에서 실제로 발생하는 실패다(PowerShell `Set-Content -Encoding UTF8`). 읽기 실패는 **throw하지 않고 null**
+  (읽기 전용 advisory가 무관한 이유로 커밋 게이트를 죽이면 안 된다).
+- D19 블록은 **D17 뒤 `return c` 앞에 append** — 중간값에 의존하지 않아 위 블록을 흔들지 않는다.
 
-**`bin/dispatch.mjs`** — `migrate` verb 1줄 등록(파일 생성과 **동시**).
-**`tests/unit/dispatch.test.ts`** — Phase 1이 심어 둔 **의도된 tripwire**(`'migrate' in VERB_MODULES === false`)를 등록과 함께 갱신.
-Phase 1 회귀가 아니라 Phase 1이 설계한 전이다. 오타 fail-closed 커버리지는 `migrat`로 유지.
-
-**`bin/uninstall.ts`** — Stage B 안내 조정만. **삭제 기능을 추가하지 않았다.**
-- `facts.commitgateDevDependency`(선언값 표시, 진단용) 추가 → 선언이 있으면 `npm uninstall -D commitgate` 안내, 없으면 "Stage B 런타임 아님" 표시.
-- 🔴 **안내는 문자열 출력만 — npm을 spawn하지 않는다.** 파일 헤더가 그 절을 선언하지만 **테스트로 고정돼 있지 않았고**,
-  런타임 제거 안내를 다루는 이 phase가 바로 spawn 유혹이 생기는 지점이라 **구조적 불변식 테스트를 추가**했다
-  (`child_process` import 금지 + `execFileSync`/`execSync`/`spawnSync`/`spawn(` 부재). `spawn`·`exec` 단어 자체는
-  금지하지 않는다 — 주석·`cross-spawn` 문자열·GitAdapter의 `git.exec`가 정당하게 쓴다).
-- vendored `scripts/req/**` 분류 로직은 **유지**한다 — uninstall의 실제 대상이 기존 Stage A 프로젝트다.
+**`tests/unit/req-doctor.test.ts`** — 신규 17건.
 
 ## 검증 결과 (리뷰 샌드박스는 read-only라 vitest를 못 돌리므로 이쪽 증거를 제시한다)
 
 - `npm run typecheck` → 0
-- `npm test` → **17파일 / 908 테스트 전부 통과**(Phase 2 시점 879 + 신규 29).
-- **실제 CLI end-to-end 확인**(테스트가 아니라 진짜 dispatch 경유, `node bin/commitgate.mjs migrate`):
-  Stage A fixture(`req:new`=Stage A값 · `req:doctor`="echo MY-CUSTOM" · `build`="tsc" · vendored `scripts/req/`)에서
-  → dry-run: 쓰기 0건 · `--apply`: `req:new`만 전환, `req:doctor`·`build`·vendored 파일 전부 보존 · `migrat`: fail-closed.
-- migrate 비파괴 회귀는 **전후 sha256 snapshot 전수 비교**로 고정했다(바뀐 파일 = `package.json` 하나, 삭제 0건).
+- `npm test` → **17파일 / 925 테스트 전부 통과**(Phase 3 시점 908 + 신규 17).
+- **이 저장소 자신의 `npm run req:doctor -- 2026-014` 실측**:
+  `OK D19: 설치 모드: Stage A(vendored — scripts/req/** 를 직접 실행)(req:* 스크립트 형태 기준)` — **OK다(FAIL 아님)**.
+  즉 위 "자기 차단" 지뢰가 실재했고 해체됐음이 실측으로 확인된다.
+- "어떤 입력에도 D19가 FAIL을 만들지 않는다"를 전수 테스트로 고정했다(기존 D18 advisory 블록과 같은 패턴).
 
 ## 리뷰 포인트 (하한이지 상한이 아님)
 
-1. **exact-match 전환이 실제로 사용자 값을 보호하는가** — 한 글자 차이(`REQ_SCRIPTS 값 + " "`)도 custom으로 판정하는가?
-   정상 경로에서 사용자 script를 덮어쓰는 경로가 남아 있는가?
-2. **비파괴 계약이 코드로 성립하는가** — `bin/migrate.ts`에 삭제 API가 없는가? snapshot 회귀가 그것을 실제로 증명하는가?
-3. **`--dir`만 쓰는 결정이 옳은가** — `resolveRoot` fallback(패키지 root 반환)을 피하려는 것이다. `--dir` 없이 cwd 기본이
-   Stage B 정상 경로를 막지 않는가?
-4. **uninstall의 읽기 전용 불변식이 여전히 성립하는가** — 새 안내가 실행으로 새지 않는가? 새 `commitgateDevDependency`
-   facts가 삭제 근거로 오용될 여지가 있는가?
-5. **dispatch tripwire 갱신이 Phase 1 계약을 훼손하지 않는가** — `migrate` 등록 외에 라우팅 규칙(D3)이 바뀌지 않았는가?
+1. **WARN 상한이 옳은가** — Stage A를 OK로 두는 것이 R7(혼합 설치 방지)을 약화시키는가?
+   (혼합 설치의 **강제 지점**은 Phase 2의 init D19 fail-closed이고, 이 검사는 **진단**이다. 그 역할 분담이 타당한가?)
+2. **shape 판정이 정상 경로에서 오분류하는가** — `custom` vs `mixed` 경계(Stage A/B가 **공존**해야 mixed),
+   부분 집합 판정, 파일명이 다른 Stage A 형태.
+3. **SSOT 드리프트 위험을 감수할 만한가** — `REQ_SCRIPT_KEYS`를 `bin/init.ts`에서 import하지 않고 이름만 복제했다.
+   레이어 역전 회피가 그 값어치를 하는가? (드리프트가 나도 advisory라 게이트를 깨지 않는다.)
+4. **optional 필드·null 처리가 기존 호출부를 깨지 않는가** — legacy 2-arg 호출, package.json 파손, BOM.
+5. **읽기 전용 계약** — `readReqScripts`가 throw하지 않는 것이 옳은가, 아니면 파손을 감춰 정보를 잃는가?
 
 ## 이 리뷰에 요청하는 규율
 
-[00-requirement.md](00-requirement.md) §4의 비목표(manifest·provenance·lockfile 파서·버전 완전 일치·realpath 동일성·
-자동 재실행·failure injection·PnP 완전 지원·nested workspace 전 형태)를 이번 범위로 되돌리는 지적은 `observations`로 부탁한다.
-**Phase 4~5로 명시 배정된 것**(doctor 설치모드 진단 D19, README/CLI help, packed-tarball smoke)도 이 phase의 결함이 아니다.
+[00-requirement.md](00-requirement.md) §4의 비목표(manifest·provenance·lockfile 파서·버전 드리프트 탐지·
+realpath 동일성·PnP preflight/WARN·nested workspace 전 형태)를 이번 범위로 되돌리는 지적은 `observations`로 부탁한다.
+설계는 doctor 검사를 **설치 모드 1건**으로 명시 축소했고, 버전 드리프트·PnP WARN은 backlog(D20/D21 예약)다.
+**Phase 5로 명시 배정된 것**(README ko/en, CLI help, packed-tarball smoke, 지원 경계 문서화)도 이 phase의 결함이 아니다.
 
-이 프로젝트는 **하나의 활성 worktree와 협조적 작업자**만 지원한다. transactional backend가 있어야 가능한 절대 보장을 근거로 차단하지 마라.
+이 프로젝트는 **하나의 활성 worktree와 협조적 작업자**만 지원한다.
 
 **차단(`findings`)은 P1 — 정상 사용 경로에서 재현되는 요구 위반·데이터 손상·보안 구멍·fail-closed 우회 — 만.**
 각 P1에는 **해당 인수 기준·재현 경로·실패 결과**를 함께 적어 달라. 그 외는 `observations`로.

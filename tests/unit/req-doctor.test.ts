@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { runChecks, phaseGranularityWarnings, parseArgs, type DoctorInputs, type Check } from '../../scripts/req/req-doctor'
+import {
+  runChecks,
+  phaseGranularityWarnings,
+  parseArgs,
+  classifyInstallMode,
+  type DoctorInputs,
+  type Check,
+} from '../../scripts/req/req-doctor'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 import type { WorkflowState, Verdict } from '../../scripts/req/review-codex'
 
@@ -507,6 +514,87 @@ describe('[C] D18 — granularity advisory(절대 FAIL 아님)', () => {
   })
   it('[P2] config granularityMaxFiles=50 → 12파일이어도 OK(임계 상향)', () => {
     expect(lvl(runChecks(mk({ ...validDesignOver, granularityMaxFiles: 50 })), 'D18')).toBe('OK')
+  })
+})
+
+// ─────────────────────── D19: 설치 모드 진단(REQ-2026-014, 형태 기준·WARN 상한) ──
+
+const STAGE_A: Record<string, string> = {
+  'req:new': 'tsx scripts/req/req-new.ts',
+  'req:next': 'tsx scripts/req/req-next.ts',
+  'req:review-codex': 'tsx scripts/req/review-codex.ts',
+  'req:doctor': 'tsx scripts/req/req-doctor.ts',
+  'req:commit': 'tsx scripts/req/req-commit.ts',
+}
+const STAGE_B: Record<string, string> = {
+  'req:new': 'commitgate req:new',
+  'req:next': 'commitgate req:next',
+  'req:review-codex': 'commitgate req:review-codex',
+  'req:doctor': 'commitgate req:doctor',
+  'req:commit': 'commitgate req:commit',
+}
+
+describe('[REQ-2026-014] classifyInstallMode — req:* 값의 형태만으로 판정(순수)', () => {
+  it('전부 Stage A 형태 → stage-a', () => expect(classifyInstallMode(STAGE_A)).toBe('stage-a'))
+  it('전부 Stage B 형태 → stage-b', () => expect(classifyInstallMode(STAGE_B)).toBe('stage-b'))
+  it('섞이면 mixed', () => expect(classifyInstallMode({ ...STAGE_A, 'req:next': 'commitgate req:next' })).toBe('mixed'))
+  it('req:* 키가 없으면 none', () => expect(classifyInstallMode({})).toBe('none'))
+  it('무관한 스크립트만 있어도 none', () => expect(classifyInstallMode({ build: 'tsc', test: 'vitest' })).toBe('none'))
+  it('전부 사용자 정의 값이면 custom', () =>
+    expect(classifyInstallMode({ 'req:new': 'node mine.mjs', 'req:doctor': 'echo hi' })).toBe('custom'))
+  it('일부만 kit 형태이고 나머지가 사용자 값이면 custom(Stage A/B가 공존해야 mixed)', () =>
+    expect(classifyInstallMode({ 'req:new': 'tsx scripts/req/req-new.ts', 'req:doctor': 'echo hi' })).toBe('custom'))
+  it('부분 집합이어도 전부 같은 형태면 그 형태로 판정', () => {
+    expect(classifyInstallMode({ 'req:new': 'tsx scripts/req/req-new.ts' })).toBe('stage-a')
+    expect(classifyInstallMode({ 'req:commit': 'commitgate req:commit' })).toBe('stage-b')
+  })
+  it('형태만 본다 — 파일명이 달라도 Stage A 형태(바이트 정확 일치 요구는 migrate 쪽 계약)', () =>
+    expect(classifyInstallMode({ 'req:new': 'tsx scripts/req/whatever.ts' })).toBe('stage-a'))
+})
+
+describe('[REQ-2026-014] D19 — 설치 모드 진단(절대 FAIL 아님)', () => {
+  /**
+   * 🔴 이 검사가 FAIL을 내면 **이 저장소 자신의 req:commit이 영구 차단**된다.
+   * CommitGate의 package.json 은 Stage A 형태이고(개발 repo가 자기 스크립트를 직접 실행), req:commit 이
+   * req:doctor 를 exit≠0에 throw 하는 하드 게이트로 spawn 하기 때문이다. Stage A 는 지원되는 설치 형태다.
+   */
+  it('Stage A → OK (결함이 아니라 지원되는 설치 형태)', () =>
+    expect(lvl(runChecks(mk({ reqScripts: STAGE_A })), 'D19')).toBe('OK'))
+  it('Stage B → OK', () => expect(lvl(runChecks(mk({ reqScripts: STAGE_B })), 'D19')).toBe('OK'))
+  it('mixed → WARN + migrate 안내', () => {
+    const checks = runChecks(mk({ reqScripts: { ...STAGE_A, 'req:next': 'commitgate req:next' } }))
+    expect(lvl(checks, 'D19')).toBe('WARN')
+    expect(checks.find((c) => c.id === 'D19')?.msg).toContain('commitgate migrate')
+  })
+  it('none/custom → OK', () => {
+    expect(lvl(runChecks(mk({ reqScripts: {} })), 'D19')).toBe('OK')
+    expect(lvl(runChecks(mk({ reqScripts: { 'req:new': 'node mine.mjs' } })), 'D19')).toBe('OK')
+  })
+
+  it('어떤 입력에도 FAIL을 만들지 않는다(WARN 상한)', () => {
+    const inputs: Array<Record<string, string> | null | undefined> = [
+      STAGE_A,
+      STAGE_B,
+      { ...STAGE_A, 'req:next': 'commitgate req:next' },
+      {},
+      null,
+      undefined,
+    ]
+    for (const reqScripts of inputs)
+      expect(runChecks(mk({ reqScripts })).filter((c) => c.id === 'D19' && c.level === 'FAIL')).toEqual([])
+  })
+
+  it('reqScripts 미지정(legacy 2-arg 호출) → OK 점검 불요 — 기존 호출부를 깨지 않는다', () => {
+    expect(lvl(runChecks(base), 'D19')).toBe('OK')
+    expect(runChecks(base).find((c) => c.id === 'D19')?.msg).toContain('점검 불요')
+  })
+
+  it('package.json 없음/파손(null) → OK 점검 불요(무관한 이유로 커밋 게이트를 죽이지 않는다)', () =>
+    expect(lvl(runChecks(mk({ reqScripts: null })), 'D19')).toBe('OK'))
+
+  it('모든 경로에서 정확히 1개 Check를 push한다(비해당도 OK를 낸다)', () => {
+    const inputs: Array<Record<string, string> | null | undefined> = [STAGE_A, STAGE_B, {}, null, undefined]
+    for (const reqScripts of inputs) expect(runChecks(mk({ reqScripts })).filter((c) => c.id === 'D19')).toHaveLength(1)
   })
 })
 
