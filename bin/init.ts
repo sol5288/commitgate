@@ -1,16 +1,23 @@
 #!/usr/bin/env tsx
 /**
- * commitgate init — AI REQ workflow(커밋 게이트) kit을 대상 git repo에 설치(Stage A / Model A: vendored 스캐폴딩).
+ * commitgate init — AI REQ workflow(커밋 게이트) kit을 대상 git repo에 설치(**Stage B: 런타임 패키지 모델**, REQ-2026-014).
+ *
+ * Stage B의 핵심: **실행 코드와 런타임 의존성은 대상에 복사·주입하지 않는다.** 그것들은 설치된 패키지
+ * (`node_modules/commitgate`)에만 있고, 대상에는 `req:* = commitgate <verb>` 스크립트와 **거버넌스·감사 데이터**만 남는다.
+ * (Stage A = 과거의 vendored 스캐폴딩 모델. `REQ_SCRIPTS`가 그 서명 기록이고 `commitgate migrate`가 전환을 담당한다.)
  *
  * 동작(멱등·비파괴):
  *   1. 대상 repo 감사(git repo·package.json 필수 → 없으면 fail-closed throw)
- *   2. `scripts/req/**` + `KIT_COPY_RELPATHS`(스키마 2종 + review-persona.md) 복사(기존 파일은 --force 없으면 스킵)
- *   3. `req.config.json` 시드(부재 시): 감지한 packageManager + handoffPath:null(프로젝트별 값은 코어 DEFAULTS가 아니라 config에서 흡수)
- *   4. 대상 `package.json`에 req:* 스크립트·devDeps(ajv/tsx) 주입(기존 키 미덮어씀)
- *   5. `AGENTS.md` 부재 시 템플릿 생성(있으면 스킵 — Codex 계약 보존)
- *   6. 에이전트 진입점(.claude/skills·.claude/commands·.cursor/rules) 복사 + `CLAUDE.md` 부재 시 생성 (--no-agent-entrypoints로 생략)
+ *   2. **Stage B 전제(순서가 계약)**: `detectStageA`(D19 — Stage A 설치본이면 migrate로 보냄) →
+ *      `commitgateDeclared`(D14 — `devDependencies.commitgate` 키 없으면 선행 설치 안내). 둘 다 preflight = 무쓰기 실패.
+ *   3. `KIT_COPY_RELPATHS`(스키마 2종 + review-persona.md) 복사(기존 파일은 --force 없으면 스킵).
+ *      **`scripts/req/**` 는 복사하지 않는다**(R3 — 패키지에서 실행).
+ *   4. `req.config.json` 시드(부재 시): 감지한 packageManager + handoffPath:null(프로젝트별 값은 코어 DEFAULTS가 아니라 config에서 흡수)
+ *   5. 대상 `package.json`에 `req:* = commitgate <verb>` 주입(기존 키 미덮어씀). **devDeps는 주입하지 않는다**(R3).
+ *   6. `AGENTS.md` 부재 시 템플릿 생성(있으면 스킵 — Codex 계약 보존)
+ *   7. 에이전트 진입점(.claude/skills·.claude/commands·.cursor/rules) 복사 + `CLAUDE.md` 부재 시 생성 (--no-agent-entrypoints로 생략)
  *
- * 코어 승인 바인딩·staged tree 검증은 건드리지 않는다(복사만). 프로젝트 차이는 req.config.json에서만 흡수.
+ * 코어 승인 바인딩·staged tree 검증은 건드리지 않는다. 프로젝트 차이는 req.config.json에서만 흡수.
  */
 import {
   existsSync,
@@ -106,9 +113,12 @@ export const KIT_AGENTS_CONTRACT_COPY_REL = 'AGENTS.commitgate.md'
 /**
  * pm별 lockfile 이름. `detectPackageManager`(아래)와 **같은 축**이다.
  *
- * ⚠️ init이 `package.json`에 devDeps를 주입하므로, 설치 안내 2단계의 `<pm> install`은 **반드시**
- * lockfile을 갱신한다. 그것을 stage 목록에서 빠뜨리면 설치분을 커밋한 뒤에도 `M pnpm-lock.yaml`이
- * 남아 `req:new --run`이 clean-tree 게이트에서 죽는다(REQ-2026-011 design R3 P2).
+ * ⚠️ lockfile을 stage 목록에서 빠뜨리면 설치분을 커밋한 뒤에도 `M pnpm-lock.yaml`이 남아
+ * `req:new --run`이 clean-tree 게이트에서 죽는다(REQ-2026-011 design R3 P2).
+ *
+ * ⚠️ Stage B(REQ-2026-014)에서 근거가 바뀌었다: init은 더 이상 devDeps를 주입하지 않는다. 대신 **선행 `npm i -D commitgate`**
+ * 가 `package.json`+lockfile을 이미 바꿔 놓는다(D14가 그 선언을 요구한다). 즉 lockfile은 여전히 설치 커밋에 담겨야 한다 —
+ * 갱신 주체가 "init 뒤의 install"에서 "init 앞의 install"로 옮겨졌을 뿐이다.
  */
 export const LOCKFILE: Record<PackageManager, string> = {
   npm: 'package-lock.json',
@@ -130,13 +140,67 @@ export const CONTRACT_POINTER_RELPATHS: readonly string[] = [
   KIT_AGENTS_CONTRACT_COPY_REL,
 ]
 
-/** 대상 package.json에 주입할 req:* 스크립트. */
+/**
+ * **Stage A**(vendored scaffold)가 주입하던 req:* 스크립트 값 — 이제 **주입하지 않는다**(REQ-2026-014 R3).
+ *
+ * 이 상수는 **Stage A 서명 SSOT**로 남는다. 세 소비자가 정확한 바이트 일치를 판정한다:
+ *  - `detectStageA`(아래 D19) — plain init이 Stage A 프로젝트를 조용히 혼합 설치로 만들지 않게 막는다.
+ *  - `bin/uninstall.ts`(`REQ_SCRIPTS` 순회, `cur === injected`) — 기존 Stage A 설치본 분류.
+ *  - `bin/migrate.ts`(Phase 3) — **정확히 이 값일 때만** `commitgate <verb>`로 전환(사용자 정의 값 미덮어씀).
+ *
+ * ⚠️ 값을 바꾸면 기존 Stage A 설치본을 더 이상 인식하지 못한다. 이것은 "우리가 무엇을 주입하는가"가 아니라
+ * **"과거에 무엇을 주입했는가"** 의 기록이다.
+ */
 export const REQ_SCRIPTS: Record<string, string> = {
   'req:new': 'tsx scripts/req/req-new.ts',
   'req:review-codex': 'tsx scripts/req/review-codex.ts',
   'req:doctor': 'tsx scripts/req/req-doctor.ts',
   'req:next': 'tsx scripts/req/req-next.ts',
   'req:commit': 'tsx scripts/req/req-commit.ts',
+}
+
+/**
+ * **Stage B**가 주입하는 req:* 스크립트 값 — 로컬 패키지 bin을 dispatch한다(REQ-2026-014 R1/R2).
+ * 키 집합은 `REQ_SCRIPTS`에서 파생해 SSOT를 하나로 유지한다(값만 다르고 키는 같다).
+ *
+ * `npm run req:new -- <args>` → `commitgate req:new <args>` → `node_modules/.bin/commitgate`
+ * → `bin/commitgate.mjs`가 verb를 `scripts/req/req-new.ts`(**패키지 안**)로 dispatch.
+ */
+export const STAGE_B_REQ_SCRIPTS: Record<string, string> = Object.fromEntries(
+  Object.keys(REQ_SCRIPTS).map((k) => [k, `commitgate ${k}`]),
+)
+
+/**
+ * **Stage A 서명 감지(D19 — REQ-2026-014 R7)**. 감지된 근거를 반환(없으면 `null`).
+ *
+ * 왜 필요한가: 스크립트 주입은 `if (!(k in scripts))`라 **기존 값을 덮지 않는다**. 따라서 Stage A 프로젝트에
+ * plain init을 돌리면 `req:*`가 vendored `tsx scripts/req/*.ts`인 채로 남아 **런타임은 계속 vendored인데
+ * 사용자는 Stage B라 믿는 조용한 혼합 설치**가 된다. 그래서 fail-closed로 막고 `migrate`로 보낸다.
+ *
+ * 🔴 **호출 순서가 계약이다: 이 검사는 `commitgateDeclared`(D14)보다 반드시 먼저 돌아야 한다.**
+ * Stage A 설치본에는 `devDependencies.commitgate`가 **없다** — Stage A는 `npx commitgate`로 설치되고
+ * `REQ_DEV_DEPS`는 `ajv`·`cross-spawn`·`tsx`만 주입하지 `commitgate` 자신을 넣지 않는다. 순서를 뒤집으면
+ * Stage A 사용자는 **항상 D14에서 먼저 죽어** "npm install -D commitgate"라는 엉뚱한 안내를 받고
+ * `commitgate migrate` 안내에 **영원히 도달하지 못한다**(design r20 P1). 회귀 테스트가 이 순서를 고정한다.
+ */
+export function detectStageA(targetRoot: string, scripts: Record<string, string>): string | null {
+  for (const [k, injected] of Object.entries(REQ_SCRIPTS)) if (scripts[k] === injected) return `package.json#scripts.${k}`
+  if (existsSync(join(targetRoot, KIT_SOURCE_DIR_REL))) return `${KIT_SOURCE_DIR_REL}/`
+  return null
+}
+
+/**
+ * **선행 설치 확인(D14, 축소 — REQ-2026-014 R6)**. `devDependencies.commitgate` **키 존재만** 본다.
+ *
+ * 🔴 **값의 형태를 검증하지 않는다.** `npm install -D <packed tarball>`은 `"commitgate": "file:../x.tgz"`를 쓴다 —
+ * semver range가 아니다. `link:`·`workspace:`·git URL도 정당한 설치 형태다. 값을 range로 검증하면
+ * packed-tarball smoke가 **스스로 실패**한다.
+ *
+ * 범위 밖(REQ-2026-014 §4 비목표): `node_modules/commitgate` 존재 확인·실행 패키지 realpath 동일성·
+ * lockfile 해결 버전 대조. 설치 **완료** 보장은 package manager의 책임이고, 여기 계약은 "설치 의도가 선언됐는가"다.
+ */
+export function commitgateDeclared(devDeps: Record<string, string>): boolean {
+  return Object.prototype.hasOwnProperty.call(devDeps, 'commitgate')
 }
 
 /** cross-spawn 주입 spec(= 보안 하한 SSOT). 진단(#1)과 주입이 이 값을 공유. */
@@ -559,8 +623,11 @@ export function planInstall(targetRoot: string, force: boolean, pm: PackageManag
     }
     copies.push({ srcAbs, destRel })
   }
-  for (const srcAbs of walkFiles(join(PACKAGE_ROOT, KIT_SOURCE_DIR_REL)))
-    add(srcAbs, relative(PACKAGE_ROOT, srcAbs).replace(/\\/g, '/'))
+  // ⚠️ Stage B(REQ-2026-014 R3): `scripts/req/**` 를 대상에 **복사하지 않는다**. 실행 코드는 패키지
+  //    (`node_modules/commitgate/scripts/req/**`)에만 있고, `req:* = commitgate <verb>` 가 그리로 dispatch한다.
+  //    `KIT_SOURCE_DIR_REL` 상수는 그대로 남는다 — `detectStageA`(D19)와 `bin/uninstall.ts`(기존 Stage A 설치본 분류)가 쓴다.
+  //    ⚠️ `package.json` files[]의 `scripts/req` 항목은 **유지해야 한다** — 패키지 자신의 bin이 그리로 dispatch한다.
+  //    복사 축(여기)과 tarball 축(files[])은 서로 다른 축이다.
   for (const rel of KIT_COPY_RELPATHS) add(join(PACKAGE_ROOT, rel), rel)
   if (!facts.agentEntrypointsSkipped)
     for (const { src, dest } of KIT_AGENT_ENTRYPOINTS) add(join(PACKAGE_ROOT, src), dest)
@@ -762,7 +829,26 @@ export function runInit(opts: InitOptions): InitResult {
       throw new Error(`package.json의 ${field} 필드가 객체가 아님(${pkgPath}) — 배열/원시 미지원.`)
   }
 
+  // ══ Stage B 전제(REQ-2026-014). 순서가 계약이다: D19(Stage A 서명) → D14(선행 설치) ══
+  // 뒤집으면 Stage A 사용자가 D14에서 먼저 죽어 migrate 안내에 도달하지 못한다 — `detectStageA` 주석 참조(design r20 P1).
+  // 둘 다 preflight라 throw 시 어떤 파일도 쓰이지 않는다.
+  const stageASignature = detectStageA(targetRoot, pkg.scripts ?? {})
+  if (stageASignature !== null)
+    throw new Error(
+      `이미 Stage A(vendored) 설치본입니다 — 감지: ${stageASignature}. ` +
+        `plain init은 기존 req:* 를 덮지 않아 vendored 런타임이 계속 실행되는 혼합 설치가 됩니다. ` +
+        `'commitgate migrate' 로 전환하세요(기본 dry-run — 아무것도 삭제하지 않습니다).`,
+    )
+  if (!commitgateDeclared(pkg.devDependencies ?? {}))
+    throw new Error(
+      `devDependencies.commitgate 선언이 없습니다 — Stage B는 req:* 를 'commitgate <verb>' 로 심으므로 ` +
+        `대상에 commitgate가 devDependency로 있어야 합니다. 먼저 'npm install -D commitgate' 를 실행한 뒤 'commitgate init' 하세요.`,
+    )
+
   // cross-spawn 보안 하한 진단(#1): 기존 cross-spawn이 하한 미만이면 WARN(기본)/throw(--strict). preflight라 strict throw 시 부분 설치 없음.
+  // ⚠️ Stage B는 대상의 cross-spawn을 **실행하지 않는다**(safeSpawnSync는 패키지 자신의 dependencies.cross-spawn에서 돈다).
+  //    대상에 cross-spawn이 없으면 자동 무동작(existingCrossSpawnSpec→null)이라 신규 Stage B 설치엔 영향이 없다.
+  //    Stage B에서의 의미 재검토는 REQ-2026-014 backlog(이번 범위에서 동작 불변).
   let crossSpawnFloorWarned = false
   const floorCheck = crossSpawnBelowFloor(targetRoot, pkg as Record<string, unknown>)
   if (floorCheck?.below) {
@@ -809,19 +895,18 @@ export function runInit(opts: InitOptions): InitResult {
   // package.json 패치 계획(쓰기 없음, 기존 키 미덮어씀)
   const packageJsonAdded: string[] = []
   const scripts = pkg.scripts ?? {}
-  const devDeps = pkg.devDependencies ?? {}
-  for (const [k, v] of Object.entries(REQ_SCRIPTS)) {
+  // Stage B: `commitgate <verb>` 를 주입한다(R1/R2). `if (!(k in scripts))` — **기존 키는 절대 덮지 않는다**.
+  // 이 미덮어씀 규칙이 곧 "사용자 정의 req:* 보존"이며, Stage A 시절부터의 **기존 동작**이다(회귀 테스트로 고정).
+  for (const [k, v] of Object.entries(STAGE_B_REQ_SCRIPTS)) {
     if (!(k in scripts)) {
       scripts[k] = v
       packageJsonAdded.push(`scripts.${k}`)
     }
   }
-  for (const [k, v] of Object.entries(REQ_DEV_DEPS)) {
-    if (!(k in devDeps)) {
-      devDeps[k] = v
-      packageJsonAdded.push(`devDependencies.${k}`)
-    }
-  }
+  // ⚠️ Stage B(R3): devDeps(`tsx`·`ajv`·`cross-spawn`)를 **주입하지 않는다**. 이들은 `commitgate` 패키지의
+  //    runtime `dependencies`라 `npm i -D commitgate` 시 전이 설치된다. 대상 package.json의 devDependencies는
+  //    **건드리지 않는다**(사용자 소유 — `devDependencies.commitgate`도 사용자가 `npm i -D`로 넣은 것이다).
+  //    `REQ_DEV_DEPS` 상수는 남는다 — `bin/uninstall.ts`가 기존 Stage A 설치본의 devDeps를 분류하는 데 쓴다.
 
   const agentsPath = join(targetRoot, 'AGENTS.md')
   const agentsCreated = !existsSync(agentsPath)
@@ -955,7 +1040,8 @@ export function runInit(opts: InitOptions): InitResult {
     if (configToWrite) writeFileSync(cfgPath, JSON.stringify(configToWrite, null, 2) + '\n', 'utf8')
     if (packageJsonAdded.length > 0) {
       pkg.scripts = scripts
-      pkg.devDependencies = devDeps
+      // ⚠️ Stage B(R3): `pkg.devDependencies`를 **재대입하지 않는다**. 주입이 없으므로 파싱된 원본이 그대로 직렬화되고,
+      //    devDependencies가 없던 package.json에 빈 `{}`를 새로 만들어 넣는 부작용도 없다.
       writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
     }
     if (agentsCreated) copyFileSync(join(PACKAGE_ROOT, 'AGENTS.template.md'), agentsPath)

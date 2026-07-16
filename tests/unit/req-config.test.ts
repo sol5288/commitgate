@@ -378,7 +378,11 @@ describe('[REQ-2026-010 D4] init이 reviewPersonaPath를 req.config.json에 주�
   const tmpTarget = (): string => {
     const dir = mkdtempSync(join(tmpdir(), 'reqcfg-init-'))
     execFileSync('git', ['init', '-q'], { cwd: dir })
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }, null, 2))
+    // Stage B(REQ-2026-014 D14): runInit은 `devDependencies.commitgate` 선언을 요구한다(선행 `npm i -D commitgate`).
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ name: 'x', version: '0.0.0', devDependencies: { commitgate: '^0.6.0' } }, null, 2),
+    )
     return dir
   }
 

@@ -26,6 +26,10 @@ import {
   AGENTS_CONTRACT_MARKER,
   CONTRACT_POINTER_RELPATHS,
   LOCKFILE,
+  REQ_SCRIPTS,
+  STAGE_B_REQ_SCRIPTS,
+  detectStageA,
+  commitgateDeclared,
   type InitOptions,
 } from '../../bin/init'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
@@ -64,9 +68,29 @@ function gitIn(dir: string, args: string[]): string {
 }
 
 /**
+ * Stage B(REQ-2026-014 D14) 픽스처 전제: init은 대상에 `devDependencies.commitgate` **선언**을 요구한다
+ * (사용자가 선행 `npm i -D commitgate`를 했다는 의도 표시). 값 형태는 검증하지 않으므로 아무 spec이나 무방하다.
+ */
+const COMMITGATE_DEP_SPEC = '^0.6.0'
+
+/**
+ * 픽스처 package.json에 `devDependencies.commitgate`를 병합한다(D14 통과용). 기존 devDeps는 보존한다.
+ *
+ * ⚠️ `devDependencies`가 plain object가 **아니면**(모양 검증 테스트의 `[1,2]` 등) 손대지 않는다 —
+ *    병합하면 "비객체 → throw" 라는 그 테스트의 의도가 사라진다.
+ */
+function withCommitgateDep(pkg: object): object {
+  const p = pkg as { devDependencies?: unknown }
+  const dd = p.devDependencies
+  if (dd !== undefined && (typeof dd !== 'object' || dd === null || Array.isArray(dd))) return pkg
+  return { ...p, devDependencies: { ...((dd as Record<string, string> | undefined) ?? {}), commitgate: COMMITGATE_DEP_SPEC } }
+}
+
+/**
  * 임시 대상 repo 생성.
  * - withGit: 'real'(기본) = 실제 `git init` / 'fake' = 빈 `.git` 마커만 / 'none' = git 없음
  * - withPkg: package.json 작성 여부(기본 true)
+ * - noCommitgateDep: `devDependencies.commitgate` 선언을 **넣지 않는다**(D14 fail-closed를 의도적으로 테스트할 때만)
  */
 function tmpTarget(opts?: {
   pkg?: object
@@ -75,6 +99,7 @@ function tmpTarget(opts?: {
   withPkg?: boolean
   spacedName?: boolean
   pctName?: boolean
+  noCommitgateDep?: boolean
 }): string {
   const prefix = opts?.pctName === true ? 'reqwf %PCT% ' : opts?.spacedName === true ? 'reqwf init ' : 'reqwf-init-'
   const dir = mkdtempSync(join(tmpdir(), prefix))
@@ -90,8 +115,13 @@ function tmpTarget(opts?: {
   } else if (g === 'fake') {
     mkdirSync(join(dir, '.git'))
   }
-  if (opts?.withPkg !== false)
-    writeFileSync(join(dir, 'package.json'), JSON.stringify(opts?.pkg ?? { name: 'x', version: '0.0.0' }, null, 2))
+  if (opts?.withPkg !== false) {
+    const base = opts?.pkg ?? { name: 'x', version: '0.0.0' }
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify(opts?.noCommitgateDep === true ? base : withCommitgateDep(base), null, 2),
+    )
+  }
   if (opts?.lock) writeFileSync(join(dir, opts.lock), '')
   return dir
 }
@@ -405,8 +435,8 @@ describe('[init] 에이전트 진입점 설치', () => {
       for (const d of [...DESTS, 'CLAUDE.md']) expect(existsSync(join(dir, d)), `${d} 미생성`).toBe(false)
       expect(existsSync(join(dir, '.claude'))).toBe(false)
       expect(existsSync(join(dir, '.cursor'))).toBe(false)
-      // 코어 설치는 그대로.
-      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true)
+      // 코어 설치는 그대로. (Stage B: 실행코드는 복사되지 않으므로 MANAGED 자산으로 확인한다)
+      expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(true)
     } finally {
       cleanup(dir)
     }
@@ -480,7 +510,131 @@ describe('[init] 에이전트 진입점 설치', () => {
     try {
       writeFileSync(join(dir, '.claude'), '나는 파일이다\n', 'utf8')
       expect(() => runInit(OPTS(dir, { noAgentEntrypoints: true }))).not.toThrow()
-      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true)
+      expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-014 Stage B 전제 — **순서가 계약이다: D19(Stage A 서명) → D14(선행 설치)**.
+ *
+ * design r20 P1: Stage A 설치본에는 `devDependencies.commitgate`가 **없다**(`REQ_DEV_DEPS`는 ajv·cross-spawn·tsx뿐).
+ * 순서가 뒤바뀌면 Stage A 사용자의 `npx commitgate init`이 **항상 D14에서 먼저 죽어** "npm install -D commitgate"라는
+ * 엉뚱한 안내를 받고 `commitgate migrate` 안내(R7 인수 기준)에 **영원히 도달하지 못한다**.
+ * 아래 마지막 케이스가 그 순서 자체를 고정한다.
+ */
+describe('[init][Stage B] 전제 검사 — D19(Stage A 서명) → D14(선행 설치)', () => {
+  it('D14: devDependencies.commitgate 미선언이면 fail-closed + 선행 설치 안내 (쓰기 0건)', () => {
+    const dir = tmpTarget({ noCommitgateDep: true })
+    try {
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir))).toThrow(/devDependencies\.commitgate 선언이 없습니다[\s\S]*npm install -D commitgate/)
+      expect(snapshot(dir), 'preflight throw는 어떤 파일도 쓰지 않는다').toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('D14: 값 형태는 검증하지 않는다 — `file:...tgz`(packed tarball 설치)도 통과', () => {
+    const dir = tmpTarget({ pkg: { name: 'x', version: '0.0.0', devDependencies: { commitgate: 'file:../commitgate-0.6.0.tgz' } } })
+    try {
+      // semver range로 검증하면 packed-tarball smoke가 스스로 실패한다 — 키 존재만 본다.
+      expect(() => runInit(OPTS(dir))).not.toThrow()
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('D19: Stage A req:* 값이 있으면 fail-closed + migrate 안내 (쓰기 0건)', () => {
+    const dir = tmpTarget({ pkg: { name: 'x', version: '0.0.0', scripts: { 'req:new': REQ_SCRIPTS['req:new'] } } })
+    try {
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir))).toThrow(/이미 Stage A\(vendored\) 설치본입니다[\s\S]*commitgate migrate/)
+      expect(snapshot(dir)).toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('D19: scripts/req/** 가 존재하면 fail-closed + migrate 안내', () => {
+    const dir = tmpTarget()
+    try {
+      mkdirSync(join(dir, 'scripts', 'req'), { recursive: true })
+      writeFileSync(join(dir, 'scripts', 'req', 'req-new.ts'), '// vendored\n', 'utf8')
+      expect(() => runInit(OPTS(dir))).toThrow(/이미 Stage A\(vendored\) 설치본입니다[\s\S]*commitgate migrate/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('사용자 정의 req:* 값은 Stage A 서명이 아니다 — 정상 설치되고 그 값은 보존된다', () => {
+    const dir = tmpTarget({ pkg: { name: 'x', version: '0.0.0', scripts: { 'req:new': 'node my-own.mjs' } } })
+    try {
+      expect(() => runInit(OPTS(dir))).not.toThrow()
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      expect(pkg.scripts['req:new']).toBe('node my-own.mjs') // 미덮어씀
+      expect(pkg.scripts['req:next']).toBe('commitgate req:next') // 없던 키만 채움
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * 🔴 **순서 회귀(design r20 P1)** — 이 테스트가 D19→D14 순서를 고정한다.
+   * 실제 Stage A 프로젝트의 상태(= Stage A 서명 **∧** commitgate 미선언)를 재현한다.
+   * 순서가 뒤집히면 "npm install -D commitgate" 안내가 나와 이 단언이 깨진다.
+   */
+  it('[순서] Stage A 서명 ∧ commitgate 미선언 → migrate 안내가 나온다(설치 선행 안내가 아니라)', () => {
+    const dir = tmpTarget({
+      noCommitgateDep: true,
+      pkg: { name: 'x', version: '0.0.0', scripts: { ...REQ_SCRIPTS } },
+    })
+    try {
+      expect(() => runInit(OPTS(dir))).toThrow(/commitgate migrate/)
+      expect(() => runInit(OPTS(dir))).not.toThrow(/npm install -D commitgate/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+describe('[init][Stage B] 순수 함수 — detectStageA / commitgateDeclared', () => {
+  it('STAGE_B_REQ_SCRIPTS는 REQ_SCRIPTS와 같은 키에 `commitgate <verb>` 값을 갖는다', () => {
+    expect(Object.keys(STAGE_B_REQ_SCRIPTS).sort()).toEqual(Object.keys(REQ_SCRIPTS).sort())
+    for (const k of Object.keys(REQ_SCRIPTS)) expect(STAGE_B_REQ_SCRIPTS[k]).toBe(`commitgate ${k}`)
+  })
+
+  it('commitgateDeclared: 키 존재만 본다(값 형태 무관), 상속 키는 인정하지 않는다', () => {
+    expect(commitgateDeclared({ commitgate: '^0.6.0' })).toBe(true)
+    expect(commitgateDeclared({ commitgate: 'file:../x.tgz' })).toBe(true) // packed tarball
+    expect(commitgateDeclared({ commitgate: 'workspace:*' })).toBe(true)
+    expect(commitgateDeclared({ commitgate: '' })).toBe(true) // 값 검증 안 함
+    expect(commitgateDeclared({})).toBe(false)
+    expect(commitgateDeclared({ ajv: '^8' })).toBe(false)
+    expect(commitgateDeclared(Object.create({ commitgate: '^1' }) as Record<string, string>)).toBe(false) // 프로토타입 오염 방지
+  })
+
+  it('detectStageA: Stage A 값이면 근거를 반환, Stage B 값·사용자 값·빈 값이면 null', () => {
+    const dir = tmpTarget()
+    try {
+      expect(detectStageA(dir, { 'req:new': REQ_SCRIPTS['req:new']! })).toBe('package.json#scripts.req:new')
+      expect(detectStageA(dir, { 'req:commit': REQ_SCRIPTS['req:commit']! })).toBe('package.json#scripts.req:commit')
+      expect(detectStageA(dir, STAGE_B_REQ_SCRIPTS)).toBeNull()
+      expect(detectStageA(dir, { 'req:new': 'node custom.mjs' })).toBeNull()
+      expect(detectStageA(dir, {})).toBeNull()
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('detectStageA: scripts/req/ 존재만으로도 서명이다(스크립트가 비어 있어도)', () => {
+    const dir = tmpTarget()
+    try {
+      expect(detectStageA(dir, {})).toBeNull()
+      mkdirSync(join(dir, 'scripts', 'req'), { recursive: true })
+      expect(detectStageA(dir, {})).toBe('scripts/req/')
     } finally {
       cleanup(dir)
     }
@@ -488,13 +642,17 @@ describe('[init] 에이전트 진입점 설치', () => {
 })
 
 describe('[init] 정상 설치', () => {
-  it('kit 파일·config·package.json·AGENTS를 설치', () => {
+  it('[Stage B] kit 파일·config·package.json·AGENTS를 설치 — 실행코드 무복사·devDep 무주입', () => {
     const dir = tmpTarget()
     try {
       const r = runInit(OPTS(dir))
-      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true)
-      expect(existsSync(join(dir, 'scripts/req/lib/config.ts'))).toBe(true)
-      expect(existsSync(join(dir, 'scripts/req/lib/adapters.ts'))).toBe(true)
+      // ── R3 무복사: 실행 코드는 패키지(node_modules/commitgate)에만 있다.
+      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(false)
+      expect(existsSync(join(dir, 'scripts/req/lib/config.ts'))).toBe(false)
+      expect(existsSync(join(dir, 'scripts/req/lib/adapters.ts'))).toBe(false)
+      expect(existsSync(join(dir, 'scripts/req'))).toBe(false)
+      expect(r.copied.some((f) => f.startsWith('scripts/req/'))).toBe(false)
+      // ── MANAGED 자산은 계속 프로젝트에 깔린다(런타임이 읽는 검증 입력 + 재현성).
       expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(true)
       expect(existsSync(join(dir, 'workflow/req.config.schema.json'))).toBe(true)
       // 티켓 디렉터리는 복사 대상 아님(스키마 2종만)
@@ -504,18 +662,22 @@ describe('[init] 정상 설치', () => {
       const cfg = JSON.parse(readFileSync(join(dir, 'req.config.json'), 'utf8'))
       expect(cfg.handoffPath).toBeNull()
       expect(cfg.packageManager).toBe('npm')
-      // package.json 패치
+      // ── R1/R2 package.json 패치: 값이 패키지 bin dispatch를 가리킨다.
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-      expect(pkg.scripts['req:new']).toBe('tsx scripts/req/req-new.ts')
-      expect(pkg.scripts['req:commit']).toBe('tsx scripts/req/req-commit.ts')
-      // REQ-2026-010 phase-2: req:next가 5번째 주입 스크립트로 추가됐다.
-      expect(pkg.scripts['req:next']).toBe('tsx scripts/req/req-next.ts')
+      expect(pkg.scripts['req:new']).toBe('commitgate req:new')
+      expect(pkg.scripts['req:commit']).toBe('commitgate req:commit')
+      expect(pkg.scripts['req:next']).toBe('commitgate req:next')
+      expect(pkg.scripts['req:doctor']).toBe('commitgate req:doctor')
+      expect(pkg.scripts['req:review-codex']).toBe('commitgate req:review-codex')
       expect(Object.keys(pkg.scripts).sort()).toEqual(
         ['req:commit', 'req:doctor', 'req:new', 'req:next', 'req:review-codex'].sort(),
       )
-      expect(pkg.devDependencies.tsx).toBeTruthy()
-      expect(pkg.devDependencies.ajv).toBeTruthy()
-      expect(pkg.devDependencies['cross-spawn']).toBeTruthy() // 복사된 adapters.ts 안전 spawn 의존(P1)
+      // ── R3 무주입: tsx·ajv·cross-spawn은 commitgate 패키지의 runtime dependency지 대상의 것이 아니다.
+      //    사용자가 넣은 devDependencies.commitgate(픽스처)는 그대로 보존된다 — init은 devDeps를 건드리지 않는다.
+      expect(pkg.devDependencies.tsx).toBeUndefined()
+      expect(pkg.devDependencies.ajv).toBeUndefined()
+      expect(pkg.devDependencies['cross-spawn']).toBeUndefined()
+      expect(Object.keys(pkg.devDependencies)).toEqual(['commitgate'])
       // AGENTS 생성
       expect(r.agentsCreated).toBe(true)
       expect(existsSync(join(dir, 'AGENTS.md'))).toBe(true)
@@ -532,7 +694,7 @@ describe('[init] 멱등성(재실행)', () => {
       runInit(OPTS(dir))
       const r2 = runInit(OPTS(dir))
       expect(r2.copied.length).toBe(0)
-      expect(r2.skipped).toContain('scripts/req/req-new.ts')
+      expect(r2.skipped).toContain('workflow/machine.schema.json')
       expect(r2.configAction).toBe('unchanged')
       expect(r2.agentsCreated).toBe(false)
       expect(r2.packageJsonAdded.length).toBe(0)
@@ -545,10 +707,11 @@ describe('[init] 멱등성(재실행)', () => {
     const dir = tmpTarget()
     try {
       runInit(OPTS(dir))
-      writeFileSync(join(dir, 'scripts/req/req-new.ts'), '// tampered', 'utf8')
+      // Stage B: 실행코드는 복사되지 않으므로 MANAGED 자산(스키마)으로 --force 덮어쓰기를 검증한다.
+      writeFileSync(join(dir, 'workflow/machine.schema.json'), '// tampered', 'utf8')
       const r = runInit(OPTS(dir, { force: true }))
-      expect(r.copied).toContain('scripts/req/req-new.ts')
-      expect(readFileSync(join(dir, 'scripts/req/req-new.ts'), 'utf8')).not.toBe('// tampered')
+      expect(r.copied).toContain('workflow/machine.schema.json')
+      expect(readFileSync(join(dir, 'workflow/machine.schema.json'), 'utf8')).not.toBe('// tampered')
     } finally {
       cleanup(dir)
     }
@@ -567,11 +730,13 @@ describe('[init] 기존 config 누락키 병합(design R1 P2)', () => {
       expect(cfg.branchPrefix).toBe('feat/x-') // 기존 키 보존
       expect(cfg.handoffPath).toBeNull() // 누락키 추가
       expect(cfg.packageManager).toBe('npm') // 누락키 추가
-      // package.json: 기존 키 보존
+      // package.json: 기존 키 보존 — **사용자 정의 req:* 는 절대 덮지 않는다**(R5, `if (!(k in scripts))`).
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
       expect(pkg.scripts['req:new']).toBe('custom')
+      // Stage B는 devDeps를 아예 건드리지 않으므로 사용자의 ajv 핀이 그대로 남는다(주입 시절에도 미덮어씀이었다).
       expect(pkg.devDependencies.ajv).toBe('^7.0.0')
-      expect(pkg.scripts['req:commit']).toBe('tsx scripts/req/req-commit.ts')
+      // 없던 키만 Stage B 값으로 채운다.
+      expect(pkg.scripts['req:commit']).toBe('commitgate req:commit')
     } finally {
       cleanup(dir)
     }
@@ -703,10 +868,15 @@ describe('[init] BOM 이식성(P3)', () => {
   it('BOM 붙은 package.json도 파싱·패치(PowerShell5 UTF8)', () => {
     const dir = tmpTarget({ withPkg: false })
     try {
-      writeFileSync(join(dir, 'package.json'), '﻿' + JSON.stringify({ name: 'x', version: '0.0.0' }), 'utf8')
+      // 이 테스트는 package.json을 직접 쓰므로 D14가 요구하는 devDependencies.commitgate 선언을 여기서 넣는다.
+      writeFileSync(
+        join(dir, 'package.json'),
+        '﻿' + JSON.stringify({ name: 'x', version: '0.0.0', devDependencies: { commitgate: COMMITGATE_DEP_SPEC } }),
+        'utf8',
+      )
       expect(() => runInit(OPTS(dir))).not.toThrow()
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) // init은 BOM 없이 재작성
-      expect(pkg.scripts['req:new']).toBe('tsx scripts/req/req-new.ts')
+      expect(pkg.scripts['req:new']).toBe('commitgate req:new')
     } finally {
       cleanup(dir)
     }
@@ -790,7 +960,7 @@ describe('[#1] cross-spawn 버전 하한 진단', () => {
     try {
       const r = runInit(OPTS(dir))
       expect(r.crossSpawnFloorWarned).toBe(true)
-      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true) // 비파괴 — 설치 계속
+      expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(true) // 비파괴 — 설치 계속
     } finally {
       cleanup(dir)
     }
@@ -903,10 +1073,14 @@ describe('[init] 설치 산출물 목록(InitResult.artifacts) — ignore 검사
     const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
     try {
       const r = runInit(OPTS(dir))
-      expect(r.artifacts).toContain('scripts/req/req-new.ts')
+      // Stage B: 실행코드는 산출물이 아니다(복사하지 않는다). MANAGED 자산은 그대로 산출물이다.
+      expect(r.artifacts).not.toContain('scripts/req/req-new.ts')
+      expect(r.artifacts.some((a) => a.startsWith('scripts/req/'))).toBe(false)
+      expect(r.artifacts).toContain('workflow/machine.schema.json')
       expect(r.artifacts).toContain('req.config.json')
       expect(r.artifacts).toContain('package.json')
-      // `<pm> install`이 lockfile을 갱신한다(devDeps 주입 때문). stage하지 않으면 clean-tree 게이트가 죽는다.
+      // lockfile은 여전히 산출물이다 — 근거만 바뀌었다: Stage B는 devDeps를 주입하지 않지만, D14가 요구하는
+      // **선행 `npm i -D commitgate`** 가 package.json+lockfile을 이미 바꿔 놓는다. stage하지 않으면 clean-tree 게이트가 죽는다.
       expect(r.artifacts, 'lockfile 누락 시 req:new --run이 clean-tree에서 실패한다').toContain('pnpm-lock.yaml')
     } finally {
       cleanup(dir)
@@ -976,8 +1150,8 @@ describe('[init] gitignore preflight (D5)', () => {
       for (const p of IGNORED_POINTERS) expect(r.gitIgnoredArtifacts, p).toContain(p)
       // .cursor는 무시되지 않는다
       expect(r.gitIgnoredArtifacts).not.toContain('.cursor/rules/commitgate.mdc')
-      // 비파괴: 설치는 계속된다
-      expect(existsSync(join(dir, 'scripts/req/req-new.ts'))).toBe(true)
+      // 비파괴: 설치는 계속된다 (Stage B: 실행코드 대신 MANAGED 자산으로 확인)
+      expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(true)
     } finally {
       cleanup(dir)
     }
@@ -1061,7 +1235,12 @@ describe('[init] 설치 전 dirty 워킹트리 (DEC-011-11)', () => {
     try {
       gitIn(dir, ['add', 'package.json'])
       gitIn(dir, ['commit', '-q', '-m', 'init'])
-      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.1' }, null, 2), 'utf8')
+      // package.json을 직접 덮어쓰므로 D14가 요구하는 devDependencies.commitgate 선언을 유지한다.
+      writeFileSync(
+        join(dir, 'package.json'),
+        JSON.stringify({ name: 'x', version: '0.0.1', devDependencies: { commitgate: COMMITGATE_DEP_SPEC } }, null, 2),
+        'utf8',
+      )
       const r = runInit(OPTS(dir))
       expect(r.preexistingDirty.overlapping).toContain('package.json')
       expect(r.preexistingDirty.unrelated).not.toContain('package.json')
@@ -1174,10 +1353,12 @@ describe('[init] installGuidance — 안내 문구 (D4)', () => {
     const dir = tmpTarget({ lock: 'pnpm-lock.yaml' })
     try {
       const g = text(dir)
-      expect(g).toContain('scripts/req')
+      // Stage B: 실행코드는 산출물이 아니다. stage 목록에는 MANAGED 자산·config·package.json·lockfile이 든다.
+      expect(g).not.toContain('scripts/req')
+      expect(g).toContain('workflow/machine.schema.json')
       expect(g).toContain('req.config.json')
       expect(g).toContain('package.json')
-      expect(g, 'lockfile — <pm> install 이 갱신한다').toContain('pnpm-lock.yaml')
+      expect(g, 'lockfile — 선행 `npm i -D commitgate`가 갱신한다').toContain('pnpm-lock.yaml')
       expect(g, '눈으로 확인하는 단계').toContain('git status')
     } finally {
       cleanup(dir)
@@ -1238,7 +1419,12 @@ describe('[init] installGuidance — 안내 문구 (D4)', () => {
     try {
       gitIn(dir, ['add', 'package.json'])
       gitIn(dir, ['commit', '-q', '-m', 'init'])
-      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '9.9.9' }), 'utf8')
+      // package.json을 직접 덮어쓰므로 D14가 요구하는 devDependencies.commitgate 선언을 유지한다.
+      writeFileSync(
+        join(dir, 'package.json'),
+        JSON.stringify({ name: 'x', version: '9.9.9', devDependencies: { commitgate: COMMITGATE_DEP_SPEC } }),
+        'utf8',
+      )
       const g = text(dir)
       expect(g).not.toContain('git add ')
       expect(g).toContain('package.json')
@@ -1411,10 +1597,11 @@ describe('[init] installGuidance — 안내 문구 (D4)', () => {
 
       expect(r2.copied).toEqual([])
       expect(r2.skipped.length).toBeGreaterThan(0)
-      expect(r2.artifacts, 'skip된 kit 파일도 설치 커밋에 속한다').toContain('scripts/req/req-new.ts')
-      expect(r2.preexistingDirty.unrelated).not.toContain('scripts/req/req-new.ts')
+      // Stage B: 실행코드는 복사되지 않으므로 MANAGED 자산(스키마)으로 같은 성질을 고정한다.
+      expect(r2.artifacts, 'skip된 kit 파일도 설치 커밋에 속한다').toContain('workflow/machine.schema.json')
+      expect(r2.preexistingDirty.unrelated).not.toContain('workflow/machine.schema.json')
       const add = cmdsOf(r2).find((c) => c.startsWith('git add --')) ?? ''
-      expect(add.split(' ')).toContain('scripts/req/req-new.ts')
+      expect(add.split(' ')).toContain('workflow/machine.schema.json')
     } finally {
       cleanup(dir)
     }
