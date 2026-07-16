@@ -6,8 +6,8 @@
 commitgate/
 ├── bin/
 │   ├── commitgate.mjs        # npx 진입 런처(tsx 등록 후 init/uninstall 위임)
-│   ├── init.ts               # 설치 코어(~1250줄): 복사·주입·프리플라이트
-│   └── uninstall.ts          # 읽기 전용 제거 플래너(~597줄): 아무 것도 지우지 않음
+│   ├── init.ts               # 설치 코어: 복사·주입·프리플라이트
+│   └── uninstall.ts          # 읽기 전용 제거 플래너: 아무 것도 지우지 않음
 ├── scripts/
 │   ├── req/
 │   │   ├── req-new.ts         # req:new  — 티켓·브랜치 생성
@@ -26,7 +26,7 @@ commitgate/
 │   ├── machine.schema.json    # Codex 구조화 응답 스키마(1.1)
 │   ├── req.config.schema.json # req.config.json 검증 스키마
 │   ├── review-persona.md      # 리뷰어(PM) 페르소나(프롬프트 첫 블록)
-│   └── REQ-2026-001..013/     # 기존 티켓(증거·설계문서·responses/)
+│   └── REQ-2026-001..013,017,018/ # main에서 추적되는 기존 티켓
 ├── templates/                 # 얇은 포인터 진입점 원본 5종
 │   ├── claude-skill.md · claude-command.md · cursor-rule.mdc
 │   ├── CLAUDE.template.md · workflow.gitignore
@@ -38,7 +38,7 @@ commitgate/
 └── tests/unit/*.test.ts       # 15개 테스트 파일
 ```
 
-`.agents/`는 존재하지만 **비어 있고 git 미추적**이다(빈 스캐폴드) — [tests 조사], `git ls-files .agents` 공백.
+현재 workspace에 `.agents/`가 보일 수 있으나 `git ls-files .agents` 결과는 비어 있다. 즉 재구현·패키지 페이로드에 포함되는 저장소 구성요소가 아니라 **로컬 미추적 디렉터리**다. 마찬가지로 main의 `workflow/REQ-2026-014/`에 보이는 파일이 있다면 과거 브랜치가 남긴 gitignore 대상 scratch이며, main 추적 인벤토리에 포함하지 않는다.
 
 ## 2. 기술 스택과 버전
 
@@ -121,3 +121,13 @@ CommitGate 자체가 정의하는 환경 변수는 **1개**이며, 나머지는 
 ### 런타임별 차이
 - **Windows**: BOM(UTF-8 BOM) 방어(`stripBom`), `.cmd` 래퍼 안전 spawn, shell 연산자(`&&`) 회피, `%VAR%`/`!VAR!` 확장 경로는 명령 미출력. 상세 [09-security-and-reliability.md](09-security-and-reliability.md).
 - **POSIX(Linux/macOS)**: cross-spawn의 POSIX exec 경로. CI가 세 OS 모두 검증.
+
+## 6. 배포 모델과 버전 드리프트
+
+현재 Stage A는 실행 코드를 대상 repo의 `scripts/req/`로 **복사**한다. 설치 후 대상 repo의 코드는 npm 패키지와 독립적으로 수정될 수 있고, 별도의 설치 manifest가 없다.
+
+- `--force`는 kit 파일을 현재 패키지 원본으로 다시 쓸 수 있으나, 설치 당시 버전·원본 해시·사용자 수정 여부를 기록한 원장이 없다.
+- 제거 플래너는 **현재 실행 중인 패키지 원본**과 대상 파일의 바이트를 비교한다. 과거 버전 설치본이나 사용자 수정본은 `differs`로 분류해 자동 소유물로 단정하지 않는다.
+- `package.json` 주입은 기존 키를 보존하는 비파괴 정책이므로, 이미 존재하는 오래된 스크립트·의존성 선언이 자동 마이그레이션된다고 보장할 수 없다.
+
+이 보수성은 데이터 파괴를 막지만, 여러 repo를 최신 계약으로 유지하는 운영 기능은 아니다. 설치 원장·plan 기반 upgrade는 [gaps-and-decisions.md](gaps-and-decisions.md) G-10 및 [14](14-product-strategy-and-roadmap.md) STR-06의 목표 상태다.

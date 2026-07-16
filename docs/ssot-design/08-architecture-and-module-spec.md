@@ -145,8 +145,41 @@ sequenceDiagram
 ```
 
 ## 4. 일관성·장애 경계
-- **캐시/큐/외부 스토리지 없음** — 상태는 오직 git + 티켓 파일. 동시성 이슈는 단일 로컬 사용자 가정으로 최소화(`추론`).
+- **캐시/큐/외부 스토리지 없음** — 상태는 오직 git + 티켓 파일. 단 `state.json`의 런타임 변경은 git에 자동 내구화되지 않으므로 “git에 전부 재구축 가능”을 뜻하지 않는다. 동시성 이슈는 단일 로컬 사용자 가정으로 최소화(`추론`).
 - **git 인덱스 stat-cache**: `req:next`는 `--no-optional-locks`로 인덱스 재기록을 방지(읽기 순수성 보장).
 - **codex 장애**: fail-closed throw. 부분 승인 없음.
 - **아카이브 쓰기 실패**: swallow되어 증거가 핀되지 않음 → 다음 doctor/commit에서 증거 부재로 차단(`추론` — 안전 방향).
 - **evidence-finalize 중단 복구**: `pending_evidence_for` 마커 + `--finalize`(고아 소스 커밋 복구 포함)로 재개.
+
+## 5. 아키텍처 평가
+
+### 5.1 강점
+
+- **불변 아티팩트 중심**: git tree·blob index·sha256을 경계 값으로 사용해 설명 문자열보다 강한 동일성을 얻는다.
+- **순수 코어 분리**: `resolveNext`, `validateVerdict`, manifest·doctor 판정의 많은 부분이 fake adapter로 테스트 가능하다.
+- **프로세스 경계 집중**: git/codex 실행을 adapter에 모아 shell 주입·Windows wrapper 회귀를 한 곳에서 통제한다.
+- **읽기 전용 명령의 구조적 제한**: `req:next`는 허용 git subcommand를 코드로 제한해 우발 쓰기를 막는다.
+- **실패 후 안전 방향**: 응답·증거·아카이브가 불완전하면 커밋이 열리는 대신 doctor/commit에서 닫힌다.
+
+### 5.2 구조적 제약
+
+- **`review-codex.ts`가 공유 도메인 허브이자 CLI 오케스트레이터**다. new/next/doctor/commit이 state type·바인딩·검증 헬퍼를 command 파일에서 import한다. 현재 순환은 없지만 CI verifier·state rebuild·provider 확장을 추가하면 결합도가 빠르게 커진다.
+- **state 계약이 선언적 schema가 아니라 분산된 사용 지점 검증**에 있다. 필드 조합의 유효성을 한 곳에서 설명·버전 관리하기 어렵다.
+- **증거 읽기 로직이 doctor/commit에 분산**되어 향후 CI verifier가 새 해석을 복제할 위험이 있다.
+- **vendored 실행 코드**는 설치가 쉽지만 여러 대상 repo의 계약 버전과 보안 패치를 일관되게 유지하기 어렵다.
+- **Codex adapter와 외부 전송 정책이 같은 호출 경로에 결합**되어 payload manifest·scanner·격리 컨텍스트를 넣을 명시적 policy port가 없다.
+
+### 5.3 목표 seam
+
+목표 설계를 구현할 때 파일을 한 번에 재작성하지 않고 다음 seam을 먼저 추출한다.
+
+| 목표 모듈 | 책임 | 소비자 |
+|---|---|---|
+| `domain/state` | versioned state/event type, reducer, invariant | next·review·doctor·repair |
+| `domain/evidence` | archive/manifest 읽기·검증·commit 매핑 | doctor·commit·CI verify·report |
+| `domain/policy` | profile, 전송·라운드·통제점 판정 | review·next·CI verify |
+| `ports/reviewer` | provider 중립 request/result 계약 | Codex·향후 local/enterprise adapter |
+| `ports/repository` | read-only/mutating git capability 분리 | 전 명령 |
+| `application/*` | use-case orchestration, 오류 코드 | CLI·CI wrapper |
+
+추출 순서는 **evidence reader → state reducer → policy evaluator → CLI adapter**가 안전하다. 먼저 증거 해석을 하나로 만들면 STR-01(CI verifier)과 STR-02(state rebuild)가 같은 코어를 공유한다([14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md) §10).

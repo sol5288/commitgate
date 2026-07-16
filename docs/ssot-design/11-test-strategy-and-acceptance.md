@@ -67,12 +67,21 @@
 ### 읽기 전용성
 - **Given** `req:next` 실행, **When** 임의 상태, **Then** `.git/index`·objects·state.json 바이트 불변(무-쓰기 회귀).
 
+### 수명주기 의미
+- **Given** 신규 티켓, **When** design 승인→phase 승인→승인 소비까지 진행, **Then** 논리 진행은 `design_approved`·`commit_allowed`·`consumed_approvals`에서 파생되고 `state.phase` 자동 전이를 전제로 하지 않는다.
+- **Given** 모든 `phases[]`가 소비되고 트리가 clean, **When** `req:next`, **Then** `DONE`을 반환하되 state 파일을 쓰지 않는다.
+
 ## 4. 알려진 미검증 영역
 - 라이브 Codex 왕복(실제 모델 판정)은 CI 미검증 — `verify:overrides`(수동)로만 override 실효성 확인.
 - codex usage limit·타임아웃 실패 경로의 진단 정확성 — 미구현 항목과 연동([09-security-and-reliability.md](09-security-and-reliability.md) §4, [gaps-and-decisions.md](gaps-and-decisions.md)).
 - 비-git VCS·라이브러리 실행 모델 — 현재 범위 밖(Stage B).
+- fresh clone에서 scratch `state.json`을 승인 아카이브·manifest·git으로 재구축하는 경로 — 기능 자체가 없음(G-09).
+- 직접 `git commit`으로 로컬 게이트를 우회한 커밋을 CI에서 증거 검증하는 경로 — 기능 자체가 없음(G-05/STR-01).
+- 설치본 버전 드리프트·3-way upgrade·rollback — 설치 manifest가 없음(G-10).
+- NEEDS_FIX 절대 라운드 상한·escalation·delta design review — 미구현(G-06a/b).
+- 사용자 가치 지표(VCCR, 리뷰 P50/P95, 온보딩 시간) — 집계 기능 없음(G-11).
 
 ## 5. 재구현 시 필요한 테스트 데이터/목
-- **fake reviewer**: 승인/needs-fix/blocked/invalid 응답을 캔ned로 주입하는 더블(라이브 codex 불요).
+- **fake reviewer**: 승인/needs-fix/blocked/invalid 응답을 canned payload로 주입하는 더블(라이브 codex 불요).
 - **헤르메틱 git repo**: 임시 디렉터리 + 빈 excludes로 전역 gitignore 영향 제거.
 - **recorder 픽스처**(Windows): `.cmd` 래퍼 + `.cjs` recorder(`"type":"module"`이라 `.cjs` 필수)로 argv/부작용 관찰.

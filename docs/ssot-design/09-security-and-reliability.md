@@ -1,5 +1,16 @@
 # 09. 보안·복원력
 
+## 0. 보호 자산과 신뢰 가정
+
+CommitGate가 직접 보호하려는 자산은 (1) 승인된 변경과 실제 커밋의 동일성, (2) 승인 증거의 무결성·anti-replay, (3) 통제점에서 사람의 최종 권한이다. 다음은 현재 신뢰 가정이다.
+
+- Builder와 로컬 사용자는 **협조적**이며 `req:*` 계약을 따른다. 악의적 로컬 사용자의 직접 `git commit`·파일 편집을 막지 못한다.
+- git 객체·인덱스는 로컬 상태의 기준이지만 git 저장소 자체가 침해되지 않았다고 가정한다.
+- Codex 응답은 비신뢰 데이터로 검증하지만, Codex/OpenAI에 전달된 데이터의 보관·처리는 외부 서비스 경계다.
+- 하나의 active worktree와 단일 writer를 가정한다. 분산 합의·다중 worktree 정합성은 비목표다.
+
+이 가정을 벗어난 팀 운영은 protected branch + CI verifier + 전송 정책이 필요하며, 현재는 목표 상태([14](14-product-strategy-and-roadmap.md) STR-01~03)다.
+
 ## 1. 구현된 보안 통제
 
 | 통제 | 내용 | 근거 |
@@ -45,6 +56,9 @@ flowchart LR
 | staged 비밀 외부 유출 | **미방어**. 마스킹/스크러빙/길이상한 없음. Builder 사전 확인이 유일한 방어. |
 | 증거 손편집 | sha256 바인딩 + live 대조로 탐지 → 게이트 FAIL. |
 | 명령/경로 주입 | shell-free spawn + confinement + 슬러그/enum 제한. |
+| scratch state 분실·fresh clone | 자동 재구축 없음. 커밋된 증거는 남지만 진행 상태 뷰가 복원되지 않을 수 있음. 추정 승인 금지, 사람이 증거 대조(G-09). |
+| 과거 설치본의 정책 드리프트 | 설치 manifest/마이그레이션 없음. `--force` 또는 수동 비교가 필요하고, 자동 최신 정책 적용 보장 없음(G-10). |
+| 로컬 게이트 우회 후 원격 반영 | 현재 CI는 evidence를 검증하지 않아 탐지 불가. branch protection과 향후 verifier가 필요(STR-01). |
 
 ## 3. 복원력(신뢰성) 통제
 
@@ -67,6 +81,9 @@ flowchart LR
 - **리뷰 전 secret-scan 훅 없음**(`preReviewCommand` 미구현) — staged diff 자동 스캔 없음.
 - **git hook 미설치** — 하드 강제 아님. `git commit` 직접 실행이 게이트를 우회.
 - **`trunkBranch` 하드코딩** `'main'` — 설정화 미구현.
+- **상태 자동 재구축 없음** — `state.json` scratch 변경이 사라지면 커밋된 증거에서 실행 상태를 복원하는 명령이 없음.
+- **설치 정책 버전 원장 없음** — 대상 repo가 어느 CommitGate 계약을 쓰는지 기계적으로 증명·업그레이드하기 어려움.
+- **CI evidence verifier 없음** — 로컬 게이트 우회를 원격 protected branch에서 검증하지 않음.
 
 ## 5. 감사 로그
 - 승인 증거는 `responses/approvals.jsonl`(append-only) + `responses/<...>.json` 아카이브에 영구 보존.

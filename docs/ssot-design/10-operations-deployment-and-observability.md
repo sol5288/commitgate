@@ -64,7 +64,33 @@ flowchart LR
 - **로그**: 사람이 읽는 진단은 `console.error`(findings·next_action·observations·blocked 안내). `req:next --json`은 구조화 JSON. **설치기 bin(`bin/init.ts`·`bin/uninstall.ts`)의 `runCli`**만 예외를 한 줄 메시지 + exit 1로 변환(스택트레이스 숨김)한다. **`scripts/req/*.ts`에는 `runCli`이 없고**, top-level 예외를 자체 변환하지 않아 미처리 예외가 node 기본 방식(스택트레이스 + 비-0 exit)으로 표면화된다.
 - **운영자가 볼 신호**: 명령 exit code + stderr 텍스트가 전부. 자동 알림 없음.
 
+### 5.1 측정할 수 없는 현재 제품 성과
+
+현재 로그·원장만으로 개별 티켓의 승인/소비 사실은 확인할 수 있지만 다음 운영 지표를 자동 집계하는 명령은 없다.
+
+- 설치부터 첫 승인 커밋까지 걸린 시간
+- 설계/phase별 리뷰 라운드 P50/P95와 escalation 비율
+- Codex 대기 시간·timeout·usage limit 분포
+- stale·증거 불일치·P1·BLOCKED의 발생 빈도
+- fresh clone 상태 재구축 성공률
+- protected branch 커밋의 증거 검증률
+
+따라서 테스트 통과 수나 아카이브 개수를 사용자 가치의 대리 지표로 과대 해석하지 않는다. 목표 지표는 [14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md) §4, 코드 내용을 수집하지 않는 로컬 리포트 설계는 STR-08에 정의한다.
+
 ## 6. 운영 명령·백업·복구
 - **백업**: 별도 백업 시스템 없음 — 증거는 git 히스토리에 있으므로 git 백업이 곧 증거 백업.
 - **복구**: evidence-finalize 중단은 `req:commit --finalize`(고아 소스 커밋 복구 포함). 제거 되돌리기는 git이 정본(`git revert`/`git checkout HEAD --`, [bin/uninstall.ts](../../bin/uninstall.ts)가 계획 출력).
 - **롤백/데이터 마이그레이션**: 서비스 배포가 없어 런타임 롤백은 `해당 없음`. 패키지 롤백은 이전 버전 재-publish(npm 정책 의존).
+
+## 7. 운영 성숙도 판단
+
+| 축 | 현재 수준 | 다음 종료 조건 |
+|---|---|---|
+| 로컬 정확성 | 높음 — tree/증거/anti-replay 검사 | 유지 |
+| 원격 강제 | 낮음 — CI가 evidence 미검증 | `commitgate verify` required check |
+| 장애 복구 | 중간 — evidence-finalize 복구, 전체 state rebuild 없음 | fresh clone rebuild 100% |
+| 진단 | 낮음 — 텍스트/스택 중심, timeout 없음 | 안정적 오류 코드 + 전 명령 JSON |
+| 업그레이드 | 낮음 — vendored 파일 원장 없음 | plan/manifest/rollback |
+| 제품 분석 | 낮음 — 집계 없음 | privacy-preserving `req:report` |
+
+운영 우선순위는 [14](14-product-strategy-and-roadmap.md)의 P0(원격 신뢰·상태 복구·전송 안전·수렴) 이후 P1(진단·업그레이드·리포트) 순서를 따른다.

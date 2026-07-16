@@ -24,6 +24,8 @@ CommitGate에는 HTTP API·웹훅·메시지 큐가 없다(`해당 없음`). "AP
 | 출력 | `kind`(RUN/AGENT/AWAIT_HUMAN/DONE/BLOCKED) + 명령/승인문장/diagnostics; `--json` 지원 |
 | exit | RUN 0, AGENT 0, BLOCKED 2, AWAIT_HUMAN 10, DONE 11 |
 
+`DONE`은 계산 결과이지 state 전이 이벤트가 아니다. 명령은 `state.phase`를 포함한 어떤 파일도 쓰지 않는다.
+
 ### 1.3 `req:review-codex`([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts))
 | 항목 | 값 |
 |---|---|
@@ -49,6 +51,8 @@ CommitGate에는 HTTP API·웹훅·메시지 큐가 없다(`해당 없음`). "AP
 | 부작용(--run) | 소스 커밋 + evidence-finalize 커밋(2커밋), `consumeState` |
 | 배타 | `--finalize`와 `--finalize-design` 동시 금지; `-m`과 `--message-file` 동시 금지 |
 | exit | 성공 0, 게이트 실패 throw 비-0 |
+
+정상 성공 뒤 `consumeState`는 로컬 `state.json`을 쓰지만 그 변경을 자동 커밋하지 않는다. 두 git 커밋의 성공과 실행 상태 뷰의 원격 내구화는 별개다.
 
 ### 1.6 설치기 `commitgate` / `commitgate uninstall`
 | 명령 | 인자 | 부작용 |
@@ -133,3 +137,13 @@ override 인자(모델/추론강도)는 값이 있을 때만 주입: `-c model="
 | `req:commit` | 조건부(evidence-finalize 중복 skip) | 없음 | 2커밋·state |
 | `commitgate`(install) | 예(기존 보존, 재실행 skip) | 없음 | 파일 복사·주입 |
 | `commitgate uninstall` | 예(읽기 전용) | 없음 | 없음 |
+
+## 6. 목표 API와 현재 API의 경계
+
+[14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md)의 `commitgate verify`, `req:repair`, `req:report`, `commitgate status --explain`, `commitgate upgrade --plan`은 **제안된 인터페이스**이며 0.6.0에는 존재하지 않는다. 재구현 시 위 §1의 실제 명령에 임의로 추가하지 않는다. 구현될 때는 다음 공통 계약을 먼저 고정해야 한다.
+
+- 안정적 machine-readable 오류 코드와 전 명령 JSON envelope
+- evidence/event schema version 및 하위호환 정책
+- read-only 명령의 git capability allowlist
+- 외부 전송 manifest와 호출 전 정책 결과
+- dry-run과 live-run의 동일 판정 코어

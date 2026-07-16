@@ -17,6 +17,7 @@
 | 티켓 생성 | 화면 B | `req:new <slug> --run` | §1.1 | state.json 초기, 00/01/02 | clean-tree, 채번 max+1 | Builder | req-new.test.ts | [scripts/req/req-new.ts](../../scripts/req/req-new.ts) | [03](03-domain-and-data-model.md)·[05](05-user-flows-and-ui-spec.md) |
 | 다음 행동 계산 | 화면 E | `req:next <id> [--json]` | §1.2 | state.json(읽기) | 결정 머신 C, G1/G2 | 읽기 전용 | req-next.test.ts | [scripts/req/req-next.ts](../../scripts/req/req-next.ts) | [07](07-business-rules-and-state-machines.md) §6 |
 | 일관성 게이트 | 화면 D | `req:doctor <id> [--finalize]` | §1.4 | state·응답·증거 | D2~D18 | 게이트 | req-doctor.test.ts | [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) | [07](07-business-rules-and-state-machines.md) §3 |
+| 논리 수명주기 | 전체 여정 | `req:next` | §1.2 | design_approved·commit_allowed·consumed_approvals+git | 파생 상태, `state.phase` 자동 전이 아님 | — | req-next.test.ts | `resolveNext`/`nextPhaseId` | [03](03-domain-and-data-model.md) §2·[07](07-business-rules-and-state-machines.md) §4 |
 
 ## C. 리뷰(Codex 연동)
 
@@ -60,3 +61,20 @@
 - 모든 행이 근거 파일 + 설계문서 링크를 가진다(빈 칸 없음).
 - 권한이 "없음/읽기전용"인 행은 로컬·읽기전용 특성 때문이며 사유가 명시됨.
 - CLI 리뷰는 코퍼스(전체 스테이징) 라운드 방식이므로 문서별 개별 통과가 아니라 **라운드별 코퍼스 통과**로 추적된다([13-review-and-validation-log.md](13-review-and-validation-log.md) §4; 코퍼스 리뷰 사유는 [gaps-and-decisions.md](gaps-and-decisions.md) D-04). 최종 라운드에서 코퍼스 전체 사실오류가 0건이면 전 문서 통과로 간주한다.
+
+## G. 현재 gap → 목표 설계 추적
+
+아래 표는 구현 추적이 아니라 **투자 추적**이다. 구현 전 항목은 위 A~F의 현재 기능 행으로 승격하지 않는다.
+
+| 현재 gap | 사용자 영향 | 목표 설계 | 우선순위 | 완료 후 갱신할 현재 문서 |
+|---|---|---|---|---|
+| G-05 로컬 게이트 우회·CI evidence 미검증 | 승인 없는 변경 원격 반영 | STR-01 CI verifier·정책 프로필 | P0 | 04·06·09·10·11·12 |
+| G-09 scratch state 비내구/재구축 없음 | fresh clone 진행 판정 불가 | STR-02 event log·`req:repair` | P0 | 03·05·07·08·09·11·12 |
+| G-02 외부 전송 보호 없음 | 비밀·과대 payload 노출 | STR-03 전송 manifest·scanner·격리 컨텍스트 | P0 | 01·05·06·09·11·12 |
+| G-06a/b 비수렴·전면 재리뷰 | 비용 폭증·티켓 중단 | STR-04 상한·delta·escalation | P0 | 03·05·06·07·11·12 |
+| G-04/G-06c trunk·ID 충돌 | 팀/병렬 브랜치 오작동 | STR-05 ref scan·trunk 설정·UUID | P1 | 02·03·05·06·07·11·12 |
+| G-10 설치 버전 드리프트 | repo별 정책 불일치 | STR-06 install manifest·upgrade plan | P1 | 02·05·06·08·10·11·12 |
+| G-01/G-03 진단·timeout | 멈춤·원인 유실 | STR-07 구조화 오류·자식 종료 | P1 | 05·06·09·10·11·12 |
+| G-11 제품 지표 없음 | 효과·비용 판단 불가 | STR-08 privacy-preserving report | P1 | 01·03·05·10·11·12 |
+
+목표 설계와 우선순위의 정본은 [14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md)다.

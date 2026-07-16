@@ -9,6 +9,7 @@
 - 데이터 모델: 티켓 `state.json`, Codex 응답 스키마([workflow/machine.schema.json](../../workflow/machine.schema.json)), 설정 스키마([workflow/req.config.schema.json](../../workflow/req.config.schema.json)), 증거 로그(`responses/approvals.jsonl`)
 - 계약·템플릿([AGENTS.template.md](../../AGENTS.template.md), [templates/](../../templates/), [workflow/review-persona.md](../../workflow/review-persona.md))
 - 테스트([tests/](../../tests/)), CI([.github/workflows/ci.yml](../../.github/workflows/ci.yml)), 릴리즈([docs/RELEASING.md](../../docs/RELEASING.md))
+- 제품 가치·성과지표·목표 설계·우선순위([14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md)). 단, 이 문서의 미구현 제안은 현재 제품 계약이 아니다.
 
 ### 비범위(Out)
 - 대상(사용자) 프로젝트의 애플리케이션 코드·화면·DB. CommitGate는 이들에 대해 아무 것도 가정하지 않는다(git repo + `package.json`만 요구).
@@ -35,6 +36,8 @@
 | **vendored scaffold** | 라이브러리 의존이 아니라 파일 복사로 설치되는 Stage A 모델. | [README.md](../../README.md) 현재 범위 |
 | **D-체크** | `req:doctor`의 일관성 검사(D2·D3·D5·D6·D9·D10·D11·D13·D15·D16·D17·D18). | [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) |
 | **D9/D10/D11 등(설계 결정 ID)** | `01-design.md`가 부여하는 안정적 설계 결정 식별자. 코드 주석·문서가 이 ID로 상호 참조한다(예: D9 staged-tree 바인딩). | 각 티켓 `01-design.md` |
+| **논리 수명주기** | `req:next`가 state+git에서 파생하는 DESIGN_REVIEW·PHASE_IMPL·DONE 등의 설명용 상태. `state.json.phase`의 자동 전이를 뜻하지 않는다. | [07-business-rules-and-state-machines.md](07-business-rules-and-state-machines.md) §4 |
+| **목표 상태(Target)** | 아직 구현되지 않았지만 제품이 도달해야 할 계약·설계·지표. [14](14-product-strategy-and-roadmap.md)에만 정의하며 현재 보장과 분리한다. | [14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md) |
 
 > **주의**: `01-design.md`가 부여하는 설계 결정 ID(D1…D18)와 `req:doctor`의 D-체크 ID는 **번호 공간이 겹치지만 다른 개념**이다. 본 SSOT에서 "D9 체크"는 doctor 검사를, "설계결정 D9"는 설계 문서 결정을 가리킨다. 문맥으로 구분한다.
 
@@ -54,8 +57,21 @@
 | `추론` | 코드 구조상 합리적으로 도출했으나 단정 근거가 부족한 서술. |
 | `확인 불가` | 저장소만으로는 판정할 수 없는 항목. 추가 확인 필요. |
 | `해당 없음` | 프로젝트에 그 주제가 존재하지 않음(근거 1~2문장 병기). |
+| `목표 상태` | 구현·테스트·릴리즈 전인 전략 제안. 현재 동작으로 재구현하면 안 됨. |
 
 "적절히 처리", "등", "필요 시" 같이 구현 결정을 숨기는 표현은 사용하지 않는다. 실제 조건·한도·분기·오류 결과를 적는다.
+
+### 4.1 문서 권위 순서
+
+같은 주제의 서술이 충돌할 때 다음 순서로 판정한다.
+
+1. **실행 코드·JSON Schema·CI 설정** — 실제 동작의 최종 근거.
+2. **자동화 테스트** — 의도적으로 고정된 계약. 코드와 충돌하면 둘의 드리프트를 gap으로 기록한다.
+3. **01~12 현재 사실 문서** — 코드·테스트를 사람이 재구현할 수 있게 해석한 명세.
+4. **13 리뷰 로그** — 특정 시점의 검수 이력. 현재 상태를 덮어쓰지 않는다.
+5. **14 목표 상태** — 구현 전 제품 방향. 현재 동작을 바꾸는 권한이 없다.
+
+`README.md`·`CHANGELOG.md`·과거 REQ 문서는 중요한 근거지만 시점이 있으므로, 현재 코드와 다르면 역사 기록으로 보존하고 현재 사실 문서에서 차이를 설명한다.
 
 ## 5. 문서 갱신 트리거와 소유 책임
 
@@ -69,6 +85,8 @@
 | CI 매트릭스/릴리즈 절차 변경 | 10 |
 | 새 테스트 파일/커버리지 변경 | 11, 12 |
 | 미구현 항목 구현/불일치 해소 | gaps-and-decisions, 12 |
+| 제품 보장·대상 사용자·North Star·우선순위 변경 | 01, 14, gaps-and-decisions |
+| `state.json.phase` 또는 파생 수명주기 규칙 변경 | 03, 05, 07, 11, 12 |
 
 - **소유 책임**: 본 SSOT는 코드 저장소와 함께 버전 관리되며, 코드 변경 PR이 관련 문서를 함께 갱신하는 것을 원칙으로 한다(`추론` — 강제 훅은 없음).
-- 모든 문서는 최신 변경 이후 [13-review-and-validation-log.md](13-review-and-validation-log.md)의 CLI 리뷰 통과 기록이 있어야 "완료"로 간주한다.
+- 현재 사실 문서의 완료 판정은 코드 대조·링크/구조 검사·관련 자동화 테스트 결과를 [13-review-and-validation-log.md](13-review-and-validation-log.md)에 기록해야 한다. 외부 Codex 리뷰를 하지 않았다면 통과했다고 쓰지 않고 **로컬 정적 검증**으로 명확히 구분한다.
