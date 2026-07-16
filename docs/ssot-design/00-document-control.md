@@ -25,7 +25,8 @@
 | **phase** | 티켓 내 구현 단위. `02-plan.md`가 phase로 분해하고, phase마다 리뷰·커밋한다. | [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `D18` |
 | **게이트(gate)** | 커밋을 막는 fail-closed 검사. `req:doctor` D-체크 + 승인 바인딩. | 본 문서 §4 |
 | **승인 바인딩** | 승인이 특정 staged tree OID(phase) 또는 설계 docs 해시(design)에 묶이는 것. 내용이 바뀌면 승인이 무효(stale). | [07-business-rules-and-state-machines.md](07-business-rules-and-state-machines.md) |
-| **finding** | 이 변경을 지금 커밋하면 안 되는 **차단 사유**. 하나라도 있으면 승인 불가. `{severity, detail, file}`. | [workflow/machine.schema.json](../../workflow/machine.schema.json) |
+| **finding** | 이 변경을 지금 커밋하면 안 되는 **차단 사유**. 하나라도 있으면 승인 불가. `{severity, detail, file}`. 출력 스키마상 **P1만** 넣을 수 있다(P1 정의 4요소 → [03 §4.2](03-domain-and-data-model.md)). | [workflow/machine.schema.json](../../workflow/machine.schema.json) |
+| **P1** | 차단의 유일한 기준. ①카테고리(요구 위반·데이터 손상·보안·금전 오류·fail-closed 우회) ②정상 경로 재현 ③재현 증거 ④배제 규칙(카테고리 밖은 재현돼도 P1 아님)을 **모두** 만족. | [03 §4.2](03-domain-and-data-model.md) |
 | **observation** | **비차단** 코멘트(취향·후속 제안). `severity` 없음. 승인 판정에 영향 없음. `{detail, file}`. | [workflow/machine.schema.json](../../workflow/machine.schema.json) |
 | **통제점(control point)** | 사람이 승인 문장을 그대로 말해야만 진행하는 지점(`req:commit`, PR/push, 릴리즈). | [04-user-roles-and-permissions.md](04-user-roles-and-permissions.md) |
 | **scratch** | clean-tree 검사에서 무시되는 도구 산출물(`state.json`, `codex-response.json`, `.review-preview.txt`). | [scripts/req/lib/scratch.ts](../../scripts/req/lib/scratch.ts) |

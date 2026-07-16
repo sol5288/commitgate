@@ -26,6 +26,7 @@
 | phase 리뷰 | 화면 C | `review-codex --kind phase --phase <p> --run` | Codex §2, 시퀀스 3.2 | approved_diff_hash, approval_evidence | staged tree 바인딩, R10, D10 | 게이트 | req-review-codex.test.ts | [scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) | [06](06-api-and-integration-contracts.md)·[07](07-business-rules-and-state-machines.md) |
 | 응답 검증 | — | (내부) | machine.schema §4 | codex-response.json, responses/*.json | AJV+validateVerdict | — | req-review-codex.test.ts, req-adapters.test.ts | `validateVerdict`/`validateResponseStructure` | [03](03-domain-and-data-model.md) §4 |
 | 회로차단 | 화면 C | `--fresh-thread` | — | blocked_review | 2회 회로차단 | 사람 회복 | req-review-codex.test.ts | `shouldShortCircuitBlockedReview` | [07](07-business-rules-and-state-machines.md) §7 |
+| **차단 채널 P1 전용** | — | (내부, 리뷰 시) | `--output-schema` 파생 copy | machine.schema `findings[].severity` | 출력 enum=`["P1"]` + P1 정의 4요소, 경로부재 throw | Reviewer | req-adapters.test.ts | `deriveStrictOutputSchema`([scripts/req/lib/adapters.ts](../../scripts/req/lib/adapters.ts)) | [03](03-domain-and-data-model.md) §4.2·[06](06-api-and-integration-contracts.md) §2.2·[07](07-business-rules-and-state-machines.md) §1.1 |
 | 리뷰어 페르소나 | — | — | 프롬프트 첫 블록 | review-persona.md | fail-closed 로드·심링크 가드 | Reviewer | req-review-codex.test.ts | [workflow/review-persona.md](../../workflow/review-persona.md) | [04](04-user-roles-and-permissions.md)·[09](09-security-and-reliability.md) |
 
 ## D. 커밋·증거

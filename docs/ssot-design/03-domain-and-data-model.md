@@ -89,7 +89,7 @@ BOM 없는 UTF-8, 2-space 들여쓰기([scripts/req/review-codex.ts](../../scrip
 | `merge_ready` | string | `yes`\|`no` | ✅ |
 | `risk_level` | string | `LOW`\|`HIGH` | ✅ |
 | `review_kind` | string | `design`\|`phase` | ✅ |
-| `findings` | array | `{severity:P1\|P2\|P3, detail:string, file:string\|null}` | ✅ |
+| `findings` | array | `{severity, detail:string, file:string\|null}` — 검증 스키마는 `P1\|P2\|P3`, **리뷰어에게 주는 출력 스키마는 `P1`만**(§4.2) | ✅ |
 | `next_action` | string | — | ✅ |
 | `observations` | array | `{detail:string, file:string\|null}` — **severity 없음** | ❌(선택) |
 
@@ -100,6 +100,30 @@ BOM 없는 UTF-8, 2-space 들여쓰기([scripts/req/review-codex.ts](../../scrip
 - **NEEDS_FIX** = `commit_approved="no"` + 비어있지 않은 `findings`(각 finding이 차단 사유).
 - **BLOCKED** = `commit_approved="no"` + `findings=[]`(모순/거부). "지적이 없으면 반드시 승인해야 한다." `observations`만으로는 이 상태를 구제하지 못한다.
 - `observations`에 `severity`를 붙이는 순간 차단 신호가 되어 경계가 무너지므로, 스키마가 아예 필드를 금지한다.
+
+### 4.2 severity — 차단 채널은 P1 전용(REQ-2026-018)
+
+`severity`의 enum은 **읽는 곳과 쓰는 곳이 다르다.**
+
+| 스키마 | `findings[].severity` | 이유 |
+|---|---|---|
+| 검증 SSOT([workflow/machine.schema.json](../../workflow/machine.schema.json)) | `P1\|P2\|P3` | 좁히면 P2/P3를 담은 **기존 아카이브가 전부 invalid**가 된다(하위호환). |
+| 출력 스키마(리뷰어에게 전달되는 파생 copy) | **`P1`만** | 리뷰어가 P2/P3를 차단 채널에 **낼 수 없게** 구조적으로 막는다. |
+
+파생은 `deriveStrictOutputSchema`([scripts/req/lib/adapters.ts](../../scripts/req/lib/adapters.ts))가 수행한다 → [06 §2.2](06-api-and-integration-contracts.md).
+
+**P1 정의(4요소, 모두 만족해야 함)** — `severity.description`에 담겨 파생 copy를 통해 리뷰어에게 전달된다.
+
+1. **카테고리 한정**: 요구 위반 · 데이터 손상 · 보안 구멍 · 금전 오류 · fail-closed 우회 중 하나.
+2. **정상 경로**: 정상 사용 경로에서 재현된다(이 프로젝트는 **단일 활성 worktree · 협조적 작업자**만 지원 → 드문 recovery 경합·다중 worktree 발산·완전한 분산 정합성은 지원 모델 밖).
+3. **증거**: 재현 경로 또는 실패 시나리오를 명시.
+4. **배제 규칙**: 카테고리 밖이면 **정상 경로에서 재현되더라도 P1이 아니다.** 포터빌리티·구조·유지보수·가독성·이름·장래 확장성·후속 부채는 전부 `observations`.
+
+> **하중을 받는 것은 enum 축소가 아니라 (1)·(4)다.** enum만 `["P1"]`로 좁히면 리뷰어는 같은 지적에 P1 라벨을 붙이면 그만이다. enum 축소는 "P2 라벨로 비차단 의견을 차단 채널에 넣는" 경로를, 카테고리 한정은 "P1 라벨로 같은 일을 하는" 경로를 막는다. **둘 다 있어야 성립한다.**
+>
+> **왜 필요했나**: 이 정의가 없던 시기 `severity`에는 description이 0줄이었고, 리뷰어는 P2를 "고칠 가치 있음"으로, 게이트는 P2를 "커밋 금지"로 읽었다. REQ-2026-014의 설계 리뷰는 r30까지 갔고 **r20~r30의 findings 21건은 전부 P2(P1 0건)**였다. REQ-2026-015/016/017도 같은 원인으로 폐기됐다.
+>
+> **잔존 리스크**(`추론`): severity inflation(P2를 P1로 올리기)은 **제거가 아니라 완화**다. 카테고리 판정 자체는 리뷰어 재량이며, 코드가 강제하지 않는다.
 
 `commit_approved="yes"`의 kind별 의미:
 - `design`: 설계 진행 승인이며 **아무 것도 커밋되지 않는다**. 좋은 설계는 `commit_approved="yes"` + `merge_ready="no"`.

@@ -72,7 +72,16 @@ override 인자(모델/추론강도)는 값이 있을 때만 주입: `-c model="
 - **현재 라이브 경로는 항상 exec(stateless)**: `main()`이 `isResume=false` 고정([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) 주석 — resume 누적이 토큰 증가·목표 이동을 유발해 비활성). resume argv는 향후 opt-in용으로 보존.
 
 ### 2.2 출력 스키마(strict)
-`deriveStrictOutputSchema`가 원본 스키마의 `required`를 `Object.keys(properties)` 전체로 설정한다(OpenAI structured-outputs strict 모드는 모든 키를 required로 요구). 원본 `machine.schema.json`은 검증 SSOT로 남아 `observations`가 선택으로 유지된다.
+`deriveStrictOutputSchema`([scripts/req/lib/adapters.ts](../../scripts/req/lib/adapters.ts))가 원본을 파싱→수정→직렬화한 **파생 copy**를 만들어 `--output-schema`로 넘긴다. 원본 `machine.schema.json`은 **검증 SSOT로 불변**이며, 응답·아카이브 검증에는 계속 원본을 쓴다. 파생은 두 가지를 적용한다.
+
+1. **root `required` = `Object.keys(properties)` 전체**(REQ-2026-005) — OpenAI structured-outputs strict 모드는 모든 키를 required로 요구한다. 원본은 검증 SSOT로 남아 `observations`가 선택으로 유지된다.
+2. **`findings[].severity.enum` = `["P1"]`**(REQ-2026-018) — 리뷰어가 P2/P3를 차단 채널에 낼 수 없게 한다. 검증 enum(`P1|P2|P3`)은 그대로 두어 기존 아카이브 하위호환을 유지한다 → [03 §4.2](03-domain-and-data-model.md).
+
+파생이 스키마를 **통째로 복사**하므로 `description`도 함께 전달된다. P1 정의(4요소)와 `commit_approved` 승인 규칙이 리뷰어에게 닿는 경로가 바로 이것이다 — 별도 배선이 없다.
+
+**경로 부재 시 throw(fail-closed)**: `properties.findings.items.properties.severity.enum`이 없으면 파생이 조용히 건너뛰지 않고 throw한다 → 리뷰 실패 = 승인 불가. 건너뛰면 P2가 다시 차단 채널로 들어오는 **정책 구멍**이 스키마가 깨진 순간에만 열려 아무도 눈치채지 못한다. `machine_schema_version`이 `1.1`로 고정된 MANAGED 파일이므로 정상 경로에서 이 throw는 발생하지 않는다.
+
+> **하위호환 주의**: 구버전 스키마(severity description·MANAGED 갱신 이전)를 가진 기존 설치본은 이 강제가 **적용되지 않을 뿐** 리뷰는 계속 동작한다.
 
 ### 2.3 스레드·응답 파싱
 `parseThreadId`가 JSONL에서 `type==='thread.started'`의 `thread_id`를 추출. null이면 `thread_id 파싱 실패`로 throw. `lastMessage`는 `--output-last-message` 파일에서 읽음.
