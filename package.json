@@ -47,6 +47,7 @@
     "workflow/review-persona.md",
     "bin",
     "templates",
+    "skills",
     "AGENTS.template.md",
     "req.config.json.sample",
     "README.md",

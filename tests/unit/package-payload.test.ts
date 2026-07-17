@@ -128,3 +128,258 @@ describe('[payload] 공개 패키지에 사설 프로젝트 참조가 없다', (
     expect(src).toMatch(/handoffPath:\s*null as string \| null/)
   })
 })
+
+// ───────────────────────────────────── REQ-2026-019 phase-1: companion skills 번들 ──
+
+/** 번들 대상 4종. 디렉터리명 == frontmatter `name`(Agent Skills open standard). */
+const COMPANION_SKILLS = ['commitgate-discovery', 'commitgate-tdd', 'commitgate-diagnosing-bugs', 'commitgate-research'] as const
+
+/** 기준 upstream(설계 D8). 경로는 버전 간 이동하므로 **SHA가 식별자**다. */
+const UPSTREAM_SHA = 'd574778f94cf620fcc8ce741584093bc650a61d3'
+
+/**
+ * upstream LICENSE **원문**(github.com/mattpocock/skills @ d574778 — 21줄).
+ * 설계 D8·R9: MIT §2가 "copyright notice **and this permission notice**"를 모든 복제본에 요구하므로
+ * 저작권 한 줄만으로는 미충족이다. **손으로 재작성한 변형본을 통과시키지 않기 위해** 전문 대조한다.
+ */
+const UPSTREAM_MIT = `MIT License
+
+Copyright (c) 2026 Matt Pocock
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+
+/** CRLF 체크아웃(Windows)에서도 문자열 대조가 성립하도록 정규화. */
+function lf(s: string): string {
+  return s.replace(/\r\n/g, '\n')
+}
+
+/** `---` 프론트매터 블록만 잘라낸다(YAML 파서 미도입 — leaf 파싱만 필요). */
+function frontmatter(text: string): string | null {
+  const t = lf(text)
+  if (!t.startsWith('---\n')) return null
+  const end = t.indexOf('\n---\n', 3)
+  return end < 0 ? null : t.slice(4, end + 1)
+}
+
+function fmValue(fm: string, key: string): string | null {
+  for (const line of fm.split('\n')) {
+    const i = line.indexOf(':')
+    if (i < 0) continue
+    if (line.slice(0, i).trim() === key) return line.slice(i + 1).trim()
+  }
+  return null
+}
+
+describe('[REQ-2026-019] companion skills 번들(payload 축)', () => {
+  const rels = payloadFiles().map((f) => relative(PACKAGE_ROOT, f).replace(/\\/g, '/'))
+
+  /**
+   * tarball 축. `files[]`에 `skills`가 없으면 tarball에서 통째로 빠지고, 설치기는
+   * 패키지에서 `walkFiles` ENOENT로 죽는다(과거 P1 유형). 설치 축은 phase-2가 따로 지킨다.
+   */
+  it.each(COMPANION_SKILLS)('%s/SKILL.md 가 tarball payload에 실린다', (name) => {
+    expect(rels).toContain(`skills/${name}/SKILL.md`)
+  })
+
+  it('ATTRIBUTION.md 가 tarball payload에 실린다', () => {
+    expect(rels).toContain('skills/ATTRIBUTION.md')
+  })
+
+  /** npm은 dot-basename을 tarball에서 제외한다 — 조용히 사라지는 회귀 방지(templates/workflow.gitignore와 같은 이유). */
+  it('skills/ 아래에 dot-prefix 파일명이 없다', () => {
+    const dotted = rels.filter((r) => r.startsWith('skills/') && (r.split('/').pop() ?? '').startsWith('.'))
+    expect(dotted).toEqual([])
+  })
+
+  describe.each(COMPANION_SKILLS)('%s', (name) => {
+    const text = (): string => lf(readFileSync(join(PACKAGE_ROOT, 'skills', name, 'SKILL.md'), 'utf8'))
+
+    /** R9 + MIT §2 회귀 고정점. 축약·의역은 여기서 죽는다. */
+    it('MIT permission notice 전문이 원문 그대로 들어 있다', () => {
+      expect(text()).toContain(UPSTREAM_MIT)
+    })
+
+    it('기준 upstream SHA가 명시돼 있다', () => {
+      expect(text()).toContain(UPSTREAM_SHA)
+    })
+
+    /** Agent Skills open standard 준수 — Claude Code는 관대하지만 거기 기대면 API·claude.ai 이식성이 깨진다. */
+    it('frontmatter가 open standard를 만족한다', () => {
+      const fm = frontmatter(text())
+      expect(fm).not.toBeNull()
+      const nm = fmValue(fm as string, 'name')
+      expect(nm).toBe(name) // 부모 디렉터리명과 일치
+      expect(nm).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/) // 소문자+하이픈, 연속/양끝 하이픈 불가
+      expect((nm as string).length).toBeLessThanOrEqual(64)
+      const desc = fmValue(fm as string, 'description')
+      expect(desc, 'description은 모델이 언제 쓸지 판단하는 유일한 근거다').toBeTruthy()
+      expect((desc as string).length).toBeLessThanOrEqual(1024)
+    })
+
+    /** 권한 경계(R7)는 강제가 아니라 본문의 문장이다 — 그 문장이 실제로 있는지만 고정한다(설계 D10). */
+    it('req:next 정본 원칙과 커밋 금지 경계를 본문에 담는다', () => {
+      expect(text()).toContain('req:next')
+      expect(text()).toMatch(/req:commit/)
+    })
+  })
+
+  /**
+   * discovery는 `req:new` **전에** 사용자가 부르는 front door다(설계 D8).
+   * 나머지 3종은 모델 호출을 허용해야 상황에 맞게 뜬다 — 잘못 잠그면 기능이 죽는다.
+   */
+  it('discovery만 사용자 호출 전용(disable-model-invocation)이다', () => {
+    for (const name of COMPANION_SKILLS) {
+      const fm = frontmatter(lf(readFileSync(join(PACKAGE_ROOT, 'skills', name, 'SKILL.md'), 'utf8'))) as string
+      const v = fmValue(fm, 'disable-model-invocation')
+      if (name === 'commitgate-discovery') expect(v, `${name}: 사용자 호출형이어야 한다`).toBe('true')
+      else expect(v, `${name}: 모델 호출을 막으면 안 된다`).toBeNull()
+    }
+  })
+
+  it('ATTRIBUTION.md 가 upstream repo·SHA·MIT 전문을 담는다', () => {
+    const t = lf(readFileSync(join(PACKAGE_ROOT, 'skills', 'ATTRIBUTION.md'), 'utf8'))
+    expect(t).toContain('github.com/mattpocock/skills')
+    expect(t).toContain(UPSTREAM_SHA)
+    expect(t).toContain(UPSTREAM_MIT)
+  })
+
+  /**
+   * R2 회귀 고정 — `npm install` 자체가 대상 프로젝트를 건드리면 안 된다.
+   * 설치는 명시적 `commitgate init`에서만. 누가 postinstall을 추가하면 여기서 죽는다.
+   */
+  it('install 생명주기 훅이 없다(npm install이 대상을 수정하지 않는다)', () => {
+    const pkg = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { scripts?: Record<string, string> }
+    const hooks = ['preinstall', 'install', 'postinstall', 'prepare', 'prepublish']
+    expect(hooks.filter((h) => pkg.scripts?.[h] !== undefined)).toEqual([])
+  })
+})
+
+/**
+ * ───────────── D11 본문 가드 (R12) — REQ-2026-020 ─────────────
+ *
+ * 🔴 **Codex phase 리뷰는 이걸 못 잡는다.** 리뷰 축은 staged diff의 명세 정합성이지 **본문 의미의 계약 위반**이 아니다.
+ * REQ-2026-019 phase-1은 findings 0으로 승인받고도 아래 4건을 전부 어겼다 — upstream 원문을 CommitGate
+ * 권한 모델에 **적응하지 않고 옮겼기** 때문이다. 그래서 이 테스트가 유일한 방어선이다.
+ *
+ * ⚠️ 한계: 문자열 수준만 본다. 의미까지 보장하지 못한다 — `AGENTS.md`가 계약 정본이고 스킬은 협조적
+ *    텍스트라는 사실은 그대로다(설계 D10). **과대 주장하지 않는다.**
+ */
+describe('[REQ-2026-020] D11 스킬 본문이 계약을 어기지 않는다', () => {
+  const body = (name: string): string => lf(readFileSync(join(PACKAGE_ROOT, 'skills', name, 'SKILL.md'), 'utf8'))
+
+  /**
+   * 지시 본문만 — `## 출처·라이선스` 절은 뺀다.
+   * 그 절은 **upstream과의 차이를 설명**하는 메타 텍스트라(예: "upstream의 '확인받아라'는 채택하지 않았다")
+   * 지시로 오독하면 위양성이 난다. 라이선스 전문도 여기서 빠진다.
+   */
+  const instructions = (name: string): string => body(name).split('## 출처·라이선스')[0] as string
+  /** AGENT형 3종 — `req:next`=AGENT 전제를 가진다. discovery는 pre-`req:new`라 예외(설계 D8). */
+  const AGENT_SKILLS = ['commitgate-tdd', 'commitgate-diagnosing-bugs', 'commitgate-research'] as const
+
+  /**
+   * R12-a — CommitGate는 npm/pnpm/yarn을 지원한다. 본문이 `npm run …`을 단정하면 pnpm/yarn 사용자가 깨진다.
+   * 대신 `02-plan.md`의 phase별 명령과 감지된 packageManager를 따르게 한다.
+   */
+  it.each(COMPANION_SKILLS)('%s: 본문에 npm run 하드코딩이 없다 (R12-a)', (name) => {
+    const hits = body(name)
+      .split('\n')
+      .filter((l) => /\bnpm run\b/.test(l))
+    expect(hits, 'pnpm/yarn 사용자를 깬다 — 02-plan.md와 감지된 packageManager를 참조하라').toEqual([])
+  })
+
+  /**
+   * R12-c — 활성 REQ worktree에서 HEAD가 움직이면 REQ 상태와 staged 승인 바인딩(D9)이 깨진다.
+   * `git bisect run` 유도가 019의 실제 결함이었다.
+   */
+  it.each(COMPANION_SKILLS)('%s: HEAD를 움직이는 명령을 유도하지 않는다 (R12-c)', (name) => {
+    const hits = body(name)
+      .split('\n')
+      .filter((l) => /`git (bisect run|reset|checkout)/.test(l) && !/금지|하지 않는다|말라|말 것/.test(l))
+    expect(hits, '활성 worktree에서 HEAD 이동 = REQ 상태·승인 바인딩 파괴').toEqual([])
+  })
+
+  /** R12-c 대조군 — 진단 스킬은 부재가 아니라 **명시적 금지**를 담아야 한다. */
+  it('commitgate-diagnosing-bugs: 활성 worktree HEAD 이동 금지를 명시한다 (R12-c)', () => {
+    const t = body('commitgate-diagnosing-bugs')
+    expect(t).toMatch(/bisect/)
+    expect(t, '금지 문구 없이 그냥 빠진 것과 명시적 금지는 다르다').toMatch(/(금지|하지 않는다)/)
+  })
+
+  /**
+   * R12-b — `AGENT` 단계에 계약에 없는 사람 승인 지점을 만들지 않는다.
+   * 019의 `commitgate-tdd`가 "seam을 확인받기 전엔 테스트 금지"로 숨은 게이트를 넣었다.
+   * 승인된 01/02 범위 안의 판단은 에이전트가 한다 — 범위 변경 시에만 보고(이미 계약의 보고 사유).
+   */
+  it.each(AGENT_SKILLS)('%s: AGENT 단계에 숨은 사람 승인 지점을 만들지 않는다 (R12-b)', (name) => {
+    // 승인 요구가 **정당한** 경우: 승인된 범위를 벗어나는 행위(별도 worktree·설계 변경·재승인).
+    // 그건 이미 계약의 보고 사유다. 금지 대상은 **정상 경로 행위**에 승인을 거는 것(019의 "seam을 확인받기 전엔 테스트 금지").
+    const legitimate = /범위|별도|재승인|승인 없이|승인받지|보고/
+    const hits = instructions(name)
+      .split('\n')
+      .filter((l) => /(확인받|승인받|확인을 받|승인을 받)/.test(l) && !legitimate.test(l))
+    expect(hits, 'AGENT 단계의 새 사람 게이트는 계약 위반 — 범위를 벗어날 때만 보고하라').toEqual([])
+  })
+
+  /** R12-b 대조군 — 승인된 설계·계획을 실제로 가리켜야 한다(그게 seam 결정의 근거다). */
+  it('commitgate-tdd: 승인된 설계·계획을 seam 근거로 가리킨다 (R12-b)', () => {
+    expect(body('commitgate-tdd')).toMatch(/02-plan\.md/)
+  })
+
+  /**
+   * R12-d — `/req`는 Claude Code 전용 command다. 다른 harness에서는 존재하지 않는다.
+   * harness 지원을 정직하게 표기하기로 해 놓고(설계 D1) 본문에서 단정하면 모순이다.
+   */
+  it('commitgate-discovery: 진입 흐름을 harness로 분기한다 (R12-d)', () => {
+    const t = body('commitgate-discovery')
+    const lines = t.split('\n')
+    // `/req`를 언급하는 줄은 **어느 harness의 것인지 함께** 밝혀야 한다.
+    // ⚠️ "본문에 /req와 AGENTS.md가 둘 다 있다"로는 부족하다 — REQ-019 본문이 정확히 그 상태로
+    //    `/req`를 무조건 단정하면서(54행) AGENTS.md는 전혀 다른 목적으로 언급했고(57행), 이 가드를 통과했다.
+    // ⚠️ 문서는 command를 백틱으로 감싼다(`/req`). 앞 문자를 제한하면 백틱 표기를 통째로 놓친다.
+    //    `scripts/req/…` 같은 경로는 slash command가 아니므로 제외한다.
+    const reqCmdLines = lines.filter((l) => /\/req\b/.test(l) && !/scripts\/req/.test(l))
+    expect(reqCmdLines.length, '`/req` 경로 안내가 있어야 한다').toBeGreaterThan(0)
+    // `/req`를 언급하는 모든 줄은 harness 맥락 안에 있어야 한다 — 소속 harness를 밝히거나(Claude Code),
+    // 다른 harness엔 없다는 분기이거나(그 외/없다/AGENTS.md). 맥락 없이 단정하는 줄이 019의 결함이었다.
+    const contextual = /Claude Code|그 외|없다|AGENTS\.md/
+    const bare = reqCmdLines.filter((l) => !contextual.test(l))
+    expect(bare, '`/req`는 Claude Code 전용 command다 — 맥락 없이 단정하면 다른 harness 사용자에게 없는 명령을 지시하게 된다').toEqual([])
+    // 분기가 성립하려면 **양쪽**이 다 있어야 한다: Claude Code 경로 + 그 외 harness의 대체 경로.
+    expect(reqCmdLines.some((l) => /Claude Code/.test(l)), 'Claude Code 경로가 명시돼야 한다').toBe(true)
+    expect(t, '그 외 harness는 AGENTS.md의 진입 흐름을 따른다').toContain('AGENTS.md')
+  })
+
+  /**
+   * 설계 D8 예외 — discovery는 `req:new` **전** front door다. 공통 전제(`req:next`=AGENT일 때만 유효)를
+   * 담으면 fresh 프로젝트에서 REQ가 없어 AGENT가 나올 수 없고 → 본문이 복귀를 지시 → **REQ Brief를
+   * 영원히 못 만든다**(design-r01 P1).
+   */
+  it('commitgate-discovery: AGENT 전제를 담지 않는다 — pre-req:new 진입이 막히면 안 된다 (D8 예외)', () => {
+    const t = body('commitgate-discovery')
+    expect(t, 'req:new 전 단계임을 명시해야 한다').toMatch(/req:new/)
+    expect(t, 'REQ Brief가 산출물').toMatch(/Brief/)
+    const gated = t.split('\n').filter((l) => /AGENT.*(일 때만|only)/.test(l))
+    expect(gated, 'AGENT 전제를 담으면 fresh 프로젝트에서 진입 불가').toEqual([])
+  })
+
+  /** 위 테스트의 대조군 — AGENT형 3종은 실제로 전제를 담는다(가드가 공회전하지 않음을 보장). */
+  it.each(AGENT_SKILLS)('%s: req:next=AGENT 전제를 담는다 (대조군)', (name) => {
+    expect(body(name)).toMatch(/AGENT/)
+  })
+})
