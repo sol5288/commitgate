@@ -3,14 +3,63 @@
   "branch": "feat/req-2026-025-review-batching-and-call-log",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f7015-1aad-7662-bfea-3b74c238e0be",
+  "review_base_sha": "6aa45175c6f1413f360ea43250653894cf14e6e5",
+  "review_diff_hash": "eb0f3e8eb4679720456678781b600f5622ba6130",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "a04407194662612ee51431ecf94ed00e8be9f0d98fc04bb87d8643de001c4df4",
   "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "phases": [
+    {
+      "id": "phase-1-batching-persona",
+      "approved": false
+    },
+    {
+      "id": "phase-2-review-call-log",
+      "approved": false
+    }
+  ],
+  "approval_evidence_required": true,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-025/responses/design-r01-approved.json",
+    "response_sha256": "c7f3abc13d4b15a4c4885fd985f70f3fe4466061b61916add4b5ab6cfdba50ed",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "6aa45175c6f1413f360ea43250653894cf14e6e5",
+    "codex_thread_id": "019f700a-ac35-7ad3-b24f-090d10408afa",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-17T12:26:40.824Z",
+    "design_hash": "a04407194662612ee51431ecf94ed00e8be9f0d98fc04bb87d8643de001c4df4"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-batching-persona",
+    "outcome": "needs-fix",
+    "compare_hash": "444556cc66cff39c158604ac63bad2b38972e51d1e92d73a377bb332237a933c",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-17T12:39:31.836Z",
+    "findings": [
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-025/state.json",
+        "detail": "staged `state.json`은 `design_approval_evidence.response_path`로 `workflow/REQ-2026-025/responses/design-r01-approved.json`을 가리키지만, 해당 파일은 index에 없고 untracked 상태다. 이 staged tree를 커밋한 새 checkout에서 `req:doctor` 또는 design-finalize를 실행하면 "
+      },
+      {
+        "severity": "P1",
+        "file": "tests/unit/req-review-codex.test.ts",
+        "detail": "O1-2는 `REVIEW_KIND` 헤더 두 개만 검사한다. 예를 들어 `workflow/review-persona.md`에서 design·phase 각 목록의 모든 bullet을 삭제하고 헤더만 남기면 테스트는 통과하지만, 조립 프롬프트에는 R2가 요구한 응답 전 점검 관점 목록이 없다. 요"
+      },
+      {
+        "severity": "P1",
+        "file": "tests/unit/req-review-codex.test.ts",
+        "detail": "O1-3는 P1 정의의 제목만 검사하며, R5가 보존을 요구한 P1 3요소(카테고리·정상 경로·재현 증거)는 검사하지 않는다. persona에서 세 항목을 삭제한 뒤 제목·승인 문장·보장 경계 제목·severity 금지 문장만 남기면 테스트는 통과하"
+      }
+    ],
+    "elided_count": 0
+  }
 }
