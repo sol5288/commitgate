@@ -3,14 +3,72 @@
   "branch": "feat/req-2026-021-companion-gitignore-uninstall",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f6ef1-71e8-71d2-aed4-dd0199f31f39",
+  "review_base_sha": "77f71bb6573da8650428a242230cdd80fc5f1bea",
+  "review_diff_hash": "1ec7d26d4ef27221484e0440cdb1895fc6693003",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "9f8622d01bc53680c83414377dba6fcfe534d4dcc84a0847b0902233c9816987",
+  "current_phase": "phase-2-companion-uninstall",
+  "phases": [
+    {
+      "id": "phase-1-companion-ignore-warn",
+      "approved": true
+    },
+    {
+      "id": "phase-1b-create-isolation-oracle",
+      "approved": true
+    },
+    {
+      "id": "phase-2-companion-uninstall",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-companion-uninstall",
+    "outcome": "approved",
+    "compare_hash": "06db03001437bf7d27839e8979497a61d29d982a84c47dee358084e2496a944f",
+    "count": 2,
+    "errors": [],
+    "at": "2026-07-17T07:20:16.704Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "c9e9312aba0ebb8218dd47c7ad3cae8216113aa5",
+      "phase_id": "phase-1-companion-ignore-warn",
+      "consumed_by_commit_sha": "6741ffff25b534323a82f1d11f1370db92dc771a",
+      "approval_consumed_at": "2026-07-17T06:49:34.216Z"
+    },
+    {
+      "approved_tree": "54026fe153cfa6dc7122e7cc8662a667773b90d3",
+      "phase_id": "phase-1b-create-isolation-oracle",
+      "consumed_by_commit_sha": "2b539a14ce7bc60e9b1dc1d78aac7e031e092cae",
+      "approval_consumed_at": "2026-07-17T07:04:13.458Z"
+    },
+    {
+      "approved_tree": "1ec7d26d4ef27221484e0440cdb1895fc6693003",
+      "phase_id": "phase-2-companion-uninstall",
+      "consumed_by_commit_sha": "28c1d791a2c5d8c1219f1213f146b66a4b6ead7b",
+      "approval_consumed_at": "2026-07-17T07:24:20.975Z"
+    }
+  ],
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-021/responses/design-r02-approved.json",
+    "response_sha256": "977a5bc91b43c641e3f1a03f017d0e9da6734ed7f2ead04c427186c6ae03f926",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "25409d95ea5d1f71e077c55a96f23ddf04e85956",
+    "codex_thread_id": "019f6ed9-f2f4-71c0-a969-e532316ca056",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-17T06:55:01.475Z",
+    "design_hash": "9f8622d01bc53680c83414377dba6fcfe534d4dcc84a0847b0902233c9816987"
+  }
 }
