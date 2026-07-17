@@ -32,10 +32,13 @@ instruction asset**이며, CommitGate의 권한 경계를 침범하지 않는 **
   `commitgate-diagnosing-bugs`·`commitgate-research`)과 attribution을 포함한다. packed tarball에 실제로 담긴다. (Done #1)
 - **R2 설치 시점**: `npm install` 자체는 대상 프로젝트를 수정하지 않는다. **postinstall 훅을 도입하지 않는다**(현재 없음 — 유지가 요구).
   파일 설치는 명시적 `commitgate init`에서만 일어난다. (Done #2)
-- **R3 설치 경로**: `.claude/skills/commitgate-<name>/SKILL.md` 4종. `.agents/skills/`에는 설치하지 않는다. (Done #3)
+- **R3 설치 경로**: `.claude/skills/commitgate-<name>/SKILL.md` 4종. `.agents/skills/`·`.cursor/skills/`에는 설치하지 않는다.
+  발견 지원은 **Claude Code ✅ · Cursor IDE ✅ · Cursor CLI ❌(알려진 벤더 버그 — 문서화된 제한) · Codex ❌(설계상 불필요)**.
+  Cursor CLI 제한을 우회하려 이중 설치하지 않는다 — 워크어라운드 경로도 CLI에선 동작이 불확실하다(§D1). (Done #3)
 - **R4 seed-once**: 대상에 같은 경로 파일이 이미 있으면 **`--force`로도 덮지 않는다.** 사용자가 수정한 스킬은 보존된다. (Done #4)
-- **R5 opt-out**: `--no-agent-entrypoints`는 companion skills도 건너뛴다. 추가로 `--no-companion-skills`를 제공한다.
-  둘 다 CLI help·README에 문서화한다. (Done #5)
+- **R5 opt-out**: `--no-agent-entrypoints`는 companion skills도 건너뛴다(companion은 `.claude/` 아래에 산다).
+  CLI help·README에 문서화한다. **`--no-companion-skills`는 도입하지 않는다** — 그 플래그는 기존 entrypoint의
+  gitignore 경고와 충돌해 R6를 약화시켜야만 성립한다(design-r05 P1, PM 범위 축소 결정 §4). (Done #5)
 - **R6 보안 동등**: 신규 asset도 기존 설치 자산과 같은 수준의 path confinement·symlink 방어·gitignore 경고·
   `--dry-run`·`--strict`·`--dir` 정책을 받는다. 기존 정상 경로를 약화시키지 않는다. (constraints)
 - **R7 권한 경계**: 스킬은 `git commit`·`git push`·`req:commit` 직접 호출·`state.json`/`responses` stage를 하지 않는다.
@@ -113,7 +116,7 @@ Builder(Claude Code)가 `/commitgate-discovery`로 요구를 정리 → `req:new
 2. `npm install`이 대상을 수정하지 않는다(postinstall 훅 부재). (R2)
 3. fresh init에 `.claude/skills/commitgate-*/SKILL.md` 4종이 정확한 경로에 생성된다. (R3)
 4. 같은 init 재실행이 멱등적이고, 사용자가 수정한 스킬은 `--force`에도 보존된다. (R4)
-5. `--no-agent-entrypoints`·`--no-companion-skills`에서 설치되지 않는다. (R5)
+5. `--no-agent-entrypoints`에서 설치되지 않는다. (R5)
 6. symlink `.claude/skills` 거부 시 **쓰기 0회**. gitignore 시 기본 WARN·`--strict` fail-closed. `--dry-run` 무부작용. (R6)
 7. 각 SKILL.md에 MIT 고지·`Copyright (c) 2026 Matt Pocock`·baseline SHA가 있다. (R9)
 8. 타사 skills 선설치/CommitGate 선설치 양쪽 fixture에서 타사 파일 보존·`AGENTS.md` 정본 유지·

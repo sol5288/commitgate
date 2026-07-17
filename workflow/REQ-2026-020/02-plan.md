@@ -59,6 +59,43 @@ Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인.
 
 ---
 
+## Phase 1b — 진단 스킬 안전 경계 보정 (`phase-1b-diagnosis-safety`)
+
+범위: `commitgate-diagnosing-bugs` 본문의 D12 위반 수정 + R12-e 가드. **2파일.** 설치기는 건드리지 않는다.
+
+**왜 별도 phase인가**: phase-1이 이미 승인·커밋됐고(`832c83b`), 그 안에 정상 경로의 안전 경계 충돌이 남아 있다.
+phase-2(설치기)에 섞으면 리뷰 면적이 넓어지고 성격이 다른 변경이 뒤엉킨다.
+
+**결함**(phase-1 본문 36행): *"현재 작업을 stage/commit해 안전하게 만든 뒤 별도 worktree나 사본에서 수행"*
+→ 같은 스킬 `## 경계`의 커밋·스테이징 금지와 충돌하고, **미승인 REQ 변경을 커밋하도록 유도**해 리뷰 게이트를 우회시킨다.
+
+**테스트 oracle**:
+- **Red**: 현재 본문에 대해 R12-e 가드가 실패한다(36행이 잡힌다).
+- **Green(R12-e)**: 4종 본문에 **진단·조사 목적의 commit/stage 유도 0건**.
+  검사 축: `stage`·`commit` 동사가 **명령형/권유형**으로 쓰인 줄 중, 금지 문맥(`금지`·`하지 않는다`·`말라`)이 아닌 것.
+  ⚠️ phase-1의 D11 가드는 `git bisect|reset|checkout`과 승인 게이트만 봤다 — **commit/stage 유도 축이 없어서 놓쳤다.** 그 구멍을 메운다.
+- **대조군**: `commitgate-tdd`의 정상 stage 안내(phase 산출물을 `git add`)는 **잡히지 않아야** 한다 —
+  그건 `req:next`=AGENT의 정상 경로다. 가드가 그것까지 잡으면 과잉이다.
+- D12 3축이 본문에 모두 존재:
+  - **(1) 절대 금지**: 활성 worktree HEAD 이동 · **진단용 미승인 commit/stage**(사람이 승인해도 불가).
+  - **(2) 범위 안·게이트 없음**: 이미 커밋된 깨끗한 승인 baseline을 활성 worktree **밖** disposable clone으로 복제해
+    bisect하고 결과만 회수 — **사람 승인 없이 진행**함이 본문에 명시된다.
+  - **(3) 보고**: (2)가 불가능할 때만(깨끗한 baseline 부재 → 미승인 커밋 필요, 또는 설계·비목표 변경 필요) = 기존 보고 사유.
+- 🔴 **R12-f 음성 oracle(design-r04 P1) — 가드 재사용만으로는 부족하다.**
+  phase-1의 R12-b 허용 목록이 `/범위|별도|재승인|승인 없이|승인받지|보고/`라 **`별도` 한 단어로 통과**한다 →
+  *"깨끗한 baseline이 있어도 승인받고 별도 사본에서 수행"* 이 살아남는다. **허용 문맥을 D12(3)으로 좁힌다**:
+  - 허용: **baseline 부재**(미승인 커밋 필요) · **설계·계획·비목표 변경**(기존 보고 사유)
+  - 제거: `별도`·`보고` 같은 약한 신호 — 단어 하나가 게이트를 정당화하지 못한다
+  - Red 확인: "깨끗한 baseline이 있어도 승인받고 별도 사본에서" 문장을 넣으면 **반드시 실패**해야 한다(fixture로 검증).
+- 🔴 **R12-g 양성 대조군**: 본문에 D12(2) **무게이트 경로가 실제로 존재**한다 — "이미 커밋된 깨끗한 승인 baseline이면
+  **사람 승인 없이** disposable clone에서 bisect하고 결과만 회수"가 쓰여 있어야 한다.
+  ⚠️ 이게 없으면 R12-f가 "승인 문구가 없다"는 이유로 **공허하게 통과**한다(무게이트 경로가 아예 없어도 그린).
+- phase-1의 D11 가드 4종(R12-a~d)은 계속 그린(회귀 없음).
+
+Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인 · HIGH 확인 후 별도 커밋.
+
+---
+
 ## Phase 2 — 설치·보안 (`phase-2-init-install`)
 
 범위: `bin/init.ts`에 seed-once 설치(D3) + confinement/symlink preflight(D4).
@@ -88,14 +125,15 @@ Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인.
 
 ## Phase 3 — opt-out·uninstall (`phase-3-optout-uninstall`)
 
-범위: `--no-agent-entrypoints`/`--no-companion-skills`(D5), gitignore WARN/strict(D6), uninstall `toolEntries`(D7).
+범위: gitignore WARN/strict(D6), uninstall `toolEntries`(D7). **신규 플래그 없음**(D5 범위 축소 — `--no-companion-skills` 미도입).
 
 **테스트 oracle**:
-- `--no-agent-entrypoints` → skills 4종 **미생성**(+ 기존 entrypoint도 미생성 = 기존 동작).
-- `--no-companion-skills` → skills만 미생성, `.claude/skills/commitgate/SKILL.md`·`.cursor/rules/commitgate.mdc`는 **생성됨**.
-- 두 플래그가 `printHelp` 출력에 등장(help↔구현 일치).
+- `--no-agent-entrypoints` → skills 4종 **미생성**(+ 기존 entrypoint도 미생성 = 기존 동작 그대로).
+- `--no-agent-entrypoints`가 `printHelp`에서 companion skills도 건너뜀을 밝힌다(help↔구현 일치).
 - `.claude/`를 gitignore한 fixture → 기본 init이 **WARN 출력**(설치는 됨), `--strict` → **설치 전 throw + 쓰기 0회**.
-- `--no-companion-skills` + gitignore → **경고 없음**.
+- 🔴 **기존 entrypoint 경고 무변경(design-r05 P1)**: companion 경고는 **companion 자산에 대해서만** 추가된다.
+  `.claude/skills/commitgate/SKILL.md`·`.claude/commands/req.md`·`.cursor/rules/commitgate.mdc`의 기존 계약 포인터
+  WARN·`--strict` fail-closed는 **그대로 통과**해야 한다(R6·R10 회귀). companion 경고를 위해 기존 경고를 억제하지 않는다.
 - uninstall: skills 4종이 계획 출력에 등장 · **대상 tree 전후 snapshot 동일**(읽기 전용) · `child_process` 미import 구조 테스트 유지.
 
 Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인.
@@ -117,6 +155,9 @@ Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인.
 - README(ko/en)에 "선별된 Companion Skills" 절: 정확한 4종 목록 · **외부 installer 미실행** · 설치/비설치 옵션 ·
   Matt skills와 공존 시 책임 경계 · 권장 흐름(`commitgate-discovery → /req → req:new → req:next 반복`) ·
   **외부 skill 결과는 보조 자료이며 Codex 승인 증거가 아님** · **"자동 발견 · 모델 판단 호출"**(auto-invoked 금지).
+- 🔴 **지원 매트릭스가 README(ko/en)·CLI help에 D1 표 그대로 실린다(design-r06 P1)**:
+  Claude Code ✅ · Cursor **IDE** ✅ · Cursor **CLI** ❌(알려진 벤더 버그 — 문서화된 제한) · Codex ❌(설계상 불필요).
+  Cursor를 뭉뚱그려 ✅로 적으면 CLI 사용자에게 거짓이다. 테스트로 문구 존재를 고정한다.
 
 Exit: typecheck0 · 단위 그린 · smoke 그린 · Codex phase 리뷰 승인.
 
@@ -151,8 +192,23 @@ Exit: typecheck0 · 단위 그린 · smoke 그린 · Codex phase 리뷰 승인.
   `assertConfinedDest` + leaf lstat, `assertEntrypointPathsUsable`을 `lstatSync` 기반으로.
 - ⚠️ 하위호환 주의: 정상 symlink를 의도적으로 쓰던 사용자가 있을 수 있다(모노레포 공유 등) → REQ-C에서 판단.
 
+### 🔴 REQ-D (별도 티켓 — finalize 경로의 사람 확인을 도구가 강제)
+
+**이번 REQ의 phase-2에 섞지 않는다**(PM 지시).
+
+- 현상: `req:commit --finalize-design`은 커밋을 2개 만들면서도 `userConfirmGate`를 호출하지 않고
+  `user_commit_confirmed: null`을 쓴다. `--finalize`도 같은 축이다. 에이전트 규율에만 의존한다.
+- 실증: 이 REQ에서 Claude가 `--finalize-design`을 **사전 승인 없이** 실행했다(PM 사후 인정). 기록은 진실했으나 절차 이탈.
+  **메모리 수정만으로는 해결로 볼 수 없다** — 규율은 강제가 아니다.
+- 방향: 모든 finalize 경로에 사람 확인을 요구하는 것이 제품 정책이라면 **CLI·상태 모델로 강제**해야 한다.
+  관련: `user_commit_confirmed`를 쓰는 CLI가 없어 **에이전트가 손으로 적는다** → 손으로 적는 감사 필드는
+  본질적으로 위조 가능하고, REQ-2026-019가 그 실패 모드를 실증했다(타임스탬프 날조 → 폐기).
+  도구가 확인 시점에 직접 시각을 찍는 설계를 함께 검토한다.
+
 ### 기타
 
+- **[design-r07 observation]** Cursor CLI의 `.claude/skills` 동작은 벤더 게시물에서 버전·경로별로 상충한다 →
+  **phase-4 문서화 직전에 지원 매트릭스를 재검증**하고 **확인한 CLI 버전을 함께 기록**한다. (비차단 관찰 — phase-4에서 처리)
 - REQ-B: `00/01/02` 템플릿 섹션 + persona 리뷰 관점 2종(명세 충족·구현 품질). P1-only 차단 정책 무변경.
 - `.agents/skills/` 이중 설치(Codex를 Builder로 쓰는 사용자).
 - 자산↔런타임 버전 skew 탐지(REQ-014가 수용한 위험과 동일 축).
