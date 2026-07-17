@@ -13,3 +13,6 @@ workflow/**/.codex-*.tmp
 
 # Codex 리뷰 요청서(일회용 핸드오프, 커밋 대상 아님)
 codex-review-request*.md
+
+# Claude 실행 지시서(일회용 핸드오프, 커밋 대상 아님)
+docs/*-claude-prompt.md
