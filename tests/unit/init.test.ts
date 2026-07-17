@@ -2227,6 +2227,44 @@ describe('[init] companion skills (REQ-2026-020)', () => {
 
   const outsideDir = (): string => mkdtempSync(join(tmpdir(), 'reqwf-outside-'))
 
+
+  /**
+   * 보안 fixture 공통 단언 — **throw 여부와 무관하게 양쪽 무변화를 먼저 검사한다.**
+   *
+   * ⚠️ `expect(() => runInit()).toThrow()`를 먼저 쓰면, 구현이 **throw하지 않고 외부에 쓰는** 회귀에서
+   *    toThrow가 먼저 실패해 **외부 snapshot 단언에 도달하지 못한다** — 실패 이유가 "대상 밖에 썼다"로
+   *    드러나지 않고, 외부 검사는 사실상 죽은 코드가 된다. 순서를 뒤집어야 oracle이 실제로 일한다.
+   *    (실측: root-only confinement 변이에서 runInit이 throw 없이 완료되고 외부에 SKILL.md를 만든다.)
+   */
+  const expectRejectedWithNoWrites = (dir: string, outside: string, run: () => void): void => {
+    const beforeIn = snapshot(dir)
+    const beforeOut = snapshot(outside)
+    let threw = false
+    try {
+      run()
+    } catch {
+      threw = true
+    }
+    expect(snapshot(outside), '외부 tree 무변화 — 여기서 실패하면 대상 **밖**에 썼다는 뜻이다').toEqual(beforeOut)
+    expect(snapshot(dir), '대상 tree 무변화').toEqual(beforeIn)
+    expect(threw, 'preflight가 쓰기 전에 거부해야 한다').toBe(true)
+  }
+
+  /**
+   * symlink fixture 준비 — 권한 없는 러너(Windows CI 일부)에서는 **그 사유로만** skip한다.
+   * 다른 오류는 삼키지 않고 throw한다(픽스처 결함을 조용히 통과시키지 않는다).
+   * @returns false면 호출부가 즉시 return해 테스트를 건너뛴다.
+   */
+  const trySymlink = (target: string, path: string, type: 'junction' | 'file'): boolean => {
+    try {
+      symlinkSync(target, path, type)
+      return true
+    } catch (e) {
+      if (symlinkUnsupported(e)) return false // 권한 미지원 — 설치기 결함이 아니다
+      throw e
+    }
+  }
+
   it('fresh init에 4종이 정확한 경로에 설치된다 (D1/R3)', () => {
     const dir = tmpTarget()
     try {
@@ -2301,12 +2339,8 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     const outside = outsideDir()
     try {
       mkdirSync(join(dir, '.claude/skills'), { recursive: true })
-      symlinkSync(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')
-      const beforeIn = snapshot(dir)
-      const beforeOut = snapshot(outside)
-      expect(() => runInit(OPTS(dir))).toThrow()
-      expect(snapshot(dir), '대상 tree 무변화').toEqual(beforeIn)
-      expect(snapshot(outside), '외부 tree 무변화 — 대상만 보면 탈출을 못 잡는다').toEqual(beforeOut)
+      if (!trySymlink(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')) return
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
     } finally {
       cleanup(dir)
       rmSync(outside, { recursive: true, force: true })
@@ -2323,15 +2357,11 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     try {
       mkdirSync(join(dir, '.claude/skills/commitgate-tdd'), { recursive: true })
       const escaped = join(outside, 'ESCAPED.md') // 아직 없는 파일 → dangling
-      symlinkSync(escaped, join(dir, TDD), 'file')
+      if (!trySymlink(escaped, join(dir, TDD), 'file')) return
       expect(existsSync(join(dir, TDD)), 'dangling이라 existsSync는 false다 — 이게 함정이다').toBe(false)
       expect(lstatSync(join(dir, TDD)).isSymbolicLink(), 'lstat은 링크를 본다').toBe(true)
-      const beforeIn = snapshot(dir)
-      const beforeOut = snapshot(outside)
-      expect(() => runInit(OPTS(dir))).toThrow()
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
       expect(existsSync(escaped), '대상 밖에 파일이 생기면 안 된다').toBe(false)
-      expect(snapshot(dir), '대상 tree 무변화').toEqual(beforeIn)
-      expect(snapshot(outside), '외부 tree 무변화').toEqual(beforeOut)
     } finally {
       cleanup(dir)
       rmSync(outside, { recursive: true, force: true })
@@ -2355,12 +2385,8 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     const outside = outsideDir()
     try {
       mkdirSync(join(dir, '.claude'), { recursive: true })
-      symlinkSync(outside, join(dir, '.claude/skills'), 'junction')
-      const beforeIn = snapshot(dir)
-      const beforeOut = snapshot(outside)
-      expect(() => runInit(OPTS(dir))).toThrow()
-      expect(snapshot(dir)).toEqual(beforeIn)
-      expect(snapshot(outside)).toEqual(beforeOut)
+      if (!trySymlink(outside, join(dir, '.claude/skills'), 'junction')) return
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
     } finally {
       cleanup(dir)
       rmSync(outside, { recursive: true, force: true })
@@ -2373,10 +2399,10 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     const outside = outsideDir()
     try {
       mkdirSync(join(dir, '.claude/skills'), { recursive: true })
-      symlinkSync(outside, join(dir, '.claude/skills/commitgate-research'), 'junction')
-      const before = snapshot(dir)
-      expect(() => runInit(OPTS(dir))).toThrow()
-      expect(snapshot(dir)).toEqual(before)
+      if (!trySymlink(outside, join(dir, '.claude/skills/commitgate-research'), 'junction')) return
+      // 🔴 dest별 confinement가 빠지면 runInit이 throw 없이 완료되고 **외부에** SKILL.md를 쓴다.
+      //    공통 단언이 외부를 먼저 보므로 실패가 "대상 밖에 썼다"로 드러난다.
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
     } finally {
       cleanup(dir)
       rmSync(outside, { recursive: true, force: true })
@@ -2389,7 +2415,7 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     const outside = outsideDir()
     try {
       mkdirSync(join(dir, '.claude/skills'), { recursive: true })
-      symlinkSync(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')
+      if (!trySymlink(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')) return
       expect(() => runInit(OPTS(dir))).toThrow()
       expect(existsSync(join(dir, 'AGENTS.md')), 'preflight throw 후 core 자산도 없어야 한다').toBe(false)
       expect(existsSync(join(dir, 'req.config.json'))).toBe(false)
@@ -2406,10 +2432,9 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     const outside = outsideDir()
     try {
       mkdirSync(join(dir, '.claude/skills'), { recursive: true })
-      symlinkSync(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')
-      const before = snapshot(dir)
-      expect(() => runInit(OPTS(dir, { dryRun: true })), 'dry-run이 조용히 통과하면 실설치 직전에야 터진다').toThrow()
-      expect(snapshot(dir)).toEqual(before)
+      if (!trySymlink(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')) return
+      // dry-run도 같은 preflight를 돈다 — 조용히 통과하면 실설치 직전에야 터진다. 양쪽을 봐야 "쓰기 0회"가 증명된다.
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir, { dryRun: true })))
     } finally {
       cleanup(dir)
       rmSync(outside, { recursive: true, force: true })
