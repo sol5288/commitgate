@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -309,5 +309,63 @@ describe('[migrate] parseArgs — 기존 CLI 관례(fail-closed)', () => {
   it('알 수 없는 인자는 throw(조용히 무시하지 않는다)', () => {
     expect(() => parseArgs(['--bogus'])).toThrow(/알 수 없는 인자/)
     expect(() => parseArgs(['positional'])).toThrow(/알 수 없는 인자/)
+  })
+})
+
+
+// ═══════ REQ-2026-022 phase-1: migrate는 companion을 추가하지 않는다 ═══════
+
+/**
+ * 설치는 **명시적 `init`에서만** 일어난다(REQ-2026-020 R2). `migrate`는 Stage A → Stage B 전환만 한다.
+ *
+ * `bin/migrate.ts`는 `KIT_COMPANION_SKILLS`를 참조하지 않으므로 이미 성립하는 성질이다 —
+ * **그 부재를 못박아** 나중에 누가 migrate에 설치를 끼워 넣으면 여기서 죽게 한다.
+ *
+ * ⚠️ dry-run은 원래 무부작용이라 **`--apply`가 진짜 검증점**이다. 둘 다 단언한다.
+ */
+describe('[migrate] companion skills를 생성하지 않는다 (REQ-2026-022)', () => {
+  const COMPANIONS = [
+    '.claude/skills/commitgate-discovery/SKILL.md',
+    '.claude/skills/commitgate-tdd/SKILL.md',
+    '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
+    '.claude/skills/commitgate-research/SKILL.md',
+  ]
+
+  const expectNoCompanions = (dir: string, when: string): void => {
+    for (const c of COMPANIONS) expect(existsSync(join(dir, c)), `${when}: ${c} 가 생기면 안 된다`).toBe(false)
+  }
+
+  it('dry-run 뒤 companion 4종이 부재한다 (R3)', () => {
+    const dir = tmpStageA()
+    try {
+      runMigrate({ dir, apply: false })
+      expectNoCompanions(dir, 'dry-run')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** dry-run은 원래 아무것도 안 쓴다 — **--apply가 진짜 검증점**이다. */
+  it('--apply 뒤에도 companion 4종이 부재한다 (R3)', () => {
+    const dir = tmpStageA()
+    try {
+      runMigrate({ dir, apply: true })
+      expectNoCompanions(dir, '--apply')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--apply가 실제로 전환을 했는데도 companion은 부재한다(공회전 아님 — 대조군)', () => {
+    const dir = tmpStageA()
+    try {
+      runMigrate({ dir, apply: true })
+      // 전환이 실제로 일어났음을 확인해야 "아무것도 안 해서 companion도 없다"는 위양성을 배제한다.
+      const scripts = readPkg(dir).scripts
+      expect(scripts['req:new'], 'Stage A 값이 commitgate <verb> 로 전환됐어야 한다').toContain('commitgate')
+      expectNoCompanions(dir, '--apply(전환 성공)')
+    } finally {
+      cleanup(dir)
+    }
   })
 })

@@ -2689,3 +2689,93 @@ describe('[init] companion gitignore 경고 (REQ-2026-021)', () => {
     }
   })
 })
+
+
+// ═══════ REQ-2026-022 phase-1: 타사 skill 공존 ═══════
+
+/**
+ * 사용자가 이미 Matt Pocock의 skills를 깔아 뒀을 수 있다 — **타사 파일을 건드리면 안 된다**.
+ *
+ * 공존은 **경로 격리**로 성립한다: companion은 `.claude/skills/commitgate-<name>/`,
+ * 타사는 `.claude/skills/<name>/` — 디렉터리가 달라 `planCompanionSkills`가 타사 경로를 보지 않는다.
+ * "충돌을 해결한다"가 아니라 "충돌하지 않는다"이므로 그 성질을 고정만 한다.
+ *
+ * ⚠️ **Buffer 기준 byte-identical로 단언한다.** 존재 여부만 보면 내용이 덮여도 통과한다.
+ */
+describe('[init] 타사 skill 공존 (REQ-2026-022)', () => {
+  /** 타사 skill — CommitGate가 만들지 않는 이름들. `tdd`는 `commitgate-tdd`와 가장 헷갈리는 케이스다. */
+  const THIRD_PARTY: Record<string, string> = {
+    '.claude/skills/tdd/SKILL.md': ['---', 'name: tdd', '---', '# Matt의 TDD', ''].join('\n'),
+    '.claude/skills/grill-me/SKILL.md': ['---', 'name: grill-me', '---', 'Run a /grilling session.', ''].join('\n'),
+  }
+  const COMPANIONS = [
+    '.claude/skills/commitgate-discovery/SKILL.md',
+    '.claude/skills/commitgate-tdd/SKILL.md',
+    '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
+    '.claude/skills/commitgate-research/SKILL.md',
+  ] as const
+
+  const seedThirdParty = (dir: string): Map<string, Buffer> => {
+    const bufs = new Map<string, Buffer>()
+    for (const [rel, body] of Object.entries(THIRD_PARTY)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true })
+      writeFileSync(join(dir, rel), body, 'utf8')
+      bufs.set(rel, readFileSync(join(dir, rel)))
+    }
+    return bufs
+  }
+
+  /** Buffer 기준 비교 — 인코딩·개행 변환에 속지 않는다. */
+  const expectBytesUnchanged = (dir: string, before: Map<string, Buffer>): void => {
+    for (const [rel, buf] of before) {
+      expect(existsSync(join(dir, rel)), `${rel}: 타사 파일이 사라지면 안 된다`).toBe(true)
+      expect(readFileSync(join(dir, rel)).equals(buf), `${rel}: 타사 파일이 byte-identical이어야 한다`).toBe(true)
+    }
+  }
+
+  it('공존 A(타사 선설치): 타사 skill이 byte-identical로 보존되고 companion은 별도 생성된다 (R1/R2)', () => {
+    const dir = tmpTarget()
+    try {
+      const before = seedThirdParty(dir)
+      runInit(OPTS(dir))
+      expectBytesUnchanged(dir, before)
+      for (const c of COMPANIONS) expect(existsSync(join(dir, c)), `${c}: 별도 생성`).toBe(true)
+      // 접두사 격리: 타사 `tdd`와 `commitgate-tdd`는 다른 디렉터리다.
+      expect(existsSync(join(dir, '.claude/skills/tdd/SKILL.md'))).toBe(true)
+      expect(existsSync(join(dir, '.claude/skills/commitgate-tdd/SKILL.md'))).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('공존 B(CommitGate 선설치): 재-init 후 타사·companion 양쪽 불변 (R1/R2)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir)) // companion 먼저
+      const companionBefore = new Map(COMPANIONS.map((c) => [c, readFileSync(join(dir, c))]))
+      const thirdBefore = seedThirdParty(dir) // 그 뒤 타사 추가
+      runInit(OPTS(dir)) // 재-init
+      expectBytesUnchanged(dir, thirdBefore)
+      // 재-init 전후 companion 4종도 불변이어야 한다(멱등).
+      for (const [rel, buf] of companionBefore)
+        expect(readFileSync(join(dir, rel)).equals(buf), `${rel}: 재-init 전후 불변`).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('공존 B: --force로 재-init해도 타사·companion 양쪽 불변 (seed-once)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      const companionBefore = new Map(COMPANIONS.map((c) => [c, readFileSync(join(dir, c))]))
+      const thirdBefore = seedThirdParty(dir)
+      runInit(OPTS(dir, { force: true }))
+      expectBytesUnchanged(dir, thirdBefore)
+      for (const [rel, buf] of companionBefore)
+        expect(readFileSync(join(dir, rel)).equals(buf), `${rel}: --force에도 불변`).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
