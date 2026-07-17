@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"5bae8fe80c40431db32a74d48a23df1290a7c53e","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","findings":[],"next_action":"Phase 1을 구현하고, 계획한 정합성·변이 검증과 smoke를 실행한 뒤 phase 리뷰를 요청하세요.","observations":[]}
