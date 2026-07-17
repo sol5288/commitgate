@@ -11,12 +11,54 @@
  */
 import spawn from 'cross-spawn'
 import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { VERB_MODULES } from '../bin/dispatch.mjs'
 
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+/** companion skills 설치 경로(REQ-2026-020 D1). 정확히 4종. */
+const COMPANION_SKILL_RELS = [
+  '.claude/skills/commitgate-discovery/SKILL.md',
+  '.claude/skills/commitgate-tdd/SKILL.md',
+  '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
+  '.claude/skills/commitgate-research/SKILL.md',
+]
+
+/** 기준 upstream(REQ-2026-020 D8). 경로는 버전 간 이동하므로 **SHA 가 식별자**다. */
+const UPSTREAM_SHA = 'd574778f94cf620fcc8ce741584093bc650a61d3'
+
+/**
+ * upstream LICENSE **전문**(github.com/mattpocock/skills @ d574778 — MIT).
+ *
+ * ⚠️ **한 문장만 검사하면 안 된다.** permission notice 뒤가 잘려 grant·나머지 조건·warranty disclaimer 가
+ *    없는 상태여도 통과해 "MIT 고지 검증됨"이라고 **거짓 보고**하게 된다. MIT §2 는 저작권 표기와
+ *    **permission notice 전체**를 요구하므로 전문을 대조한다.
+ */
+const UPSTREAM_MIT = `MIT License
+
+Copyright (c) 2026 Matt Pocock
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+
 
 const packDir = mkdtempSync(join(tmpdir(), 'cg-pack-'))
 const target = mkdtempSync(join(tmpdir(), 'cg-target-'))
@@ -119,8 +161,16 @@ try {
   )
   assert(!doctor.out.includes('알 수 없는 명령'), 'dispatch 가 req:doctor 를 미지 verb 로 취급했다')
 
+  // (e) **companion skills**(REQ-2026-020/022 R4) — packed 설치본에서 4종이 실제로 깔리는가.
+  //     단위 테스트는 로컬 소스로 돌지만, 여기서는 `files[]` whitelist 를 통과한 **tarball** 이 근거다.
+  //     tarball 에서 빠지면 walkFiles 가 ENOENT 로 죽거나 조용히 미설치된다 — 그 축은 여기서만 잡힌다.
+  assertCompanionSkills(target)
+
   // 5) uninstall verb 해소(REQ-2026-007) — 배포 아티팩트에서 bin/uninstall.ts가 로드되고 rc=0.
   //    R4: planner 는 읽기 전용이다 — 실행 전후 대상 tree 가 동일해야 한다.
+  //    ⚠️ 그 판정은 snapshot 의 지문에 달려 있다. 먼저 지문이 실제로 내용 변경을 잡는지 자기검증한다(REQ-2026-022 R7) —
+  //       크기 기반으로 퇴행하면 아래 assertSameTree 가 조용히 통과해 이 축이 공허해진다.
+  assertFingerprintDetectsSameSizeEdit()
   const beforeUninstall = snapshot(target)
   run('npx', ['--no-install', 'commitgate', 'uninstall'], { cwd: target })
   assertSameTree(beforeUninstall, snapshot(target), 'uninstall planner 가 대상 tree 를 변경했다(읽기 전용 위반)')
@@ -130,7 +180,7 @@ try {
   smokeMigrate(tgzAbs)
 
   console.log(
-    '\n[smoke] ✅ pack tarball 설치본 OK — Stage B 인수 기준(무복사·무주입·commitgate <verb>·dispatch 도달) · uninstall 읽기 전용 · migrate 비파괴',
+    '\n[smoke] ✅ pack tarball 설치본 OK — Stage B 인수 기준(무복사·무주입·commitgate <verb>·dispatch 도달) · uninstall 읽기 전용(SHA-256 지문) · migrate 비파괴·companion 무추가 · companion skills 4종 + MIT 고지',
   )
 } finally {
   rmSync(packDir, { recursive: true, force: true })
@@ -138,7 +188,15 @@ try {
   rmSync(npmCache, { recursive: true, force: true })
 }
 
-/** `.git` 제외 전체 파일 목록+크기(경로 → size). 읽기 전용 검증용(내용 해시까지는 불필요 — 변경/삭제만 잡으면 된다). */
+/**
+ * 트리 지문 — `.git`·`node_modules` 제외 전체 파일의 **내용 기반 SHA-256**(경로 → sha256). (REQ-2026-022 R7)
+ *
+ * ⚠️ 이전 구현은 `readFileSync(abs).length` 로 **크기만** 저장해 **같은 크기의 내용 변경을 놓쳤다**.
+ *    smoke 는 uninstall 의 "읽기 전용"을 이 snapshot 으로 검증하므로(아래 `assertSameTree` 호출부),
+ *    그 축의 **유일한 end-to-end 방어선이 공허**했다 — planner 가 파일을 같은 크기로 고쳐도 통과했다.
+ *
+ * `assertSameTree` 는 값 비교라 수정할 필요가 없다 — 비교 축만 바뀐다.
+ */
 function snapshot(dir) {
   const out = new Map()
   const walk = (d) => {
@@ -146,11 +204,73 @@ function snapshot(dir) {
       if (e.name === '.git' || e.name === 'node_modules') continue
       const abs = join(d, e.name)
       if (e.isDirectory()) walk(abs)
-      else out.set(abs.slice(dir.length + 1).replace(/\\/g, '/'), readFileSync(abs).length)
+      else out.set(abs.slice(dir.length + 1).replace(/\\/g, '/'), createHash('sha256').update(readFileSync(abs)).digest('hex'))
     }
   }
   walk(dir)
   return out
+}
+
+/**
+ * packed 설치본에 companion 4종이 깔리고 **MIT 고지가 동행**하는가 (R4/R9).
+ *
+ * MIT §2 는 저작권 표기와 permission notice 를 "copies or substantial portions" 에 포함할 것을 요구한다.
+ * 그 고지가 **설치되는 파일** 안에 있어야 하므로 tarball→설치 경로 끝에서 확인한다.
+ */
+function assertCompanionSkills(target) {
+  const present = COMPANION_SKILL_RELS.filter((r) => existsSync(join(target, r)))
+  assert(
+    present.length === COMPANION_SKILL_RELS.length,
+    `companion skills 가 packed 설치본에 깔리지 않았다(${present.length}/4) — 누락: ${COMPANION_SKILL_RELS.filter((r) => !present.includes(r)).join(', ')}`,
+  )
+  for (const rel of COMPANION_SKILL_RELS) {
+    // CRLF 체크아웃에서도 성립하도록 정규화(대상 repo 는 사용자 환경이다).
+    const body = readFileSync(join(target, rel), 'utf8').replace(/\r\n/g, '\n')
+    // 🔴 **전문** 대조. 한 문장만 보면 그 뒤가 잘려 grant·warranty disclaimer 가 없어도 통과해
+    //    "MIT 고지 검증됨"이라고 거짓 보고한다(design 리뷰 P1).
+    assert(
+      body.includes(UPSTREAM_MIT),
+      `${rel}: MIT 고지 **전문**이 없다 — 저작권 표기·permission grant·조건·warranty disclaimer 전체가 동행해야 MIT §2 충족`,
+    )
+    assert(body.includes(UPSTREAM_SHA), `${rel}: 기준 upstream SHA 가 없다`)
+  }
+  console.log(`[smoke] companion skills OK — 4종 설치 + MIT 고지·upstream SHA 동행`)
+}
+
+/** Stage A migrate 대상에 companion 이 생기지 않았는가 (R6). 설치는 명시적 init 에서만이다. */
+function assertNoCompanionSkills(dir, when) {
+  const leaked = COMPANION_SKILL_RELS.filter((r) => existsSync(join(dir, r)))
+  assert(leaked.length === 0, `${when}: migrate 가 companion 을 생성했다 — 설치는 명시적 init 에서만이다: ${leaked.join(', ')}`)
+}
+
+/**
+ * 🔴 fingerprint 자기검증 — **같은 크기·다른 내용**을 `assertSameTree` 가 실제로 거부하는가.
+ *
+ * 이 대조가 없으면 "SHA 로 바꿨다"는 주장이 공허하다. 크기 기반이었다면 두 Map 의 값이 같아 통과한다.
+ */
+function assertFingerprintDetectsSameSizeEdit() {
+  const probe = mkdtempSync(join(tmpdir(), 'cg-fp-'))
+  try {
+    const f = join(probe, 'probe.txt')
+    writeFileSync(f, 'AAAA')
+    const before = snapshot(probe)
+    writeFileSync(f, 'BBBB') // 같은 4바이트, 다른 내용
+    const after = snapshot(probe)
+    assert(
+      before.get('probe.txt') !== after.get('probe.txt'),
+      'fingerprint 가 같은 크기의 내용 변경을 구분하지 못한다(크기 기반으로 퇴행)',
+    )
+    let rejected = false
+    try {
+      assertSameTree(before, after, 'probe')
+    } catch {
+      rejected = true
+    }
+    assert(rejected, 'assertSameTree 가 같은 크기·다른 내용을 거부하지 못한다 — uninstall 읽기 전용 검증이 공허하다')
+    console.log('[smoke] fingerprint 자기검증 OK — 같은 크기·다른 내용을 거부한다')
+  } finally {
+    rmSync(probe, { recursive: true, force: true })
+  }
 }
 
 function assertSameTree(before, after, msg) {
@@ -187,6 +307,8 @@ function smokeMigrate(tgzAbs) {
     const before = snapshot(t)
     run('npx', ['--no-install', 'commitgate', 'migrate'], { cwd: t })
     assertSameTree(before, snapshot(t), 'migrate dry-run 이 파일을 건드렸다')
+    // R6: migrate 는 companion 을 설치하지 않는다 — 설치는 명시적 init 에서만이다.
+    assertNoCompanionSkills(t, 'migrate dry-run')
 
     // --apply: 정확한 Stage A 값만 전환, 사용자 값·vendored 파일 보존(비파괴).
     run('npx', ['--no-install', 'commitgate', 'migrate', '--apply'], { cwd: t })
@@ -195,6 +317,9 @@ function smokeMigrate(tgzAbs) {
     assert(pkg.scripts['req:doctor'] === 'echo MY-CUSTOM', 'migrate 가 사용자 정의 req:doctor 를 덮어썼다')
     assert(pkg.scripts['build'] === 'tsc', 'migrate 가 무관한 스크립트를 건드렸다')
     assert(existsSync(join(t, 'scripts', 'req', 'req-new.ts')), 'migrate 가 vendored 파일을 삭제했다(비파괴 위반)')
+    // ⚠️ dry-run 은 원래 무부작용이라 **--apply 가 진짜 검증점**이다. 위 전환 단언이 --apply 가 실제로 일했음을
+    //    보장하므로, 여기서의 부재는 "아무것도 안 해서 없다"는 위양성이 아니다.
+    assertNoCompanionSkills(t, 'migrate --apply')
   } finally {
     rmSync(t, { recursive: true, force: true })
   }
