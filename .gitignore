@@ -11,6 +11,10 @@ workflow/**/codex-response.json
 workflow/**/.review-preview.txt
 workflow/**/.codex-*.tmp
 
+# review-call 측정 로그(REQ-2026-025). 로컬 관측용이며 **커밋 대상이 아니다** —
+# ledger 커밋을 늘리지 않는다. 내용(프롬프트·diff·finding 본문)은 담기지 않고 개수만 담는다.
+workflow/.review-calls.jsonl
+
 # Codex 리뷰 요청서(일회용 핸드오프, 커밋 대상 아님)
 codex-review-request*.md
 

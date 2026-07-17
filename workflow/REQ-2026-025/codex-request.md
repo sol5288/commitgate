@@ -2,56 +2,55 @@
 
 ## 배경
 
-이 REQ는 CommitGate의 **리뷰 수렴·배송 안정화 개선 A0**다. 개선 순서는 A0 → A → B → 측정 → (조건부) C이며,
-각 REQ는 독립적으로 main에 병합된다.
+CommitGate **리뷰 수렴·배송 안정화 개선 A0**. 순서는 A0 → A → B → 측정 → (조건부) C이며 각 REQ는 독립 병합된다.
 
-해결하려는 현상은 **drip-feed**다. 리뷰어의 지적은 대부분 유효했으나, 라운드당 P1이 한 건씩 나왔다 —
-REQ-020은 design 14라운드에 반려 9회가 전부 `findings` 1건, REQ-023은 8라운드에 r03~r06이 각 1건,
-REQ-013은 17라운드. 현행 `workflow/review-persona.md`는 탐색을 넓히라고는 하지만 **이번 호출에서 식별한
-P1을 모두 반환하라는 지시가 없다.**
+해결 대상은 **drip-feed** — 유효한 P1이 라운드당 한 건씩 나와 직렬 재검수를 낳았다(REQ-020 design 14라운드
+반려 9회 전부 1건, REQ-023 8라운드 r03~r06 각 1건, REQ-013 17라운드).
 
-설계는 design-r01에서 승인됐다(findings 0). 이 요청은 **phase-1 리뷰**다.
+설계는 design-r01 승인(findings 0). **phase-1은 r02 승인·커밋 완료**(`1c0c8d7`) — persona에 전수반환 의무·
+REVIEW_KIND별 관점·R3 경계를 넣었다. 이 요청은 **phase-2 리뷰**다.
 
-## 변경 요약 (phase-1-batching-persona)
+## 변경 요약 (phase-2-review-call-log)
 
-**D1만 구현한다. 코드 변경 없음** — persona 주입은 이미 배선돼 있다(`assembleReviewPrompt`가 첫 블록으로 주입).
+D2~D6 구현. **측정 로그만 추가하고 리뷰 판정 경로는 건드리지 않는다.**
 
-`workflow/review-persona.md`에 세 가지를 추가했다.
+- **D2 `reviewPolicyVersion(persona)`** — `sha256(persona 본문)` 앞 12자. persona 비활성(null)이면 `'none'`.
+  수동 상수 bump를 쓰지 않는다(고치고 올리기를 잊으면 세그먼트가 조용히 거짓 — REQ-019 날조 폐기 이력).
+- **D3 `.gitignore`에 `workflow/.review-calls.jsonl`** — 로컬 관측용, **커밋 대상 아님**.
+- **`buildReviewCallLogRow`** — verdict를 받되 **개수만** 꺼낸다. 내용 배제 경계가 여기다(R7).
+- **`appendReviewCallLog`** — JSONL append. **실패를 삼킨다**(R8 — 로그는 승인 근거가 아니므로 게이트가 아니다).
+- **D4 `main()` 배선** — `resolveReviewOutcome`·`writeState` 직후 1행. `approvedAt` 재사용(새 시계 안 읽음).
+  `archiveRound`는 아카이브를 남긴 경우에만 값, 무효 응답은 `null`.
 
-1. **`## 응답 전 점검 관점 (REVIEW_KIND별)`** — `design`·`phase`별 점검 관점 목록. 목록은 탐색의 하한임을 명시.
-2. **R3 기존 코드 기준선 경계** — 기존 코드·CLI help는 "설계가 현재 동작과의 호환 또는 문서·help 변경을
-   약속한 경우에만" 기준선으로 읽는다. 무관한 기존 코드 결함은 `observations`.
-3. **`## 배칭 — 아는 P1은 한 번에 낸다`** — 이번 호출에서 식별한 모든 P1을 `findings[]`에 함께 반환.
-   P1 기준은 낮추지 않음을 명시.
+`machine.schema.json`·승인 바인딩·`classifyReview`·persona **무변경**. `series`·`attempt`·`lineage`·
+`full_review`는 **정의하지 않는다**(REQ-A/B 범위, R9).
 
-테스트(`tests/unit/req-review-codex.test.ts`)에 O1-1/O1-2/O1-3을 추가했다. 실제 `workflow/review-persona.md`를
-`loadReviewPersona`로 읽어 `assembleReviewPrompt`에 넣고 계약 도달을 단언한다.
-
-게이트: typecheck 0, 단위 1046/1046 green. (이 repo에 lint 스크립트는 없다.)
-
-staged diff에는 **설계 문서 3종(00/01/02)도 포함**돼 있다 — REQ-024 phase-1(`86d91ac`)과 같은 관례로,
-설계 문서는 phase-1 구현과 함께 커밋된다. 설계 자체는 design-r01에서 이미 승인됐다.
+게이트: typecheck 0, 단위 1057/1057 green (REQ-025 오라클 15/15).
 
 ## 리뷰 포인트
 
 리뷰 포인트는 심사 범위의 하한이다. 아래에 없는 결함도 지적하라.
 
-1. **R3 경계가 기존 조항과 실제로 정합한가.** persona에는 여전히 "리뷰 대상이 아닌 것을 근거로 지적하지
-   마라 / 설계 리뷰에서 '구현이 없다'는 지적은 성립하지 않는다"가 있다. 새로 넣은 R3 문단은 이를 "예외가
-   아니라 적용 규칙"이라고 선언한다. **이 두 문단이 실제로 모순 없이 읽히는가?** 리뷰어가 둘을 동시에
-   만족시킬 수 있는가?
+1. **내용 배제가 실제로 성립하는가** (R7·D3). `buildReviewCallLogRow`가 verdict를 인자로 받는다 —
+   `detail`·`file`·`next_action`이 행에 샐 경로가 남아 있는가? O2-3은 표식 문자열의 **부재**와 개수의
+   **정확성**을 함께 단언한다. 이 오라클이 "verdict 통째 덤프" 구현을 실제로 잡는가?
 
-2. **배칭 절이 P1 정의를 침식하지 않는가.** "모든 P1을 한 번에 내라"가 "P1을 더 많이 만들라"로 오독될
-   여지가 있는가? 「P1 정의」 3요소와 `observations` 경계가 그대로 유지되는가?
+2. **실패 격리가 fail-closed를 침식하지 않는가** (R8·D5). `appendReviewCallLog`가 모든 예외를 삼킨다.
+   "로그는 승인 근거가 아니므로 게이트가 아니다"라는 판단이 맞는가? 삼키면 안 되는 예외가 섞여 있는가?
 
-3. **kind별 관점 목록이 서로 모순되지 않는가** (R2 후단). 이건 문자열 단언으로 증명할 수 없어 02-plan에서
-   "design 리뷰의 판단 사항"으로 남겼다. **당신의 판단을 요청한다.**
+3. **`policy_version`을 persona 해시로 파생하는 선택** (D2). 세그먼트 목적에 충분한가? persona가 `null`일
+   때 `'none'`으로 뭉개는 것이 관측을 왜곡하는가?
 
-4. **oracle이 실제 회귀를 잡는가.** O1-1~O1-3은 실물 persona 파일을 읽는다. 계약 절을 지우면 실패하는가?
-   O1-3(기존 차단 계약 생존)이 배칭 추가로 인한 침식을 실제로 잡는가?
+4. **배선 지점과 누락 범위** (D4). `writeState` 직후에 기록하므로, 리뷰어 무수정 검증(`:1438`~`:1443`)에서
+   throw되면 행이 없다. A0 목적(라운드당 P1 수 관측)에 이 누락이 문제인가? `archive_round`가 무효 응답에서
+   `null`인 것이 집계에 모호함을 남기는가?
 
-5. **정직성 표기가 정확한가.** 테스트 주석과 02-plan에 "이 테스트는 리뷰어가 실제로 배칭한다는 것을
-   증명하지 않는다"고 명시했다. 과하거나 부족하지 않은가?
+5. **gitignore 선택이 측정을 훼손하지 않는가** (D3·R7). 로그를 커밋하지 않으므로 clone·CI에는 데이터가
+   없다. 측정 단계("B 배송 뒤 최소 5개 series")가 로컬 데이터만으로 가능한가? O2-5는 `git status`에
+   나타나지 않음을 실측한다 — D10·`req:doctor` 무영향 주장이 이걸로 충분히 고정되는가?
 
-6. **범위 이탈이 없는가.** phase-1은 D1만이다. `series`·`attempt`·`lineage`·`full_review`(REQ-A/B 범위)나
-   `policy_version`·로그(phase-2 범위)가 새어 들어오지 않았는가?
+6. **범위 이탈이 없는가** (R9). `series`·`attempt`·`lineage`·`full_review` 개념이 새어 들어오지 않았는가?
+   행 형식이 A·B의 확장을 받을 수 있는 **열린 객체**인가?
+
+7. **정직성 표기** (02-plan). "`main()` 배선의 종단 동작은 단위 테스트로 증명하지 않는다 — 리뷰어가 diff로
+   확인하고, 병합 후 실제 로그 누적을 최종 보고에 포함한다"고 명시했다. 이 한계 표기가 정확한가?

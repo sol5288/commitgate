@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -43,6 +44,10 @@ import {
   buildFindingsSnapshot,
   validatePersistedSnapshot,
   buildPreviousFindingsBlock,
+  reviewPolicyVersion,
+  buildReviewCallLogRow,
+  appendReviewCallLog,
+  REVIEW_CALL_LOG_REL,
   truncateUtf8,
   SNAPSHOT_MAX_FINDINGS,
   SNAPSHOT_MAX_DETAIL_BYTES,
@@ -2067,5 +2072,201 @@ describe('REQ-2026-025 phase-1 — 배칭 persona 계약(실제 workflow/review-
     const b = section(persona as string, '## 배칭 — 아는 P1은 한 번에 낸다')
     expect(b).toContain('배칭은 P1 기준을 낮추라는 뜻이 **아니다**')
     expect(b).toContain('추측은 `observations`다')
+  })
+})
+
+/**
+ * REQ-2026-025 phase-2 — review-call 측정 로그(D2~D6).
+ *
+ * 이 로그는 **측정이지 게이트가 아니다.** 승인 근거가 아니므로 실패를 삼킨다(R8).
+ * `series`·`attempt`·`lineage`·`full_review`는 여기서 정의하지 않는다 — REQ-A/B가 행을 확장한다(R9).
+ */
+describe('REQ-2026-025 phase-2 — review-call 로그', () => {
+  const ROOT = packageRoot()
+  const tmp = (): string => mkdtempSync(join(tmpdir(), 'callog-'))
+
+  describe('O2-1: policy_version 파생(D2)', () => {
+    const sha12 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 12)
+
+    it('persona 본문 → sha256 앞 12자', () => {
+      expect(reviewPolicyVersion('# Reviewer 역할 (PM)\n본문\n')).toBe(sha12('# Reviewer 역할 (PM)\n본문\n'))
+      expect(reviewPolicyVersion('x')).toHaveLength(12)
+    })
+
+    it('1바이트만 달라도 값이 다르다(정책 전/후 세그먼트 가능)', () => {
+      expect(reviewPolicyVersion('persona A')).not.toBe(reviewPolicyVersion('persona B'))
+    })
+
+    it('persona 비활성(null) → "none"', () => {
+      expect(reviewPolicyVersion(null)).toBe('none')
+    })
+  })
+
+  describe('O2-2: 최소 필드 1행(R6)', () => {
+    const verdict = (findings: number, observations: number): Verdict => ({
+      findings: Array.from({ length: findings }, (_, i) => ({ severity: 'P1', file: `f${i}`, detail: `d${i}` })),
+      observations: Array.from({ length: observations }, (_, i) => ({ detail: `o${i}`, file: `f${i}` })),
+    })
+
+    it('R6 9개 필드가 전부 존재한다', () => {
+      const row = buildReviewCallLogRow({
+        ticketId: 'REQ-2026-025',
+        kind: 'phase',
+        phaseId: 'phase-2-review-call-log',
+        archiveRound: 3,
+        outcome: 'needs-fix',
+        verdict: verdict(2, 1),
+        timestamp: '2026-07-17T00:00:00.000Z',
+        policyVersion: 'abc123def456',
+      })
+      expect(Object.keys(row).sort()).toEqual(
+        [
+          'archive_round',
+          'findings_count',
+          'observations_count',
+          'outcome',
+          'phase_id',
+          'policy_version',
+          'review_kind',
+          'ticket_id',
+          'timestamp',
+        ].sort(),
+      )
+      expect(row.findings_count).toBe(2)
+      expect(row.observations_count).toBe(1)
+      expect(row.archive_round).toBe(3)
+    })
+
+    it('무효 응답(아카이브 없음) → archive_round=null', () => {
+      const row = buildReviewCallLogRow({
+        ticketId: 'REQ-2026-025',
+        kind: 'design',
+        phaseId: null,
+        archiveRound: null,
+        outcome: 'invalid',
+        verdict: {},
+        timestamp: '2026-07-17T00:00:00.000Z',
+        policyVersion: 'none',
+      })
+      expect(row.archive_round).toBeNull()
+      expect(row.phase_id).toBeNull()
+      expect(row.findings_count).toBe(0) // findings 미제공 → 0(undefined 아님)
+      expect(row.observations_count).toBe(0)
+    })
+  })
+
+  it('O2-3: 🔴 finding·observation 본문이 기록된 행에 새지 않는다(R7)', () => {
+    const MARK_F = 'LEAK_MARKER_FINDING_XYZZY'
+    const MARK_O = 'LEAK_MARKER_OBSERVATION_PLUGH'
+    const row = buildReviewCallLogRow({
+      ticketId: 'REQ-2026-025',
+      kind: 'phase',
+      phaseId: 'p1',
+      archiveRound: 1,
+      outcome: 'needs-fix',
+      verdict: {
+        findings: [
+          { severity: 'P1', file: 'secret/path.ts', detail: MARK_F },
+          { severity: 'P1', file: 'x.ts', detail: `${MARK_F}-2` },
+        ],
+        observations: [{ detail: MARK_O, file: 'y.ts' }],
+        next_action: `${MARK_F}-next`,
+      },
+      timestamp: '2026-07-17T00:00:00.000Z',
+      policyVersion: 'abc123def456',
+    })
+    const line = JSON.stringify(row)
+    // verdict를 통째로 덤프하거나 detail을 흘리는 구현은 여기서 실패한다.
+    expect(line).not.toContain(MARK_F)
+    expect(line).not.toContain(MARK_O)
+    expect(line).not.toContain('secret/path.ts')
+    // 개수는 정확해야 한다 — 부재만 단언하면 "아무것도 안 세는" 구현도 통과한다.
+    expect(row.findings_count).toBe(2)
+    expect(row.observations_count).toBe(1)
+  })
+
+  it('O2-4: append 실패를 삼킨다 — throw 없음(R8, 로그는 게이트가 아니다)', () => {
+    const d = tmp()
+    try {
+      // workflow를 **파일**로 만들어 append 경로를 쓰기 불가로 만든다.
+      writeFileSync(join(d, 'workflow'), 'not a dir', 'utf8')
+      expect(() =>
+        appendReviewCallLog(d, {
+          ticket_id: 'REQ-2026-025',
+          review_kind: 'phase',
+          phase_id: 'p1',
+          archive_round: 1,
+          outcome: 'approved',
+          findings_count: 0,
+          observations_count: 0,
+          timestamp: '2026-07-17T00:00:00.000Z',
+          policy_version: 'abc123def456',
+        }),
+      ).not.toThrow()
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('O2-2: append 후 **파싱한 JSONL 행**에 R6 9개 필드와 전달값이 전부 보존된다', () => {
+    const d = tmp()
+    try {
+      const row = {
+        ticket_id: 'REQ-2026-025',
+        review_kind: 'phase' as const,
+        phase_id: 'phase-2-review-call-log',
+        archive_round: 3,
+        outcome: 'needs-fix' as const,
+        findings_count: 2,
+        observations_count: 1,
+        timestamp: '2026-07-17T00:00:00.000Z',
+        policy_version: 'abc123def456',
+      }
+      appendReviewCallLog(d, row)
+      // 빌더 반환값이 아니라 **디스크에 실제로 쓰인 것**을 파싱한다 — append가 필드를 떨구는 회귀를 잡는다.
+      const parsed = JSON.parse(readFileSync(join(d, REVIEW_CALL_LOG_REL), 'utf8').trim())
+      expect(Object.keys(parsed).sort()).toEqual(Object.keys(row).sort())
+      expect(parsed).toEqual(row) // 키 존재만이 아니라 **각 전달값**까지 고정
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('O2-4: 정상 경로에서는 JSONL이 1행씩 누적된다', () => {
+    const d = tmp()
+    try {
+      const base = {
+        ticket_id: 'REQ-2026-025',
+        review_kind: 'phase' as const,
+        phase_id: 'p1',
+        archive_round: 1,
+        outcome: 'approved' as const,
+        findings_count: 0,
+        observations_count: 0,
+        timestamp: '2026-07-17T00:00:00.000Z',
+        policy_version: 'abc123def456',
+      }
+      appendReviewCallLog(d, base)
+      appendReviewCallLog(d, { ...base, archive_round: 2 })
+      const lines = readFileSync(join(d, REVIEW_CALL_LOG_REL), 'utf8').trim().split('\n')
+      expect(lines).toHaveLength(2)
+      expect(JSON.parse(lines[0] as string).archive_round).toBe(1)
+      expect(JSON.parse(lines[1] as string).archive_round).toBe(2)
+    } finally {
+      rmSync(d, { recursive: true, force: true })
+    }
+  })
+
+  it('O2-5: 로그 경로가 gitignore되어 git status에 나타나지 않는다(D10 무영향)', () => {
+    const abs = join(ROOT, REVIEW_CALL_LOG_REL)
+    const preexisting = existsSync(abs)
+    if (!preexisting) writeFileSync(abs, '')
+    try {
+      const out = execFileSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' })
+      expect(out).not.toContain('.review-calls.jsonl')
+    } finally {
+      // 우리가 만든 것만 지운다 — 실제 측정 데이터를 파괴하지 않는다.
+      if (!preexisting) rmSync(abs, { force: true })
+    }
   })
 })

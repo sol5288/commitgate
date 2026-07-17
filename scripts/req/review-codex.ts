@@ -17,8 +17,17 @@
  *   req:review-codex --ticket <dir>    # 임의 티켓 디렉터리
  *   옵션: --handoff <path>  (미지정 시 req.config.json의 handoffPath. 둘 다 없으면 handoff 블록 생략 — 코어 기본은 비활성)
  */
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { resolve, join, relative, sep } from 'node:path'
+import {
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  appendFileSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from 'node:fs'
+import { resolve, join, relative, sep, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
@@ -380,6 +389,84 @@ export const REVIEW_EXIT_CODES: Record<ReviewOutcome, number> = {
   invalid: 1,
   blocked: 2,
   'needs-fix': 3,
+}
+
+// ──────────────────────────────────── review-call 측정 로그 (REQ-2026-025) ──
+
+/** 로그 경로(repo 루트 기준). `.gitignore`에 등재 — **커밋 대상이 아니다**(D3·R7). */
+export const REVIEW_CALL_LOG_REL = 'workflow/.review-calls.jsonl'
+
+/**
+ * persona 본문 → 로그 세그먼트 키(D2). `sha256(본문)` 앞 12자. persona 비활성(null)이면 `'none'`.
+ *
+ * 수동 상수 bump를 쓰지 않는 이유: persona를 고치고 상수 올리기를 잊으면 세그먼트가 **조용히 거짓**이 된다.
+ * 이 프로젝트는 사람이 손으로 적은 값이 실제와 어긋나 REQ 하나를 폐기한 이력이 있다(REQ-2026-019).
+ * 자동 파생은 잊을 수 없고, 사용자가 `reviewPersonaPath`로 바꾼 custom persona도 자동으로 구분한다.
+ */
+export function reviewPolicyVersion(persona: string | null): string {
+  if (persona === null) return 'none'
+  return createHash('sha256').update(persona, 'utf8').digest('hex').slice(0, 12)
+}
+
+/** review-call 로그 1행(R6 최소 필드). REQ-A가 series/attempt/lineage를, REQ-B가 review_mode/full_review를 **확장**한다(R9·D6). */
+export interface ReviewCallLogRow {
+  ticket_id: string
+  review_kind: ReviewKind
+  phase_id: string | null
+  /** 아카이브 round. 무효 응답은 아카이브를 남기지 않으므로 `null`(D4). */
+  archive_round: number | null
+  outcome: ReviewOutcome
+  findings_count: number
+  observations_count: number
+  timestamp: string
+  policy_version: string
+}
+
+/**
+ * verdict → 로그 행(순수). **내용 배제 경계가 여기다**(R7).
+ *
+ * verdict를 받지만 **개수만 꺼낸다** — `findings[].detail`·`observations[].detail`·`next_action`·`file`은
+ * 절대 행에 담지 않는다. 리뷰 프롬프트는 `git diff --cached` 전문을 담을 수 있고(AGENTS 계약 §6),
+ * 그 파생물을 gitignore된 로컬 파일에 복제하면 마스킹 없는 사본이 하나 더 생긴다. 개수만 세면 목적
+ * ("배칭이 라운드당 P1 수를 바꾸는가")이 달성된다.
+ */
+export function buildReviewCallLogRow(args: {
+  ticketId: string
+  kind: ReviewKind
+  phaseId: string | null
+  archiveRound: number | null
+  outcome: ReviewOutcome
+  verdict: Verdict
+  timestamp: string
+  policyVersion: string
+}): ReviewCallLogRow {
+  return {
+    ticket_id: args.ticketId,
+    review_kind: args.kind,
+    phase_id: args.phaseId,
+    archive_round: args.archiveRound,
+    outcome: args.outcome,
+    findings_count: args.verdict.findings?.length ?? 0,
+    observations_count: args.verdict.observations?.length ?? 0,
+    timestamp: args.timestamp,
+    policy_version: args.policyVersion,
+  }
+}
+
+/**
+ * 로그 append(측정 전용). **실패를 삼킨다**(R8).
+ *
+ * fail-closed 원칙의 예외가 아니다 — 이 로그는 **승인 근거가 아니므로 게이트가 아니다.** 측정 실패가
+ * 리뷰 판정·exit code·state를 바꾸면 그것이 오히려 계약 위반이다. 아카이브 기록도 같은 패턴을 쓴다.
+ */
+export function appendReviewCallLog(rootAbs: string, row: ReviewCallLogRow): void {
+  try {
+    const abs = join(rootAbs, ...REVIEW_CALL_LOG_REL.split('/'))
+    mkdirSync(dirname(abs), { recursive: true })
+    appendFileSync(abs, `${JSON.stringify(row)}\n`, 'utf8')
+  } catch {
+    // 측정은 게이트가 아니다(R8). 리뷰 판정 경로는 로그 유무와 무관하게 동일하다.
+  }
 }
 
 export interface ProcessResponseResult {
@@ -1368,6 +1455,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const probe = processResponse(baseArgs) // 아카이브 없이 검증(진짜 승인 여부·유효성)
   const decision = archiveDecision(probe, opts.kind) // null=아카이브 안 함(무효), 'approved'|'needs-fix'
   let archiveDesc: { path: string; sha256: string } | undefined
+  // REQ-2026-025 D4: 측정 로그의 archive_round. 무효 응답은 아카이브를 남기지 않으므로 null로 남는다.
+  let archiveRound: number | null = null
   if (decision) {
     try {
       const respBytes = readFileSync(respPath)
@@ -1375,9 +1464,11 @@ export function main(argv: string[] = process.argv.slice(2)): void {
       const responsesDir = join(ticketDir, 'responses')
       mkdirSync(responsesDir, { recursive: true })
       const existing = readdirSync(responsesDir).filter((n) => isArchiveFileName(n))
-      const archiveAbs = join(responsesDir, archiveFileName(base, nextArchiveRound(existing, base), decision))
+      const round = nextArchiveRound(existing, base)
+      const archiveAbs = join(responsesDir, archiveFileName(base, round, decision))
       writeFileSync(archiveAbs, respBytes)
       archiveDesc = { path: repoRel(archiveAbs), sha256: createHash('sha256').update(respBytes).digest('hex') }
+      archiveRound = round
     } catch {
       // 아카이브 기록 실패 — evidence 미부착(probe 결과 사용)
     }
@@ -1401,6 +1492,22 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     compareHash,
   })
   writeState(ticketDir, finalState)
+
+  // REQ-2026-025 D4: 완료된 review call 1행 기록(측정 전용). `approvedAt`을 재사용해 같은 call의 다른
+  // 기록과 시각이 어긋나지 않게 한다 — 새 시계를 읽지 않는다. 실패는 삼켜진다(R8).
+  appendReviewCallLog(
+    cfg.root,
+    buildReviewCallLogRow({
+      ticketId: String(state.id ?? ''),
+      kind: opts.kind,
+      phaseId,
+      archiveRound,
+      outcome,
+      verdict: result.verdict,
+      timestamp: approvedAt,
+      policyVersion: reviewPolicyVersion(persona),
+    }),
+  )
 
   console.log(`[req:review-codex] ${outcomeLabel(outcome)}  thread=${threadId}`)
   console.log(
