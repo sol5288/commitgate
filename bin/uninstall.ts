@@ -30,6 +30,7 @@ import {
   KIT_COPY_RELPATHS,
   KIT_AGENT_ENTRYPOINTS,
   KIT_GITIGNORE,
+  KIT_COMPANION_SKILLS,
   KIT_CLAUDE_TEMPLATE_REL,
   KIT_CLAUDE_DEST_REL,
   KIT_AGENTS_CONTRACT_COPY_REL,
@@ -230,6 +231,10 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
     { destRel: KIT_AGENTS_CONTRACT_COPY_REL, srcRel: 'AGENTS.template.md' },
     // workflow/.gitignore(REQ-2026-012): src≠dest. identical이면 제거 대상, differs면 review(사용자 편집 보존). 부재 정상.
     { destRel: KIT_GITIGNORE.dest, srcRel: KIT_GITIGNORE.src },
+    // companion skills(REQ-2026-021 D5): src≠dest. `KIT_COMPANION_SKILLS`가 이미 `{src, dest}` shape라 직접 매핑한다.
+    // `--no-agent-entrypoints`·미설치면 부재가 **정상**이므로 present=false여도 문제 없다(entrypoint와 같은 성질).
+    // ⚠️ 분류는 기존 규칙을 그대로 탄다 — 새 예외를 만들지 않는다. `differs`는 "편집됐거나 **다른 버전**이 설치함"이다.
+    ...KIT_COMPANION_SKILLS.map((e) => ({ destRel: e.dest, srcRel: e.src })),
   ]
   const tool: ToolArtifact[] = toolEntries.map(({ destRel, srcRel }) => {
     const dest = join(targetRoot, destRel)

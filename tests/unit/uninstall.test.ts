@@ -16,6 +16,7 @@ import {
   STAGE_B_REQ_SCRIPTS,
 } from '../../bin/init'
 import { planUninstall, renderPlan, runUninstall, parseArgs } from '../../bin/uninstall'
+import { KIT_COMPANION_SKILLS } from '../../bin/init'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
 import type { GitRunner } from '../../scripts/req/lib/adapters'
 
@@ -408,6 +409,9 @@ describe('[uninstall] 커밋 전/후 안내 분기', () => {
       execFileSync('git', ['rm', '-r', '-q', 'scripts/req'], { cwd: dir })
       execFileSync('git', ['rm', '-q', ...KIT_COPY_RELPATHS], { cwd: dir })
       execFileSync('git', ['rm', '-q', ...KIT_AGENT_ENTRYPOINTS.map((e) => e.dest)], { cwd: dir })
+      // companion skills(REQ-2026-021)도 "전부 제거"의 일부다. 빠뜨리면 tracked로 남아 아래 `every(!tracked)`가 깨진다
+      // — 위 주석이 예고한 바로 그 실패다(설치물이 늘면 픽스처가 조용히 불완전해진다).
+      execFileSync('git', ['rm', '-q', ...KIT_COMPANION_SKILLS.map((e) => e.dest)], { cwd: dir })
       execFileSync('git', ['rm', '-q', 'req.config.json', 'AGENTS.md', 'CLAUDE.md', KIT_GITIGNORE.dest], { cwd: dir })
       // package.json의 Stage A `req:*` 도 함께 되돌린다 — **"전부 제거"의 일부**다(uninstall planner가 수동 정리 후보로 표시하는 항목).
       // `git rm`은 파일만 지우므로 이것이 없으면 Stage A 서명이 package.json에 남아, 3)의 재설치가 D19(migrate 안내)로 정당하게 막힌다.
@@ -911,6 +915,119 @@ describe('[uninstall] workflow/.gitignore (REQ-2026-012)', () => {
       const plan = planUninstall({ dir })
       expect(plan.removable.map((t) => t.path)).not.toContain(WG)
       expect(plan.review.find((t) => t.path === WG)?.match).toBe('differs')
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+// ═══════ REQ-2026-021 phase-2: uninstall 계획에 companion 포함 ═══════
+
+/**
+ * companion skills 4종이 제거 계획에 등장해야 사용자가 무엇을 정리할지 알 수 있다(R4).
+ *
+ * ⚠️ **읽기 전용 유지**가 핵심 불변식이다 — planner는 아무것도 쓰지 않는다.
+ * ⚠️ **`differs`를 "사용자 수정"으로 단정하지 않는다**(R6) — `ToolArtifact.match` 주석대로
+ *    "편집됐거나 **다른 버전**이 설치함"일 뿐이다. 테스트도 그 의미를 과대주장하지 않는다.
+ */
+describe('[uninstall] companion skills (REQ-2026-021)', () => {
+  const SKILLS = KIT_COMPANION_SKILLS.map((e) => e.dest)
+  const TDD = '.claude/skills/commitgate-tdd/SKILL.md'
+
+  it('4종이 planner의 tool에 정확히 한 번씩 등장한다 (R4)', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const paths = planUninstall({ dir }).facts.tool.map((t) => t.path)
+      for (const s of SKILLS) {
+        expect(paths, `${s}가 계획에 있어야 한다`).toContain(s)
+        expect(paths.filter((p) => p === s), `${s}가 중복 등장하면 안 된다`).toHaveLength(1)
+      }
+      expect(SKILLS, 'KIT_COMPANION_SKILLS를 직접 매핑 — 4종이다').toHaveLength(4)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('설치본은 identical, 수정본은 differs로 분류된다', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const before = planUninstall({ dir }).facts.tool
+      for (const s of SKILLS) {
+        const t = before.find((x) => x.path === s)
+        expect(t?.present, `${s} present`).toBe(true)
+        expect(t?.match, `${s}: 방금 깐 원본이므로 identical`).toBe('identical')
+      }
+      // 사용자가 고치면 differs. ⚠️ 이것이 "사용자 수정"임을 단정하지 않는다 —
+      //    같은 값이 "다른 버전이 깔았음"에서도 나온다(R6). 분류 값만 고정한다.
+      writeFileSync(join(dir, TDD), '# 사용자가 고친 내용\n', 'utf8')
+      const after = planUninstall({ dir }).facts.tool.find((x) => x.path === TDD)
+      expect(after?.match, 'differs = 수정됐거나 다른 버전이 깐 것').toBe('differs')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('미설치 상태는 absent다(부재는 정상 — 오류가 아니다)', () => {
+    const dir = tmpRepo()
+    try {
+      const tool = planUninstall({ dir }).facts.tool
+      for (const s of SKILLS) {
+        const t = tool.find((x) => x.path === s)
+        expect(t, `${s}가 계획 목록에는 있어야 한다`).toBeDefined()
+        expect(t?.match, `${s}: 미설치면 absent`).toBe('absent')
+        expect(t?.present).toBe(false)
+      }
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--no-agent-entrypoints로 설치하면 absent다', () => {
+    const dir = tmpRepo()
+    try {
+      runInit({ dir, force: false, dryRun: false, strict: false, noAgentEntrypoints: true })
+      const tool = planUninstall({ dir }).facts.tool
+      for (const s of SKILLS) expect(tool.find((x) => x.path === s)?.match, s).toBe('absent')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** 🔴 읽기 전용 — planner가 대상 tree를 건드리면 안 된다. */
+  it('planner 실행 전후 대상 tree snapshot이 동일하다 (읽기 전용)', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const before = snapshot(dir)
+      planUninstall({ dir })
+      renderPlan(planUninstall({ dir })) // 렌더링도 부작용이 없어야 한다
+      expect(snapshot(dir), 'planner는 아무것도 쓰지 않는다').toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** 기존 자산 분류 회귀 — companion 추가가 다른 항목을 밀어내지 않는다 (R5). */
+  it('기존 entrypoint·schema·persona·workflow/.gitignore 분류에 회귀가 없다', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const tool = planUninstall({ dir }).facts.tool
+      const paths = tool.map((t) => t.path)
+      for (const p of [
+        '.claude/skills/commitgate/SKILL.md',
+        '.claude/commands/req.md',
+        '.cursor/rules/commitgate.mdc',
+        'workflow/machine.schema.json',
+        'workflow/req.config.schema.json',
+        'workflow/review-persona.md',
+        'workflow/.gitignore',
+      ]) {
+        expect(paths, `${p}: 기존 항목이 계획에 남아야 한다`).toContain(p)
+        expect(tool.find((t) => t.path === p)?.match, `${p}: 방금 깔았으므로 identical`).toBe('identical')
+      }
     } finally {
       cleanup(dir)
     }
