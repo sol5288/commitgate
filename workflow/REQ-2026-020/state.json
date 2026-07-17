@@ -3,14 +3,82 @@
   "branch": "feat/req-2026-020-companion-skills-bundle",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f6e8b-ab0d-7f90-8f1f-7e0f3f56a9e6",
+  "review_base_sha": "98df04d08f1cfdf58998432abe2abba05ff36b57",
+  "review_diff_hash": "86dc3784228296d97660d4c39d95c8518e1785ee",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "63fcc9e3fd1cba8fc308277092b02c7cdad01f9091510bf90e82f3ce8ecf1239",
+  "current_phase": "phase-2b-security-oracle",
+  "phases": [
+    {
+      "id": "phase-1-skill-content",
+      "approved": true
+    },
+    {
+      "id": "phase-1b-diagnosis-safety",
+      "approved": true
+    },
+    {
+      "id": "phase-2-init-install",
+      "approved": true
+    },
+    {
+      "id": "phase-2b-security-oracle",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2b-security-oracle",
+    "outcome": "approved",
+    "compare_hash": "695ab0ed14bc3dc96c106d10215b7305f2605c02790b9c1ea5db6203ef2c28f1",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-17T05:28:58.075Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "48b87192d3577c499b2b37a4a3862d6ca8fabadc",
+      "phase_id": "phase-1-skill-content",
+      "consumed_by_commit_sha": "832c83b6fd20a1249dcbaea48e9fdb9c8f23cf46",
+      "approval_consumed_at": "2026-07-17T03:27:10.340Z"
+    },
+    {
+      "approved_tree": "f6e1274f39ba57b4d04862928c4355124f5b8275",
+      "phase_id": "phase-1b-diagnosis-safety",
+      "consumed_by_commit_sha": "3905ea87c4541a6ccb6255046d66c215d6d2f20b",
+      "approval_consumed_at": "2026-07-17T04:33:23.862Z"
+    },
+    {
+      "approved_tree": "ecd33a6d4edba41555b750c9dd4b12564e96e985",
+      "phase_id": "phase-2-init-install",
+      "consumed_by_commit_sha": "6e63106e20236f43fe94f96758ea1d31421338a9",
+      "approval_consumed_at": "2026-07-17T05:01:06.620Z"
+    },
+    {
+      "approved_tree": "86dc3784228296d97660d4c39d95c8518e1785ee",
+      "phase_id": "phase-2b-security-oracle",
+      "consumed_by_commit_sha": "19817e91ea9a85dc88c9f623505fc932cca1a5e4",
+      "approval_consumed_at": "2026-07-17T05:30:07.636Z"
+    }
+  ],
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-020/responses/design-r14-approved.json",
+    "response_sha256": "29c5a5f2023c50b1cba524df88276ba19f5cb5e1011fec6e284c92c5cd1596ec",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "367c18c6ce716b5bba8c1472486fb4db6802a6bd",
+    "codex_thread_id": "019f6e82-ff8c-7503-b363-438d931cc6a0",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-17T05:19:51.579Z",
+    "design_hash": "63fcc9e3fd1cba8fc308277092b02c7cdad01f9091510bf90e82f3ce8ecf1239"
+  }
 }
