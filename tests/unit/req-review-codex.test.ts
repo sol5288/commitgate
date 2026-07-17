@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
+import { packageRoot } from '../../scripts/req/lib/config'
 import {
   assembleReviewPrompt,
   loadReviewPersona,
@@ -1962,5 +1963,109 @@ describe('[REQ-2026-013 P4] findings 스냅샷 + stateless 연속성', () => {
       expect((b!.match(/<<<END_PREVIOUS_FINDINGS_TO_CLOSE>>>/g) || []).length).toBe(1) // 진짜 END 하나만
     })
     it('elided_count>0 → "(+N more elided)" 렌더', () => expect(buildPreviousFindingsBlock(withLR({ elided_count: 3 }), 'phase', 'p1')!).toContain('(+3 more elided)'))
+  })
+})
+
+/**
+ * REQ-2026-025 phase-1 — 배칭 persona 계약(D1).
+ *
+ * 대상은 **실제 `workflow/review-persona.md`**다. 임시 fixture가 아니다 — 계약이 실물 파일에서 사라지면
+ * 실패해야 회귀 가드가 된다. persona는 `assembleReviewPrompt`가 첫 블록으로 통째 주입하므로(`:104`),
+ * 조립 결과 단언은 "계약 본문 존재 + 주입 배선"을 함께 고정한다.
+ *
+ * ⚠️ 한계: 이 테스트는 **리뷰어가 실제로 배칭한다는 것을 증명하지 않는다.** LLM 행동은 결정적으로
+ * 단위 테스트할 수 없고, R4가 검증 불가능한 자기선언 필드를 금지한다. 실제 효과는 phase-2의
+ * review-call 로그로 사후 측정한다.
+ */
+describe('REQ-2026-025 phase-1 — 배칭 persona 계약(실제 workflow/review-persona.md)', () => {
+  const ROOT = packageRoot()
+  const persona = loadReviewPersona(resolve(ROOT, 'workflow', 'review-persona.md'), ROOT)
+
+  const prompt = (kind: 'design' | 'phase'): string =>
+    assembleReviewPrompt({
+      persona,
+      reviewBaseSha: 'abc123',
+      requestBody: 'REQ 본문',
+      reviewKind: kind,
+      designDocs: kind === 'design' ? { requirement: 'R', design: 'D', plan: 'P' } : null,
+      stagedDiff: 'diff --git a/x b/x',
+    })
+
+  it('O1-1: 전수반환 의무가 design·phase 양쪽 조립 프롬프트에 도달한다', () => {
+    for (const kind of ['design', 'phase'] as const) {
+      const p = prompt(kind)
+      expect(p).toContain('## 배칭 — 아는 P1은 한 번에 낸다')
+      expect(p).toContain('이번 호출에서 식별한 모든 P1')
+      expect(p).toContain('다음 라운드로 의도적으로 미루지 않는다')
+    }
+  })
+
+  /**
+   * 헤딩 이후 다음 `##`/`###` 직전까지를 잘라낸다. 항목이 **그 kind의 절 안에** 있음을 단언하기 위함 —
+   * 문서 전체 `toContain`은 항목을 엉뚱한 절로 옮겨도 통과한다.
+   */
+  const section = (md: string, heading: string): string => {
+    const i = md.indexOf(heading)
+    if (i < 0) return ''
+    const rest = md.slice(i + heading.length)
+    const next = rest.search(/\n#{2,3} /)
+    return next < 0 ? rest : rest.slice(0, next)
+  }
+
+  it('O1-2: REVIEW_KIND별 점검 관점이 각 절 안에 실제 항목으로 존재한다', () => {
+    const p = prompt('design')
+    expect(p).toContain('## 응답 전 점검 관점 (REVIEW_KIND별)')
+
+    // 헤더만 남기고 bullet을 지우는 회귀를 잡으려면 **항목 자체**를 단언해야 한다.
+    const d = section(p, '### REVIEW_KIND: design')
+    for (const lens of [
+      '요구사항·비목표·인수 기준',
+      '00/01/02 문서 간 모순',
+      '요구된 정상 사용 경로의 계약 위반',
+      '테스트 oracle이 실제 실패를 잡는지',
+      '보안·fail-closed 경계',
+      '설계가 약속한 문서·CLI help·기존 동작과의 호환성',
+    ])
+      expect(d).toContain(lens)
+
+    const ph = section(p, '### REVIEW_KIND: phase')
+    for (const lens of [
+      'staged diff가 해당 phase의 인수 기준을 충족하는지',
+      '변경된 테스트 oracle이 실제 실패를 잡는지',
+      '변경된 사용자 대면 문서·CLI help가 실제 변경 동작과 일치하는지',
+      '보안·fail-closed 경계가 staged diff에서 약화되지 않는지',
+    ])
+      expect(ph).toContain(lens)
+  })
+
+  it('O1-2: R3 기존 코드 기준선 경계가 design 절 안에 명시된다(무관한 기존 코드로의 확산 차단)', () => {
+    const d = section(prompt('design'), '### REVIEW_KIND: design')
+    expect(d).toContain('설계가 현재 동작과의 호환 또는 문서·help 변경을 약속한 경우에만')
+    expect(d).toContain('설계와 무관한 기존 코드 결함은 `findings`가 아니라 `observations`다')
+  })
+
+  it('O1-3: P1 정의 3요소가 절 안에 그대로 남아 있다(배칭 추가로 인한 침식 차단)', () => {
+    const p1 = section(persona as string, '## P1 정의 (차단의 유일한 기준)')
+    expect(p1).toContain('`findings`에는 **P1만** 넣는다')
+    // 제목만 검사하면 3요소를 지운 persona도 통과한다 — 세 요소를 각각 고정한다.
+    expect(p1).toContain('**카테고리**: 요구 위반 · 데이터 손상 · 보안 구멍 · 금전 오류 · fail-closed 우회 중 하나다.')
+    expect(p1).toContain('**정상 경로**: 정상 사용 경로에서 재현된다.')
+    expect(p1).toContain('**증거**: 재현 경로나 실패 시나리오를 명시했다.')
+    expect(p1).toContain('**배제 규칙**')
+    expect(p1).toContain('카테고리에 없으면')
+  })
+
+  it('O1-3: 승인 조건·보장 경계·severity 금지가 그대로 남아 있다', () => {
+    const p = persona as string
+    expect(p).toContain('**승인(`commit_approved=yes`)은 `findings`가 0건일 때만 가능하다.**')
+    expect(p).toContain('## 보장 범위 경계 (이 경계 밖은 결함이 아니다)')
+    expect(p).toContain('`observations`에는 `severity`를 붙이지 않는다')
+    expect(p).toContain('리뷰 대상이 아닌 것을 근거로 지적하지 마라')
+  })
+
+  it('O1-3: 배칭 절이 P1 기준을 낮추지 않음을 명시한다', () => {
+    const b = section(persona as string, '## 배칭 — 아는 P1은 한 번에 낸다')
+    expect(b).toContain('배칭은 P1 기준을 낮추라는 뜻이 **아니다**')
+    expect(b).toContain('추측은 `observations`다')
   })
 })
