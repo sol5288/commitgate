@@ -1,47 +1,74 @@
 {
   "id": "REQ-2026-027",
   "branch": "feat/req-2026-027-review-series-model",
+  "review_series_model_version": 1,
+  "user_commit_confirmed": null,
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": "019f70a2-7451-7720-a5e1-65232175728e",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f70ea-f9db-7c63-8051-c072d56a735e",
+  "review_base_sha": "e14d66fa8f4197c72bf1d6013bb2986a36758501",
+  "review_diff_hash": "db4688cf9e7a843faafb628a8d90ff9d39713e50",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
+  "design_approved": true,
+  "design_approved_hash": "58943167400d8f096ce3c9d23c320e6afc75dc1ee75c7260bee8c1fd30490fb5",
+  "current_phase": "phase-2-series-record-and-attempt",
   "phases": [
     {
       "id": "phase-1-model-version-and-legacy",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-series-record-and-attempt",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
-    "outcome": "needs-fix",
-    "compare_hash": "b692b0705bdb9530545b0c0778474077f4e1c0f0deba587cf09272eb329d62dc",
+    "review_kind": "phase",
+    "phase_id": "phase-2-series-record-and-attempt",
+    "outcome": "approved",
+    "compare_hash": "0363b0a114067bf5f930f2a9b45ce96af3326951b3d83f22e3c4f2ce9c635525",
     "count": 1,
     "errors": [],
-    "at": "2026-07-17T15:14:48.274Z",
-    "findings": [
-      {
-        "severity": "P1",
-        "file": "workflow/REQ-2026-027/02-plan.md",
-        "detail": "계획은 각 phase의 Codex 승인 뒤 다음 단계로 진행하도록 하지만, in-flight stamp는 “phase-1 구현·커밋 직후”에 하도록 둔다. 정상 절차에서 phase-1 구현을 stage한 뒤 phase 리뷰를 요청하면, 아직 model version이 없는 이 티켓은 새 phase-1 "
-      },
-      {
-        "severity": "P1",
-        "file": "workflow/REQ-2026-027/02-plan.md",
-        "detail": "O2-6은 NEEDS_FIX·approved만 main()에서 검증한다. 따라서 구현이 그 두 outcome에는 afterAttempt를 쓰되, 구조적으로 유효하지만 미승인·findings 없는 응답의 blocked 처리(또는 invalid 처리)에는 pre-call state를 base로 최종 write하도록 분기해도 "
-      }
-    ],
+    "at": "2026-07-17T16:32:51.054Z",
+    "findings": [],
     "elided_count": 0
-  }
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-027/responses/design-r04-approved.json",
+    "response_sha256": "e9dc155f81061e27edff86c4d7acdbc8eb66cc7c5b4e2a97d51184ff2db6dca2",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "43fcef58e68c547294b18129e9e230fb8305c582",
+    "codex_thread_id": "019f70a6-557c-7cc1-addb-ffde67ba4595",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-17T15:17:58.083Z",
+    "design_hash": "58943167400d8f096ce3c9d23c320e6afc75dc1ee75c7260bee8c1fd30490fb5"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "6699f268a743220c5e3b1adb9fd2ab25ab106fa7",
+      "phase_id": "phase-1-model-version-and-legacy",
+      "consumed_by_commit_sha": "4910a207eb2d0d3fb0d876f432cc93941d39191a",
+      "approval_consumed_at": "2026-07-17T15:51:19.338Z"
+    },
+    {
+      "approved_tree": "db4688cf9e7a843faafb628a8d90ff9d39713e50",
+      "phase_id": "phase-2-series-record-and-attempt",
+      "consumed_by_commit_sha": "b2bb71fb1144e4a6ec51b13d8c1a90dc7e54d722",
+      "approval_consumed_at": "2026-07-17T16:34:24.143Z"
+    }
+  ],
+  "review_series": [
+    {
+      "series_id": "phase:phase-2-series-record-and-attempt#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-series-record-and-attempt",
+      "attempts": 4,
+      "closed_reason": "approved"
+    }
+  ]
 }
