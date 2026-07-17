@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"77f71bb6573da8650428a242230cdd80fc5f1bea","status":"COMPLETE","commit_approved":"yes","merge_ready":"yes","risk_level":"LOW","review_kind":"phase","findings":[],"next_action":"이 staged 변경을 커밋하세요.","observations":[{"detail":"`tsc --noEmit`은 통과했습니다. 대상 Vitest는 읽기 전용 샌드박스가 Vitest 설정 임시 파일 생성을 막아(EPERM) 실행할 수 없었습니다.","file":null}]}
