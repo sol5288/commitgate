@@ -2541,12 +2541,55 @@ describe('[init] companion gitignore 경고 (REQ-2026-021)', () => {
     }
   })
 
-  it('create: --strict는 설치 전 throw + 쓰기 0회 (R2)', () => {
+  /**
+   * ⚠️ 격리가 **없는** 테스트다 — `.claude/` ignore 시 기존 계약 포인터가 먼저 strict 오류를 내므로
+   *    `companionAtRisk`에서 `create`를 빼도 초록이다. R2의 "쓰기 0회"만 지키는 보조 테스트로 남기고,
+   *    `create` 항의 증명은 아래 격리 fixture가 담당한다(REQ-2026-021 D7 / phase-1b).
+   */
+  it('create: --strict는 설치 전 throw + 쓰기 0회 (R2 — 쓰기 축만)', () => {
     const dir = ignoredClaude()
     try {
       const before = snapshot(dir)
       expect(() => runInit(OPTS(dir, { strict: true }))).toThrow()
       expect(snapshot(dir), 'preflight throw는 어떤 파일도 쓰지 않는다').toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * 🔴 `create` **격리** — phase-1이 `ownedSkip`·`userDiffers`만 격리하고 `create`는 비대칭으로 빠뜨렸다(D7).
+   *
+   * 초기 설치 후 **tdd만 제거**하면 재실행 시 그 경로가 다시 `create` 상태가 되고,
+   * 나머지 3종은 byte-identical(`ownedSkip`)이다. 그 3종과 `.claude` 포인터를 강제 추적해
+   * at-risk 원인에서 빼면 **`create` 항 하나만** 남는다.
+   */
+  const createIsolated = (dir: string): void => {
+    runInit(OPTS(dir)) // 4종 생성
+    rmSync(join(dir, TDD)) // tdd만 제거 → 재실행 시 create 상태
+    isolateOnly(dir, TDD) // 나머지 3종 + .claude 포인터 강제 추적
+  }
+
+  it('create 격리: tdd만 부재면 그 경로가 WARN 원인이다 (D7)', () => {
+    const dir = ignoredClaude()
+    try {
+      createIsolated(dir)
+      const warn = captureWarn(() => runInit(OPTS(dir)))
+      expect(warn, 'create 상태의 tdd가 원인으로 등장해야 한다').toContain(TDD)
+      for (const s of SKILLS.filter((x) => x !== TDD)) expect(warn, `${s}는 추적돼 원인이 아니다`).not.toContain(s)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('create 격리: --strict throw 메시지에 그 경로가 있고 쓰기 0회다 (D7)', () => {
+    const dir = ignoredClaude()
+    try {
+      createIsolated(dir)
+      const before = snapshot(dir)
+      // 기존 계약 포인터는 추적됐으므로 이 throw는 **companion 때문**이어야 한다.
+      expectStrictThrowMentioning(dir, TDD)
+      expect(snapshot(dir), '--strict 전후 대상 snapshot 동일').toEqual(before)
     } finally {
       cleanup(dir)
     }
