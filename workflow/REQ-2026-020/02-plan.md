@@ -123,49 +123,37 @@ Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인.
 
 ---
 
-## Phase 3 — opt-out·uninstall (`phase-3-optout-uninstall`)
+## Phase 2b — 보안 oracle 보정 (`phase-2b-security-oracle`)
 
-범위: gitignore WARN/strict(D6), uninstall `toolEntries`(D7). **신규 플래그 없음**(D5 범위 축소 — `--no-companion-skills` 미도입).
+범위: **`tests/unit/init.test.ts` 1파일.** 구현(`bin/init.ts`) **무변경** — 방향 전환이 아니라 **증명 보완**이다.
+`planCompanionSkills()`는 이미 4개 최종 dest 각각을 검사하고 leaf에 `lstat`/ENOENT 정책을 적용한다.
 
-**테스트 oracle**:
-- `--no-agent-entrypoints` → skills 4종 **미생성**(+ 기존 entrypoint도 미생성 = 기존 동작 그대로).
-- `--no-agent-entrypoints`가 `printHelp`에서 companion skills도 건너뜀을 밝힌다(help↔구현 일치).
-- `.claude/`를 gitignore한 fixture → 기본 init이 **WARN 출력**(설치는 됨), `--strict` → **설치 전 throw + 쓰기 0회**.
-- 🔴 **기존 entrypoint 경고 무변경(design-r05 P1)**: companion 경고는 **companion 자산에 대해서만** 추가된다.
-  `.claude/skills/commitgate/SKILL.md`·`.claude/commands/req.md`·`.cursor/rules/commitgate.mdc`의 기존 계약 포인터
-  WARN·`--strict` fail-closed는 **그대로 통과**해야 한다(R6·R10 회귀). companion 경고를 위해 기존 경고를 억제하지 않는다.
-- uninstall: skills 4종이 계획 출력에 등장 · **대상 tree 전후 snapshot 동일**(읽기 전용) · `child_process` 미import 구조 테스트 유지.
+**결함**: phase-2의 보안 fixture 중 둘이 **대상만** snapshot해 탈출 탐지기로서 **공허**하다 —
+대상 안의 symlink는 외부로 써져도 변하지 않는다.
+- `commitgate-research만 symlink여도 거부한다` — `snapshot(dir)`만.
+- `--dry-run도 confinement/leaf preflight를 수행해 symlink면 실패한다` — `snapshot(dir)`만.
 
-Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인.
+실측(root-only confinement 변이): `runInit`이 **throw 없이 완료되고 외부에 `SKILL.md`를 생성**한다.
+현재는 `toThrow`가 회귀를 잡아내지만, **다른 이유로 throw하면서 외부에 쓰는 경우**는 통과시킨다.
 
----
-
-## Phase 4 — 공존·문서·smoke (`phase-4-coexist-docs-smoke`)
-
-범위: 공존 fixture 테스트, README(ko/en)·CLI help·CHANGELOG, packed-tarball smoke.
+또한 신규 `symlinkSync` 5곳이 기존 `symlinkUnsupported()` 관례를 쓰지 않아, 권한 없는 Windows 러너에서
+**설치기 결함이 아니라 픽스처 준비 실패로** 빨간불이 난다.
 
 **테스트 oracle**:
-- **공존 A(타사 선설치)**: `.claude/skills/tdd/SKILL.md`(타사)를 먼저 깔고 init → 타사 파일 **바이트 불변**, `commitgate-tdd`는 별도 생성.
-- **공존 B(CommitGate 선설치)**: init 후 타사 skill 추가 → 재-init → 양쪽 보존.
-- 두 fixture 모두: `AGENTS.md` 계약 정본 유지(`<!-- commitgate:contract -->` 마커) · `req:next --json` 의미 불변 · `req:doctor` 정상.
-- **Stage A migration이 companion skills를 조용히 추가하지 않음** — `migrate --apply` 후 `.claude/skills/commitgate-*` **부재**.
-- **packed-tarball smoke**(`scripts/smoke.mjs`): fresh git/npm fixture에 `npm i -D <tgz>` → `commitgate init` →
-  4종 존재 · `scripts/req/**` 부재 · `tsx`/`ajv`/`cross-spawn` 직접 주입 부재 · `req:*`가 package bin 지시(Stage B 조건 유지).
-  npm 캐시는 일회용으로 격리한다.
-- README(ko/en)에 "선별된 Companion Skills" 절: 정확한 4종 목록 · **외부 installer 미실행** · 설치/비설치 옵션 ·
-  Matt skills와 공존 시 책임 경계 · 권장 흐름(`commitgate-discovery → /req → req:new → req:next 반복`) ·
-  **외부 skill 결과는 보조 자료이며 Codex 승인 증거가 아님** · **"자동 발견 · 모델 판단 호출"**(auto-invoked 금지).
-- 🔴 **지원 매트릭스가 README(ko/en)·CLI help에 D1 표 그대로 실린다(design-r06 P1)**:
-  Claude Code ✅ · Cursor **IDE** ✅ · Cursor **CLI** ❌(알려진 벤더 버그 — 문서화된 제한) · Codex ❌(설계상 불필요).
-  Cursor를 뭉뚱그려 ✅로 적으면 CLI 사용자에게 거짓이다. 테스트로 문구 존재를 고정한다.
+- `commitgate-research` 외부 symlink fixture에 **외부 snapshot 전후 비교** 추가.
+- `--dry-run` 외부 symlink fixture에 **외부 snapshot 전후 비교** 추가 → "쓰기 0회"가 완전히 증명된다.
+- 신규 `symlinkSync` **전부**에 `symlinkUnsupported()` 적용 — 권한 미지원이면 **그 사유로만** skip하고, 다른 오류는 throw.
+- 🔴 **변이 검증**: dest별 confinement를 root-only로 되돌리면 research 테스트가 **외부 파일 생성으로 실패**해야 한다
+  (`toThrow`뿐 아니라 외부 snapshot 단언에서도). 이게 공허하지 않음의 증명이다.
 
-Exit: typecheck0 · 단위 그린 · smoke 그린 · Codex phase 리뷰 승인.
+Exit: typecheck0 · 단위 그린 · Codex phase 리뷰 승인 · HIGH 확인 후 별도 커밋. **phase-3은 그 뒤에만 착수.**
 
 ---
 
 ## 완료
 
-- 게이트 해당분(unit·typecheck) · smoke · 사용자 main 머지(별도 승인).
+- 게이트 해당분(unit·typecheck) · 사용자 main 머지(별도 승인).
+  ⚠️ **smoke·문서·공존 fixture는 REQ-A2**(2차 축소). 이번 REQ의 완료 상태는 "패키지에 실리고 안전하게 설치된다"까지.
 - HIGH 티켓: 각 phase의 `req:commit --run` **직전** 통제점에서 사용자 확인(`state.user_commit_confirmed`).
   리뷰 전 선승인은 커밋 실행 승인이 아니다.
 
@@ -204,6 +192,19 @@ Exit: typecheck0 · 단위 그린 · smoke 그린 · Codex phase 리뷰 승인.
   관련: `user_commit_confirmed`를 쓰는 CLI가 없어 **에이전트가 손으로 적는다** → 손으로 적는 감사 필드는
   본질적으로 위조 가능하고, REQ-2026-019가 그 실패 모드를 실증했다(타임스탬프 날조 → 폐기).
   도구가 확인 시점에 직접 시각을 찍는 설계를 함께 검토한다.
+
+### 🔴 REQ-A2 (2차 축소로 분리 — PM 결정, 설계 리뷰 11회 도달)
+
+구 phase-3(opt-out·gitignore·uninstall)·구 phase-4(공존·문서·smoke)를 **별도 REQ로 이관**한다.
+설계 문서 1개가 6개 phase를 덮어, 앞 phase를 승인받을 때마다 뒤 phase까지 전체 재검수되며 무관한 지적이 계속 나왔다
+(r09·r10이 실제로 phase-3 oracle 지적). CommitGate의 알려진 결함(Stage B 중단 사유)이 재현된 것이다.
+
+**이관 범위(설계는 보존 — 재사용):**
+- companion gitignore WARN/`--strict` 축(D6) + **userDiffers 경고 원인 격리 fixture**(design-r09/r10에서 벼려짐).
+- uninstall `toolEntries`에 companion 4종(D7). read-only 유지, `differs`는 "수정됨 또는 다른 버전이 깐 것".
+- 공존 fixture(타사 skills 선/후설치) · Stage A migrate 미추가 · packed-tarball smoke.
+- README(ko/en)·CLI help·CHANGELOG. 🔴 **그때 Cursor CLI 지원 표기를 검증한 버전·모드와 함께 재승인**해야 한다(D1).
+- phase-2 리뷰 observation: gitignore된 companion이 stage 목록에서 빠지는 비계약 자산 정책 명시·검증.
 
 ### 기타
 
