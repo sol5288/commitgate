@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-014-stage-b-runtime-package",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": "019f6bb6-3cc6-7960-b87e-24ecb5d1e4ae",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f6d65-2a12-7d73-a28a-d18fa596ba1a",
+  "review_base_sha": "f6d4000c098e2919341103bd8ba86c26f9c1d399",
+  "review_diff_hash": "9436bb10e33883f5078005a9fbd95c4affd8836e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "af32f66e0fc6c5f292d07dd8c25afd5e00ea00903bb2a0bdeab441cb3c401b35",
-  "current_phase": null,
+  "current_phase": "phase-5-docs-smoke",
   "phases": [
     {
       "id": "phase-1-dispatch",
@@ -18,30 +18,30 @@
     },
     {
       "id": "phase-2-init-runtime",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-uninstall-migrate",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-4-repro-pm",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-5-docs-smoke",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-5-docs-smoke",
     "outcome": "approved",
-    "compare_hash": "af32f66e0fc6c5f292d07dd8c25afd5e00ea00903bb2a0bdeab441cb3c401b35",
+    "compare_hash": "4f58b142a272dc6755738e69fb6049e777898e2d628f4783e59e4e50e9928583",
     "count": 1,
     "errors": [],
-    "at": "2026-07-16T16:17:30.160Z",
+    "at": "2026-07-17T00:07:56.161Z",
     "findings": [],
     "elided_count": 0
   },
@@ -51,6 +51,30 @@
       "phase_id": "phase-1-dispatch",
       "consumed_by_commit_sha": "95d94b81d7849a0afb159bb636af1066e3846615",
       "approval_consumed_at": "2026-07-15T13:23:52.885Z"
+    },
+    {
+      "approved_tree": "e856ad453a570e6aa0f34d6a49b5573a63c0f476",
+      "phase_id": "phase-2-init-runtime",
+      "consumed_by_commit_sha": "46b740ef03a25334ac24b489e1343ed2c5cbf771",
+      "approval_consumed_at": "2026-07-16T23:26:02.191Z"
+    },
+    {
+      "approved_tree": "6d947efbb8998703c00ec794570904987a02e22b",
+      "phase_id": "phase-3-uninstall-migrate",
+      "consumed_by_commit_sha": "e141ac300142a293f3ec2107220c3baf4de0f064",
+      "approval_consumed_at": "2026-07-16T23:43:04.605Z"
+    },
+    {
+      "approved_tree": "02f487b31652949d74dac7ec1ce04be4ecc6396d",
+      "phase_id": "phase-4-repro-pm",
+      "consumed_by_commit_sha": "ef59904639aede6db53123231c997320a9b478b9",
+      "approval_consumed_at": "2026-07-16T23:53:51.227Z"
+    },
+    {
+      "approved_tree": "9436bb10e33883f5078005a9fbd95c4affd8836e",
+      "phase_id": "phase-5-docs-smoke",
+      "consumed_by_commit_sha": "2f3138ac5e977910ed0fbf1c5f4bf477c848dede",
+      "approval_consumed_at": "2026-07-17T00:10:26.497Z"
     }
   ],
   "design_approval_evidence": {
@@ -65,5 +89,6 @@
     "commit_approved": "yes",
     "approved_at": "2026-07-16T16:17:30.160Z",
     "design_hash": "af32f66e0fc6c5f292d07dd8c25afd5e00ea00903bb2a0bdeab441cb3c401b35"
-  }
+  },
+  "user_commit_confirmed": null
 }
