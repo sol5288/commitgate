@@ -2,6 +2,12 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+- **Companion Skills 추가 및 lifecycle 문서화** — `commitgate init`이 `.claude/skills/commitgate-*/SKILL.md` 4종
+  (`discovery`·`tdd`·`diagnosing-bugs`·`research`)을 함께 설치합니다. 설치·보존·경고·제거 계획·지원 범위는
+  [README](README.md#companion-skills) / [README (English)](README.en.md#companion-skills)를 참조하세요.
+
 ## 0.7.0
 
 **설치 모델이 바뀝니다 — 기존 사용자는 조치가 필요합니다.** 실행 코드와 런타임 의존성을 대상 프로젝트에 복사·주입하지 않고, `commitgate` 패키지에서 실행합니다. 프로젝트에는 거버넌스·감사 데이터만 남습니다.

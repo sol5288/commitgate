@@ -481,3 +481,124 @@ describe('[REQ-2026-020] D12 진단 스킬 안전 경계', () => {
     expect(t, '진단용 커밋 금지 — 사람이 승인해도 불가').toMatch(/(진단|조사).*(커밋|commit).*(금지|아니다)/)
   })
 })
+
+// ───────────────────────── REQ-2026-023 phase-1: 문서·지원 매트릭스 ──
+
+/**
+ * companion skills의 **정본 설명은 README 한/영**이다. help·CHANGELOG는 정본이 아니다.
+ *
+ * ⚠️ **불변값·표면 정합 회귀 방지용이다. 문서의 모든 의미를 증명하지 않는다** —
+ *    문맥·링크·번역 정합성은 최종 phase 리뷰에서 사람·Codex가 별도로 검토한다.
+ *
+ * ⚠️ **과검증을 피한다**(PM 지시):
+ *  - `staged diff`를 oracle로 쓰지 않는다 — 커밋 뒤·CI는 index가 비어 **환경 의존적이거나 공허**해진다.
+ *    `printHelp` 문자열 한정 여부는 **구현 전 staged-diff/리뷰 체크리스트**로만 확인한다.
+ *  - `.cursor/skills` 문자열 0건 검사를 하지 않는다 — "설치하지 않는다"는 **설명 자체를 막는다**.
+ *    정확한 축은 **설치 destination이 4개뿐**임을 고정하는 것이고, 그건 `init.test.ts`가 이미 한다(D6).
+ *  - CHANGELOG는 **계약 표면이 아니다** — 존재 검사만. 반복하면 **세 번째 정본**이 생겨 drift 부채가 는다.
+ */
+describe('[REQ-2026-023] companion 문서 정합', () => {
+  const read = (rel: string): string => lf(readFileSync(join(PACKAGE_ROOT, rel), 'utf8'))
+  const READMES = ['README.md', 'README.en.md'] as const
+  /** `printHelp` 본문만 잘라낸다(주변 코드가 아니라 사용자가 보는 문자열을 검사). */
+  const helpBody = (): string => {
+    const src = read('bin/init.ts')
+    const i = src.indexOf('function printHelp')
+    expect(i, 'printHelp 함수를 찾지 못했다').toBeGreaterThanOrEqual(0)
+    const rest = src.slice(i)
+    return rest.slice(0, rest.indexOf('\n}\n'))
+  }
+
+  it.each(READMES)('%s: companion 불변값을 담는다 (R5)', (rel) => {
+    const t = read(rel)
+    for (const name of COMPANION_SKILLS) expect(t, `${rel}: ${name}`).toContain(name)
+    expect(t, `${rel}: opt-out 플래그`).toContain('--no-agent-entrypoints')
+    expect(t, `${rel}: --force 언급`).toContain('--force')
+    expect(t, `${rel}: strict 축`).toContain('--strict')
+    expect(t, `${rel}: 계약 정본`).toContain('AGENTS.md')
+    expect(t, `${rel}: 기준 upstream SHA`).toContain(UPSTREAM_SHA)
+    expect(t, `${rel}: 외부 installer 미의존`).toMatch(/installer/i)
+  })
+
+  /** 🔴 승인 증거 경계(R6) — 외부·companion skill 결과는 CommitGate/Codex 승인 근거가 아니다. */
+  it.each(READMES)('%s: 승인 증거 경계를 명시한다 (R6)', (rel) => {
+    expect(read(rel), `${rel}: 승인 증거가 아니라는 경계`).toMatch(/승인 증거가 아|승인 근거가 아|not approval evidence|is not .{0,30}approval/i)
+  })
+
+  /**
+   * 🔴 **표면 정합** — README가 `--force`를 "companion도 덮는다"로 읽히게 쓰면 안 된다.
+   *    실제로는 seed-once로 **보존**된다(REQ-020 D3). 존재 검사만 하면 이 모순을 놓친다.
+   */
+  it.each(READMES)('%s: --force가 companion을 덮는다고 쓰지 않는다 (표면 정합)', (rel) => {
+    const t = read(rel)
+    // ⚠️ "같은 줄에 '보존'이 있으면 통과"로 짜면 **자기 라벨에 속는다** — 예:
+    //    "**기존 파일 보존(seed-once)**: … 수정한 스킬도 **`--force`면 덮어씁니다.**"
+    //    는 '보존'이 라벨로 들어 있어 배제되고, 정작 의미는 정반대다(변이 검증에서 실제로 통과했다).
+    //    → **`--force`와 덮어쓰기 동사가 직접 결합한 표현**을 잡고, 부정형만 예외로 둔다.
+    const asserts = t
+      .split('\n')
+      .filter((l) => /(`--force`|--force)\s*(로도|면|는|가|를)?\s*[^.]{0,20}(덮어씁|덮어쓴|덮습|덮는다|overwrites?\b)/i.test(l))
+      .filter((l) => !/(덮어쓰지 않|덮지 않|does not overwrite|never overwrite)/i.test(l))
+    expect(asserts, `${rel}: --force는 companion을 보존한다(seed-once) — 덮는다고 단언하면 실제 동작과 어긋난다`).toEqual([])
+    // 양성: 보존을 **실제로** 말하는 문장이 있어야 한다(가드가 공회전하지 않음을 보장).
+    expect(t, `${rel}: seed-once 보존 단언이 있어야 한다`).toMatch(/(덮어쓰지 않|덮지 않|not overwritten|does not overwrite|never overwrite)/i)
+  })
+
+  /**
+   * 🔴 CLI help의 `--force` **정확한 예외**(D4).
+   * 기존 문구 "기존 kit 파일 덮어쓰기(기본: 스킵)"는 companion·workflow/.gitignore·AGENTS.md·CLAUDE.md에 **거짓**이다.
+   */
+  it('printHelp: --force의 정확한 예외를 명시한다 (R4/R5)', () => {
+    const h = helpBody()
+    expect(h, 'help: --force 줄').toContain('--force')
+    for (const kept of ['AGENTS.md', 'CLAUDE.md', 'workflow/.gitignore']) {
+      expect(h, `help: --force 예외 대상 ${kept}`).toContain(kept)
+    }
+    expect(h, 'help: companion skills 예외').toMatch(/companion/i)
+    expect(h, 'help: 보존 의미').toMatch(/보존/)
+  })
+
+  it('printHelp: --no-agent-entrypoints를 안내한다 (R5)', () => {
+    expect(helpBody()).toContain('--no-agent-entrypoints')
+  })
+
+  /** 🔴 SHA 일치(R1/R7) — README 한/영과 ATTRIBUTION.md가 같은 값을 가리켜야 한다. */
+  it('upstream SHA가 README 한/영·ATTRIBUTION.md에서 동일하다', () => {
+    const surfaces = ['README.md', 'README.en.md', 'skills/ATTRIBUTION.md']
+    for (const rel of surfaces) expect(read(rel), `${rel}: SHA`).toContain(UPSTREAM_SHA)
+    // upstream 문맥 줄에 **다른** 40자 hex가 있으면 옛 pin 잔재다.
+    for (const rel of surfaces) {
+      const stray = read(rel)
+        .split('\n')
+        .filter((l) => /mattpocock\/skills/.test(l))
+        .flatMap((l) => l.match(/\b[0-9a-f]{40}\b/g) ?? [])
+        .filter((h) => h !== UPSTREAM_SHA)
+      expect(stray, `${rel}: upstream 문맥에 다른 SHA가 있다`).toEqual([])
+    }
+  })
+
+  /** 🔴 "auto-invoked"는 거짓이다 — 발견은 native지만 **호출은 모델 판단**이다. */
+  it('payload 전체에 "auto-invoked"가 0건이다 (R5)', () => {
+    const hits: string[] = []
+    for (const abs of payloadFiles()) {
+      const text = readTextOrNull(abs)
+      if (text === null) continue
+      lf(text)
+        .split('\n')
+        .forEach((line, i) => {
+          if (/auto-invoked/i.test(line)) hits.push(`${relative(PACKAGE_ROOT, abs).replace(/\\/g, '/')}:${i + 1}`)
+        })
+    }
+    expect(hits, '"자동 발견 · 모델 판단 호출"이 정확한 표현이다').toEqual([])
+  })
+
+  /** CHANGELOG는 **계약 표면이 아니다** — `Unreleased` 아래 companion 항목 **존재만** 본다. */
+  it('CHANGELOG: Unreleased 아래 companion 항목이 있다 (존재 검사만)', () => {
+    const t = read('CHANGELOG.md')
+    const i = t.indexOf('## Unreleased')
+    expect(i, 'Unreleased 절이 있어야 한다').toBeGreaterThanOrEqual(0)
+    const next = t.indexOf('\n## ', i + 1)
+    const section = next < 0 ? t.slice(i) : t.slice(i, next)
+    expect(section, 'Unreleased 아래 companion 변경 사실').toMatch(/companion/i)
+  })
+})

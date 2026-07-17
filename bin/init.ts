@@ -1378,7 +1378,9 @@ function printHelp(): void {
 
 옵션:
   --dir <path>   대상 repo 루트(기본: 현재 디렉터리)
-  --force        기존 kit 파일 덮어쓰기(기본: 스킵)
+  --force        덮어쓰기 가능한 kit 항목만 갱신(기본: 스킵).
+                 AGENTS.md · CLAUDE.md · workflow/.gitignore · companion skills(.claude/skills/commitgate-*)는
+                 기존 파일을 **보존**합니다 — --force 로도 덮어쓰지 않습니다.
   --dry-run      변경 없이 수행 예정 목록만 출력
   --strict       정합성 경고를 설치 실패로 취급(fail-closed)
   --no-agent-entrypoints

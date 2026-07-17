@@ -57,7 +57,7 @@ git commit -m "chore: install commitgate"
 | File | Read by |
 |---|---|
 | `AGENTS.md` | Codex CLI, Cursor — **the contract** |
-| `.claude/skills/commitgate/SKILL.md` | Claude Code (auto-invoked when it matches) |
+| `.claude/skills/commitgate/SKILL.md` | Claude Code (auto-discovered — the model decides whether to use it) |
 | `.claude/commands/req.md` | Claude Code (`/req` explicit call) |
 | `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
 | `CLAUDE.md` | Claude Code (always loaded) — created only if absent |
@@ -162,7 +162,56 @@ So that you do not miscalculate where your real defenses are:
 | `.claude/skills/commitgate/SKILL.md` | Claude Code skill (pointer) |
 | `.claude/commands/req.md` | `/req` slash command (pointer) |
 | `.cursor/rules/commitgate.mdc` | Cursor rule (pointer) |
+| `.claude/skills/commitgate-*/SKILL.md` | **Companion Skills** — four of them, see below (existing files preserved) |
 | `package.json` scripts | `req:new`·`req:next`·`req:review-codex`·`req:doctor`·`req:commit` = `commitgate <verb>` (missing keys only) |
+
+### Companion Skills
+
+CommitGate is a **governance layer** — `req:next` computes the next action, and review/approval/evidence gate the commit.
+What was missing was **method**: how to sharpen a vague request, how to write the test first, how to corner a bug.
+Four skills, adapted from Matt Pocock's public skills (MIT) to fit CommitGate's authority boundaries, ship with it.
+
+| Skill | When |
+|---|---|
+| `commitgate-discovery` | **Before** `req:new` — turn a vague request into a REQ Brief. **User-invoked** |
+| `commitgate-tdd` | When `req:next` returns `AGENT` — Red → Green → Refactor → stage |
+| `commitgate-diagnosing-bugs` | Bugs, regressions, perf — feedback loop → reproduce/minimise → hypothesise → instrument → fix |
+| `commitgate-research` | External technology choices — primary sources, findings with citations and limits |
+
+**Auto-discovered, model-invoked.** The harness **discovers** skills automatically, but **the model decides**
+whether to use one — that is probabilistic, so don't expect a skill to always fire. In Claude Code you can also
+invoke one directly with `/commitgate-<name>`. On other harnesses, use whatever invocation that harness offers,
+or follow the entry flow in `AGENTS.md`.
+
+**Suggested flow**: `commitgate-discovery` to sharpen the request → `/req` (Claude Code) or the `AGENTS.md` entry
+flow → `req:new` → repeat `req:next`.
+
+#### Boundaries — read this
+
+- 🔴 **`AGENTS.md` is the contract.** Skills carry **method**, not contract.
+  Without the skills installed, the **core workflow behaves identically**.
+- 🔴 **Skill output is not approval evidence.** Neither a companion skill's output nor the result of running
+  Matt's external skills separately is **approval evidence** for CommitGate or Codex. Running the review, judging
+  approval, transitioning state, and committing are **CommitGate's alone**, and `req:next` is the authority on
+  what comes next.
+- Skills are **cooperative text** — a skill doesn't block a commit; CommitGate's gate does.
+
+#### Install, preservation, options
+
+- **`--no-agent-entrypoints`**: skips the whole `.claude/` layer (including the four companion skills).
+- **Existing files preserved (seed-once)**: skills are **meant to be edited**. A skill you modified is
+  **not overwritten, even with `--force`.** `AGENTS.md`, `CLAUDE.md`, and `workflow/.gitignore` follow the same policy.
+- **gitignore warning**: if `.claude/` is gitignored, the skills never reach a teammate's fresh clone.
+  Install still proceeds, but CommitGate **warns** and tells you how to track them. **`--strict` stops before installing.**
+- **Coexists with third-party skills**: third-party `tdd`, `grill-me`, etc. live at `.claude/skills/<name>/`, companions at
+  `.claude/skills/commitgate-<name>/` — **different paths, so neither touches the other.**
+
+#### Attribution
+
+Adapted from Matt Pocock's MIT-licensed public skills at baseline SHA `d574778f94cf620fcc8ce741584093bc650a61d3`
+and **included as package payload**. CommitGate **does not run or depend on any external skill installer** at
+runtime — these are pinned copies inside the package. Each SKILL.md carries the full MIT notice; see
+`skills/ATTRIBUTION.md` in the package for details.
 
 ### What it does **not** install
 
@@ -235,6 +284,29 @@ npx commitgate migrate --apply # rewrites only the req:* scripts in package.json
 | **workspaces / monorepo** | **Workspace-root installs** are supported (`req.config.json` and `workflow/` at the root). Installing independently in a sub-package is not supported |
 
 **Reproducibility**: the review model/effort pins in `req.config.json`, plus the schemas and persona, stay in your project, so past review inputs are reproducible from git history. Runtime versions are pinned by your lockfile — **commit `package-lock.json`** (or the pnpm/yarn equivalent).
+
+### Companion Skills discovery scope
+
+**Installation is identical everywhere.** What follows is about whether a harness **discovers** those files.
+
+| harness | Discovery |
+|---|---|
+| **Claude Code** | Reads `.claude/skills/<name>/SKILL.md` natively |
+| **Cursor (editor)** | Reads `.claude/skills` as a compatibility path |
+| **Cursor (CLI)** | ⚠️ **May differ by version and run mode — not guaranteed** |
+| **Codex** | **Out of product scope** — no companion entrypoint is installed. In CommitGate, Codex is the **Reviewer**; these four are **Builder aids** |
+
+⚠️ **This is based on vendor primary documentation — the CommitGate team did not verify it empirically.**
+Checked **2026-07-17** on win32 x64 / Node v20.19.5. If a vendor changes behaviour, this table goes stale.
+
+⚠️ **We do not claim Cursor CLI is either supported or unsupported.** Cursor announced Agent Skills for both
+editor and CLI, but discovery via the `.claude/skills` compatibility path is reported to differ by version and
+run mode, and we could not verify it. If discovery doesn't happen, **the core workflow is unaffected** — skills
+are a quality aid, and `AGENTS.md` is the contract.
+
+We do **not** double-install into `.cursor/skills` to work around this: that path's CLI behaviour is also
+uncertain, and the same content in two places invites drift. If the vendor fixes it, it works **with no change
+on our side** — same path.
 
 ---
 

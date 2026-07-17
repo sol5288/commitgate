@@ -57,7 +57,7 @@ git commit -m "chore: install commitgate"
 | 파일 | 읽는 도구 |
 |---|---|
 | `AGENTS.md` | Codex CLI, Cursor — **계약 정본** |
-| `.claude/skills/commitgate/SKILL.md` | Claude Code (요청에 맞으면 자동 발동) |
+| `.claude/skills/commitgate/SKILL.md` | Claude Code (자동 발견 — 호출은 모델 판단) |
 | `.claude/commands/req.md` | Claude Code (`/req` 명시 호출) |
 | `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
 | `CLAUDE.md` | Claude Code (항상 로드) — 부재 시에만 생성 |
@@ -162,7 +162,53 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 | `.claude/skills/commitgate/SKILL.md` | Claude Code 스킬 (포인터) |
 | `.claude/commands/req.md` | `/req` 슬래시 커맨드 (포인터) |
 | `.cursor/rules/commitgate.mdc` | Cursor 규칙 (포인터) |
+| `.claude/skills/commitgate-*/SKILL.md` | **Companion Skills** 4종 — 아래 참조 (기존 파일 보존) |
 | `package.json` 스크립트 | `req:new`·`req:next`·`req:review-codex`·`req:doctor`·`req:commit` = `commitgate <verb>` (없는 키만) |
+
+### Companion Skills
+
+CommitGate는 **거버넌스 레이어**입니다 — `req:next`가 다음 행동을 계산하고, 리뷰·승인·증거가 커밋을 게이트합니다.
+그런데 "무엇을 만들지 정리하는 법", "테스트를 어떻게 먼저 쓰는지" 같은 **방법론**은 비어 있었습니다.
+Matt Pocock의 공개 skills(MIT)를 CommitGate의 권한 경계에 맞게 적응해 4종을 함께 설치합니다.
+
+| 스킬 | 언제 |
+|---|---|
+| `commitgate-discovery` | `req:new` **전** — 모호한 요구를 REQ Brief로 정리. **사용자 호출형** |
+| `commitgate-tdd` | `req:next`가 `AGENT`일 때 — Red → Green → Refactor → stage |
+| `commitgate-diagnosing-bugs` | 버그·회귀·성능 — 피드백 루프 → 재현·최소화 → 가설 → 계측 → 수정 |
+| `commitgate-research` | 외부 기술 선택 — 1차 출처 조사, 결론·출처·한계 |
+
+**자동 발견 · 모델 판단 호출.** harness가 스킬을 자동으로 **발견**하지만, 쓸지 **판단하는 건 모델**입니다 —
+확률적이며 항상 뜬다고 기대하면 안 됩니다. Claude Code에서는 `/commitgate-<이름>`으로 **직접 호출**할 수도 있습니다.
+다른 harness에서는 그 harness가 제공하는 호출 방식을 쓰거나, `AGENTS.md`의 진입 흐름을 따르세요.
+
+**권장 흐름**: `commitgate-discovery`로 요구 정리 → `/req`(Claude Code) 또는 `AGENTS.md` 진입 → `req:new` → `req:next` 반복.
+
+#### 경계 — 반드시 알아 두세요
+
+- 🔴 **`AGENTS.md`가 계약 정본입니다.** 스킬은 **방법론**이지 계약이 아닙니다.
+  스킬을 설치하지 않아도 **핵심 워크플로는 완전히 동일하게** 동작합니다.
+- 🔴 **스킬 결과는 승인 증거가 아닙니다.** companion skills의 산출물도, 외부 Matt skills를 따로 돌린 결과도
+  CommitGate·Codex의 **승인 근거가 되지 않습니다**. 리뷰 실행·승인 판정·상태 전이·커밋은 **CommitGate만** 담당하며,
+  다음 행동은 `req:next`가 정본입니다.
+- 스킬은 **협조적 텍스트**입니다 — 스킬이 커밋을 막는 게 아니라, 막는 건 CommitGate의 게이트입니다.
+
+#### 설치·보존·옵션
+
+- **`--no-agent-entrypoints`**: `.claude/` 계층 전체를 건너뜁니다(companion 4종 포함).
+- **기존 파일 보존(seed-once)**: 스킬은 **고치라고 만든 자산**입니다. 수정한 스킬은 **`--force`로도 덮어쓰지 않습니다.**
+  `AGENTS.md`·`CLAUDE.md`·`workflow/.gitignore`도 같은 정책입니다.
+- **gitignore 경고**: `.claude/`를 gitignore하면 팀원의 fresh clone에 스킬이 전달되지 않습니다.
+  설치는 진행하되 **경고**하고 추적 방법을 안내합니다. **`--strict`면 설치 전에 중단**합니다.
+- **타사 skill과 공존**: 타사 `tdd`·`grill-me` 등은 `.claude/skills/<이름>/`, companion은 `.claude/skills/commitgate-<이름>/` —
+  **경로가 달라 서로 건드리지 않습니다.**
+
+#### 출처
+
+Matt Pocock의 MIT 공개 skills를 기준 SHA `d574778f94cf620fcc8ce741584093bc650a61d3`에서 적응해
+**패키지 payload로 포함**합니다. **외부 skill installer를 실행하거나 런타임 의존하지 않습니다** —
+패키지 안에 고정된 사본입니다. 각 SKILL.md에 MIT 고지 전문이 동행하며, 자세한 출처는 패키지의
+`skills/ATTRIBUTION.md`에 있습니다.
 
 ### 설치하지 **않는** 것
 
@@ -240,6 +286,27 @@ npx commitgate migrate --apply # package.json 의 req:* 만 전환
 | **workspace/monorepo** | **워크스페이스 root 설치**를 지원합니다(root에 `req.config.json`·`workflow/`). 하위 패키지에 독립 설치하는 배치는 미지원 |
 
 **재현성**: `req.config.json`의 리뷰 모델·추론강도 핀과 스키마·persona가 프로젝트에 남아 과거 리뷰 입력이 git 이력으로 재현됩니다. 런타임 버전은 **lockfile이 고정**하므로 `package-lock.json`(pnpm/yarn은 각 lockfile)을 **커밋하세요**.
+
+### Companion Skills 발견 범위
+
+**설치는 모든 환경에서 동일합니다.** 아래는 harness가 그 파일을 **발견하는지**에 대한 것입니다.
+
+| harness | 발견 |
+|---|---|
+| **Claude Code** | `.claude/skills/<이름>/SKILL.md`를 native로 읽습니다 |
+| **Cursor (editor)** | `.claude/skills`를 호환 경로로 읽습니다 |
+| **Cursor (CLI)** | ⚠️ **버전·실행 모드별 동작 차이 가능 — 보장하지 않습니다** |
+| **Codex** | **제품 범위 밖** — companion entrypoint를 설치하지 않습니다. CommitGate에서 Codex는 **Reviewer**이고 이 4종은 **Builder 보조**입니다 |
+
+⚠️ **근거는 벤더 1차 문서입니다 — CommitGate 팀이 실측한 것이 아닙니다.** 확인 시점 **2026-07-17**, 확인 환경 win32 x64 / Node v20.19.5.
+벤더가 동작을 바꾸면 이 표는 낡을 수 있습니다.
+
+⚠️ **Cursor CLI를 "지원"·"미지원" 어느 쪽으로도 단정하지 않습니다.** Cursor는 editor·CLI 양쪽의 Agent Skills 지원을
+발표했지만, `.claude/skills` 호환 경로의 CLI 발견은 버전·모드에 따라 차이가 보고돼 있고 우리는 검증하지 못했습니다.
+발견되지 않아도 **핵심 워크플로에는 영향이 없습니다** — 스킬은 품질 보조 레이어이고 계약 정본은 `AGENTS.md`입니다.
+
+우회를 위해 `.cursor/skills`에 **이중 설치하지 않습니다** — 그 경로도 CLI에서 동작이 불확실하고, 같은 내용이 두 곳에
+깔리면 drift 위험이 생깁니다. 벤더가 고치면 **우리 변경 없이** 동작합니다(같은 경로를 읽으므로).
 
 ---
 
