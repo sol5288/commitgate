@@ -96,6 +96,13 @@ describe('req:new — 브랜치명/초기 state', () => {
     const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
     expect(s.approval_evidence_required).toBe(true)
   })
+
+  // REQ-2026-027 phase-1 O1-1: 새 ticket은 첫 리뷰 전에도 review series 모델 버전을 갖는다(D1).
+  // 이 stamp가 "새 ticket(레코드 없음)"과 "legacy(필드 부재)"를 구분한다 — 빼면 새 ticket이 legacy로 오분류된다.
+  it('[REQ-2026-027] buildInitialState: 새 ticket에 review_series_model_version=1 stamp', () => {
+    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
+    expect((s as { review_series_model_version?: number }).review_series_model_version).toBe(1)
+  })
 })
 
 /**

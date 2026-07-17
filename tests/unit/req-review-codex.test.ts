@@ -51,10 +51,13 @@ import {
   truncateUtf8,
   SNAPSHOT_MAX_FINDINGS,
   SNAPSHOT_MAX_DETAIL_BYTES,
+  main as reviewCodexMain,
+  isLegacyTicket,
   type Verdict,
   type WorkflowState,
   type LastReviewMarker,
 } from '../../scripts/req/review-codex'
+import { createFakeReviewerAdapter } from '../../scripts/req/lib/adapters'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 
 /**
@@ -2268,5 +2271,62 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       // 우리가 만든 것만 지운다 — 실제 측정 데이터를 파괴하지 않는다.
       if (!preexisting) rmSync(abs, { force: true })
     }
+  })
+})
+
+/**
+ * REQ-2026-027 phase-1 — legacy fail-closed를 **main() 실제 실행 경로**에서 검증(near-e2e).
+ *
+ * 왜 near-e2e인가: "throw + state 무변경"만 단언하면 **외부 호출을 먼저 하고 throw하는 구현도 통과**한다
+ * (design-r02 P1). fake reviewer의 호출 카운터가 **0**임을 단언해야 R2("legacy에 외부 리뷰 0회")가 진짜다.
+ * reviewer 주입 seam(D3)이 phase-1 산출물인 이유가 이것 — legacy fail-closed 증명에 먼저 필요하다.
+ */
+describe('REQ-2026-027 phase-1 — legacy fail-closed(main near-e2e)', () => {
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+
+  /** legacy ticket(모델 버전 없음)을 가진 최소 repo. main()은 isLegacyTicket에서 loadState 직후 throw한다. */
+  const setupLegacyRepo = (): { repo: string; ticket: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req027-legacy-'))
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    // persona 비활성(temp repo엔 persona 파일이 없다) — 어차피 legacy throw가 먼저지만 config는 유효해야 한다.
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticket, { recursive: true })
+    for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n`)
+    writeFileSync(join(ticket, 'codex-request.md'), '# req\n')
+    // 🔴 review_series_model_version 없음 = legacy.
+    writeFileSync(
+      join(ticket, 'state.json'),
+      JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', phases: [], approval_evidence_required: true }, null, 2) + '\n',
+    )
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    return { repo, ticket }
+  }
+
+  it('O1-3: legacy ticket → throw · fake reviewer 호출 0회 · state.json 바이트 무변경', () => {
+    const { repo, ticket } = setupLegacyRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'TID', rawStdout: '' })
+      const stateBefore = readFileSync(join(ticket, 'state.json'))
+      expect(() =>
+        reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }),
+      ).toThrow(/legacy/)
+      // 🔴 핵심: 외부 호출이 **일어나지 않았다**. "throw 먼저" 구현만이 이걸 통과한다.
+      expect(fake.requests.length).toBe(0)
+      // state.json 바이트 동일 — 자동 초기화·조용한 필드 주입 없음.
+      expect(readFileSync(join(ticket, 'state.json'))).toEqual(stateBefore)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('O1-4: 모델 버전 있는 ticket은 legacy가 아니다(isLegacyTicket 순수 판정)', () => {
+    expect(isLegacyTicket({ id: 'X', phase: 'INTAKE', review_series_model_version: 1 })).toBe(false)
+    expect(isLegacyTicket({ id: 'X', phase: 'INTAKE' })).toBe(true) // 부재 = legacy
+    expect(isLegacyTicket({ id: 'X', phase: 'INTAKE', review_series: [] } as WorkflowState)).toBe(true) // 레코드 유무 아님
   })
 })

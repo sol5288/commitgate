@@ -29,6 +29,7 @@ import {
   captureDesignBinding,
   captureIndexHash,
   findUnstagedOrUntracked,
+  isLegacyTicket,
   type WorkflowState,
   type ReviewKind,
   type LastReviewMarker,
@@ -436,6 +437,18 @@ export function resolveNext(input: NextInput): NextAction {
       command: commitCmd(pm, target),
       controlPoint: 'req:commit --run 직전',
       approvalSentence: 'req:commit --run 승인',
+    }
+
+  // 1.5 legacy ticket(REQ-2026-027 D1): 모델 버전 부재 = legacy. 살아 있는 승인(1번)보다는 뒤 —
+  // 그건 소비만 하면 되고 새 외부 호출이 아니다. design/phase RUN 후보(2·3번)보다는 **앞** — 그 후보를
+  // 내면 사용자가 실행한 뒤에야 호출 지점에서 throw된다(R2는 AWAIT_HUMAN을 요구). 자동 초기화하지 않는다.
+  if (isLegacyTicket(state))
+    return {
+      kind: 'AWAIT_HUMAN',
+      detail:
+        'legacy ticket(review_series_model_version 부재)이다. 자동으로 새 모델로 초기화하지 않는다 — 사람이 이 티켓을 새 series 모델로 채택할지 결정해야 한다.',
+      controlPoint: 'legacy 티켓 채택',
+      approvalSentence: 'state.json에 review_series_model_version: 1 추가(이 티켓을 새 모델로 채택) 승인',
     }
 
   // 2. 설계 문서가 인덱스에 없으면 3번의 freshness 판정(captureDesignBinding)이 throw한다. 여기서 먼저 거른다.

@@ -48,8 +48,10 @@ export { isArchiveFileName, isAllowedResponsesScratch } from './lib/scratch'
 
 // git·codex(reviewer) 경계 = 어댑터(Phase 3, D-017-3/4). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — config 부재 시 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
-// reviewer는 main에서 재할당 없음(기본 codex). 테스트 주입 이음새는 callReviewer 파라미터.
-const reviewer: ReviewerAdapter = createCodexReviewerAdapter()
+// REQ-2026-027 D3: reviewer 주입 seam. gitAdapter와 같은 패턴(let + main 재할당)으로 near-e2e 테스트가
+// main() 전체 경로를 fake reviewer로 돌려 (1) legacy에서 외부 호출 0회, (2) attempt 보존 배선을 검증한다.
+// 기본값은 codex — 인자 없는 main(argv)·runCli은 프로덕션 동작 불변.
+let reviewer: ReviewerAdapter = createCodexReviewerAdapter()
 
 /** 구조화 응답 스키마 버전 (machine.schema.json과 동기). */
 export const MACHINE_SCHEMA_VERSION = '1.1'
@@ -677,7 +679,31 @@ export interface WorkflowState {
   design_approval_evidence?: ApprovalEvidence
   blocked_review?: BlockedReviewMarker
   approval_evidence_required?: boolean
+  // REQ-2026-027 D1·D2: review series 모델 버전 + series 레코드. 필드 부재 = legacy(무침습).
+  review_series_model_version?: number
+  review_series?: SeriesRecord[]
   [k: string]: unknown
+}
+
+/**
+ * review series 레코드(REQ-2026-027 D2). 키 `(review_kind, phase_id)`. 배열이라 이력을 지우지 않는다(R7).
+ * A-1의 `closed_reason`은 `'approved' | null`뿐 — A-2가 `'human-resolution'`을 추가한다(열린 확장).
+ */
+export interface SeriesRecord {
+  series_id: string
+  review_kind: ReviewKind
+  phase_id: string | null
+  attempts: number
+  closed_reason: 'approved' | null
+}
+
+/**
+ * legacy ticket 판정(REQ-2026-027 D1, 순수). 생성 시 stamp되는 `review_series_model_version` **부재** = legacy.
+ * "series 레코드 유무"로 판정하지 않는다 — 새 ticket도 첫 리뷰 전엔 레코드가 없어 오분류된다.
+ * `state.phase`를 쓰지 않는다(죽은 필드 — 티켓 전부 INTAKE). legacy면 자동 초기화 대신 사람에게 넘긴다.
+ */
+export function isLegacyTicket(state: WorkflowState): boolean {
+  return typeof state.review_series_model_version !== 'number'
 }
 
 /** state.phases를 안전하게 PhaseEntry[]로 읽음(부재/비배열→[], id 문자열 항목만). */
@@ -1290,12 +1316,20 @@ export function callReviewer(
   return { threadId }
 }
 
-export function main(argv: string[] = process.argv.slice(2)): void {
+export function main(argv: string[] = process.argv.slice(2), opts2?: { reviewer?: ReviewerAdapter }): void {
   const opts = parseArgs(argv)
   const cfg = loadConfig({ root: opts.root })
   gitAdapter = createGitAdapter(cfg.root) // 모든 git 호출 cwd = config.root
+  // REQ-2026-027 D3: 테스트 주입 seam(gitAdapter 선례). 미주입이면 기본 codex(프로덕션 불변).
+  if (opts2?.reviewer) reviewer = opts2.reviewer
   const ticketDir = resolveTicketDir(opts, cfg)
   let state = loadState(ticketDir) // 부재 시 명확한 에러
+  // REQ-2026-027 D1: legacy ticket(모델 버전 부재)은 외부 호출 **전에** fail-closed. AWAIT_HUMAN 안내는
+  // req:next가, 강제 throw는 여기가 담당한다. 어떤 state 변경도·codex 호출도 하지 않는다(R2).
+  if (isLegacyTicket(state))
+    throw new Error(
+      'legacy ticket(review_series_model_version 부재) — 자동 리뷰 불가. 사람이 이 티켓을 새 모델로 채택할지 결정해야 한다(req:next가 AWAIT_HUMAN으로 안내).',
+    )
   // --fresh-thread: blocked 회로차단기 명시적 회복 — 마커 제거(단락 해제) + resume 대신 새 스레드(고착 resume 끊기).
   if (opts.freshThread) state = clearBlockedReview(state)
 

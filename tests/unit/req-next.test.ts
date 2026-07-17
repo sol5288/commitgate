@@ -43,6 +43,9 @@ function baseState(over: Partial<WorkflowState> = {}): WorkflowState {
     design_approved_hash: DESIGN_HASH,
     phases: [{ id: 'p1', approved: false }, { id: 'p2', approved: false }],
     approval_evidence_required: true,
+    // REQ-2026-027: 기본 state는 **새 모델 티켓**이다(첫 리뷰 전에도 stamp됨). legacy 테스트는 이 필드를
+    // 명시적으로 제거해 부재를 만든다. 이게 없으면 기존 모든 테스트가 legacy 분기로 빠진다(O1-5가 잡는 회귀).
+    review_series_model_version: 1,
     ...over,
   } as WorkflowState
 }
@@ -619,7 +622,8 @@ describe('[req:next] no-write 회귀 — .git/index·objects·state.json 불변'
       for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n`)
       writeFileSync(
         join(ticket, 'state.json'),
-        JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', phases: [], approval_evidence_required: true }, null, 2) + '\n',
+        // REQ-2026-027: 새 모델 티켓 fixture — review_series_model_version 없으면 legacy(AWAIT_HUMAN)로 빠진다.
+        JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', phases: [], approval_evidence_required: true, review_series_model_version: 1 }, null, 2) + '\n',
       )
       git(['add', '-A'])
       git(['commit', '-qm', 'baseline'])
@@ -695,5 +699,49 @@ describe('[req:next] CLI 파싱 / 출력', () => {
   it('RUN 출력에 실행 명령이 보인다', () => {
     const text = renderAction('REQ-2026-010', resolveNext(baseInput({ hasStagedChanges: true })))
     expect(text).toContain('$ npm run req:review-codex -- 2026-010 --kind phase --phase p1 --run')
+  })
+})
+
+// REQ-2026-027 phase-1 — legacy 판정(D1). 모델 버전 부재 = legacy → req:next는 RUN이 아니라 AWAIT_HUMAN.
+describe('REQ-2026-027 — legacy ticket 안내(resolveNext)', () => {
+  /** baseState에서 review_series_model_version을 제거해 legacy state를 만든다. */
+  const legacyState = (over: Partial<WorkflowState> = {}): WorkflowState => {
+    const s = baseState(over) as Record<string, unknown>
+    delete s.review_series_model_version
+    return s as WorkflowState
+  }
+
+  it('O1-2: legacy + design 미승인 + 워킹트리 clean → RUN이 아니라 AWAIT_HUMAN', () => {
+    const a = resolveNext(
+      baseInput({ state: legacyState({ design_approved: false, design_approved_hash: null }), worktreeReviewClean: true }),
+    )
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.controlPoint).toBe('legacy 티켓 채택')
+    expect(a.approvalSentence).toContain('review_series_model_version: 1')
+  })
+
+  it('O1-2: legacy는 phase RUN 상태에서도 AWAIT_HUMAN (호출 안내를 내지 않는다)', () => {
+    // 정상이면 phase RUN이 나올 state(staged 변경). legacy면 그 앞에서 가로챈다.
+    const a = resolveNext(baseInput({ state: legacyState(), hasStagedChanges: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+  })
+
+  it('O1-5: 살아 있는 승인(commit_allowed)은 legacy보다 우선한다 — 소비만, 새 호출 아님', () => {
+    const a = resolveNext(baseInput({ state: legacyState({ commit_allowed: true }) }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.approvalSentence).toBe('req:commit --run 승인') // legacy 안내가 아니라 commit 안내
+  })
+
+  it('O1-4: 새 모델 티켓(모델 버전 있음, series 레코드 없음)은 legacy가 아니다 — 종전 판정', () => {
+    // baseState는 이미 review_series_model_version=1이고 review_series는 없다. design 미승인 → design RUN.
+    const a = resolveNext(baseInput({ state: baseState({ design_approved: false, design_approved_hash: null }) }))
+    expect(a.kind).toBe('RUN')
+    expect(a.command).toContain('--kind design')
+  })
+
+  it('O1-5: 새 모델 정상 티켓의 기존 분기(design RUN·phase RUN·commit)는 무변경', () => {
+    expect(resolveNext(baseInput({ state: baseState({ commit_allowed: true }) })).kind).toBe('AWAIT_HUMAN')
+    expect(resolveNext(baseInput({ state: baseState({ design_approved: false, design_approved_hash: null }) })).command).toContain('--kind design')
+    expect(resolveNext(baseInput({ hasStagedChanges: true })).command).toContain('--kind phase')
   })
 })
