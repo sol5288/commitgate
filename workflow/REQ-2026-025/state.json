@@ -1,24 +1,25 @@
 {
   "id": "REQ-2026-025",
   "branch": "feat/req-2026-025-review-batching-and-call-log",
+  "user_commit_confirmed": null,
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": "019f7015-1aad-7662-bfea-3b74c238e0be",
-  "review_base_sha": "6aa45175c6f1413f360ea43250653894cf14e6e5",
-  "review_diff_hash": "eb0f3e8eb4679720456678781b600f5622ba6130",
+  "codex_thread_id": "019f7034-a0e3-7552-be3a-7867c064a2f1",
+  "review_base_sha": "30c17cbe73ac4cb6c61dfd42297e7abf9bcf5b1a",
+  "review_diff_hash": "feaaf1bd7af9556a5a0046e321d5cb6884c8f779",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "a04407194662612ee51431ecf94ed00e8be9f0d98fc04bb87d8643de001c4df4",
-  "current_phase": null,
+  "current_phase": "phase-2-review-call-log",
   "phases": [
     {
       "id": "phase-1-batching-persona",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-review-call-log",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -37,29 +38,27 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-batching-persona",
-    "outcome": "needs-fix",
-    "compare_hash": "444556cc66cff39c158604ac63bad2b38972e51d1e92d73a377bb332237a933c",
+    "phase_id": "phase-2-review-call-log",
+    "outcome": "approved",
+    "compare_hash": "0e510c1227f0c8e061fdbdcfbcfe6eb1613143d6d5d9cc66e314bfab1276d0f9",
     "count": 1,
     "errors": [],
-    "at": "2026-07-17T12:39:31.836Z",
-    "findings": [
-      {
-        "severity": "P1",
-        "file": "workflow/REQ-2026-025/state.json",
-        "detail": "staged `state.json`은 `design_approval_evidence.response_path`로 `workflow/REQ-2026-025/responses/design-r01-approved.json`을 가리키지만, 해당 파일은 index에 없고 untracked 상태다. 이 staged tree를 커밋한 새 checkout에서 `req:doctor` 또는 design-finalize를 실행하면 "
-      },
-      {
-        "severity": "P1",
-        "file": "tests/unit/req-review-codex.test.ts",
-        "detail": "O1-2는 `REVIEW_KIND` 헤더 두 개만 검사한다. 예를 들어 `workflow/review-persona.md`에서 design·phase 각 목록의 모든 bullet을 삭제하고 헤더만 남기면 테스트는 통과하지만, 조립 프롬프트에는 R2가 요구한 응답 전 점검 관점 목록이 없다. 요"
-      },
-      {
-        "severity": "P1",
-        "file": "tests/unit/req-review-codex.test.ts",
-        "detail": "O1-3는 P1 정의의 제목만 검사하며, R5가 보존을 요구한 P1 3요소(카테고리·정상 경로·재현 증거)는 검사하지 않는다. persona에서 세 항목을 삭제한 뒤 제목·승인 문장·보장 경계 제목·severity 금지 문장만 남기면 테스트는 통과하"
-      }
-    ],
+    "at": "2026-07-17T13:13:15.065Z",
+    "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "fa19d3bd03aa60c24d57eec79d8c96579da042a0",
+      "phase_id": "phase-1-batching-persona",
+      "consumed_by_commit_sha": "1c0c8d7a8bee4535e109357ae8dfe491d4c1dc77",
+      "approval_consumed_at": "2026-07-17T12:59:38.139Z"
+    },
+    {
+      "approved_tree": "feaaf1bd7af9556a5a0046e321d5cb6884c8f779",
+      "phase_id": "phase-2-review-call-log",
+      "consumed_by_commit_sha": "c16420844c4c94bf5dc74d1c63c63e14aa9366de",
+      "approval_consumed_at": "2026-07-17T13:20:02.587Z"
+    }
+  ]
 }
