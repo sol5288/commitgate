@@ -53,6 +53,11 @@ let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 // 기본값은 codex — 인자 없는 main(argv)·runCli은 프로덕션 동작 불변.
 let reviewer: ReviewerAdapter = createCodexReviewerAdapter()
 
+/** 테스트 전용: 현재 모듈 reviewer를 관측(복원 검증용). 프로덕션 경로는 이 함수를 쓰지 않는다. */
+export function __getReviewerForTest(): ReviewerAdapter {
+  return reviewer
+}
+
 /** 구조화 응답 스키마 버전 (machine.schema.json과 동기). */
 export const MACHINE_SCHEMA_VERSION = '1.1'
 
@@ -706,6 +711,75 @@ export function isLegacyTicket(state: WorkflowState): boolean {
   return typeof state.review_series_model_version !== 'number'
 }
 
+/** `state.review_series`를 안전하게 읽는다(부재/비배열 → []). */
+function readSeries(state: WorkflowState): SeriesRecord[] {
+  const raw = (state as { review_series?: unknown }).review_series
+  return Array.isArray(raw) ? (raw as SeriesRecord[]) : []
+}
+
+/**
+ * attempt 기록(REQ-2026-027 D2·D3, 순수). 같은 `(kind, phase_id)`에 **열린** series가 있으면 그 `attempts`를
+ * +1, 없으면 새 series를 연다(seq = 같은 키의 기존 레코드 수 + 1, attempts=1).
+ *
+ * **hash를 입력으로 받지 않는다**(R5) — design series는 hash가 바뀌어도 같은 series다. 이것이 REQ-020의
+ * 14라운드 병리(라운드마다 hash가 달라 계수가 초기화됨)를 막는 핵심이다. **아무것도 막지 않는다**(R11):
+ * attempts가 아무리 커도 여기서 거부하지 않는다 — 예산·상한은 A-2다.
+ */
+export function recordAttempt(state: WorkflowState, kind: ReviewKind, phaseId: string | null): WorkflowState {
+  const series = readSeries(state)
+  const openIdx = series.findIndex(
+    (r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId && r.closed_reason === null,
+  )
+  if (openIdx >= 0) {
+    const next = series.map((r, i) => (i === openIdx ? { ...r, attempts: r.attempts + 1 } : r))
+    return { ...state, review_series: next }
+  }
+  const seq = series.filter((r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId).length + 1
+  const rec: SeriesRecord = {
+    series_id: `${kind}:${phaseId ?? '-'}#${seq}`,
+    review_kind: kind,
+    phase_id: phaseId,
+    attempts: 1,
+    closed_reason: null,
+  }
+  return { ...state, review_series: [...series, rec] }
+}
+
+/**
+ * 승인으로 series 종료(REQ-2026-027 D2, 순수). 같은 `(kind, phase_id)`의 **열린** 레코드를 `'approved'`로 닫는다.
+ * 열린 게 없으면 no-op(방어). **`approved`만이 A-1의 자동 종료 계기다**(R6) — needs-fix·blocked·invalid는
+ * 여기를 타지 않아 열린 채로 남고, 그래야 A-2가 얹을 상한이 의미를 갖는다.
+ */
+export function closeSeriesApproved(state: WorkflowState, kind: ReviewKind, phaseId: string | null): WorkflowState {
+  const series = readSeries(state)
+  const openIdx = series.findIndex(
+    (r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId && r.closed_reason === null,
+  )
+  if (openIdx < 0) return state
+  const next = series.map((r, i) => (i === openIdx ? { ...r, closed_reason: 'approved' as const } : r))
+  return { ...state, review_series: next }
+}
+
+/**
+ * attempt를 **외부 호출 직전**에 기록·`writeState`하고 `call()`을 부른다(REQ-2026-027 D3).
+ *
+ * **순서가 계약이다**(R8): 기록·writeState가 `call()`보다 **먼저**다. `call()`이 throw해도 기록은 이미
+ * 디스크에 있어 되돌아가지 않는다 — 외부 호출은 이미 일어났고 비용도 발생했다. "실패했으니 안 센다"는
+ * 예산 세탁이다.
+ *
+ * **반환 `state`가 후처리의 유일한 base다**(R9): 호출자는 이 값을 이후 모든 처리에 써야 한다. 호출 전
+ * state를 다시 쓰면 최종 `writeState`가 attempt를 되돌린다(정상 경로에서도).
+ */
+export function withAttemptRecorded<T>(
+  ctx: { ticketDir: string; state: WorkflowState; kind: ReviewKind; phaseId: string | null },
+  call: () => T,
+): { result: T; state: WorkflowState } {
+  const state = recordAttempt(ctx.state, ctx.kind, ctx.phaseId)
+  writeState(ctx.ticketDir, state) // 호출 **전** 영속 — throw해도 남는다
+  const result = call() // throw면 그대로 전파(기록은 이미 선행)
+  return { result, state }
+}
+
 /** state.phases를 안전하게 PhaseEntry[]로 읽음(부재/비배열→[], id 문자열 항목만). */
 export function readPhases(state: WorkflowState): PhaseEntry[] {
   const raw = (state as { phases?: unknown }).phases
@@ -1317,6 +1391,18 @@ export function callReviewer(
 }
 
 export function main(argv: string[] = process.argv.slice(2), opts2?: { reviewer?: ReviewerAdapter }): void {
+  // REQ-2026-027 D3: 주입한 reviewer는 이 호출에만 유효해야 한다 — 모듈 전역에 잔존하면 이후 인자 없는
+  // main()도 그것을 쓴다(리뷰어 observation). CLI는 프로세스당 1회라 무해하나, programmatic 다중 호출
+  // (near-e2e 테스트 등)에선 오염된다. finally로 기본값을 복원한다.
+  const defaultReviewer = reviewer
+  try {
+    mainImpl(argv, opts2)
+  } finally {
+    reviewer = defaultReviewer
+  }
+}
+
+function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void {
   const opts = parseArgs(argv)
   const cfg = loadConfig({ root: opts.root })
   gitAdapter = createGitAdapter(cfg.root) // 모든 git 호출 cwd = config.root
@@ -1453,16 +1539,24 @@ export function main(argv: string[] = process.argv.slice(2), opts2?: { reviewer?
 
   // ReviewerAdapter 경유(Phase 3). exec/resume 분기·--output-last-message·thread 파싱은 어댑터가 담당.
   // resumeThreadId 있으면 resume(thread 상속), 없으면 exec(--sandbox read-only) → thread.started 파싱.
-  const { threadId } = callReviewer(reviewer, {
-    prompt,
-    schemaPath: cfg.schemaPathAbs,
-    resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
-    cwd: cfg.root,
-    respPath,
-    // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
-    model: cfg.reviewModel,
-    reasoningEffort: cfg.reviewReasoningEffort,
-  })
+  // REQ-2026-027 D3: attempt를 **호출 직전**에 기록·writeState(withAttemptRecorded). 반환 state(afterAttempt)가
+  // 이후 모든 처리의 base다 — 호출 전 `state`를 다시 쓰면 최종 writeState가 attempt를 되돌린다(R9).
+  const { result: callRes, state: afterAttempt } = withAttemptRecorded(
+    { ticketDir, state, kind: opts.kind, phaseId },
+    () =>
+      callReviewer(reviewer, {
+        prompt,
+        schemaPath: cfg.schemaPathAbs,
+        resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
+        cwd: cfg.root,
+        respPath,
+        // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
+        model: cfg.reviewModel,
+        reasoningEffort: cfg.reviewReasoningEffort,
+      }),
+  )
+  const { threadId } = callRes
+  state = afterAttempt // 이후 baseArgs·finalState의 base
 
   // 사후 리뷰어 무수정 검증: worktree 절대검사 + index(staged tree OID) 불변 (content 기반)
   const postDirty = findUnstagedOrUntracked(gitStatusEntries(), SCRATCH, ticketRel)
@@ -1525,7 +1619,10 @@ export function main(argv: string[] = process.argv.slice(2), opts2?: { reviewer?
     blockedAt: approvedAt,
     compareHash,
   })
-  writeState(ticketDir, finalState)
+  // REQ-2026-027 D2·R6: approved만이 series 자동 종료 계기. needs-fix·blocked·invalid는 열린 채 둔다
+  // (그래야 A-2 상한이 의미를 갖는다). finalState는 afterAttempt 계보라 attempts 증가가 보존돼 있다.
+  const persistedState = outcome === 'approved' ? closeSeriesApproved(finalState, opts.kind, phaseId) : finalState
+  writeState(ticketDir, persistedState)
 
   // REQ-2026-025 D4: 완료된 review call 1행 기록(측정 전용). `approvedAt`을 재사용해 같은 call의 다른
   // 기록과 시각이 어긋나지 않게 한다 — 새 시계를 읽지 않는다. 실패는 삼켜진다(R8).

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -52,12 +52,18 @@ import {
   SNAPSHOT_MAX_FINDINGS,
   SNAPSHOT_MAX_DETAIL_BYTES,
   main as reviewCodexMain,
+  __getReviewerForTest,
   isLegacyTicket,
+  recordAttempt,
+  closeSeriesApproved,
+  withAttemptRecorded,
+  type SeriesRecord,
   type Verdict,
   type WorkflowState,
   type LastReviewMarker,
 } from '../../scripts/req/review-codex'
 import { createFakeReviewerAdapter } from '../../scripts/req/lib/adapters'
+import { reviewScratchPaths } from '../../scripts/req/lib/scratch'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 
 /**
@@ -2328,5 +2334,226 @@ describe('REQ-2026-027 phase-1 — legacy fail-closed(main near-e2e)', () => {
     expect(isLegacyTicket({ id: 'X', phase: 'INTAKE', review_series_model_version: 1 })).toBe(false)
     expect(isLegacyTicket({ id: 'X', phase: 'INTAKE' })).toBe(true) // 부재 = legacy
     expect(isLegacyTicket({ id: 'X', phase: 'INTAKE', review_series: [] } as WorkflowState)).toBe(true) // 레코드 유무 아님
+  })
+})
+
+/**
+ * REQ-2026-027 phase-2 — series 계수(D2·D3). 순수 함수 + main() near-e2e.
+ * **아무것도 막지 않는다** — 세기만 한다(예산·상한은 A-2).
+ */
+describe('REQ-2026-027 phase-2 — series 계수(순수)', () => {
+  const seriesOf = (s: WorkflowState) => (s.review_series ?? []) as import('../../scripts/req/review-codex').SeriesRecord[]
+
+  it('O2-1: 서로 다른 hash로 3회 기록해도 series 1개·attempts=3 (hash 무관 — REQ-020 병리 차단)', () => {
+    let s: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1 }
+    // design series는 hash를 입력으로 받지 않는다 — 같은 (kind,phaseId)면 hash가 뭐든 같은 series.
+    s = recordAttempt(s, 'design', null)
+    s = recordAttempt(s, 'design', null)
+    s = recordAttempt(s, 'design', null)
+    const open = seriesOf(s).filter((r) => r.closed_reason === null)
+    expect(open).toHaveLength(1)
+    expect(open[0]!.attempts).toBe(3)
+    expect(seriesOf(s)).toHaveLength(1)
+  })
+
+  it('O2-2: phase_id가 다르면 별도 series', () => {
+    let s: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1 }
+    s = recordAttempt(s, 'phase', 'p1')
+    s = recordAttempt(s, 'phase', 'p2')
+    expect(seriesOf(s)).toHaveLength(2)
+    expect(seriesOf(s).every((r) => r.attempts === 1)).toBe(true)
+  })
+
+  it('O2-3: approved만 자동 종료 — needs-fix/blocked/invalid는 열린 채', () => {
+    let s: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1 }
+    s = recordAttempt(s, 'design', null)
+    // approved면 닫힌다
+    const closed = closeSeriesApproved(s, 'design', null)
+    expect(seriesOf(closed)[0]!.closed_reason).toBe('approved')
+    // recordAttempt만 한 원본은 열린 채 — 어떤 outcome도 recordAttempt가 닫지 않는다
+    expect(seriesOf(s)[0]!.closed_reason).toBeNull()
+  })
+
+  it('O2-4: approved로 닫힌 뒤 재해소하면 새 레코드(seq 증가)·이전 레코드 보존', () => {
+    let s: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1 }
+    s = recordAttempt(s, 'design', null)      // series #1, attempts=1
+    s = closeSeriesApproved(s, 'design', null) // #1 closed
+    s = recordAttempt(s, 'design', null)      // 열린 게 없으니 새 #2
+    expect(seriesOf(s)).toHaveLength(2)
+    expect(seriesOf(s)[0]!.closed_reason).toBe('approved') // 이전 보존
+    expect(seriesOf(s)[1]!.closed_reason).toBeNull()
+    expect(seriesOf(s)[1]!.attempts).toBe(1)
+    expect(seriesOf(s)[1]!.series_id).not.toBe(seriesOf(s)[0]!.series_id) // seq 다름
+  })
+
+  it('closeSeriesApproved는 열린 게 없으면 no-op(방어)', () => {
+    const s: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1, review_series: [] }
+    expect(closeSeriesApproved(s, 'design', null).review_series).toEqual([])
+  })
+})
+
+/**
+ * REQ-2026-027 phase-2 — attempt 배선을 **main() 실제 실행 경로**에서 검증(near-e2e).
+ *
+ * 왜 near-e2e인가(design-r01 P1): `withAttemptRecorded`의 동작은 순수 테스트로 잡히지만, main()이 그 반환
+ * state(afterAttempt)를 후처리 base로 넘겼는지(R9)는 안 잡힌다 — pre-call state를 baseArgs에 넣으면 최종
+ * writeState가 attempt를 되돌린다. fake reviewer 주입으로 main()을 돌려 디스크 state의 attempts를 단언한다.
+ */
+describe('REQ-2026-027 phase-2 — attempt 배선(main near-e2e)', () => {
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+
+  /** design 리뷰가 통과할 최소 repo. 반환: repo·ticket·headSha·designHash. */
+  const setupRepo = (stateExtra: Record<string, unknown> = {}): { repo: string; ticket: string; head: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req027-attempt-'))
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    // 실제 machine.schema.json을 repo에 복사(응답 구조 검증에 필요). persona 비활성.
+    mkdirSync(join(repo, 'workflow'), { recursive: true })
+    const realSchema = readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')
+    writeFileSync(join(repo, 'workflow', 'machine.schema.json'), realSchema)
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticket, { recursive: true })
+    for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
+    writeFileSync(join(ticket, 'codex-request.md'), '# req\n리뷰 포인트\n')
+    writeFileSync(
+      join(ticket, 'state.json'),
+      JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', phases: [], approval_evidence_required: true, review_series_model_version: 1, ...stateExtra }, null, 2) + '\n',
+    )
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    const head = git(['rev-parse', 'HEAD']).trim()
+    return { repo, ticket, head }
+  }
+
+  /** design canned 응답 — outcome별. review_base_sha는 repo HEAD와 일치해야 통과. */
+  const cannedDesign = (head: string, kind: 'approved' | 'needs-fix' | 'blocked' | 'invalid'): string => {
+    const base = { machine_schema_version: '1.1', review_base_sha: head, risk_level: 'LOW', review_kind: 'design' }
+    if (kind === 'approved') return JSON.stringify({ ...base, status: 'STEP_COMPLETE', commit_approved: 'yes', merge_ready: 'no', findings: [], next_action: '' })
+    if (kind === 'needs-fix') return JSON.stringify({ ...base, status: 'NEEDS_FIX', commit_approved: 'no', merge_ready: 'no', findings: [{ severity: 'P1', file: 'x', detail: 'd' }], next_action: 'fix' })
+    // blocked = 유효·미승인·findings 없음. NEEDS_FIX는 findings≥1을 요구하므로 STEP_COMPLETE+commit_approved:no로 만든다.
+    if (kind === 'blocked') return JSON.stringify({ ...base, status: 'STEP_COMPLETE', commit_approved: 'no', merge_ready: 'no', findings: [], next_action: '' })
+    return JSON.stringify({ ...base, status: 'NEEDS_FIX', commit_approved: 'no', merge_ready: 'yes', findings: [], next_action: '' }) // 모순 → invalid
+  }
+
+  const seriesOf = (ticket: string) => {
+    const s = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')) as WorkflowState
+    return (s.review_series ?? []) as import('../../scripts/req/review-codex').SeriesRecord[]
+  }
+
+  const lastReviewOf = (ticket: string): { outcome?: string } => {
+    const s = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')) as WorkflowState
+    return (s.last_review ?? {}) as { outcome?: string }
+  }
+
+  const EXPECTED_EXIT: Record<string, number> = { approved: 0, invalid: 1, blocked: 2, 'needs-fix': 3 }
+
+  const runOutcome = (outcome: 'approved' | 'needs-fix' | 'blocked' | 'invalid', startAttempts?: number) => {
+    // startAttempts 지정 시 그 값의 **열린** series를 미리 심어 고횟수 경로를 검증한다(R11 무차단).
+    const seed = startAttempts
+      ? { review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: startAttempts, closed_reason: null }] }
+      : {}
+    const { repo, ticket, head } = setupRepo(seed)
+    // 🔴 process.exit를 **throw로** 대체(design-r02 P1). main()의 process.exit(nonzero)가 Vitest worker를
+    // 종료시키면 아래 단언이 실행되지 않아 outcome 오분류 회귀를 못 잡는다. throw로 바꿔 exit code를 포착·단언한다.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`__EXIT__${code ?? 0}`)
+    }) as never)
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, outcome), threadId: 'TID', rawStdout: '' })
+      let exitCode = 0
+      try {
+        reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      } catch (e) {
+        const m = /^__EXIT__(\d+)$/.exec(e instanceof Error ? e.message : '')
+        if (!m) throw e // 진짜 예외는 전파 — process.exit 위장이 아닌 실제 오류는 숨기지 않는다
+        exitCode = Number(m[1])
+      }
+      // 🔴 exit code로 outcome 분류를 직접 단언한다 — invalid/blocked/needs-fix를 서로 오분류하면 여기서 실패.
+      expect(exitCode).toBe(EXPECTED_EXIT[outcome])
+      expect(fake.requests.length).toBe(1) // 외부 호출 실제 발생(고횟수에서도 거부 없음)
+      const series = seriesOf(ticket)
+      expect(series).toHaveLength(1)
+      // 🔴 attempt가 되돌아가지 않고 (시작값+1)로 보존된다. 고횟수(9→10)에서도 거부·미기록 없음(R11).
+      expect(series[0]!.attempts).toBe((startAttempts ?? 0) + 1)
+      // approved만 series를 닫는다(R6). 나머지는 열린 채.
+      expect(series[0]!.closed_reason).toBe(outcome === 'approved' ? 'approved' : null)
+      // persisted last_review.outcome도 함께 단언(exit code와 이중 고정).
+      expect(lastReviewOf(ticket).outcome).toBe(outcome)
+    } finally {
+      exitSpy.mockRestore()
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }
+
+  it('O2-6: approved — attempt 보존 + series 닫힘 + outcome=approved', () => { runOutcome('approved') })
+  it('O2-6: needs-fix — attempt 보존 + series 열린 채 + outcome=needs-fix', () => { runOutcome('needs-fix') })
+  it('O2-6: blocked — attempt 보존 + series 열린 채 + outcome=blocked', () => { runOutcome('blocked') })
+  it('O2-6: invalid — attempt 보존 + series 열린 채 + outcome=invalid', () => { runOutcome('invalid') })
+  // 🔴 R11 고횟수 무차단: attempts=9 열린 series에서 네 번째(10번째) 호출이 실제 일어나고 10으로 영속.
+  it('O2-6b: attempts=9 고횟수 열린 series도 호출 허용·10 보존(예산 게이트 회귀 차단)', () => { runOutcome('needs-fix', 9) })
+
+  it('O2-7: 주입 reviewer는 호출 뒤 기본값으로 복원된다(모듈 전역 직접 관측 — codex 미호출)', () => {
+    // 🔴 실제 codex를 절대 부르지 않는다(design-r03 P1): 두 번째 호출 대신 **모듈 전역 reviewer를 직접 관측**한다.
+    const { repo, head } = setupRepo()
+    try {
+      const before = __getReviewerForTest() // 기본(codex) adapter 핸들
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'TID', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      expect(fake.requests.length).toBe(1) // 이 호출엔 fake가 쓰였다
+      // 🔴 호출 뒤 전역은 fake가 아니라 원래(before)로 복원됐다 — 이후 인자 없는 main()이 fake를 쓰지 않는다.
+      expect(__getReviewerForTest()).toBe(before)
+      expect(__getReviewerForTest()).not.toBe(fake)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})
+
+/** REQ-2026-027 phase-2 — 나머지 순수 오라클(O2-8 SCRATCH·O2-9 fresh-thread). */
+describe('REQ-2026-027 phase-2 — SCRATCH·fresh-thread(순수)', () => {
+  it('O2-8: 수정된 state.json은 D10에 안 걸린다(SCRATCH) — 그 외 tracked 파일은 걸린다', () => {
+    const scratch = reviewScratchPaths('workflow/REQ-2026-001')
+    // state.json 수정(index+worktree) → 빈 배열(허용)
+    const stateEntry = E('MM workflow/REQ-2026-001/state.json')
+    expect(findUnstagedOrUntracked(stateEntry, scratch, 'workflow/REQ-2026-001')).toHaveLength(0)
+    // 다른 tracked 파일(예: 소스) 수정 → 검출(허용이 넓어지지 않았다)
+    const srcEntry = E(' M scripts/req/review-codex.ts')
+    expect(findUnstagedOrUntracked(srcEntry, scratch, 'workflow/REQ-2026-001').length).toBeGreaterThan(0)
+  })
+
+  it('O2-9: --fresh-thread(clearBlockedReview)는 review_series.attempts를 안 건드린다', () => {
+    const s: WorkflowState = {
+      id: 'X', phase: 'INTAKE', review_series_model_version: 1,
+      review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 3, closed_reason: null }],
+      blocked_review: { review_kind: 'design', phase_id: null, review_binding: 'B', response_sha256: null, count: 1, at: 'T' } as never,
+    }
+    const cleared = clearBlockedReview(s)
+    expect((cleared.review_series as SeriesRecord[])[0]!.attempts).toBe(3) // series 무변경
+    expect(cleared.blocked_review).toBeUndefined() // blocked 마커만 제거
+  })
+})
+
+/** REQ-2026-027 phase-2 — O2-5: withAttemptRecorded는 call() throw에도 attempt를 되돌리지 않는다. */
+describe('REQ-2026-027 phase-2 — withAttemptRecorded throw 보존(near-fs)', () => {
+  it('O2-5: call()이 throw해도 디스크 state의 attempts가 증가한 채 남는다', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'req027-wa-'))
+    try {
+      const state: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1 }
+      expect(() =>
+        withAttemptRecorded({ ticketDir: dir, state, kind: 'design', phaseId: null }, () => {
+          throw new Error('boom') // 외부 호출 중 실패 시뮬레이션
+        }),
+      ).toThrow('boom')
+      // 🔴 기록은 호출 **전**에 writeState됐으므로 throw에도 디스크에 남는다(예산 세탁 차단).
+      const persisted = JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')) as WorkflowState
+      const series = (persisted.review_series ?? []) as SeriesRecord[]
+      expect(series).toHaveLength(1)
+      expect(series[0]!.attempts).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
