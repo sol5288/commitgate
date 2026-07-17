@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, symlinkSync } from 'node:fs'
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  rmSync,
+  readdirSync,
+  symlinkSync,
+  readlinkSync,
+  lstatSync,
+} from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -23,6 +34,7 @@ import {
   KIT_CLAUDE_TEMPLATE_REL,
   KIT_AGENTS_CONTRACT_COPY_REL,
   KIT_GITIGNORE,
+  KIT_COMPANION_SKILLS,
   AGENTS_CONTRACT_MARKER,
   CONTRACT_POINTER_RELPATHS,
   LOCKFILE,
@@ -48,14 +60,37 @@ const se = (index: string, worktree: string, path: string, origPath?: string): S
   origPath === undefined ? { index, worktree, path } : { index, worktree, path, origPath }
 
 /** repo 전체(.git 제외)의 `경로 → sha256`. "쓰기 0건"을 전수 검증하는 데 쓴다. */
+/**
+ * 트리 스냅샷 — **symlink를 따라가지 않는다**(REQ-2026-020 phase-2).
+ *
+ * ⚠️ 이전 구현은 `readFileSync`로 내용을 읽어 해시했다. 두 가지가 깨진다:
+ *   1. **dangling leaf symlink**에서 `readFileSync`가 ENOENT로 throw → 테스트가 "쓰기 0회"가 아니라
+ *      스냅샷 함수 자체의 오류로 실패해 **실패 이유를 오인**한다.
+ *   2. **디렉터리 symlink**는 링크 너머를 훑어, 링크 자체의 변화(생성·교체)를 못 보고 외부 트리를 섞어 본다.
+ *
+ * `lstat`+`readlink`로 **링크 자체**를 기록하고 디렉터리 엔트리도 남긴다 —
+ * symlink 탈출 fixture에서 대상·외부 양쪽을 정확히 전후 비교하기 위해서다.
+ */
 function snapshot(dir: string): Map<string, string> {
   const out = new Map<string, string>()
+  if (!existsSync(dir)) return out
   const walk = (d: string): void => {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       if (e.name === '.git') continue
       const abs = join(d, e.name)
-      if (e.isDirectory()) walk(abs)
-      else out.set(relative(dir, abs).replace(/\\/g, '/'), createHash('sha256').update(readFileSync(abs)).digest('hex'))
+      const rel = relative(dir, abs).replace(/\\/g, '/')
+      // Dirent는 lstat 의미다 — symlink-to-dir는 isDirectory()가 false, isSymbolicLink()가 true.
+      if (e.isSymbolicLink()) {
+        // 링크 대상 문자열만 본다. 링크가 가리키는 곳은 따라가지 않는다(dangling이어도 안전).
+        out.set(rel, `symlink:${readlinkSync(abs).replace(/\\/g, '/')}`)
+      } else if (e.isDirectory()) {
+        out.set(rel, 'dir') // 디렉터리 생성도 변화다 — preflight 실패 시 mkdir조차 없어야 한다.
+        walk(abs)
+      } else if (e.isFile()) {
+        out.set(rel, `file:${createHash('sha256').update(readFileSync(abs)).digest('hex')}`)
+      } else {
+        out.set(rel, 'special') // FIFO·소켓 등: 내용을 읽지 않는다(읽으면 블로킹될 수 있다).
+      }
     }
   }
   walk(dir)
@@ -2172,5 +2207,230 @@ describe('[init] workflow/.gitignore (REQ-2026-012)', () => {
     } finally {
       cleanup(dir)
     }
+  })
+})
+
+// ═════════ REQ-2026-020 phase-2: companion skills 설치·보안 ═════════
+
+/**
+ * D1 경로 · D3 seed-once(--force 무시) · D4-1 dest별 상위 confinement · D4-3 leaf lstat(ENOENT만 부재).
+ * 보안 fixture는 **대상과 외부 양쪽**을 전후 비교한다 — 대상만 보면 탈출을 못 잡는다.
+ */
+describe('[init] companion skills (REQ-2026-020)', () => {
+  const DESTS = [
+    '.claude/skills/commitgate-discovery/SKILL.md',
+    '.claude/skills/commitgate-tdd/SKILL.md',
+    '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
+    '.claude/skills/commitgate-research/SKILL.md',
+  ] as const
+  const TDD = DESTS[1]
+
+  const outsideDir = (): string => mkdtempSync(join(tmpdir(), 'reqwf-outside-'))
+
+  it('fresh init에 4종이 정확한 경로에 설치된다 (D1/R3)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      for (const d of DESTS) expect(existsSync(join(dir, d)), d).toBe(true)
+      // 기존 entrypoint와 공존 — `commitgate-` 접두사라 이름 충돌 없음.
+      expect(existsSync(join(dir, '.claude/skills/commitgate/SKILL.md'))).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('설치된 SKILL.md에 MIT permission notice 전문이 동행한다 (R9)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      for (const d of DESTS) {
+        const t = readFileSync(join(dir, d), 'utf8')
+        expect(t, `${d}: 저작권 표기`).toContain('Copyright (c) 2026 Matt Pocock')
+        expect(t, `${d}: permission notice 전문(MIT §2)`).toContain(
+          'The above copyright notice and this permission notice shall be included in all',
+        )
+        expect(t, `${d}: baseline SHA`).toContain('d574778f94cf620fcc8ce741584093bc650a61d3')
+      }
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('재실행이 멱등적이다', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      const after1 = snapshot(dir)
+      runInit(OPTS(dir))
+      expect(snapshot(dir)).toEqual(after1)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** D3 핵심 — 스킬은 사용자가 고치라고 만든 자산이다. `--force`가 손수정을 날리면 실질적 데이터 손실. */
+  it('사용자가 수정한 skill은 --force에도 보존된다 (D3 seed-once)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      const target = join(dir, TDD)
+      writeFileSync(target, '# 내가 고친 내용\n', 'utf8')
+      runInit(OPTS(dir, { force: true }))
+      expect(readFileSync(target, 'utf8'), '--force가 사용자 수정을 덮으면 안 된다').toBe('# 내가 고친 내용\n')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--no-agent-entrypoints면 설치되지 않는다 (D5/R5)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir, { noAgentEntrypoints: true }))
+      for (const d of DESTS) expect(existsSync(join(dir, d)), d).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * 🔴 D4-1 — 상위 컴포넌트 symlink 탈출. `assertConfinedDest`에 skills **루트**만 넘기면
+   * `segs.length-1` 루프가 `commitgate-tdd`를 검사하지 않아 대상 **밖에** 쓴다.
+   */
+  it('commitgate-tdd 디렉터리가 외부 symlink면 쓰기 0회로 거부한다 (D4-1)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(dir, '.claude/skills'), { recursive: true })
+      symlinkSync(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')
+      const beforeIn = snapshot(dir)
+      const beforeOut = snapshot(outside)
+      expect(() => runInit(OPTS(dir))).toThrow()
+      expect(snapshot(dir), '대상 tree 무변화').toEqual(beforeIn)
+      expect(snapshot(outside), '외부 tree 무변화 — 대상만 보면 탈출을 못 잡는다').toEqual(beforeOut)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * 🔴 D4-3 — leaf **dangling** symlink. `existsSync`는 **false**를 주므로 seed-once가 부재로 오판하고
+   * `copyFileSync`가 링크를 따라 대상 밖에 쓴다. `lstatSync` + ENOENT-only 구현에서만 통과한다.
+   */
+  it('SKILL.md leaf가 외부를 가리키는 dangling symlink면 쓰기 0회로 거부한다 (D4-3)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(dir, '.claude/skills/commitgate-tdd'), { recursive: true })
+      const escaped = join(outside, 'ESCAPED.md') // 아직 없는 파일 → dangling
+      symlinkSync(escaped, join(dir, TDD), 'file')
+      expect(existsSync(join(dir, TDD)), 'dangling이라 existsSync는 false다 — 이게 함정이다').toBe(false)
+      expect(lstatSync(join(dir, TDD)).isSymbolicLink(), 'lstat은 링크를 본다').toBe(true)
+      const beforeIn = snapshot(dir)
+      const beforeOut = snapshot(outside)
+      expect(() => runInit(OPTS(dir))).toThrow()
+      expect(existsSync(escaped), '대상 밖에 파일이 생기면 안 된다').toBe(false)
+      expect(snapshot(dir), '대상 tree 무변화').toEqual(beforeIn)
+      expect(snapshot(outside), '외부 tree 무변화').toEqual(beforeOut)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('SKILL.md leaf가 디렉터리면 거부한다 (D4-3)', () => {
+    const dir = tmpTarget()
+    try {
+      mkdirSync(join(dir, DESTS[3]), { recursive: true })
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir))).toThrow()
+      expect(snapshot(dir)).toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('.claude/skills 자체가 symlink면 거부한다 (D4-1)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(dir, '.claude'), { recursive: true })
+      symlinkSync(outside, join(dir, '.claude/skills'), 'junction')
+      const beforeIn = snapshot(dir)
+      const beforeOut = snapshot(outside)
+      expect(() => runInit(OPTS(dir))).toThrow()
+      expect(snapshot(dir)).toEqual(beforeIn)
+      expect(snapshot(outside)).toEqual(beforeOut)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /** 4개 dest **각각** 검사되는가 — 루트만 검사하는 구현이면 이 케이스가 통과해 버린다(회귀 탐지점). */
+  it('commitgate-research만 symlink여도 거부한다 (dest별 검사 회귀)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(dir, '.claude/skills'), { recursive: true })
+      symlinkSync(outside, join(dir, '.claude/skills/commitgate-research'), 'junction')
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir))).toThrow()
+      expect(snapshot(dir)).toEqual(before)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /** preflight 실패면 **core 자산도** 하나도 안 생겨야 한다 — Apply엔 rollback이 0줄이다. */
+  it('preflight 실패 시 core 자산(AGENTS.md·config·schema)도 생성되지 않는다', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(dir, '.claude/skills'), { recursive: true })
+      symlinkSync(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')
+      expect(() => runInit(OPTS(dir))).toThrow()
+      expect(existsSync(join(dir, 'AGENTS.md')), 'preflight throw 후 core 자산도 없어야 한다').toBe(false)
+      expect(existsSync(join(dir, 'req.config.json'))).toBe(false)
+      expect(existsSync(join(dir, 'workflow/machine.schema.json'))).toBe(false)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /** `--dry-run`도 **같은 preflight**를 돈다 — 쓰기는 0건이지만 symlink면 실패해야 한다. */
+  it('--dry-run도 confinement/leaf preflight를 수행해 symlink면 실패한다', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(dir, '.claude/skills'), { recursive: true })
+      symlinkSync(outside, join(dir, '.claude/skills/commitgate-tdd'), 'junction')
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir, { dryRun: true })), 'dry-run이 조용히 통과하면 실설치 직전에야 터진다').toThrow()
+      expect(snapshot(dir)).toEqual(before)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('--dry-run은 skill 파일을 쓰지 않는다', () => {
+    const dir = tmpTarget()
+    try {
+      const before = snapshot(dir)
+      runInit(OPTS(dir, { dryRun: true }))
+      expect(snapshot(dir)).toEqual(before)
+      for (const d of DESTS) expect(existsSync(join(dir, d))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** D6 — companion은 계약 포인터가 **아니다**(없어도 핵심 워크플로가 동일하게 동작한다). 별도 목록으로 관리한다. */
+  it('companion skills는 CONTRACT_POINTER_RELPATHS에 섞이지 않는다 (D6)', () => {
+    for (const d of DESTS) expect(CONTRACT_POINTER_RELPATHS as readonly string[], d).not.toContain(d)
+    expect([...KIT_COMPANION_SKILLS.map((s) => s.dest)].sort()).toEqual([...DESTS].sort())
   })
 })

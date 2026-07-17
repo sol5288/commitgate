@@ -95,6 +95,23 @@ export const KIT_CLAUDE_DEST_REL = 'CLAUDE.md'
  */
 export const KIT_GITIGNORE = { src: 'templates/workflow.gitignore', dest: 'workflow/.gitignore' } as const
 
+/**
+ * companion skills (REQ-2026-020). Builder용 방법론 instruction asset — 실행 코드가 아니다.
+ *
+ * ⚠️ `CONTRACT_POINTER_RELPATHS`에 **섞지 않는다**(설계 D6). 그 상수는 "계약 포인터"라는 의미를 갖고,
+ *    companion skills는 **없어도 핵심 워크플로가 동일하게 동작**한다(R10). 의미가 다르므로 별도 목록이다.
+ *    gitignore WARN/`--strict` 동작은 같은 축에서 받되, 기존 계약 포인터 경고를 약화시키지 않는다.
+ *
+ * ⚠️ `add()`를 타지 않는다(설계 D3). `add()`의 skip은 `existsSync && !force`라 **`--force`가 사용자 수정을 덮는다**.
+ *    스킬은 사용자가 고치라고 만든 자산이므로 `workflow/.gitignore`(D12)와 같은 seed-once 축으로 간다.
+ */
+export const KIT_COMPANION_SKILLS = [
+  { src: 'skills/commitgate-discovery/SKILL.md', dest: '.claude/skills/commitgate-discovery/SKILL.md' },
+  { src: 'skills/commitgate-tdd/SKILL.md', dest: '.claude/skills/commitgate-tdd/SKILL.md' },
+  { src: 'skills/commitgate-diagnosing-bugs/SKILL.md', dest: '.claude/skills/commitgate-diagnosing-bugs/SKILL.md' },
+  { src: 'skills/commitgate-research/SKILL.md', dest: '.claude/skills/commitgate-research/SKILL.md' },
+] as const
+
 /** `AGENTS.md`가 CommitGate 계약인지 판별하는 마커. 진입점 포인터들이 이 마커로 SSOT를 확인한다. */
 export const AGENTS_CONTRACT_MARKER = '<!-- commitgate:contract -->'
 
@@ -398,6 +415,56 @@ function assertConfinedDest(targetRoot: string, destRel: string): void {
   }
 }
 
+/** companion skills 계획 결과(순수 판정 — 쓰기 없음). */
+export interface CompanionSkillsPlan {
+  /** 부재(lstat ENOENT)라 새로 만들 것. */
+  create: { srcAbs: string; destRel: string }[]
+  /** 이미 있고 **바이트 동일** = 직전 실행이 깐 것 → 설치 커밋 stage 목록에 편입. */
+  ownedSkips: string[]
+  /** 이미 있고 다름 = 사용자가 고친 것 → 보존(`--force`로도 안 덮음). */
+  userDiffers: string[]
+}
+
+/**
+ * companion skills seed-once 판정 + confinement preflight (설계 D3·D4).
+ * **순수 판정이라 아무것도 쓰지 않는다** — `--dry-run`도 이 검사를 그대로 받는다(쓰기 0건, 그러나 symlink면 실패).
+ *
+ * `workflow/.gitignore`(D12)와 같은 축이고, 다른 점은 **dest가 4개**라는 것뿐이다:
+ *
+ * 🔴 **각 최종 `SKILL.md` dest를 개별로 넘긴다.** skills 루트(`.claude/skills`)만 넘기면
+ *    `assertConfinedDest`의 `i < segs.length - 1` 루프가 **마지막 컴포넌트를 검사하지 않아**
+ *    `commitgate-<name>`이 외부 symlink여도 통과하고, `copyFileSync`가 대상 **밖에** 쓴다.
+ *
+ * 🔴 **leaf는 `lstatSync`로 본다. `existsSync`를 부재 판정에 쓰면 안 된다** —
+ *    대상 밖의 아직 없는 파일을 가리키는 **dangling symlink**에서 `existsSync`는 **false**를 주고,
+ *    그걸 부재로 오판하면 `copyFileSync`가 링크를 따라 대상 밖에 파일을 만든다(실측 확인).
+ *    **ENOENT만** 부재로 인정한다 — EACCES·ELOOP를 부재로 삼키면 Apply에서 늦게 실패한다(rollback 0줄).
+ */
+export function planCompanionSkills(targetRoot: string): CompanionSkillsPlan {
+  const create: { srcAbs: string; destRel: string }[] = []
+  const ownedSkips: string[] = []
+  const userDiffers: string[] = []
+  for (const { src, dest } of KIT_COMPANION_SKILLS) {
+    // 상위 컴포넌트 전부(.claude → .claude/skills → .claude/skills/commitgate-<name>)를 lstat으로 검사.
+    assertConfinedDest(targetRoot, dest)
+    const destAbs = join(targetRoot, dest)
+    const srcAbs = join(PACKAGE_ROOT, src)
+    let st: ReturnType<typeof lstatSync> | null = null
+    try {
+      st = lstatSync(destAbs)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`${dest} 상태 확인 실패(${(e as Error).message}) — fail-closed.`)
+      st = null
+    }
+    if (st !== null && !st.isFile())
+      throw new Error(`${dest} 가 일반 파일이 아닙니다(symlink·디렉터리·특수파일) — 그 경로를 옮기고 재시도하십시오.`)
+    if (st === null) create.push({ srcAbs, destRel: dest })
+    else if (sha256File(destAbs) === sha256File(srcAbs)) ownedSkips.push(dest)
+    else userDiffers.push(dest) // 사용자가 고친 것 — `--force`도 보지 않는다(D3).
+  }
+  return { create, ownedSkips, userDiffers }
+}
+
 /**
  * `<pm> install`이 만드는 `node_modules/`가 **워킹트리를 dirty하게 만드는가**.
  * ignore되지도 tracked되지도 않으면 `?? node_modules/`로 나타나 `req:new --run`의 clean-tree 게이트를 막는다.
@@ -572,6 +639,11 @@ export interface PlanFacts {
   workflowGitignoreWillCreate: boolean
   /** 기존 `workflow/.gitignore`가 템플릿과 바이트 동일(= 직전 실행이 깐 것). ownedSkips에 직접 편입(D4 축). */
   workflowGitignoreOwnedSkip: boolean
+  /**
+   * companion skills 계획(REQ-2026-020). `add()`를 타지 않으므로(D3 seed-once) 여기로 받아
+   * copies/ownedSkips에 **직접** 편입한다 — 그러지 않으면 stageList에서 빠져 unrelated로 오분류된다.
+   */
+  companionSkills: CompanionSkillsPlan
 }
 
 /**
@@ -634,6 +706,11 @@ export function planInstall(targetRoot: string, force: boolean, pm: PackageManag
   // workflow/.gitignore는 add()를 타지 않는다(D12: --force가 사용자 파일을 덮으면 안 됨). 바이트 동일 재실행분은
   // 여기서 ownedSkips에 **직접** 편입 — 그러지 않으면 stageList에서 빠져 unrelated로 오분류된다(phase-2 리뷰 R1).
   if (facts.workflowGitignoreOwnedSkip) ownedSkips.push(KIT_GITIGNORE.dest)
+  // companion skills도 add()를 타지 않는다(D3). 생성분은 copies로, 바이트 동일분은 ownedSkips로 직접 편입 —
+  // 그래야 artifacts·stageList·ignore 검사가 이들을 함께 본다. userDiffers는 사용자 파일이라 설치 커밋에 담지 않는다.
+  for (const c of facts.companionSkills.create) copies.push(c)
+  for (const d of facts.companionSkills.ownedSkips) ownedSkips.push(d)
+  for (const d of facts.companionSkills.userDiffers) skips.push(d)
 
   return {
     copies,
@@ -963,6 +1040,13 @@ export function runInit(opts: InitOptions): InitResult {
     gitIsIgnored(targetRoot, KIT_GITIGNORE.dest) &&
     !gitIsTracked(targetRoot, KIT_GITIGNORE.dest)
 
+  // companion skills(REQ-2026-020 D3·D4). **preflight**라 `--dry-run`도 이 검사를 받는다 —
+  // dry-run이 조용히 통과하면 실설치 직전에야 터진다. 판정은 순수(쓰기 0건)다.
+  // `.claude/` 계층이므로 `--no-agent-entrypoints`면 통째로 건너뛴다(D5/D7 의미 유지).
+  const companionSkills: CompanionSkillsPlan = agentEntrypointsSkipped
+    ? { create: [], ownedSkips: [], userDiffers: [] }
+    : planCompanionSkills(targetRoot)
+
   // 설치 **전** 워킹트리(쓰기 전 스냅샷). `.gitignore`의 dirty 여부 판정에도 쓰이므로 계획보다 먼저 찍는다.
   const porcelain = gitStatusEntries(targetRoot)
   const nmWillDirty = nodeModulesWillDirty(targetRoot)
@@ -978,6 +1062,7 @@ export function runInit(opts: InitOptions): InitResult {
     gitignoreWillJoin: gitignoreJoinsInstall(nmWillDirty, porcelain),
     workflowGitignoreWillCreate: workflowGitignoreCreated,
     workflowGitignoreOwnedSkip,
+    companionSkills,
   })
   const artifacts = planArtifactPaths(plan)
 
