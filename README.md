@@ -26,12 +26,19 @@ AI 에이전트가 코드를 빠르게 만들더라도, 리뷰 없이 바로 커
 git init
 npm init -y
 
-# 그다음 설치:
-npx commitgate
-npm install
+# 1) CommitGate를 devDependency로 설치합니다 — 실행 코드가 여기 들어옵니다:
+npm install -D commitgate
+
+# 2) 프로젝트에 설정·계약·스키마와 req:* 스크립트를 깝니다:
+npx commitgate init
+
 codex --version
 codex login status
 ```
+
+> **왜 두 단계인가요?** CommitGate는 실행 코드를 프로젝트에 **복사하지 않습니다**. 1단계가 런타임을 `node_modules/commitgate`에 넣고, 2단계는 프로젝트에 **거버넌스 자산**(설정·계약·스키마·persona)과 `req:* = commitgate <verb>` 스크립트만 깝니다.
+> 그래서 업데이트는 `npm update commitgate` 한 번이고, 런타임 제거는 `npm uninstall -D commitgate`입니다.
+> `init`은 `devDependencies.commitgate` 선언이 없으면 **중단**합니다 — `req:*`가 가리킬 런타임이 없기 때문입니다.
 
 설치는 파일을 놓기만 하고 커밋하지 않습니다. `req:new`는 **clean 워킹트리를 요구**하므로, 설치분을 먼저 커밋하세요. 설치 출력의 `다음:` 안내가 stage할 정확한 경로 목록을 알려 줍니다.
 
@@ -143,20 +150,30 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 
 ## 설치가 하는 일
 
-`npx commitgate`는 대상 프로젝트에 아래 파일과 설정을 추가합니다. 기존 파일은 기본적으로 덮어쓰지 않습니다.
+`npx commitgate init`은 대상 프로젝트에 아래 파일과 설정을 추가합니다. 기존 파일은 기본적으로 덮어쓰지 않습니다.
 
 | 추가 항목 | 설명 |
 |---|---|
-| `scripts/req/` | `req:new`, `req:next`, `req:review-codex`, `req:doctor`, `req:commit` 스크립트 |
 | `workflow/*.schema.json` | Codex 응답과 설정 검증 스키마 |
-| `workflow/review-persona.md` | Codex 리뷰 프롬프트에 주입되는 리뷰어 페르소나 |
+| `workflow/review-persona.md` | Codex 리뷰 프롬프트에 주입되는 리뷰어 페르소나 (없을 때만 생성) |
 | `req.config.json` | 프로젝트별 설정 |
 | `AGENTS.md` | 계약 정본 (없을 때만 생성) |
 | `CLAUDE.md` | Claude Code 지침 포인터 (없을 때만 생성) |
 | `.claude/skills/commitgate/SKILL.md` | Claude Code 스킬 (포인터) |
 | `.claude/commands/req.md` | `/req` 슬래시 커맨드 (포인터) |
 | `.cursor/rules/commitgate.mdc` | Cursor 규칙 (포인터) |
-| `package.json` 스크립트 | `req:*` 명령과 필요한 devDependencies |
+| `package.json` 스크립트 | `req:new`·`req:next`·`req:review-codex`·`req:doctor`·`req:commit` = `commitgate <verb>` (없는 키만) |
+
+### 설치하지 **않는** 것
+
+| 항목 | 어디에 있나 |
+|---|---|
+| `scripts/req/**` 실행 코드 | `node_modules/commitgate` — 프로젝트에 복사하지 않습니다 |
+| `tsx` · `ajv` · `cross-spawn` | `commitgate` 패키지의 runtime dependency — 대상 `package.json`에 주입하지 않습니다 |
+
+프로젝트에 남는 것은 **거버넌스·감사 데이터**(설정·계약·스키마·persona·`workflow/REQ-*` 증거)뿐입니다. 실행 코드는 패키지에만 있으므로 `npm update commitgate` 한 번으로 갱신되고, 복사본 버전이 갈라지지 않습니다.
+
+`req:*` 스크립트는 설치된 패키지 bin을 호출합니다 — `npm run req:new -- <slug>` → `commitgate req:new <slug>` → `node_modules/.bin/commitgate`.
 
 진입점 파일들은 **얇은 포인터**입니다. 계약 본문은 `AGENTS.md` 하나에만 있습니다.
 
@@ -180,19 +197,63 @@ npx commitgate --dry-run
 npx commitgate --strict
 ```
 
-**파일을 하나도 쓰기 전에** 중단합니다. 대상은 세 가지입니다.
+**파일을 하나도 쓰기 전에** 중단합니다. 대상은 다음과 같습니다.
 
-- 기존 `cross-spawn`이 검증 하한보다 낮을 때
 - 계약 포인터(`.claude/`·`.cursor/`·`AGENTS.md`·`CLAUDE.md`)가 `.gitignore`에 걸려 팀·CI에 공유되지 않을 때
+- `workflow/.gitignore` 정책 파일이 무시돼 fresh clone·CI에 scratch 규칙이 전달되지 않을 때
 - 설치 전 워킹트리에 staged 변경이 있거나 설치 산출물과 겹치는 수정이 있어, 설치분만 담은 커밋을 만들 수 없을 때
+- 기존 `cross-spawn`이 검증 하한보다 낮을 때(프로젝트가 그 패키지를 이미 쓰는 경우)
+
+> `--strict`는 **선행 `npm install -D commitgate`가 남긴 `package.json`·lockfile 변경도** preexisting-dirty로 봅니다. 권장 순서: `npm i -D commitgate` → **커밋** → `npx commitgate init --strict` → 설치분 커밋.
 
 > `workflow/machine.schema.json`과 `workflow/req.config.schema.json`은 `req.config.json`의 `ticketRoot` 설정과 무관하게 **항상 `workflow/` 아래**에 복사됩니다.
 
 ---
 
+## 예전 설치본에서 옮겨오기 (`migrate`)
+
+`scripts/req/`가 프로젝트에 복사돼 있고 `req:*`가 `tsx scripts/req/*.ts`를 가리킨다면 **예전(vendored) 설치본**입니다. `init`은 이 상태를 감지하면 조용히 섞이지 않도록 **중단하고** 이 명령을 안내합니다.
+
+```sh
+npm install -D commitgate      # 아직 devDependency가 아니라면 먼저
+npx commitgate migrate         # 계획만 출력 — 아무것도 쓰지 않습니다
+npx commitgate migrate --apply # package.json 의 req:* 만 전환
+```
+
+`migrate`가 하는 일은 **하나**입니다: `req:*` 중 **현재 값이 정확히 예전 주입값인 키만** `commitgate <verb>`로 바꿉니다.
+
+- **아무것도 삭제하지 않습니다.** `scripts/req/`·스키마·persona·설정·진입점·`workflow/REQ-*` 증거를 전부 그대로 둡니다. 남은 `scripts/req/`는 더 이상 실행되지 않으니, 정리하려면 `npx commitgate uninstall` 계획을 먼저 확인하세요.
+- **직접 고친 스크립트는 덮어쓰지 않습니다.** 값이 한 글자라도 다르면 사용자 값으로 보고 보존한 뒤 수동 조치를 안내합니다.
+- **커밋하지 않습니다.** `package.json` 한 파일만 쓰고, 검토는 사용자 몫입니다.
+
+`req:doctor`도 설치 모드(예전/현재/혼합)를 진단해 알려 줍니다.
+
+---
+
+## 지원 범위
+
+| 환경 | 상태 |
+|---|---|
+| **npm** | 완전 지원 — 매 릴리스 packed tarball smoke로 검증합니다 |
+| **pnpm · yarn** (`node_modules` linker) | 지원 — `node_modules/.bin/commitgate`로 해소되는 표준 경로를 씁니다 |
+| **Yarn PnP** | **이번 릴리스 미지원**(검증하지 않았습니다). `nodeLinker: node-modules`를 쓰세요 |
+| **workspace/monorepo** | **워크스페이스 root 설치**를 지원합니다(root에 `req.config.json`·`workflow/`). 하위 패키지에 독립 설치하는 배치는 미지원 |
+
+**재현성**: `req.config.json`의 리뷰 모델·추론강도 핀과 스키마·persona가 프로젝트에 남아 과거 리뷰 입력이 git 이력으로 재현됩니다. 런타임 버전은 **lockfile이 고정**하므로 `package-lock.json`(pnpm/yarn은 각 lockfile)을 **커밋하세요**.
+
+---
+
 ## 제거하려면
 
-먼저 알아둘 것: **`npx commitgate`는 전역 설치가 아닙니다.** npx는 패키지를 npm 캐시(`_npx/<hash>/`)에 받아 한 번 실행할 뿐이고, 전역 `node_modules`에도 PATH에도 아무것도 남기지 않습니다. 실제 "설치물"은 위 표대로 **대상 repo에 추가된 파일과 `package.json` 변경**입니다.
+CommitGate는 두 곳에 있습니다. **런타임**(`node_modules/commitgate`)과 **프로젝트에 깔린 거버넌스 파일**입니다.
+
+런타임은 package manager가 지웁니다:
+
+```sh
+npm uninstall -D commitgate      # pnpm remove -D commitgate · yarn remove commitgate
+```
+
+프로젝트 파일은 아래 계획을 보고 직접 정리하세요. 먼저 알아둘 것: **`npx commitgate`는 전역 설치가 아닙니다.** npx는 패키지를 npm 캐시(`_npx/<hash>/`)에 받아 한 번 실행할 뿐이고, 전역 `node_modules`에도 PATH에도 아무것도 남기지 않습니다.
 
 제거 계획을 먼저 확인하세요. 이 명령은 **아무것도 지우지 않고** 계획만 출력합니다:
 
@@ -331,11 +392,14 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 
 | 명령 | 용도 |
 |---|---|
-| `npx commitgate` | 프로젝트에 CommitGate 설치 |
-| `npx commitgate --dry-run` | 파일을 쓰지 않고 설치 계획 확인 |
-| `npx commitgate --strict` | 정합성 경고를 설치 실패로 처리 (낮은 `cross-spawn`, gitignore된 계약 포인터, 설치 커밋을 안전하게 만들 수 없는 워킹트리) — 파일을 하나도 쓰기 전에 중단 |
-| `npx commitgate --no-agent-entrypoints` | `.claude/`·`.cursor/`·`CLAUDE.md` 설치 건너뛰기 |
+| `npm install -D commitgate` | **런타임 설치 (선행 필수)** — 실행 코드가 `node_modules/commitgate`에 들어옵니다 |
+| `npx commitgate init` | 프로젝트에 설정·계약·스키마와 `req:*` 스크립트 설치 |
+| `npx commitgate init --dry-run` | 파일을 쓰지 않고 설치 계획 확인 |
+| `npx commitgate init --strict` | 정합성 경고를 설치 실패로 처리 (gitignore된 계약 포인터, 설치 커밋을 안전하게 만들 수 없는 워킹트리 등) — 파일을 하나도 쓰기 전에 중단 |
+| `npx commitgate init --no-agent-entrypoints` | `.claude/`·`.cursor/`·`CLAUDE.md` 설치 건너뛰기 |
+| `npx commitgate migrate [--apply]` | 예전 vendored 설치본 → 런타임 패키지 전환 (기본: 계획만, 비파괴) |
 | `npx commitgate uninstall` | 제거 계획 확인 (읽기 전용 — 아무것도 지우지 않음) |
+| `npm uninstall -D commitgate` | 런타임 제거 |
 | `npm run req:new -- <slug> --run` | REQ 티켓, 브랜치, 설계문서 생성 |
 | `npm run req:next -- <id> [--json]` | **다음 행동 계산** (읽기 전용) |
 | `npm run req:review-codex -- <id> --kind design --run` | 설계 리뷰 |
@@ -396,17 +460,18 @@ yarn req:next 2026-002           # yarn
 
 ## 현재 범위
 
-현재 버전은 **Stage A: vendored scaffold 모델**입니다. 즉 `npx commitgate`가 대상 프로젝트에 워크플로 파일을 복사합니다.
+현재 버전은 **런타임 패키지 모델**입니다. 실행 코드와 런타임 의존성은 `node_modules/commitgate`에만 있고, 프로젝트에는 거버넌스·감사 데이터와 `req:* = commitgate <verb>` 스크립트만 남습니다. (예전 vendored scaffold 설치본은 [`migrate`](#예전-설치본에서-옮겨오기-migrate)로 전환합니다.)
 
 현재 운영 중인 검증입니다.
 
 - GitHub Actions에서 `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 18/20/22 매트릭스를 실행합니다.
-- `npm run smoke`는 pack tarball 설치본의 `commitgate` bin을 실행합니다.
+- `npm run smoke`는 pack tarball을 임시 프로젝트에 실제로 설치해, 대상에 `scripts/req/`가 **없고** `tsx`·`ajv`·`cross-spawn`이 **주입되지 않으며** 다섯 `req:*`가 패키지 bin을 가리키는지, 그리고 `npm run req:doctor`가 실제로 패키지 안의 모듈까지 dispatch되는지 확인합니다. `migrate` 비파괴성도 같은 방식으로 검증합니다.
 - Windows `.cmd` 래퍼 주입 회귀 테스트가 패키지 매니저와 Codex wrapper 경로를 보호합니다.
 
 아래는 후속 범위입니다.
 
-- `node_modules`에서 직접 실행하는 라이브러리 모델
+- Yarn PnP 지원, 워크스페이스 하위 패키지 독립 설치
+- 자산↔런타임 버전 드리프트 탐지
 - 비-git VCS 지원
 - 더 다양한 설계문서 템플릿
 

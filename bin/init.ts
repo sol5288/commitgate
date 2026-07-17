@@ -1253,25 +1253,36 @@ export function parseArgs(argv: string[]): InitOptions {
 }
 
 function printHelp(): void {
-  console.log(`commitgate — AI REQ workflow(커밋 게이트) kit 설치
+  console.log(`commitgate — AI REQ workflow(커밋 게이트) 설치
+
+⚠️ commitgate 를 **먼저 devDependency 로 설치**해야 합니다:
+     npm install -D commitgate
+   그다음 이 명령을 실행합니다. 실행 코드는 대상 repo 에 복사되지 않고
+   node_modules/commitgate 에서 돕니다(req:* 스크립트가 그리로 dispatch).
 
 사용법:
-  npx commitgate [--dir <대상repo>] [--force] [--dry-run] [--strict]
-  npx commitgate uninstall [--dir <대상repo>]   # 제거 계획만 출력(아무것도 지우지 않음)
+  npx commitgate [init] [--dir <대상repo>] [--force] [--dry-run] [--strict]
+  npx commitgate migrate [--apply] [--dir <대상repo>]   # 예전 vendored 설치본 → 런타임 패키지(기본: 계획만)
+  npx commitgate uninstall [--dir <대상repo>]           # 제거 계획만 출력(아무것도 지우지 않음)
 
 옵션:
   --dir <path>   대상 repo 루트(기본: 현재 디렉터리)
   --force        기존 kit 파일 덮어쓰기(기본: 스킵)
   --dry-run      변경 없이 수행 예정 목록만 출력
-  --strict       기존 cross-spawn이 보안 하한(>=7.0.6) 미만이면 경고 대신 중단(fail-closed)
+  --strict       정합성 경고를 설치 실패로 취급(fail-closed)
   --no-agent-entrypoints
                  .claude/·.cursor/·CLAUDE.md 진입점 설치를 건너뛴다
   -h, --help     도움말
 
+설치하는 것: workflow 스키마 2종 · reviewer persona · req.config.json ·
+  AGENTS.md/CLAUDE.md·에이전트 진입점 · package.json 의 req:* 스크립트.
+설치하지 않는 것: scripts/req/** 실행 코드 · tsx/ajv/cross-spawn devDependency
+  (전부 commitgate 패키지에 들어 있습니다).
+
 설치 후:
-  1. <대상repo>에서 의존성 설치(감지된 패키지매니저)
-  2. codex CLI 설치 확인(리뷰 실호출용)
-  3. req.config.json 조정(branchPrefix/ticketRoot 등)
+  1. codex CLI 설치 확인(리뷰 실호출용)
+  2. req.config.json 조정(branchPrefix/ticketRoot 등)
+  3. 설치분 커밋(안내가 stage 할 경로를 알려 줍니다)
   4. 첫 티켓 생성:
        npm  → npm run req:new -- <slug> --run
        pnpm → pnpm req:new <slug> --run

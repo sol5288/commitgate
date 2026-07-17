@@ -26,12 +26,19 @@ Run this from your project root. The project must be a **git repository with a `
 git init
 npm init -y
 
-# Then install:
-npx commitgate
-npm install
+# 1) Install CommitGate as a devDependency — this is where the runtime lives:
+npm install -D commitgate
+
+# 2) Add config, contract, schemas, and the req:* scripts to your project:
+npx commitgate init
+
 codex --version
 codex login status
 ```
+
+> **Why two steps?** CommitGate does **not** copy its runtime code into your project. Step 1 puts the runtime in `node_modules/commitgate`; step 2 adds only **governance assets** (config, contract, schemas, persona) plus `req:* = commitgate <verb>` scripts.
+> That means updating is a single `npm update commitgate`, and removing the runtime is `npm uninstall -D commitgate`.
+> `init` **stops** if `devDependencies.commitgate` is not declared — there would be no runtime for `req:*` to point at.
 
 Installation writes files but never commits them. `req:new` **requires a clean working tree**, so commit the scaffold first. The installer's `다음:` (next steps) output prints the exact paths to stage.
 
@@ -143,20 +150,30 @@ So that you do not miscalculate where your real defenses are:
 
 ## What Installation Adds
 
-`npx commitgate` adds the following to the target project. Existing files are not overwritten by default.
+`npx commitgate init` adds the following to the target project. Existing files are not overwritten by default.
 
 | Added item | Purpose |
 |---|---|
-| `scripts/req/` | `req:new`, `req:next`, `req:review-codex`, `req:doctor`, `req:commit` scripts |
 | `workflow/*.schema.json` | Schemas for Codex responses and config |
-| `workflow/review-persona.md` | Reviewer persona injected into the Codex review prompt |
+| `workflow/review-persona.md` | Reviewer persona injected into the Codex review prompt (created only if absent) |
 | `req.config.json` | Project-level configuration |
 | `AGENTS.md` | The contract (created only if absent) |
 | `CLAUDE.md` | Claude Code pointer (created only if absent) |
 | `.claude/skills/commitgate/SKILL.md` | Claude Code skill (pointer) |
 | `.claude/commands/req.md` | `/req` slash command (pointer) |
 | `.cursor/rules/commitgate.mdc` | Cursor rule (pointer) |
-| `package.json` scripts | `req:*` commands and required devDependencies |
+| `package.json` scripts | `req:new`·`req:next`·`req:review-codex`·`req:doctor`·`req:commit` = `commitgate <verb>` (missing keys only) |
+
+### What it does **not** install
+
+| Item | Where it lives instead |
+|---|---|
+| `scripts/req/**` runtime code | `node_modules/commitgate` — never copied into your project |
+| `tsx` · `ajv` · `cross-spawn` | runtime dependencies of the `commitgate` package — never injected into your `package.json` |
+
+What stays in your project is **governance and audit data** only: config, contract, schemas, persona, and `workflow/REQ-*` evidence. Because the runtime lives in the package, `npm update commitgate` updates it in one step and vendored copies cannot drift.
+
+The `req:*` scripts call the installed package bin — `npm run req:new -- <slug>` → `commitgate req:new <slug>` → `node_modules/.bin/commitgate`.
 
 The entrypoint files are **thin pointers**. The contract itself lives only in `AGENTS.md`.
 
@@ -180,15 +197,58 @@ Treat integrity warnings as an install failure:
 npx commitgate --strict
 ```
 
-CommitGate stops **before writing any file** if an existing `cross-spawn` is below the verified floor, if a contract pointer would be swallowed by `.gitignore`, or if the working tree makes a safe install commit impossible.
+CommitGate stops **before writing any file** if a contract pointer would be swallowed by `.gitignore`, if the `workflow/.gitignore` policy file would not reach a fresh clone, if the working tree makes a safe install commit impossible, or if an existing `cross-spawn` is below the verified floor.
+
+> `--strict` also treats the `package.json`/lockfile changes left by the required `npm install -D commitgate` as pre-existing dirt. Recommended order: `npm i -D commitgate` → **commit** → `npx commitgate init --strict` → commit the scaffold.
 
 > `workflow/machine.schema.json` and `workflow/req.config.schema.json` are always copied under `workflow/`, regardless of the `ticketRoot` setting in `req.config.json`.
 
 ---
 
+## Migrating from an older install (`migrate`)
+
+If `scripts/req/` is copied into your project and `req:*` points at `tsx scripts/req/*.ts`, you have an **older (vendored) install**. `init` detects this and **stops** rather than creating a silent mix, pointing you here.
+
+```sh
+npm install -D commitgate      # first, if it is not a devDependency yet
+npx commitgate migrate         # plan only — writes nothing
+npx commitgate migrate --apply # rewrites only the req:* scripts in package.json
+```
+
+`migrate` does exactly **one** thing: it rewrites the `req:*` keys **whose current value is byte-for-byte the old injected value** to `commitgate <verb>`.
+
+- **It deletes nothing.** `scripts/req/`, schemas, persona, config, entrypoints, and `workflow/REQ-*` evidence are all left in place. The leftover `scripts/req/` is no longer executed; run `npx commitgate uninstall` to see a cleanup plan first.
+- **It never overwrites scripts you edited.** Any value that differs — even by one character — is treated as yours, preserved, and reported for manual action.
+- **It does not commit.** It writes `package.json` only; reviewing is up to you.
+
+`req:doctor` also reports the install mode (old / current / mixed).
+
+---
+
+## Support scope
+
+| Environment | Status |
+|---|---|
+| **npm** | Fully supported — verified on every release by a packed-tarball smoke test |
+| **pnpm · yarn** (`node_modules` linker) | Supported — uses the standard `node_modules/.bin/commitgate` resolution |
+| **Yarn PnP** | **Not supported in this release** (untested). Use `nodeLinker: node-modules` |
+| **workspaces / monorepo** | **Workspace-root installs** are supported (`req.config.json` and `workflow/` at the root). Installing independently in a sub-package is not supported |
+
+**Reproducibility**: the review model/effort pins in `req.config.json`, plus the schemas and persona, stay in your project, so past review inputs are reproducible from git history. Runtime versions are pinned by your lockfile — **commit `package-lock.json`** (or the pnpm/yarn equivalent).
+
+---
+
 ## Removing CommitGate
 
-First, the important part: **`npx commitgate` is not a global install.** npx downloads the package into the npm cache (`_npx/<hash>/`) and runs it once; it leaves nothing in your global `node_modules` and nothing on your PATH. The real "installation" is the set of files added to your repo, plus the `package.json` changes listed above.
+CommitGate lives in two places: the **runtime** (`node_modules/commitgate`) and the **governance files installed into your project**.
+
+The package manager removes the runtime:
+
+```sh
+npm uninstall -D commitgate      # pnpm remove -D commitgate · yarn remove commitgate
+```
+
+For the project files, review the plan below and clean up yourself. First, the important part: **`npx commitgate` is not a global install.** npx downloads the package into the npm cache (`_npx/<hash>/`) and runs it once; it leaves nothing in your global `node_modules` and nothing on your PATH.
 
 Start by previewing the removal plan. This command **deletes nothing**:
 
@@ -327,11 +387,14 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 
 | Command | Purpose |
 |---|---|
-| `npx commitgate` | Install CommitGate into a project |
-| `npx commitgate --dry-run` | Preview the install plan without writing files |
-| `npx commitgate --strict` | Treat low `cross-spawn` version warnings as install failures |
-| `npx commitgate --no-agent-entrypoints` | Skip `.claude/`, `.cursor/`, and `CLAUDE.md` |
+| `npm install -D commitgate` | **Install the runtime (required first)** — the executable code lives in `node_modules/commitgate` |
+| `npx commitgate init` | Install config, contract, schemas, and the `req:*` scripts into a project |
+| `npx commitgate init --dry-run` | Preview the install plan without writing files |
+| `npx commitgate init --strict` | Treat integrity warnings as install failures — stops before writing any file |
+| `npx commitgate init --no-agent-entrypoints` | Skip `.claude/`, `.cursor/`, and `CLAUDE.md` |
+| `npx commitgate migrate [--apply]` | Move an older vendored install to the runtime package (plan-only by default, non-destructive) |
 | `npx commitgate uninstall` | Preview the removal plan (read-only — deletes nothing) |
+| `npm uninstall -D commitgate` | Remove the runtime |
 | `npm run req:new -- <slug> --run` | Create a REQ ticket, branch, and design docs |
 | `npm run req:next -- <id> [--json]` | **Compute the next action** (read-only) |
 | `npm run req:review-codex -- <id> --kind design --run` | Review the design |
@@ -392,17 +455,18 @@ No. Existing files are skipped. Use `--force` if you intentionally want to refre
 
 ## Current Scope
 
-The current release is **Stage A: vendored scaffold model**. `npx commitgate` copies workflow files into the target project.
+The current release is a **runtime package model**. Executable code and runtime dependencies live only in `node_modules/commitgate`; your project keeps governance/audit data and the `req:* = commitgate <verb>` scripts. (Older vendored installs move over with [`migrate`](#migrating-from-an-older-install-migrate).)
 
 Current verification:
 
 - GitHub Actions runs a `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 18/20/22 matrix.
-- `npm run smoke` installs the packed tarball and runs the installed `commitgate` bin.
+- `npm run smoke` installs the packed tarball into a throwaway project and asserts that the target has **no** `scripts/req/`, that `tsx`/`ajv`/`cross-spawn` are **not** injected, that all five `req:*` scripts point at the package bin, and that `npm run req:doctor` actually dispatches into the module inside the package. It verifies `migrate`'s non-destructiveness the same way.
 - A Windows `.cmd` wrapper injection regression test protects package-manager and Codex wrapper paths.
 
 Future scope:
 
-- Running directly from `node_modules` as a library-style model
+- Yarn PnP support; independent installs in workspace sub-packages
+- Asset↔runtime version drift detection
 - Non-git VCS support
 - More design document templates
 
