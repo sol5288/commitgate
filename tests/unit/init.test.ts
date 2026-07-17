@@ -35,6 +35,7 @@ import {
   KIT_AGENTS_CONTRACT_COPY_REL,
   KIT_GITIGNORE,
   KIT_COMPANION_SKILLS,
+  applyCopies,
   AGENTS_CONTRACT_MARKER,
   CONTRACT_POINTER_RELPATHS,
   LOCKFILE,
@@ -2774,6 +2775,229 @@ describe('[init] 타사 skill 공존 (REQ-2026-022)', () => {
       expectBytesUnchanged(dir, thirdBefore)
       for (const [rel, buf] of companionBefore)
         expect(readFileSync(join(dir, rel)).equals(buf), `${rel}: --force에도 불변`).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-024 phase-1 — `add()` 경로(`KIT_COPY_RELPATHS`·`KIT_AGENT_ENTRYPOINTS`)의 confinement.
+ *
+ * 실측(00-requirement §2)으로 확인된 탈출을 고정한다. v0.7.0에서 `add()`는 `existsSync && !force`라
+ * 4가지로 뚫렸다: dangling leaf(A) · ancestor dir symlink(B) · live leaf + `--force`(C) · writeFileSync(D).
+ * 이 블록은 **A·B·C**를 다룬다(D는 phase-2의 `req.config.json`·`package.json` 몫).
+ */
+describe('[init] add() 경로 confinement (REQ-2026-024)', () => {
+  const CURSOR_RULE = KIT_AGENT_ENTRYPOINTS.find((e) => e.dest.startsWith('.cursor/'))?.dest as string
+  const KIT_FILE = KIT_COPY_RELPATHS[0] as string
+
+  const outsideDir = (): string => mkdtempSync(join(tmpdir(), 'reqwf-outside-'))
+
+  const trySymlink = (target: string, path: string, type: 'junction' | 'file'): boolean => {
+    try {
+      symlinkSync(target, path, type)
+      return true
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (code === 'EPERM' || code === 'ENOSYS' || code === 'EACCES') return false // 권한 미지원 — 설치기 결함이 아니다
+      throw e
+    }
+  }
+
+  /** 정상 실행: throw 여부와 무관하게 **양쪽 무변화를 먼저** 검사한다(순서를 뒤집으면 외부 검사가 죽은 코드가 된다). */
+  const expectRejectedWithNoWrites = (dir: string, outside: string, run: () => void): void => {
+    const beforeIn = snapshot(dir)
+    const beforeOut = snapshot(outside)
+    let threw = false
+    try {
+      run()
+    } catch {
+      threw = true
+    }
+    expect(snapshot(outside), '외부 tree 무변화 — 여기서 실패하면 대상 **밖**에 썼다는 뜻이다').toEqual(beforeOut)
+    expect(snapshot(dir), '대상 tree 무변화').toEqual(beforeIn)
+    expect(threw, 'preflight가 쓰기 전에 거부해야 한다').toBe(true)
+  }
+
+  /**
+   * 🔴 **preflight 도달을 분리 관측한다** (design-r01 P1).
+   *
+   * 정상 실행 단언만 쓰면 **`applyCopies`의 전량 검증(D3 백스톱)이 `add()` 결함을 가린다** —
+   * `add()`를 `existsSync`로 되돌려도 백스톱이 쓰기 직전에 거부해 `expectRejectedWithNoWrites`가 계속 초록이다.
+   * 그러나 그때 거부는 preflight가 아니라 apply이고, **`--dry-run`은 백스톱에 도달하지 못해 조용히 통과한다**(R5 위반).
+   *
+   * `applyCopies`는 `if (!opts.dryRun)` **안**에 있으므로 dry-run에는 **preflight throw만** 보인다.
+   * 실측으로 이 계측이 양방향으로 작동함을 확인했다: 현행 v0.7.0에서 `.cursor` junction + dry-run은
+   * throw하지 않고(→ 변이를 잡는다), 이미 방어된 companion 경로 + dry-run은 throw한다(→ 계측이 눈멀지 않았다).
+   */
+  const expectPreflightRejects = (dir: string, outside: string, over?: Partial<InitOptions>): void => {
+    const beforeIn = snapshot(dir)
+    const beforeOut = snapshot(outside)
+    expect(
+      () => runInit(OPTS(dir, { ...over, dryRun: true })),
+      'preflight(--dry-run)에서 거부해야 한다 — 여기가 초록이 아니면 거부가 apply로 밀린 것이다(R5)',
+    ).toThrow()
+    expect(snapshot(outside), 'dry-run 외부 무변화').toEqual(beforeOut)
+    expect(snapshot(dir), 'dry-run 대상 무변화').toEqual(beforeIn)
+  }
+
+  /**
+   * 🔴 **E7 — 격리의 핵심.** `.cursor/`는 companion(`.claude/**`만)도 `workflow/.gitignore`(`workflow/`만)도
+   * 검사하지 않는다 → **`add()`의 검사만이 유일한 방어선**이다.
+   * `.claude/`·`workflow/` fixture는 다른 기능이 같은 조상을 **우연히** 검사해서 막히므로
+   * (v0.7.0에서도 초록이었다) `add()`의 결함과 구분하지 못한다. 이 fixture만이 구분한다.
+   */
+  it('.cursor/ 상위가 junction이면 쓰기 0회로 거부한다 (E7, 모드 B)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(outside, 'cursor-dir'))
+      if (!trySymlink(join(outside, 'cursor-dir'), join(dir, '.cursor'), 'junction')) return
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('.cursor/ junction을 preflight(--dry-run)에서 거부한다 — 백스톱이 가리지 못하게 (E7-②)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(outside, 'cursor-dir'))
+      if (!trySymlink(join(outside, 'cursor-dir'), join(dir, '.cursor'), 'junction')) return
+      expectPreflightRejects(dir, outside)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('.cursor/rules/*.mdc leaf가 dangling symlink면 쓰기 0회로 거부한다 (E9, 모드 A)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      mkdirSync(join(dir, dirname(CURSOR_RULE)), { recursive: true })
+      const escaped = join(outside, 'ESCAPED.mdc') // 아직 없는 파일 → dangling
+      if (!trySymlink(escaped, join(dir, CURSOR_RULE), 'file')) return
+      expect(existsSync(join(dir, CURSOR_RULE)), 'dangling이라 existsSync는 false다 — 이게 함정이다').toBe(false)
+      expect(lstatSync(join(dir, CURSOR_RULE)).isSymbolicLink(), 'lstat은 링크를 본다').toBe(true)
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
+      expectPreflightRejects(dir, outside)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * 🔴 **E8 — `--force`가 대상 밖 사용자 파일을 덮어쓴다**(v0.7.0 실측). 가장 무거운 탈출이다:
+   * 생성이 아니라 **기존 파일 파괴**다. `existsSync`=true인데도 뚫리므로 dangling(A)만 막으면 남는다.
+   *
+   * 격리: `workflow/` 상위는 **실제 디렉터리**라 `workflow/.gitignore`의 confinement가 통과한다
+   * → leaf 검사만이 방어선이다.
+   */
+  it('--force가 kit 파일 leaf symlink를 따라 대상 밖을 덮어쓰지 않는다 (E8, 모드 C)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      const real = join(outside, 'user-owned.md')
+      writeFileSync(real, '사용자 소유 — 덮이면 안 된다\n')
+      mkdirSync(dirname(join(dir, KIT_FILE)), { recursive: true })
+      if (!trySymlink(real, join(dir, KIT_FILE), 'file')) return
+      expect(existsSync(join(dir, KIT_FILE)), 'live symlink라 existsSync는 true다 — force가 덮으려 든다').toBe(true)
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir, { force: true })))
+      expectPreflightRejects(dir, outside, { force: true })
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * 🔴 **백스톱(D3)은 `applyCopies`를 직접 호출해야만 검증된다.**
+   *
+   * `runInit` 경유로는 preflight(`add()`)가 **먼저** 터지므로 백스톱을 제거하는 변이가 **그대로 통과한다**
+   * — 그 테스트는 공허하다. `plan.copies`는 `add()`만 채우지 않는다(`planCompanionSkills` 결과가 직접
+   * 편입된다) → **preflight를 우회하는 경로가 이미 존재한다**. 여기서 그 불변식을 고정한다.
+   */
+  it('applyCopies가 검사를 안 거친 symlink dest를 쓰기 전에 거부한다 (D3 백스톱)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      const escaped = join(outside, 'ESCAPED-BACKSTOP.md')
+      mkdirSync(dirname(join(dir, KIT_FILE)), { recursive: true })
+      if (!trySymlink(escaped, join(dir, KIT_FILE), 'file')) return
+      const beforeOut = snapshot(outside)
+      // add()를 우회해 손으로 만든 plan — 미래에 plan.copies에 직접 push하는 코드를 흉내낸다.
+      const plan = {
+        copies: [{ srcAbs: join(PACKAGE_ROOT_FOR_TEST, KIT_FILE), destRel: KIT_FILE }],
+        skips: [],
+        ownedSkips: [],
+        configRel: null,
+        packageJsonRel: null,
+        lockfileRel: null,
+        agentsRel: null,
+        claudeMdRel: null,
+        contractCopyRel: null,
+        gitignoreRel: null,
+        workflowGitignoreRel: null,
+      }
+      expect(() => applyCopies(dir, plan), '백스톱이 쓰기 전에 거부해야 한다').toThrow()
+      expect(snapshot(outside), '외부 tree 무변화 — 실패하면 백스톱을 통과해 대상 밖에 썼다는 뜻이다').toEqual(beforeOut)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * `applyCopies`의 검증은 **쓰기 전 전량**이어야 한다 — 한 루프에서 섞으면 중간 throw 시 앞 파일이
+   * 이미 복사돼 **부분 설치**가 된다(롤백 0줄). 정상 dest를 symlink dest **앞에** 두고, 그 정상 dest가
+   * 만들어지지 않았음을 단언한다.
+   */
+  it('applyCopies가 거부할 때 앞선 정상 dest도 쓰지 않는다 — 부분 설치 없음 (D3 두 루프)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      const good = KIT_COPY_RELPATHS[1] as string
+      mkdirSync(dirname(join(dir, KIT_FILE)), { recursive: true })
+      if (!trySymlink(join(outside, 'ESCAPED-ORDER.md'), join(dir, KIT_FILE), 'file')) return
+      const plan = {
+        copies: [
+          { srcAbs: join(PACKAGE_ROOT_FOR_TEST, good), destRel: good }, // 정상 — symlink dest보다 앞
+          { srcAbs: join(PACKAGE_ROOT_FOR_TEST, KIT_FILE), destRel: KIT_FILE }, // symlink
+        ],
+        skips: [],
+        ownedSkips: [],
+        configRel: null,
+        packageJsonRel: null,
+        lockfileRel: null,
+        agentsRel: null,
+        claudeMdRel: null,
+        contractCopyRel: null,
+        gitignoreRel: null,
+        workflowGitignoreRel: null,
+      }
+      expect(() => applyCopies(dir, plan)).toThrow()
+      expect(
+        existsSync(join(dir, good)),
+        '앞선 정상 dest가 만들어졌다 = 검사·쓰기를 한 루프에 섞었다(부분 설치)',
+      ).toBe(false)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /** 정상 경로 대조군 — symlink가 없으면 헬퍼는 `existsSync`와 같은 답을 준다(위양성 방지). */
+  it('symlink가 없으면 kit 파일·진입점 설치가 그대로 동작한다 (R8)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      for (const rel of KIT_COPY_RELPATHS) expect(existsSync(join(dir, rel)), rel).toBe(true)
+      for (const e of KIT_AGENT_ENTRYPOINTS) expect(existsSync(join(dir, e.dest)), e.dest).toBe(true)
     } finally {
       cleanup(dir)
     }

@@ -415,6 +415,47 @@ function assertConfinedDest(targetRoot: string, destRel: string): void {
   }
 }
 
+/**
+ * 쓰기 dest의 **confinement + leaf 상태를 한 번에** 판정한다 (REQ-2026-024 D1·D2).
+ *
+ * @returns 일반 파일이면 그 `Stats`, **실제 부재(ENOENT)면 `null`**. 그 밖은 전부 throw(fail-closed).
+ *
+ * 🔴 **`existsSync`를 부재 판정에 쓰면 안 된다.** 실측(REQ-2026-024 §2)으로 확인된 4가지 탈출:
+ *   - **A. dangling leaf**: `existsSync`가 **false** → "부재" 오판 → 쓰기가 링크를 따라 대상 **밖에 생성**.
+ *   - **B. ancestor dir symlink**: `existsSync`·`statSync`가 링크를 **따라가** 통과 → `mkdirSync`+쓰기가 밖에.
+ *   - **C. live leaf + `--force`**: skip 조건이 `existsSync && !force`라 force면 `copyFileSync`가 **외부를 덮어씀**.
+ *   - **D. live leaf + `writeFileSync`**: 기존 파일로 읽고 병합 → 쓰기가 링크 따라 **외부를 수정**.
+ * A만 막으면 C·D가 남는다 — 그쪽은 생성이 아니라 **기존 외부 파일 파괴**라 더 무겁다.
+ *
+ * 🔴 **반환값이 곧 부재 판정이다**(D2). 호출부가 `existsSync`를 쓸 이유를 없앤다 —
+ *    검사를 빼먹으려면 판정도 포기해야 하므로 **드리프트가 구조적으로 불가능**하다.
+ *    "쓰기 전에 검사를 호출한다"는 규율은 이미 실패했다: `workflow/.gitignore`·companion에는 붙고
+ *    나머지 7종에는 안 붙은 것이 이번 결함이다.
+ *
+ * ⚠️ 루트 직속 dest(`AGENTS.md`·`package.json` 등)에서 `assertConfinedDest`는 **무동작**이다
+ *    (`segs.length - 1 === 0`). 정상이다 — 그 상위는 `targetRoot` 자신이고 `runInit`이 이미 검사한다.
+ *    그 경우 leaf `lstat`이 방어를 맡는다.
+ *
+ * ⚠️ **TOCTOU는 막지 않는다.** 이 판정과 실제 쓰기 사이에 경로가 바뀌는 경쟁은 남는다
+ *    (Node에 `O_NOFOLLOW` 원자 API가 없다). **협조적 사용자의 우발적 symlink**를 막는 것이다.
+ */
+function statWritableDest(targetRoot: string, destRel: string): ReturnType<typeof lstatSync> | null {
+  assertConfinedDest(targetRoot, destRel) // 상위 컴포넌트 전부 lstat (leaf는 아래에서)
+  const abs = join(targetRoot, destRel)
+  let st: ReturnType<typeof lstatSync>
+  try {
+    st = lstatSync(abs)
+  } catch (e) {
+    // ⚠️ **ENOENT만** 부재로 인정한다 — EACCES·ELOOP를 부재로 삼키면 apply에서 늦게 실패해 부분 설치가 된다(롤백 0줄).
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT')
+      throw new Error(`${destRel} 상태 확인 실패(${(e as Error).message}) — fail-closed.`)
+    return null
+  }
+  if (!st.isFile())
+    throw new Error(`${destRel} 가 일반 파일이 아닙니다(symlink·디렉터리·특수파일) — 그 경로를 옮기고 재시도하십시오.`)
+  return st
+}
+
 /** companion skills 계획 결과(순수 판정 — 쓰기 없음). */
 export interface CompanionSkillsPlan {
   /** 부재(lstat ENOENT)라 새로 만들 것. */
@@ -435,29 +476,18 @@ export interface CompanionSkillsPlan {
  *    `assertConfinedDest`의 `i < segs.length - 1` 루프가 **마지막 컴포넌트를 검사하지 않아**
  *    `commitgate-<name>`이 외부 symlink여도 통과하고, `copyFileSync`가 대상 **밖에** 쓴다.
  *
- * 🔴 **leaf는 `lstatSync`로 본다. `existsSync`를 부재 판정에 쓰면 안 된다** —
- *    대상 밖의 아직 없는 파일을 가리키는 **dangling symlink**에서 `existsSync`는 **false**를 주고,
- *    그걸 부재로 오판하면 `copyFileSync`가 링크를 따라 대상 밖에 파일을 만든다(실측 확인).
- *    **ENOENT만** 부재로 인정한다 — EACCES·ELOOP를 부재로 삼키면 Apply에서 늦게 실패한다(rollback 0줄).
+ * confinement + leaf 판정은 `statWritableDest`가 한다 — 이 함수의 본문이 그 헬퍼의 출처다
+ * (REQ-2026-024 D1: 같은 규칙이 두 벌 있었고, 나머지 7종에 안 붙은 것이 결함이었다).
  */
 export function planCompanionSkills(targetRoot: string): CompanionSkillsPlan {
   const create: { srcAbs: string; destRel: string }[] = []
   const ownedSkips: string[] = []
   const userDiffers: string[] = []
   for (const { src, dest } of KIT_COMPANION_SKILLS) {
-    // 상위 컴포넌트 전부(.claude → .claude/skills → .claude/skills/commitgate-<name>)를 lstat으로 검사.
-    assertConfinedDest(targetRoot, dest)
+    // 상위 전부(.claude → .claude/skills → .claude/skills/commitgate-<name>) + leaf를 lstat으로 검사.
+    const st = statWritableDest(targetRoot, dest)
     const destAbs = join(targetRoot, dest)
     const srcAbs = join(PACKAGE_ROOT, src)
-    let st: ReturnType<typeof lstatSync> | null = null
-    try {
-      st = lstatSync(destAbs)
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`${dest} 상태 확인 실패(${(e as Error).message}) — fail-closed.`)
-      st = null
-    }
-    if (st !== null && !st.isFile())
-      throw new Error(`${dest} 가 일반 파일이 아닙니다(symlink·디렉터리·특수파일) — 그 경로를 옮기고 재시도하십시오.`)
     if (st === null) create.push({ srcAbs, destRel: dest })
     else if (sha256File(destAbs) === sha256File(srcAbs)) ownedSkips.push(dest)
     else userDiffers.push(dest) // 사용자가 고친 것 — `--force`도 보지 않는다(D3).
@@ -686,7 +716,11 @@ export function planInstall(targetRoot: string, force: boolean, pm: PackageManag
   }
   const add = (srcAbs: string, destRel: string): void => {
     const destAbs = join(targetRoot, destRel)
-    if (existsSync(destAbs) && !force) {
+    // 🔴 confinement + leaf 판정(REQ-2026-024 D2). **반환값이 곧 부재 판정이다** — `existsSync`를 쓰면
+    //    dangling leaf(A)를 부재로 오판하고, ancestor dir symlink(B)를 통과시키며, `--force`가 링크를 따라
+    //    대상 **밖** 사용자 파일을 덮어쓴다(C, 실측 E8). 검사와 판정이 같은 호출이라 빼먹을 수 없다.
+    const st = statWritableDest(targetRoot, destRel)
+    if (st !== null && !force) {
       skips.push(destRel)
       // 바이트가 같으면 CommitGate 소유(직전 실행이 깐 것). 다르면 사용자 파일 — 설치 커밋에 담지 않는다.
       const a = sha(destAbs)
@@ -754,8 +788,23 @@ function assertEntrypointPathsUsable(targetRoot: string): void {
   }
 }
 
-/** 계획대로 복사(중첩 디렉터리 생성). `--dry-run`이면 아무것도 쓰지 않는다. */
-function applyCopies(targetRoot: string, plan: InstallPlan): void {
+/**
+ * 계획대로 복사(중첩 디렉터리 생성). 호출부가 `--dry-run`이면 이 함수를 아예 부르지 않는다.
+ *
+ * 🔴 **쓰기 전 전량 검증**(REQ-2026-024 D3). `plan.copies`는 `add()`만 채우지 않는다 —
+ *    `planCompanionSkills`의 결과가 **직접 편입**된다(REQ-2026-020 D3). 즉 `add()`의 preflight를
+ *    **우회하는 경로가 이미 존재한다.** 여기서 불변식을 강제해 미래의 우회도 잡는다.
+ *
+ * 🔴 **두 루프여야 한다.** 검사·쓰기를 한 루프에 섞으면 중간 throw 시 앞의 파일이 이미 복사돼
+ *    **부분 설치**가 된다(롤백 0줄) — preflight→apply 계약 위반이다.
+ *
+ * ⚠️ 이 검사는 **불변식 강제**지 주 방어선이 아니다. 주 방어선은 preflight(`add()`·`planCompanionSkills`)다.
+ *    preflight가 완전하면 여기는 **절대 발화하지 않는다** — 그래서 `runInit` 경유로는 검증할 수 없고
+ *    (preflight가 먼저 터진다) 이 함수를 **직접 호출**하는 테스트만이 공허하지 않다. export 이유가 그것이다.
+ *    TOCTOU도 막지 못한다 — 검사와 `copyFileSync` 사이에도 창이 있다.
+ */
+export function applyCopies(targetRoot: string, plan: InstallPlan): void {
+  for (const { destRel } of plan.copies) statWritableDest(targetRoot, destRel)
   for (const { srcAbs, destRel } of plan.copies) {
     const destAbs = join(targetRoot, destRel)
     mkdirSync(dirname(destAbs), { recursive: true })
@@ -1007,23 +1056,10 @@ export function runInit(opts: InitOptions): InitResult {
   // --no-agent-entrypoints와 무관(D13).
   const workflowGitignorePath = join(targetRoot, KIT_GITIGNORE.dest)
   const workflowGitignoreSrcAbs = join(PACKAGE_ROOT, KIT_GITIGNORE.src)
-  // confinement: workflow/(또는 그 상위)가 symlink면 copyFileSync가 밖에 쓰거나 git이 경로를 stage하지 못한다.
-  // 상위 컴포넌트를 lstat으로 검사해 내부·외부·dangling 링크를 모두 거부한다(P1).
-  // preflight라 스키마 복사(같은 workflow/ 경유)보다 먼저 돌아 함께 보호된다.
-  assertConfinedDest(targetRoot, KIT_GITIGNORE.dest)
-  // fail-closed: 존재하면 반드시 **일반 파일**이어야 한다(P1). lstat로 symlink를 안 따라간다 —
-  //   symlink면 copyFileSync가 링크 대상을 따라 쓰고 git도 링크된 .gitignore를 규칙으로 안 읽는다. 디렉터리·특수파일도 복사 불가.
-  //   ⚠️ **ENOENT만** 부재로 인정한다 — EACCES·ELOOP 등을 부재로 삼키면 apply로 넘어가 늦게 실패한다.
-  let wgLstat: ReturnType<typeof lstatSync> | null = null
-  try {
-    wgLstat = lstatSync(workflowGitignorePath)
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT')
-      throw new Error(`${KIT_GITIGNORE.dest} 상태 확인 실패(${(e as Error).message}) — fail-closed.`)
-    wgLstat = null
-  }
-  if (wgLstat !== null && !wgLstat.isFile())
-    throw new Error(`${KIT_GITIGNORE.dest} 가 일반 파일이 아닙니다(symlink·디렉터리·특수파일) — 그 경로를 옮기고 재시도하십시오.`)
+  // confinement + leaf: workflow/(또는 그 상위)가 symlink면 copyFileSync가 밖에 쓰거나 git이 경로를 stage하지 못하고,
+  //   leaf가 symlink면 링크 대상을 따라 쓰며 git도 링크된 .gitignore를 규칙으로 안 읽는다. 디렉터리·특수파일도 복사 불가.
+  //   preflight라 스키마 복사(같은 workflow/ 경유)보다 먼저 돌아 함께 보호된다.
+  const wgLstat = statWritableDest(targetRoot, KIT_GITIGNORE.dest)
   const workflowGitignoreExists = wgLstat !== null // isFile 보장
   const workflowGitignoreCreated = !workflowGitignoreExists
   // 존재 & 바이트 동일 = 직전 실행이 깐 것(소유). ⚠️ add()를 타지 않으므로(D12) ownedSkips를 **직접** 채운다 —
