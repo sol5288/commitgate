@@ -383,3 +383,101 @@ describe('[REQ-2026-020] D11 스킬 본문이 계약을 어기지 않는다', ()
     expect(body(name)).toMatch(/AGENT/)
   })
 })
+
+// ───────────── D12 진단 안전 경계 (R12-e/f/g) — REQ-2026-020 phase-1b ─────────────
+
+/** 금지·부정 문맥이면 지시가 아니라 경계 서술이다. */
+const PROHIBITION = /금지|하지 않는다|않는다|말라|말 것|불가|없이/
+
+/**
+ * 승인 요구가 **정당한** 문맥인가 — D12(3)으로 한정한다.
+ *
+ * ⚠️ phase-1의 R12-b 허용 목록(`/범위|별도|재승인|승인 없이|승인받지|보고/`)은 **`별도` 한 단어로 통과**한다 →
+ *    "깨끗한 baseline이 있어도 승인받고 **별도** 사본에서 수행" 같은 게이트가 살아남는다(design-r04 P1).
+ *    그래서 `별도`·`보고` 같은 약한 신호를 근거에서 빼고 **경계 위반 사유**만 남긴다.
+ */
+export function isLegitimateApprovalContext(line: string): boolean {
+  return /baseline이 없|baseline 부재|깨끗한 승인 baseline이 아니|미승인 (변경을 )?커밋|설계|계획|비목표|재승인|범위 변경|범위를 벗어/.test(line)
+}
+
+/** D12(2) 무게이트 경로를 어기는 승인 게이트 문장들. */
+export function approvalGateHits(text: string): string[] {
+  return text
+    .split('\n')
+    .filter((l) => /(승인받|확인받|승인을 받|확인을 받)/.test(l) && !PROHIBITION.test(l) && !isLegitimateApprovalContext(l))
+}
+
+/** D12(1) 절대 금지 — 진단·조사를 위해 미승인 변경을 stage/commit하라는 유도. */
+export function diagnosisCommitHits(text: string): string[] {
+  return text
+    .split('\n')
+    .filter((l) => /(stage\/commit|stage하|스테이징하|commit해|커밋해|commit하|커밋하)/.test(l) && !PROHIBITION.test(l))
+}
+
+describe('[REQ-2026-020] D12 진단 스킬 안전 경계', () => {
+  const body = (name: string): string => lf(readFileSync(join(PACKAGE_ROOT, 'skills', name, 'SKILL.md'), 'utf8'))
+  const instructions = (name: string): string => body(name).split('## 출처·라이선스')[0] as string
+  /** 조사 성격 스킬 — 진단·조사를 위해 미승인 변경을 만지면 안 된다. */
+  const INVESTIGATION = ['commitgate-diagnosing-bugs', 'commitgate-research', 'commitgate-discovery'] as const
+
+  /**
+   * R12-e — phase-1이 실제로 어긴 축. 본문이 *"현재 작업을 stage/commit해 안전하게 만든 뒤"* 라고 유도해
+   * **미승인 REQ 변경을 커밋시켜 리뷰 게이트를 우회**시켰다. phase-1의 D11 가드는 이 축이 없어 놓쳤다.
+   */
+  it.each(INVESTIGATION)('%s: 진단·조사를 위해 stage/commit하라고 유도하지 않는다 (R12-e)', (name) => {
+    expect(diagnosisCommitHits(instructions(name)), '진단은 커밋 사유가 아니다 — 승인 없는 커밋은 리뷰 게이트 우회다').toEqual([])
+  })
+
+  /**
+   * R12-e 대조군 — **정상 TDD의 stage는 잡히면 안 된다.** phase 산출물을 `git add`하는 건 `req:next`=AGENT의
+   * 정상 경로다. 가드가 그것까지 잡으면 과잉이고, 가드를 못 쓰게 된다.
+   */
+  it('commitgate-tdd의 정상 stage 안내는 잡히지 않는다 (R12-e 과잉 방지 대조군)', () => {
+    expect(instructions('commitgate-tdd'), 'tdd는 실제로 stage를 안내한다 — 대조군이 공회전하지 않음을 보장').toMatch(/stage/)
+    expect(diagnosisCommitHits(instructions('commitgate-tdd'))).toEqual([])
+  })
+
+  /** R12-e 음성 대조군 — 실제 위반 문장은 반드시 잡힌다(가드가 살아 있음을 fixture로 증명). */
+  it('R12-e 가드가 실제 위반 문장을 잡는다 (fixture)', () => {
+    const violation = '현재 작업을 stage/commit해 안전하게 만든 뒤 별도 worktree나 사본에서 수행한다.'
+    expect(diagnosisCommitHits(violation), 'phase-1이 실제로 담았던 문장 — 반드시 Red여야 한다').toHaveLength(1)
+  })
+
+  /**
+   * R12-f — D12(2)의 무게이트 경로를 어기는 승인 게이트가 남아 있으면 실패.
+   * "bisect가 필요해서" 멈추는 것은 범위 변경이 아니므로 R12-b 위반이다(design-r03 P1).
+   */
+  it('commitgate-diagnosing-bugs: 범위 내 진단에 사람 승인 게이트가 없다 (R12-f)', () => {
+    expect(approvalGateHits(instructions('commitgate-diagnosing-bugs')), '멈춤 사유는 "bisect 필요"가 아니라 "경계 위반"이어야 한다').toEqual([])
+  })
+
+  /** R12-f 음성 대조군 — "깨끗한 baseline인데도 승인받으라"는 문장은 반드시 잡힌다(design-r04 P1의 회귀 고정). */
+  it('R12-f 가드가 "깨끗한 baseline인데도 승인" 문장을 잡는다 (fixture)', () => {
+    const gate = '깨끗한 승인 baseline이 있어도 bisect 전에 사람에게 승인받고 별도 사본에서 수행한다.'
+    expect(approvalGateHits(gate), '`별도` 한 단어로 통과하면 안 된다 — design-r04 P1').toHaveLength(1)
+  })
+
+  /** R12-f 양성 대조군 — 정당한 승인 문맥(baseline 부재·설계 변경)은 잡히면 안 된다. */
+  it('R12-f 가드가 정당한 승인 문맥은 잡지 않는다 (fixture)', () => {
+    expect(approvalGateHits('복제할 깨끗한 승인 baseline이 없어 미승인 변경을 커밋해야 하면 사람에게 보고해 승인받는다.')).toEqual([])
+    expect(approvalGateHits('진단 결과가 설계·비목표를 바꿔야 하면 재승인을 받는다.')).toEqual([])
+  })
+
+  /**
+   * R12-g — 무게이트 경로가 **실제로 본문에 존재**해야 한다.
+   * ⚠️ 없으면 R12-f가 "승인 문구가 없다"는 이유로 **공허하게 통과**한다(경로 자체가 없어도 그린).
+   */
+  it('commitgate-diagnosing-bugs: 승인 없이 disposable clone에서 조사하는 경로를 명시한다 (R12-g)', () => {
+    const t = instructions('commitgate-diagnosing-bugs')
+    const noGate = t.split('\n').filter((l) => /(승인 없이|게이트 없)/.test(l) && /(clone|사본|복제)/.test(l))
+    expect(noGate.length, 'D12(2) 무게이트 경로가 본문에 없으면 R12-f는 공허하게 통과한다').toBeGreaterThan(0)
+  })
+
+  /** D12(1) 절대 금지가 본문에 명시된다 — 부재가 아니라 명시적 금지. */
+  it('commitgate-diagnosing-bugs: 활성 worktree HEAD 이동과 진단용 커밋을 명시적으로 금지한다 (D12-1)', () => {
+    const t = instructions('commitgate-diagnosing-bugs')
+    expect(t).toMatch(/bisect/)
+    expect(t, 'HEAD 이동 금지').toMatch(/(HEAD를 움직이지|HEAD 이동).*(금지|마라)|(금지|마라).*(HEAD)/)
+    expect(t, '진단용 커밋 금지 — 사람이 승인해도 불가').toMatch(/(진단|조사).*(커밋|commit).*(금지|아니다)/)
+  })
+})
