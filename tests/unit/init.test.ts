@@ -2459,3 +2459,190 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     expect([...KIT_COMPANION_SKILLS.map((s) => s.dest)].sort()).toEqual([...DESTS].sort())
   })
 })
+
+// ═══════ REQ-2026-021 phase-1: companion gitignore 경고 ═══════
+
+/**
+ * companion skills가 팀원 clone에 전달되지 못하면(ignored ∧ !tracked) 경고한다.
+ *
+ * 🔴 **3개 계획 상태(create·ownedSkip·userDiffers)를 각각 격리해 증명한다.**
+ *    `create`만 검증하면 나머지 둘의 누락을 못 잡는다 — 특히 `userDiffers`는 `skips`로 가서
+ *    `planArtifactPaths`(= copies + ownedSkips)에 **없으므로** artifacts만 보는 구현이 조용히 통과한다.
+ *
+ * 🔴 **기존 계약 포인터의 strict 경고로 우연히 통과하면 안 된다.** 각 fixture는 나머지 companion과
+ *    기존 `.claude` entrypoint를 **강제 추적**해 at-risk 원인에서 제거한 뒤, 대상 skill 하나만 남긴다.
+ */
+describe('[init] companion gitignore 경고 (REQ-2026-021)', () => {
+  const SKILLS = [
+    '.claude/skills/commitgate-discovery/SKILL.md',
+    '.claude/skills/commitgate-tdd/SKILL.md',
+    '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
+    '.claude/skills/commitgate-research/SKILL.md',
+  ] as const
+  const TDD = SKILLS[1]
+  /** `.claude/` 아래의 기존 계약 포인터 — 이들이 at-risk로 남으면 격리가 깨진다. */
+  const CLAUDE_POINTERS = ['.claude/skills/commitgate/SKILL.md', '.claude/commands/req.md', 'CLAUDE.md']
+
+  /** WARN을 문자열로 캡처. 원인 경로를 단언해야 "WARN이 났다"가 아니라 "그 경로 때문에 났다"를 증명한다. */
+  const captureWarn = (fn: () => void): string => {
+    const orig = console.warn
+    const lines: string[] = []
+    console.warn = (...a: unknown[]): void => {
+      lines.push(a.map(String).join(' '))
+    }
+    try {
+      fn()
+    } finally {
+      console.warn = orig
+    }
+    return lines.join('\n')
+  }
+
+
+  /** `--strict` throw 메시지가 **그 경로를 포함**하는지. 문자열 포함으로 본다(정규식 이스케이프 불필요). */
+  const expectStrictThrowMentioning = (dir: string, path: string): void => {
+    let msg = ''
+    expect(() => {
+      try {
+        runInit(OPTS(dir, { strict: true }))
+      } catch (e) {
+        msg = (e as Error).message
+        throw e
+      }
+    }, '--strict는 설치 전에 멈춰야 한다').toThrow()
+    expect(msg, `throw 메시지에 ${path}가 있어야 한다 — 기존 계약 포인터 경고로 우연히 통과하면 안 된다`).toContain(path)
+  }
+
+  /** `.claude/`를 ignore한 fixture. */
+  const ignoredClaude = (): string => {
+    const dir = tmpTarget()
+    writeFileSync(join(dir, '.gitignore'), '.claude/\n', 'utf8')
+    return dir
+  }
+
+  /**
+   * 대상 skill **하나만** at-risk로 남긴다 — 나머지 companion과 `.claude` 포인터는 강제 추적으로 원인에서 뺀다.
+   * 이 격리가 없으면 init이 생성하는 나머지가 경고를 유발해 **누락 구현도 통과**한다(REQ-020 design-r10 함정).
+   */
+  const isolateOnly = (dir: string, keep: string): void => {
+    const others = [...SKILLS.filter((s) => s !== keep), ...CLAUDE_POINTERS].filter((p) => existsSync(join(dir, p)))
+    gitIn(dir, ['add', '-f', ...others])
+    gitIn(dir, ['commit', '-q', '-m', 'track everything except the subject'])
+  }
+
+  it('create: 첫 init에서 untracked·ignored companion이 WARN 원인이다 (R1)', () => {
+    const dir = ignoredClaude()
+    try {
+      const warn = captureWarn(() => runInit(OPTS(dir)))
+      for (const s of SKILLS) expect(warn, `${s}가 경고에 등장해야 한다`).toContain(s)
+      expect(existsSync(join(dir, TDD)), '비파괴 — 설치는 계속된다').toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('create: --strict는 설치 전 throw + 쓰기 0회 (R2)', () => {
+    const dir = ignoredClaude()
+    try {
+      const before = snapshot(dir)
+      expect(() => runInit(OPTS(dir, { strict: true }))).toThrow()
+      expect(snapshot(dir), 'preflight throw는 어떤 파일도 쓰지 않는다').toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** ownedSkip = 재실행에서 원본과 byte-identical. 산출물이지만 artifacts에는 ownedSkips로 들어간다. */
+  it('ownedSkip 격리: byte-identical skill 하나만 남기면 그 경로가 WARN 원인이다 (R3)', () => {
+    const dir = ignoredClaude()
+    try {
+      runInit(OPTS(dir)) // 4종 생성
+      isolateOnly(dir, TDD) // tdd만 untracked·ignored로 남긴다 (내용은 원본 그대로 = ownedSkip)
+      const warn = captureWarn(() => runInit(OPTS(dir)))
+      expect(warn, 'ownedSkip 상태의 tdd가 원인으로 등장해야 한다').toContain(TDD)
+      for (const s of SKILLS.filter((x) => x !== TDD)) expect(warn, `${s}는 추적돼 원인이 아니다`).not.toContain(s)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('ownedSkip 격리: --strict throw 메시지에 그 경로가 있고 쓰기 0회다 (R2/R3)', () => {
+    const dir = ignoredClaude()
+    try {
+      runInit(OPTS(dir))
+      isolateOnly(dir, TDD)
+      const before = snapshot(dir)
+      expectStrictThrowMentioning(dir, TDD)
+      expect(snapshot(dir), '--strict 전후 대상 snapshot 동일').toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * 🔴 userDiffers = 사용자가 고친 skill. **핵심 함정** — `skips`로 가서 `planArtifactPaths`에 없다.
+   * artifacts만 보는 구현은 여기서 경고 없이 통과하고 `--strict`가 뚫린다.
+   */
+  it('userDiffers 격리: 수정한 skill 하나만 남기면 그 경로가 WARN 원인이다 (R3)', () => {
+    const dir = ignoredClaude()
+    try {
+      runInit(OPTS(dir))
+      isolateOnly(dir, TDD)
+      writeFileSync(join(dir, TDD), '# 내가 고친 내용\n', 'utf8') // → userDiffers
+      const warn = captureWarn(() => runInit(OPTS(dir)))
+      expect(warn, 'userDiffers 상태의 tdd가 원인으로 등장해야 한다 — artifacts에 없어도').toContain(TDD)
+      for (const s of SKILLS.filter((x) => x !== TDD)) expect(warn, `${s}는 추적돼 원인이 아니다`).not.toContain(s)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('userDiffers 격리: --strict throw 메시지에 그 경로가 있고 쓰기 0회다 (R2/R3)', () => {
+    const dir = ignoredClaude()
+    try {
+      runInit(OPTS(dir))
+      isolateOnly(dir, TDD)
+      writeFileSync(join(dir, TDD), '# 내가 고친 내용\n', 'utf8')
+      const before = snapshot(dir)
+      expectStrictThrowMentioning(dir, TDD)
+      expect(snapshot(dir), '--strict 전후 대상 snapshot 동일 — 사용자 수정본도 보존').toEqual(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** 음성 대조군 — 그 skill까지 추적하면 companion WARN이 사라진다(원인 분리 증명). */
+  it('음성 대조군: 4종 전부 추적하면 companion WARN이 없다', () => {
+    const dir = ignoredClaude()
+    try {
+      runInit(OPTS(dir))
+      const all = [...SKILLS, ...CLAUDE_POINTERS].filter((p) => existsSync(join(dir, p)))
+      gitIn(dir, ['add', '-f', ...all])
+      gitIn(dir, ['commit', '-q', '-m', 'track all'])
+      const warn = captureWarn(() => runInit(OPTS(dir)))
+      for (const s of SKILLS) expect(warn, `${s}: 추적됐으므로 경고 원인이 아니다`).not.toContain(s)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('정상 경로 대조군: .claude/를 ignore하지 않으면 companion 경고가 없다', () => {
+    const dir = tmpTarget()
+    try {
+      const warn = captureWarn(() => runInit(OPTS(dir)))
+      for (const s of SKILLS) expect(warn, `${s}: ignore되지 않으므로 경고 없음`).not.toContain(s)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('--no-agent-entrypoints면 companion 미설치이므로 경고가 없다 (R5)', () => {
+    const dir = ignoredClaude()
+    try {
+      const warn = captureWarn(() => runInit(OPTS(dir, { noAgentEntrypoints: true })))
+      for (const s of SKILLS) expect(warn, `${s}: 설치되지 않으므로 경고 없음`).not.toContain(s)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})

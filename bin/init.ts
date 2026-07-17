@@ -1103,6 +1103,32 @@ export function runInit(opts: InitOptions): InitResult {
     if (opts.strict) throw new Error(`[--strict] ${msg}`)
     console.warn(`⚠️  ${msg}\n    (설치는 계속 — 안전한 커밋 안내는 생략됩니다)`)
   }
+  // companion skills가 ignored∧untracked면 설치 커밋에 못 담겨 팀원 fresh clone에 전달되지 않는다(REQ-2026-021 D1).
+  //
+  // 🔴 **`artifacts`로 판정하면 안 된다.** `userDiffers`는 `skips`로 가서 `planArtifactPaths`
+  //    (= `copies + ownedSkips + extras`)에 **없다** → `findIgnoredArtifacts`가 그 파일을 보지 못한다.
+  //    그러면 나머지가 전부 추적된 상태에서 사용자가 skill 하나만 고쳤을 때 **경고 없이 `--strict`가 통과**한다.
+  //    계획 3분류(create·ownedSkips·userDiffers)를 **전부** 본다 — 소유든 사용자 파일이든, 팀에 전달되지
+  //    못하면 안전한 설치 안내를 낼 수 없다. `workflowGitignorePolicyAtRisk`와 같은 축이다(D1).
+  //
+  // ⚠️ `CONTRACT_POINTER_RELPATHS`에 섞지 않는다(REQ-2026-020 D6) — companion은 계약 포인터가 아니다.
+  //    같은 WARN/strict **동작**만 별도 판정으로 준다. 기존 포인터 경고는 손대지 않는다(추가만).
+  const companionAtRisk = [
+    ...companionSkills.create.map((c) => c.destRel),
+    ...companionSkills.ownedSkips,
+    ...companionSkills.userDiffers,
+  ].filter((p) => gitIsIgnored(targetRoot, p) && !gitIsTracked(targetRoot, p))
+
+  if (companionAtRisk.length > 0) {
+    const msg =
+      `companion skills가 무시되고 있어 설치 커밋에 담을 수 없습니다:\n` +
+      companionAtRisk.map((p) => `      ${p}`).join('\n') +
+      `\n    팀원의 fresh clone·CI에는 이 스킬들이 없습니다(그쪽 Builder는 방법론 보조를 못 받습니다).\n` +
+      `    추적하려면: git add -f <위 경로>   또는 .gitignore 에서 해당 규칙을 걷어내십시오.`
+    if (opts.strict) throw new Error(`[--strict] ${msg}`)
+    console.warn(`⚠️  ${msg}\n    (설치는 계속 — 강제 중단하려면 --strict)`)
+  }
+
   // staged·overlapping이 있으면 **안전한 커밋 안내를 만들 수 없다**(커밋이 인덱스 전체를 담고, 겹침은 사후 분리 불가).
   // 기본 모드는 설치를 막지 않는다(비파괴·비-breaking) — 안내를 내지 않을 뿐. `--strict`는 쓰기 전에 중단한다.
   if (opts.strict && (preexistingDirty.staged.length > 0 || preexistingDirty.overlapping.length > 0)) {
