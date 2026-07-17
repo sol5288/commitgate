@@ -3,14 +3,52 @@
   "branch": "feat/req-2026-023-companion-docs-support-matrix",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f6f55-fb01-75f0-8038-4828aa4a496c",
+  "review_base_sha": "d93565450d8108d1ba6247f0a742c0b0ce725ca5",
+  "review_diff_hash": "27079c2998f9fd59151d5f810ce21928a21ded80",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "c46f64f21eef8300c8892f44b18c38e8c3bd89740b6b36c77c343b0f79d853f0",
+  "current_phase": "phase-1-docs-support-matrix",
+  "phases": [
+    {
+      "id": "phase-1-docs-support-matrix",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-docs-support-matrix",
+    "outcome": "approved",
+    "compare_hash": "27ff39e9c451fe3931adddb4076416a3609fa79980121611b607c475dd5fe736",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-17T09:10:31.500Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-023/responses/design-r08-approved.json",
+    "response_sha256": "2b180f4dcc782e449853b17c69cbae0cc2803e7e02127ef8563e22fd3aec7d20",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "5bae8fe80c40431db32a74d48a23df1290a7c53e",
+    "codex_thread_id": "019f6f47-822e-77d0-8609-2a306cacd9a3",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-17T08:54:28.701Z",
+    "design_hash": "c46f64f21eef8300c8892f44b18c38e8c3bd89740b6b36c77c343b0f79d853f0"
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "27079c2998f9fd59151d5f810ce21928a21ded80",
+      "phase_id": "phase-1-docs-support-matrix",
+      "consumed_by_commit_sha": "fc1c629556553948976fd31ee8b6bc58c04c66e1",
+      "approval_consumed_at": "2026-07-17T09:12:00.576Z"
+    }
+  ]
 }
