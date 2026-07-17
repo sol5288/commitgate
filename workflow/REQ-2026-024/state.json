@@ -3,14 +3,67 @@
   "branch": "feat/req-2026-024-init-write-path-symlink-defense",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f6fa8-d7ae-72c2-8238-dc372e4a86f1",
+  "review_base_sha": "5acbe56837e1af51b5d43c1c31a46b62784cefb0",
+  "review_diff_hash": "0102c52fa25cf9436d172c49192be0b7469fed8b",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "d5b1035944b963c8208bb93530a9144a0512ed53500c7cc65b2a939ce5fb7e1a",
+  "current_phase": "phase-2-confine-individual-writes",
+  "phases": [
+    {
+      "id": "phase-1-confine-helper-add",
+      "approved": true
+    },
+    {
+      "id": "phase-2-confine-individual-writes",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-confine-individual-writes",
+    "outcome": "approved",
+    "compare_hash": "b34b1e52f638c97aaa82d497021930b8ca755f9fb10851bb4887f8c20a13b319",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-17T10:40:32.777Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-024/responses/design-r02-approved.json",
+    "response_sha256": "5578ff1182fc6de6708196c5570a3c1821cc74bb82659ec756e5bd7dd81a98d2",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "f912f27fee5536879239733f022a163ccf0a3d8a",
+    "codex_thread_id": "019f6f86-97eb-7be2-8e22-f62f23b6b691",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-17T10:03:20.405Z",
+    "design_hash": "d5b1035944b963c8208bb93530a9144a0512ed53500c7cc65b2a939ce5fb7e1a"
+  },
+  "user_commit_confirmed": {
+    "confirmed": true,
+    "method": "in-chat: \"req:commit --finalize-design 승인\" (design-r02 감사 기록 아카이브)",
+    "confirmed_at": "2026-07-17T10:55:13.040Z",
+    "note": "감사 기록이며 위조불가 증명이 아니다(REQ-D 후속). 사용자가 AskUserQuestion 통제점에서 선택했다."
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "7c3daf21d7c6dc76db9cf44e94b964cbcc97244a",
+      "phase_id": "phase-1-confine-helper-add",
+      "consumed_by_commit_sha": "86d91ac74fd96f168a308f61af95a871ae943e28",
+      "approval_consumed_at": "2026-07-17T10:30:22.287Z"
+    },
+    {
+      "approved_tree": "0102c52fa25cf9436d172c49192be0b7469fed8b",
+      "phase_id": "phase-2-confine-individual-writes",
+      "consumed_by_commit_sha": "ebd1ea31892b430dc6794f8626e831adc26ba898",
+      "approval_consumed_at": "2026-07-17T10:53:03.547Z"
+    }
+  ]
 }
