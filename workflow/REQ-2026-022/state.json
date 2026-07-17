@@ -3,14 +3,62 @@
   "branch": "feat/req-2026-022-companion-coexist-smoke",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f6f20-7765-7ff2-a08a-6255384a6e44",
+  "review_base_sha": "8b4aab495a54ab651f7e61fb403f2cfd68ef8fa7",
+  "review_diff_hash": "cde3bcf319d0fc9b939a152d72b30d73fa1f334a",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "design_approved": true,
+  "design_approved_hash": "5f9c13b8d3fc8e6cfe723dda38371f9b3716616d976790199c90ff327d80ee22",
+  "current_phase": "phase-2-smoke-companion",
+  "phases": [
+    {
+      "id": "phase-1-coexist-migrate",
+      "approved": true
+    },
+    {
+      "id": "phase-2-smoke-companion",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-022/responses/design-r01-approved.json",
+    "response_sha256": "8403f2a9f08c55099678f4bbc55ea9aa00a1545a237d65a5695c23690247de0a",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "8007c7c4508bd22c6d6ae0f9796373b0350c32b3",
+    "codex_thread_id": "019f6efd-8b94-7fb2-afa8-a36b2644df90",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-17T07:32:37.937Z",
+    "design_hash": "5f9c13b8d3fc8e6cfe723dda38371f9b3716616d976790199c90ff327d80ee22"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-smoke-companion",
+    "outcome": "approved",
+    "compare_hash": "8544a7233aa43a32476377077e8a8363a44520cd8fe310baee6b1f7577f9abb3",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-17T08:11:47.067Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "0640bedfbe9c908b0373537749e792a01baea33e",
+      "phase_id": "phase-1-coexist-migrate",
+      "consumed_by_commit_sha": "6f8a618a8c3bf3ee92a64579db6436e0a568043a",
+      "approval_consumed_at": "2026-07-17T07:47:42.298Z"
+    },
+    {
+      "approved_tree": "cde3bcf319d0fc9b939a152d72b30d73fa1f334a",
+      "phase_id": "phase-2-smoke-companion",
+      "consumed_by_commit_sha": "3b12e41b3cc3d7db6730c8940bf8da00acbc6887",
+      "approval_consumed_at": "2026-07-17T08:13:12.516Z"
+    }
+  ]
 }
