@@ -86,7 +86,7 @@ flowchart TB
     Builder["Builder AI 에이전트<br/>(Claude/Cursor)"]
 
     subgraph Repo["대상 git 저장소 (로컬)"]
-        CLI["CommitGate CLI<br/>req:new/next/review-codex/doctor/commit"]
+        CLI["CommitGate CLI<br/>(node_modules/commitgate 런타임)<br/>req:new/next/review-codex/doctor/commit"]
         WF["workflow/REQ-*/<br/>state.json · 설계문서 · responses/"]
         Git["git 인덱스·HEAD·트리"]
         Src["대상 소스 코드"]
@@ -114,7 +114,7 @@ flowchart TB
 
 ## 4. 핵심 시나리오(현재 구현 근거)
 
-1. **설치**: `npx commitgate` → 대상 repo에 `scripts/req/*`·스키마·계약파일 복사, `package.json`에 `req:*` 스크립트/devDeps 주입. 파일만 놓고 커밋하지 않는다([bin/init.ts](../../bin/init.ts) `runInit`).
+1. **설치**: **2단계다** — `npm install -D commitgate`로 런타임 패키지를 devDependency로 설치한 뒤 `npx commitgate init`. init은 **관리 자산만 배치한다**(스키마 2종·`review-persona.md`, `req.config.json` 시드, `AGENTS.md`·에이전트 진입점). **실행 코드는 복사하지 않는다** — `scripts/req/**`는 `node_modules/commitgate` 안에만 있고, 대상 `package.json`에는 `req:* = commitgate <verb>`만 주입돼 그 런타임으로 dispatch된다(기존 키는 덮지 않음). `tsx`·`ajv`·`cross-spawn`도 **주입하지 않는다** — `commitgate` 패키지의 runtime `dependencies`라 전이 설치된다. 파일만 놓고 커밋하지 않는다([bin/init.ts](../../bin/init.ts) `planInstall`·`STAGE_B_REQ_SCRIPTS`). 기존 Stage A(vendored scaffold) 설치본이면 init이 쓰기 전에 **fail-closed로 막고** `commitgate migrate`로 보낸다([bin/init.ts](../../bin/init.ts) `detectStageA`, [bin/migrate.ts](../../bin/migrate.ts)).
 2. **티켓 생성**: `req:new <slug> --run` → clean 워킹트리 요구, `feat/req-*` 브랜치 생성, 티켓 디렉터리+4개 문서+`state.json` 생성 후 스캐폴드 커밋([scripts/req/req-new.ts](../../scripts/req/req-new.ts) `main`).
 3. **설계 리뷰**: 00/01/02를 `git add` → `req:review-codex --kind design --run` → Codex가 설계 docs를 리뷰. 승인 시 `design_approved=true`, 설계 해시 바인딩([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) `applyVerdict`).
 4. **구현·phase 리뷰**: phase 구현 → `git add` → `req:doctor` PASS → `req:review-codex --kind phase --phase <p> --run`. 승인은 `findings=[]`일 때만이며 staged tree OID에 바인딩([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) `validateVerdict` R10).

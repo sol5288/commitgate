@@ -54,11 +54,32 @@ CommitGate에는 HTTP API·웹훅·메시지 큐가 없다(`해당 없음`). "AP
 
 정상 성공 뒤 `consumeState`는 로컬 `state.json`을 쓰지만 그 변경을 자동 커밋하지 않는다. 두 git 커밋의 성공과 실행 상태 뷰의 원격 내구화는 별개다.
 
-### 1.6 설치기 `commitgate` / `commitgate uninstall`
-| 명령 | 인자 | 부작용 |
-|---|---|---|
-| `commitgate` | `--dir <p>`, `--force`, `--dry-run`, `--strict`, `--no-agent-entrypoints`, `-h` | 파일 복사·주입(프리플라이트 통과 후). 커밋 없음 |
-| `commitgate uninstall` | `--dir <p>`, `-h` | 없음(읽기 전용 계획만) |
+### 1.6 `commitgate` bin — dispatch·init·migrate·uninstall
+
+**Stage B 런타임 패키지 모델**: `commitgate`는 대상 repo의 devDependency로 설치되고, `node_modules/.bin/commitgate` → [bin/commitgate.mjs](../../bin/commitgate.mjs)가 verb를 **패키지 내부** 모듈로 보낸다. 대상 repo에는 실행 코드가 없다.
+
+**verb 표**([bin/dispatch.mjs](../../bin/dispatch.mjs) `VERB_MODULES`):
+
+| verb | 대상 모듈 |
+|---|---|
+| `req:new` · `req:next` · `req:review-codex` · `req:doctor` · `req:commit` | 패키지 안의 `scripts/req/<해당>.ts`(계약은 §1.1~§1.5) |
+| `uninstall` | [bin/uninstall.ts](../../bin/uninstall.ts) |
+| `migrate` | [bin/migrate.ts](../../bin/migrate.ts) |
+| `init` | [bin/init.ts](../../bin/init.ts) |
+
+**argv 해소**([bin/dispatch.mjs](../../bin/dispatch.mjs) `resolveDispatch`): 알려진 verb → 해당 모듈(verb 토큰 소비). **argv 없음 또는 첫 인자가 `-`로 시작** → `init`에 **argv 전체** 전달(`npx commitgate --dry-run` 하위호환). **그 외 비-옵션 미지 토큰 → `unknown` = fail-closed** — 오타를 조용히 init으로 보내지 않는다.
+
+| 명령 | 인자 | 선행 | 부작용 |
+|---|---|---|---|
+| `commitgate [init]` | `--dir <p>`, `--force`, `--dry-run`, `--strict`, `--no-agent-entrypoints`, `-h` | **D19 → D14**(아래) | 관리 자산 복사 + `package.json`의 `req:*` = `commitgate <verb>` 주입(없는 키만). **런타임 무복사 · devDeps 무주입**. 커밋 없음 |
+| `commitgate migrate` | `--dir <p>`(기본 cwd), `--apply`, `--dry-run`, `-h`. 미지 인자 → throw | `--apply`면 `devDependencies.commitgate` 키 존재 | **기본 dry-run(쓰기 0건)**. `--apply`는 **`package.json` 한 파일**만. 삭제·커밋 없음 |
+| `commitgate uninstall` | `--dir <p>`, `-h`. 미지 인자 → throw | — | 없음(읽기 전용 계획만). `--run`/`--force`/`--apply` **부재가 계약** |
+
+**init preflight 순서가 계약이다**([bin/init.ts](../../bin/init.ts) `runInit`): ① **D19** `detectStageA` — `req:*`가 정확히 `REQ_SCRIPTS` 값이거나 `scripts/req/`가 존재하면 throw + `commitgate migrate` 안내(막지 않으면 plain init이 기존 `req:*`를 덮지 않아 **런타임은 vendored인 조용한 혼합 설치**가 된다). ② **D14** `commitgateDeclared` — `devDependencies.commitgate` **키 존재만** 확인(값 형태 미검증 — `npm i -D <tgz>`는 `file:…tgz`를 쓴다), 없으면 throw + `npm install -D commitgate` 안내. 둘 다 preflight라 **어떤 파일도 쓰기 전에** 중단한다. 뒤집으면 Stage A 설치본에는 `devDependencies.commitgate`가 없어 **Stage A 사용자가 migrate 안내에 영원히 도달하지 못한다**(design r20 P1).
+
+**migrate 전환 규칙**([bin/migrate.ts](../../bin/migrate.ts) `decideScripts`): `req:*` 중 **현재 값이 정확히 Stage A 주입값(`REQ_SCRIPTS`)인 키만** `commitgate <verb>`로 바꾼다(`convert`). 이미 Stage B면 무동작(`stage-b`), 한 글자라도 다르면 사용자 값이므로 **보존 + 수동 조치 안내**(`custom`). 비파괴 계약: `scripts/req/**`·스키마·persona·config·진입점·`workflow/REQ-*` 증거를 **삭제하지 않는다**. 대상 root는 `--dir`(기본 cwd)로만 해소한다 — `resolveRoot`의 fallback을 타면 CommitGate 패키지 **자신의** `package.json`을 재작성하기 때문이다.
+
+**uninstall read-only 불변식**([bin/uninstall.ts](../../bin/uninstall.ts)): `node:fs` 조회 API만 쓰고, git은 read-only 서브커맨드 allowlist(`rev-parse`·`status`·`ls-files`·`log`)만 호출하며, **`node:child_process`를 import하지 않는다**. Stage B 런타임 제거 안내(`npm uninstall -D commitgate`)는 **문자열 출력일 뿐 npm을 spawn하지 않는다**([bin/uninstall.ts](../../bin/uninstall.ts) `renderRuntimeRemovalSection`) — 제거는 사용자가 package manager로 직접 수행한다.
 
 ## 2. Codex 리뷰 연동 계약
 
@@ -122,9 +143,14 @@ override 인자(모델/추론강도)는 값이 있을 때만 주입: `-c model="
 `git status`는 `-z` 사용(경로에 `"`/`\`/제어문자/비ASCII가 있어도 C-quote로 깨지지 않게). rename/copy는 `-z`에서 NEW 먼저·OLD 다음 순서([scripts/req/lib/porcelain.ts](../../scripts/req/lib/porcelain.ts)).
 
 ## 4. npm/npx 연동
-- 배포 산출물은 `package.json` `files[]`로 화이트리스트(`scripts/req`, `workflow/*.schema.json`, `review-persona.md`, `bin`, `templates`, `AGENTS.template.md`, `req.config.json.sample`, README, CHANGELOG 등).
-- `npx commitgate`는 전역 설치가 아니라 npm 캐시 `_npx/<hash>/`에서 1회 실행([README.md](../../README.md) 제거 섹션).
-- 설치기가 대상 `package.json`에 주입: 스크립트 `req:new/review-codex/doctor/next/commit` = `tsx scripts/req/*.ts`; devDeps `ajv ^8.20.0`, `cross-spawn ^7.0.6`, `tsx ^4.19.1`(기존 키는 보존, 없는 키만 주입)([bin/init.ts](../../bin/init.ts) `REQ_SCRIPTS`/`REQ_DEV_DEPS`).
+- 배포 산출물은 `package.json` `files[]`로 화이트리스트(`scripts/req`, `workflow/*.schema.json`, `review-persona.md`, `bin`, `templates`, `AGENTS.template.md`, `req.config.json.sample`, README, CHANGELOG 등). `scripts/req`는 **tarball에는 들어가되 대상 repo로 복사되지 않는다** — 패키지 자신의 bin이 그리로 dispatch한다(tarball 축과 복사 축은 별개, [bin/init.ts](../../bin/init.ts) `planInstall`).
+- **설치 형태는 2단계다(Stage B)**: `npm install -D commitgate`로 런타임을 devDependency에 두고 `npx commitgate init`으로 관리 자산을 배치한다. `npx commitgate`는 전역 설치가 아니라 npm 캐시 `_npx/<hash>/`에서 1회 실행이지만([README.md](../../README.md) 제거 섹션), init은 `devDependencies.commitgate` 선언이 없으면 D14에서 중단하므로 **1회 실행만으로는 설치가 끝나지 않는다**(§1.6).
+- 설치기가 대상 `package.json`에 주입하는 것은 **`req:*` 스크립트뿐**이다: `req:new/review-codex/doctor/next/commit` = **`commitgate <verb>`**, **없는 키만**(`if (!(k in scripts))` — 기존 키·사용자 정의 값 보존)([bin/init.ts](../../bin/init.ts) `STAGE_B_REQ_SCRIPTS`, 키 집합은 `REQ_SCRIPTS`에서 파생).
+- **devDeps는 주입하지 않는다**: `ajv`·`cross-spawn`·`tsx`는 `commitgate` 패키지의 runtime `dependencies`라 `npm i -D commitgate` 시 전이 설치된다. 대상 `package.json`의 `devDependencies`는 **건드리지 않는다**(사용자 소유 — `devDependencies.commitgate`도 사용자가 `npm i -D`로 넣은 것이다). 재대입 자체를 하지 않으므로 `devDependencies`가 없던 `package.json`에 빈 `{}`가 생기는 부작용도 없다([bin/init.ts](../../bin/init.ts) `runInit`).
+- **두 상수의 역할이 바뀌었다**([bin/init.ts](../../bin/init.ts)) — 이제 어느 쪽도 주입에 쓰이지 않는다:
+  - `REQ_SCRIPTS`(`tsx scripts/req/*.ts`) = **Stage A 서명 SSOT**. "우리가 무엇을 주입하는가"가 아니라 **"과거에 무엇을 주입했는가"** 의 기록이며, 세 소비자가 바이트 정확 일치를 판정한다 — `detectStageA`(init preflight D19) · [bin/uninstall.ts](../../bin/uninstall.ts)(기존 Stage A 설치본 분류) · [bin/migrate.ts](../../bin/migrate.ts) `decideScripts`(전환 대상 판정). 값을 바꾸면 기존 Stage A 설치본을 더 이상 인식하지 못한다.
+  - `REQ_DEV_DEPS`(`ajv ^8.20.0`·`cross-spawn ^7.0.6`·`tsx ^4.19.1`) = **legacy 분류용으로만 남아 있다**. [bin/uninstall.ts](../../bin/uninstall.ts)가 기존 Stage A 설치본의 devDeps를 분류할 때만 순회한다.
+- `npx commitgate uninstall`은 런타임을 지우지 않는다 — 사용자가 `npm uninstall -D commitgate`를 직접 실행한다(§1.6).
 
 ## 5. 멱등성·레이트 제한·부작용 요약
 
@@ -135,7 +161,8 @@ override 인자(모델/추론강도)는 값이 있을 때만 주입: `-c model="
 | `req:review-codex` | 조건부(재리뷰 안전, 라운드 증가) | Codex 계정 usage limit(외부) | state·아카이브 |
 | `req:doctor` | 예 | 없음 | 티켓 상태·소스 변경 없음(단 git `write-tree`가 `.git/objects`, `status`가 `.git/index` stat-cache 갱신 가능 — §1.4) |
 | `req:commit` | 조건부(evidence-finalize 중복 skip) | 없음 | 2커밋·state |
-| `commitgate`(install) | 예(기존 보존, 재실행 skip) | 없음 | 파일 복사·주입 |
+| `commitgate`(init) | 예(기존 보존, 재실행 skip) | 없음 | 관리 자산 복사 + `req:*` 주입(런타임 무복사·devDeps 무주입) |
+| `commitgate migrate` | 예(전환된 키는 `stage-b` 판정 → 무동작) | 없음 | dry-run 없음 / `--apply`는 `package.json` 한 파일 |
 | `commitgate uninstall` | 예(읽기 전용) | 없음 | 없음 |
 
 ## 6. 목표 API와 현재 API의 경계

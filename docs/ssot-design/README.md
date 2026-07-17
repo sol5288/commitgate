@@ -8,22 +8,22 @@
 
 | 항목 | 값 | 근거 |
 |---|---|---|
-| 대상 커밋 SHA | `8bc02de28bae3c09fabc5ed271841c90f4bccc0e` (`8bc02de`) | `git rev-parse HEAD` |
-| 조사 일시 | 2026-07-16 | 세션 컨텍스트 `current_date` |
+| 대상 커밋 SHA | `0962d37be269906b3520087526da574dc6bbd6d8` (`0962d37`) | `git rev-parse HEAD` |
+| 조사 일시 | 2026-07-17 | 세션 컨텍스트 `current_date` |
 | 대상 브랜치 | `main` | `git rev-parse --abbrev-ref HEAD` |
 | 패키지 버전 | `commitgate@0.6.0` | [package.json](../../package.json) |
 | 라이선스 | MIT | [LICENSE](../../LICENSE) |
 
 ## 2. 제품 한 줄 정의
 
-**CommitGate는 AI 코딩 에이전트(Builder)가 만든 변경을 독립 Reviewer의 승인·정확한 git tree·감사 증거에 묶어, 협조적 워크플로에서 검증되지 않은 커밋을 fail-closed로 차단하는 로컬 거버넌스 kit다.** 대상 프로젝트에 `scripts/req/*` CLI와 계약 파일(`AGENTS.md` 등)을 복사(vendored scaffold)하는 방식으로 설치된다.
+**CommitGate는 AI 코딩 에이전트(Builder)가 만든 변경을 독립 Reviewer의 승인·정확한 git tree·감사 증거에 묶어, 협조적 워크플로에서 검증되지 않은 커밋을 fail-closed로 차단하는 로컬 거버넌스 kit다.** 대상 프로젝트에는 **devDependency로 설치**된다 — `npm install -D commitgate` → `npx commitgate init`의 2단계다(**Stage B 런타임 패키지 모델**). init은 스키마·persona·설정·계약(`AGENTS.md` 등)·진입점 같은 **관리 자산만 배치**하고 `scripts/req/**` 런타임을 복사하지 않으며, `tsx`·`ajv`·`cross-spawn`도 대상 `package.json`에 주입하지 않는다(이들은 `commitgate` 패키지의 runtime `dependencies`) — `planInstall`([bin/init.ts](../../bin/init.ts)). 실행 코드는 `node_modules/commitgate`에만 있고, 대상의 `req:*` 스크립트는 `commitgate <verb>` 형태로 패키지 런타임에 dispatch된다(`VERB_MODULES`([bin/dispatch.mjs](../../bin/dispatch.mjs))). 파일 복사로 설치하던 **Stage A(vendored scaffold)는 legacy**이며 `commitgate migrate`([bin/migrate.ts](../../bin/migrate.ts))의 전환 대상이다.
 
 핵심 가치는 “AI가 더 많은 코드를 쓰게 하는 것”이 아니라 **AI 변경을 사람이 통제·검증·감사할 수 있는 증거 단위로 바꾸는 것**이다. 현재는 로컬·협조적 작업자 범위이며, CI 강제·외부 전송 안전·상태 재구축은 목표 상태([14](14-product-strategy-and-roadmap.md))다.
 
 ## 3. 독자와 범위
 
 - **독자**: 재구현을 맡은 시니어 개발자, 아키텍트, QA. Node.js/TypeScript/git에 익숙하다고 가정한다.
-- **범위**: `npx commitgate` 설치기, `req:new/next/review-codex/doctor/commit` 5개 CLI, Codex/git 연동, 워크플로 상태·증거 데이터 모델, 테스트·CI·릴리즈 절차.
+- **범위**: `npx commitgate` 설치기(`init`)와 verb dispatch([bin/dispatch.mjs](../../bin/dispatch.mjs)), legacy Stage A 전환기(`migrate`([bin/migrate.ts](../../bin/migrate.ts))), `req:new/next/review-codex/doctor/commit` 5개 워크플로 CLI, Codex/git 연동, 워크플로 상태·증거 데이터 모델, 테스트·CI·릴리즈 절차.
 - **비범위**: 대상 프로젝트(사용자 repo)의 애플리케이션 로직, Codex/OpenAI 내부 구현, npm 레지스트리 내부.
 
 ## 4. 재구현 권장 읽는 순서

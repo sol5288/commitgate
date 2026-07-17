@@ -3,7 +3,7 @@
 ## 1. 문서 범위 / 비범위
 
 ### 범위(In)
-- `npx commitgate` 설치기([bin/init.ts](../../bin/init.ts))·제거 플래너([bin/uninstall.ts](../../bin/uninstall.ts))·런처([bin/commitgate.mjs](../../bin/commitgate.mjs))
+- `npx commitgate` 설치기([bin/init.ts](../../bin/init.ts))·legacy Stage A 전환기([bin/migrate.ts](../../bin/migrate.ts))·제거 플래너([bin/uninstall.ts](../../bin/uninstall.ts))·런처([bin/commitgate.mjs](../../bin/commitgate.mjs))와 verb dispatch([bin/dispatch.mjs](../../bin/dispatch.mjs) `VERB_MODULES`)
 - 워크플로 CLI 5종: `req:new`, `req:next`, `req:review-codex`, `req:doctor`, `req:commit`([scripts/req/](../../scripts/req/))
 - 공유 라이브러리: `config`, `adapters`, `porcelain`, `scratch`([scripts/req/lib/](../../scripts/req/lib/))
 - 데이터 모델: 티켓 `state.json`, Codex 응답 스키마([workflow/machine.schema.json](../../workflow/machine.schema.json)), 설정 스키마([workflow/req.config.schema.json](../../workflow/req.config.schema.json)), 증거 로그(`responses/approvals.jsonl`)
@@ -33,13 +33,15 @@
 | **scratch** | clean-tree 검사에서 무시되는 도구 산출물(`state.json`, `codex-response.json`, `.review-preview.txt`). | [scripts/req/lib/scratch.ts](../../scripts/req/lib/scratch.ts) |
 | **evidence-finalize** | 소스 커밋 뒤 승인 증거(`approvals.jsonl` + 아카이브)를 별도 chore 커밋으로 고정하는 단계. | [scripts/req/req-commit.ts](../../scripts/req/req-commit.ts) |
 | **fail-closed** | 불확실·오류·부재 시 통과가 아니라 **차단/실패**로 처리하는 원칙. | 저장소 전반 |
-| **vendored scaffold** | 라이브러리 의존이 아니라 파일 복사로 설치되는 Stage A 모델. | [README.md](../../README.md) 현재 범위 |
-| **D-체크** | `req:doctor`의 일관성 검사(D2·D3·D5·D6·D9·D10·D11·D13·D15·D16·D17·D18). | [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) |
+| **Stage B 런타임 패키지 모델** | **현재 설치 모델.** `commitgate`를 대상 저장소의 devDependency로 설치해 실행 코드는 `node_modules/commitgate`에 두고, 대상에는 관리 자산과 `req:* = commitgate <verb>` 스크립트만 배치한다. | `planInstall`([bin/init.ts](../../bin/init.ts)), [README.md](../../README.md) |
+| **관리 자산 / 런타임** | **관리 자산** = Stage B에서 대상 저장소에 배치되는 스키마·persona·설정·계약·진입점. **런타임** = `node_modules/commitgate` 안의 실행 코드. 둘을 섞어 부르지 않는다. | `planInstall`([bin/init.ts](../../bin/init.ts)) |
+| **vendored scaffold (Stage A)** | 라이브러리 의존이 아니라 파일 복사로 설치되던 **legacy 모델**. `scripts/req/**`가 대상에 복사되고 `req:*`가 이를 직접 실행한다. 현재 설치 모델이 아니며 `commitgate migrate` 전환 대상이다. `init`은 Stage A 서명을 감지하면 무쓰기로 중단하고 migrate를 안내한다. | `planMigrate`([bin/migrate.ts](../../bin/migrate.ts)), `classifyInstallMode`([scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts)) |
+| **D-체크** | `req:doctor`의 일관성 검사(D2·D3·D5·D6·D9·D10·D11·D13·D15·D16·D17·D18·D19). D19는 `req:*` **값의 형태**만으로 설치 모드(`stage-a`/`stage-b`/`mixed`/`none`/`custom`)를 진단하며, **`mixed`만 WARN — 절대 FAIL이 아니다**(Stage A는 결함이 아니라 지원되는 설치 형태). | [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `classifyInstallMode` |
 | **D9/D10/D11 등(설계 결정 ID)** | `01-design.md`가 부여하는 안정적 설계 결정 식별자. 코드 주석·문서가 이 ID로 상호 참조한다(예: D9 staged-tree 바인딩). | 각 티켓 `01-design.md` |
 | **논리 수명주기** | `req:next`가 state+git에서 파생하는 DESIGN_REVIEW·PHASE_IMPL·DONE 등의 설명용 상태. `state.json.phase`의 자동 전이를 뜻하지 않는다. | [07-business-rules-and-state-machines.md](07-business-rules-and-state-machines.md) §4 |
 | **목표 상태(Target)** | 아직 구현되지 않았지만 제품이 도달해야 할 계약·설계·지표. [14](14-product-strategy-and-roadmap.md)에만 정의하며 현재 보장과 분리한다. | [14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md) |
 
-> **주의**: `01-design.md`가 부여하는 설계 결정 ID(D1…D18)와 `req:doctor`의 D-체크 ID는 **번호 공간이 겹치지만 다른 개념**이다. 본 SSOT에서 "D9 체크"는 doctor 검사를, "설계결정 D9"는 설계 문서 결정을 가리킨다. 문맥으로 구분한다.
+> **주의**: `01-design.md`가 부여하는 설계 결정 ID(D1…D19)와 `req:doctor`의 D-체크 ID는 **번호 공간이 겹치지만 다른 개념**이다. 본 SSOT에서 "D9 체크"는 doctor 검사를, "설계결정 D9"는 설계 문서 결정을 가리킨다. 문맥으로 구분한다. 실제 충돌 예: [REQ-2026-014](../../workflow/REQ-2026-014/01-design.md)의 설계결정 D19(Stage A 서명 감지)·D14(선행 설치 확인)는 doctor D19(설치 모드 진단)와 번호만 겹칠 뿐 다른 것이고, doctor D-체크 공간에서 D14는 예약 결번이다.
 
 ## 3. 명명 규칙
 

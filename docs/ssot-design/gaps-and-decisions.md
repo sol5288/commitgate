@@ -35,11 +35,15 @@
 - **근거**: [scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) 주석(D5 stateless).
 - **재구현 원칙**: 재리뷰는 stateless(새 스레드)가 현재 동작. resume는 향후 opt-in용 보존 코드로 취급.
 
-### G-06a. 리뷰 라운드 상한·escalation 없음 (영향: 대)
-- **사실**: 설계/phase 리뷰의 **재검수 횟수 상한이 없다.** needs-fix면 무한히 반복할 수 있고, 상한 도달 시 PM에게 넘기는 escalation 경로도 없다. 유일한 회로차단기 `blocked`는 `findings=[]`일 때만 발화하므로([07](07-business-rules-and-state-machines.md) §7), findings가 계속 나오는 비수렴 루프에서는 **영원히 걸리지 않는다**.
-- **근거**: 실측 — REQ-2026-014 설계 리뷰가 **r30**까지 진행. REQ-2026-015(4R)·016(2R)·017(2R)은 terminal 폐기.
+### G-06a. 리뷰 라운드 상한·escalation 없음 (영향: 대 — **열린 gap**)
+- **사실**: 설계/phase 리뷰의 **재검수 횟수 상한이 없다.** needs-fix면 무한히 반복할 수 있고, 상한 도달 시 PM에게 넘기는 escalation 경로도 없다. 유일한 회로차단기 `blocked`는 `findings=[]`일 때만 발화하므로([07](07-business-rules-and-state-machines.md) §7), findings가 계속 나오는 비수렴 루프에서는 **영원히 걸리지 않는다**. **이 문장은 `0962d37` 기준으로도 그대로 유효하다 — 상한·escalation 기능은 여전히 구현되지 않았다.**
+- **근거(역사 — 비수렴 이력)**: 실측 — REQ-2026-014 설계 리뷰가 **r30**까지 진행. REQ-2026-015(4R)·016(2R)·017(2R)은 terminal 폐기.
+- **2026-07-17 갱신 — 역사와 현재 공식 기록을 혼동하지 말 것**: REQ-2026-014는 위 비수렴 이력 이후 **설계 범위를 축소**(`f7ad5ea`)하고 **수렴했다**. 아카이브된 공식 기록은 `design-r20-needs-fix.json`(**P1 2건**) → 수정 → `design-r21-approved.json`(**findings 0건**)이며, phase 1~5는 각 r01 승인(0건)이다([13](13-review-and-validation-log.md) §9.1).
+  - ⚠️ **이 r20/r21은 위 "r30까지" 이력의 r20~r30과 같은 라운드가 아니다.** 아카이브 r19의 `review_base_sha`는 `c978358`(티켓 생성 시점)이고, r20/r21은 둘 다 `fae8c81`(2026-07-16 이후)이다. `git log -- workflow/REQ-2026-014/responses/`에 추적된 design 응답은 r19·r21·r20 **세 개뿐**이다.
+  - **번호가 재사용되는 이유**: 라운드 번호는 리뷰 실행 횟수가 아니라 **디스크에 남아 있는 기존 아카이브 파일명**에서 파생된다 — `nextArchiveRound`는 그 목록의 `max round + 1`을 낸다([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) `nextArchiveRound`/`archiveFileName`). 따라서 아카이브로 남지 않은 라운드는 번호에 반영되지 않고 **번호가 다시 쓰인다**. 즉 **라운드 번호는 실제 리뷰 횟수의 하한**이며, 두 r20을 같은 라운드로 읽으면 안 된다.
+  - **수렴의 원인은 코드가 아니다**: r20→r21 수렴은 **사람의 범위 축소**와 P1 전용 차단 채널(REQ-2026-018, [13](13-review-and-validation-log.md) §7)의 결과이지, 상한을 강제하는 코드의 결과가 아니다. 표본 1건이 정책의 실효를 증명하지도 않는다(G-11). **gap은 열린 채로 둔다.**
 - **PM 정책(코드 미반영)**: 설계 리뷰 상한 기본 2회, P1 잔존 시 3회, **절대 최대 5회**. 상한에서 새 예외를 만들지 말고 출시·범위 축소·중단을 결정한다. 현재 이 정책을 **강제하는 코드가 없다** — 사람이 집행해야 한다.
-- **재구현 원칙**: 상한은 아카이브 라운드 수(`nextRound`)로 계산 가능하다. 상한 도달은 **승인이 아니라 escalation**(별도 exit code)이어야 한다. REQ-2026-018은 이를 명시적 비목표로 두고 후속에 넘겼다.
+- **재구현 원칙**: 상한을 아카이브 라운드 수(`nextArchiveRound`)로 계산하려면 **위 번호 재사용 문제를 먼저 풀어야 한다** — 아카이브되지 않은 라운드는 세어지지 않으므로 현재 번호로 상한을 걸면 실제보다 관대해진다. 상한 도달은 **승인이 아니라 escalation**(별도 exit code)이어야 한다. REQ-2026-018은 이를 명시적 비목표로 두고 후속에 넘겼다.
 
 ### G-06b. 승인 후 편집 시 전면 재리뷰(델타 재리뷰 없음) (영향: 대)
 - **사실**: 설계 문서 해시가 **한 글자만 바뀌어도** design 승인 전체가 무효화되고, 재리뷰는 변경분이 아니라 **설계 전체**를 대상으로 다시 돈다. 스테이트리스 재리뷰는 직전 라운드 findings 스냅샷만 참고하므로, 리뷰어는 자기가 몇 라운드째인지·같은 주제를 몇 번 돌았는지 알지 못한다.
@@ -57,11 +61,15 @@
 - **근거**: [scripts/req/req-commit.ts](../../scripts/req/req-commit.ts) `srcStaged` non-code 차단·`consumeState`; `696faa6` 커밋 메시지의 REQ-2026-018 수동 state finalize 사례.
 - **재구현 원칙**: 현재 동작을 재구현할 때 state 변경을 자동 커밋한다고 가정하지 않는다. 개선 시 immutable event log + state rebuild/check를 먼저 설계하고 기존 아카이브 마이그레이션을 fail-closed로 처리한다([14](14-product-strategy-and-roadmap.md) STR-02).
 
-### G-10. vendored 설치본 버전 원장·안전한 upgrade 없음 (영향: 중)
-- **사실**: 설치기는 파일을 복사하지만 설치 당시 패키지 버전·파일별 원본 sha를 대상 repo에 기록하지 않는다. `--force`는 갱신 수단이지만 사용자 수정과 구버전 원본을 3-way로 구분하는 upgrade 계획이 아니다.
-- **영향**: 여러 repo의 정책이 조용히 다른 버전에 머물 수 있고, 현재 패키지의 강화된 schema/persona가 기존 설치본에 자동 적용된다고 보장할 수 없다. 제거 플래너는 다른 바이트를 안전하게 `review`로 남기므로 데이터 파괴는 피하지만 운영 드리프트는 해소하지 못한다.
-- **근거**: [bin/init.ts](../../bin/init.ts) `planInstall`/`runInit`, [bin/uninstall.ts](../../bin/uninstall.ts) `identical|differs` 분류.
-- **재구현 원칙**: 기존 비파괴 동작을 유지. 개선은 install manifest·plan·3-way 분류·rollback을 함께 제공한다(STR-06).
+### G-10. 자산↔런타임 version skew 및 safe upgrade 계획 부재 (영향: 중)
+- **배경(2026-07-17 갱신)**: Stage B 전환(`0962d37`, REQ-2026-014)으로 **실행 코드의 vendored 드리프트는 해소됐다.** 런타임은 이제 `node_modules/commitgate` 패키지에 있고 init은 `scripts/req/**`를 복사하지 않는다. 그러나 문제는 사라진 것이 아니라 **자리를 옮겼다.**
+- **사실**: 대상 repo에 남는 **관리 자산**(스키마·persona·config·계약·진입점)과 **런타임 패키지**의 버전이 어긋나도 **자동으로 감지할 수단이 없다.** 설치기는 설치 당시 패키지 버전·자산별 원본 sha를 대상 repo에 기록하지 않는다. `npm update commitgate`는 런타임만 올리고 자산은 그대로 둔다. `--force` 재설치는 갱신 수단이지만 사용자 수정과 구버전 원본을 3-way로 구분하는 upgrade 계획이 아니다.
+- **`node_modules` realpath 검증은 해법이 아니었고 제거됐다**: REQ-2026-014는 `node_modules/commitgate` 존재 확인·실행 패키지 realpath 동일성을 **명시적 비목표**로 두고 범위에서 뺐다([bin/init.ts](../../bin/init.ts)의 "범위 밖(REQ-2026-014 §4 비목표)" 주석 — 여기서 §4는 티켓 설계문서의 절이다). 그 검증은 애초에 **upgrade 이후의 자산 skew를 해결하지 못한다** — 실행 중인 패키지가 어디 있는지 확인하는 것과, 대상 repo의 자산이 그 패키지 버전에 맞는지 확인하는 것은 다른 문제다.
+- **D19도 skew를 잡지 않는다**: `req:doctor` D19는 `req:*` **값의 형태만** 보고 `stage-a`/`stage-b`/`mixed`/`none`/`custom`을 분류하며, manifest·lockfile·`node_modules`·버전을 **검증하지 않는다**. mixed만 WARN이고 FAIL이 아니다.
+- **영향**: 여러 repo의 정책이 조용히 다른 버전 조합에 머물 수 있고, 현재 패키지의 강화된 schema/persona가 기존 설치본에 자동 적용된다고 보장할 수 없다. Stage A→B 마이그레이션은 비파괴이지만([bin/migrate.ts](../../bin/migrate.ts)) `package.json`의 `req:*`만 전환할 뿐 **자산을 업그레이드하지 않는다**. 제거 플래너는 다른 바이트를 안전하게 `review`로 남기므로 데이터 파괴는 피하지만 운영 드리프트는 해소하지 못한다.
+- **근거**: [bin/init.ts](../../bin/init.ts) `planInstall`/`runInit`, [bin/migrate.ts](../../bin/migrate.ts), [bin/uninstall.ts](../../bin/uninstall.ts) `identical|differs` 분류, [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `classifyInstallMode`.
+- **관련 관측 — smoke snapshot은 크기만 비교한다**: [scripts/smoke.mjs](../../scripts/smoke.mjs) `snapshot`은 `.git`·`node_modules`를 제외한 **파일 경로 → 바이트 크기** 맵만 만들고 `assertSameTree`가 그것을 비교한다. uninstall read-only·migrate dry-run 비파괴 검증은 이 비교에 의존하므로 **크기가 같은 내용 변경은 놓친다**(내용 해시 미사용). 현재 검증하는 위반(파일 변경·삭제)에는 충분하다는 것이 코드 주석의 근거지만, 보장 범위를 "바이트 동일성"으로 읽으면 안 된다.
+- **재구현 원칙**: 기존 비파괴 동작을 유지. 개선은 install manifest(패키지 버전 + 자산별 sha256)·`upgrade --plan`·3-way 분류·rollback을 함께 제공하고, **런타임 버전과 자산 원장 버전의 skew를 명시적으로 보고**해야 한다([14](14-product-strategy-and-roadmap.md) STR-06). manifest가 이미 존재한다거나 안전한 upgrade가 제공된다고 읽어선 안 된다 — 둘 다 없다.
 
 ### G-11. 사용자 가치·비용·수렴 관측 지표 없음 (영향: 중)
 - **사실**: 텔레메트리·메트릭·집계 CLI가 없다. 개별 archive와 exit code는 있으나 온보딩 시간, 리뷰 라운드 P50/P95, 대기 시간, 실패 코드 비율, fresh-clone 복구율을 자동 산출하지 않는다.
@@ -114,6 +122,6 @@
 ## 4. 고위험/재구현 영향 항목 요약
 - **현재 동작을 1:1 재구현하는 데 필요한 사실은 문서화되어 있으나, 제품 위험이 없다는 뜻은 아니다.**
 - **고영향 제품 gap**: G-06a(무한 NEEDS_FIX), G-06b(전면 재리뷰), G-09(state 비내구/재구축 부재). 이 셋은 사용자 신뢰·완료 가능성에 직접 영향을 주므로 P0다.
-- **중요 보안/운영 gap**: G-01(타임아웃), G-02(외부 전송/secret-safe), G-03(진단 유실), G-05(하드 강제 부재), G-10(업그레이드), G-11(지표), G-12(state schema/수명주기).
+- **중요 보안/운영 gap**: G-01(타임아웃), G-02(외부 전송/secret-safe), G-03(진단 유실), G-05(하드 강제 부재), G-10(자산↔런타임 skew·업그레이드), G-11(지표), G-12(state schema/수명주기).
 - **정합성 gap**: G-06c(브랜치 간 ID 충돌), G-04(`main` 하드코딩). 팀 적용 전에 해결해야 한다.
 - 우선순위·목표 설계는 [14-product-strategy-and-roadmap.md](14-product-strategy-and-roadmap.md)에 연결한다. 프로세스 결정 D-01~D-05는 과거 문서화 제약 대응이며 제품 런타임과 분리한다.

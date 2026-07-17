@@ -174,3 +174,95 @@
 - 현재 구현과 목표 상태의 경계를 분리했고, 재구현에 위험한 수명주기 오기를 바로잡았다.
 - 제품 고영향 gap을 숨기지 않고 STR-01(CI 검증) → STR-02(state 재구축) → STR-03(전송 안전) → STR-04(리뷰 수렴) 순의 P0 계획으로 연결했다.
 - 로컬 문서 QA는 완료했으나 **외부 Reviewer 승인 및 전체 테스트 green은 주장하지 않는다**. 구현 코드는 변경하지 않았다.
+
+## 9. 갱신: REQ-2026-014 Stage B 런타임 패키지 전환 (2026-07-17)
+
+§7·§8은 각각 2026-07-16 시점(`main@8bc02de`) 기준이다. 그 뒤 REQ-2026-014가 main에 들어와 **배포 모델 자체가 Stage A(vendored scaffold)에서 Stage B(런타임 패키지)로 전환**됐으므로 SSOT를 코드에 맞춰 갱신했다. 기준 SHA는 **`0962d37`**, 패키지 버전은 `commitgate@0.6.0`(변경 없음)이다. Stage A는 삭제되지 않았고 **legacy · `commitgate migrate` 대상**으로 남는다.
+
+### 9.1 REQ-2026-014의 리뷰 라운드 (실제 `/req` 게이트)
+
+§1·§7.2의 문서 리뷰와 달리 **이 티켓은 `/req` 워크플로 자체를 통과했다** — 티켓·작업 브랜치·design 승인·phase별 evidence가 모두 존재한다. 증거는 `workflow/REQ-2026-014/responses/`.
+
+| 라운드 | 종류 | 결과 | findings |
+|---|---|---|---|
+| design r20 | design | NEEDS_FIX (`risk_level: HIGH`) | **P1 2건** |
+| design r21 | design | COMPLETE (`commit_approved: yes`) | **0건** (+ 비차단 observation 1건) |
+| phase-1-dispatch r01 | phase | COMPLETE | 0건 |
+| phase-2-init-runtime r01 | phase | COMPLETE | 0건 |
+| phase-3-uninstall-migrate r01 | phase | COMPLETE | 0건 |
+| phase-4-repro-pm r01 | phase | STEP_COMPLETE | 0건 |
+| phase-5-docs-smoke r01 | phase | STEP_COMPLETE | 0건 |
+
+**design r20의 P1 2건**(둘 다 "정상 경로가 성립하지 않는다"는 지적이며, 수정 후 r21에서 재발하지 않았다):
+
+1. **preflight 순서가 D14 → D19였다.** Stage A 설치본에는 `devDependencies.commitgate`가 **없으므로**, 선행 설치 확인(D14)이 Stage A 서명 감지(D19)보다 앞서면 Stage A 사용자는 `npx commitgate init`에서 "npm install -D commitgate" 오류만 만나고 **`commitgate migrate` 안내에 영원히 도달하지 못한다**(티켓 요구 R7의 Stage A plain-init 감지·migration 안내 인수 기준 미달성). → preflight 순서를 **D19 → D14**로 바로잡아 수정. 현재 코드는 [bin/init.ts](../../bin/init.ts) `runInit`에서 `detectStageA`(D19) → `commitgateDeclared`(D14) 순으로 호출하며, 그 순서가 계약임을 `detectStageA` 주석이 명시한다. 둘 다 preflight라 throw 시 어떤 파일도 쓰이지 않는다.
+2. **Phase 5 smoke가 티켓 없는 fresh 대상에서 `req:doctor` rc=0을 기대했다.** [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts)는 REQ id 또는 `--ticket` 없이 즉시 throw하므로 이 경로는 exit 1이 되어 packed-tarball smoke(요구 R11)가 성립하지 않는다. → dispatch 검증을 "성공 종료"가 아니라 **"도달 증명"**(exit≠0 + req-doctor 자신의 사용법 오류)으로 재설계해 수정. fresh·티켓 없는 대상에서 rc=0으로 끝나는 `req:*` verb는 없기 때문이다. 근거 [scripts/smoke.mjs](../../scripts/smoke.mjs).
+
+두 라운드의 `review_base_sha`는 모두 `fae8c81`이다 — 설계 문서 수정은 워킹트리에서 이뤄졌고, r21 승인 뒤 `f7ad5ea`로 커밋됐다.
+
+⚠️ **design 표가 r20에서 시작하는 이유와 번호 주의**: 아카이브에는 이보다 앞선 `design-r19-approved.json`(base `c978358`, findings 0)이 있다. 그 승인은 이후 설계 변경으로 무효화됐고([gaps-and-decisions.md](gaps-and-decisions.md) G-06b), 범위 축소 뒤 리뷰가 r20/r21로 이어졌다. **여기의 r20/r21을 G-06a에 기록된 과거 "r30까지" 비수렴 이력의 r20~r30과 같은 라운드로 읽으면 안 된다** — 라운드 번호는 리뷰 실행 횟수가 아니라 디스크에 남은 아카이브 파일명에서 파생되므로(`nextArchiveRound`) 번호가 재사용된다. 상세는 [gaps-and-decisions.md](gaps-and-decisions.md) G-06a.
+
+### 9.2 구현·증거 커밋
+
+```text
+f7ad5ea design scope reduction     14f5b76 design evidence
+95d94b8 phase 1 dispatch           1d2e9e6 phase 1 evidence
+46b740e phase 2 Stage B init       ec30c2c phase 2 evidence
+e141ac3 phase 3 migrate/uninstall  4e16897 phase 3 evidence
+ef59904 phase 4 doctor D19         f6d4000 phase 4 evidence
+2f3138a phase 5 docs/smoke         2a7ef1b phase 5 evidence
+0962d37 final ticket state and review archive
+```
+
+### 9.3 보고된 검증 결과
+
+| 검증 | 보고된 결과 |
+|---|---|
+| TypeScript | `tsc --noEmit` exit 0 |
+| Vitest | **925/925 통과** |
+| packed-tarball smoke | [scripts/smoke.mjs](../../scripts/smoke.mjs) rc=0 |
+| CI | **9/9 success**(3 OS × Node 18/20/22) |
+
+### 9.4 🔴 post-push CI의 한계 (완료로 오인 금지)
+
+**Stage B는 `main`에 branch protection bypass direct push된 뒤 CI가 실행됐다.** CI 9/9 success는 사실이지만, **이 사례에서 CI는 병합을 사전에 막는 게이트가 아니었다** — 코드가 이미 `main`에 있는 상태에서 사후(post-hoc)로 돈 검증이다. 따라서:
+
+- 이 9/9는 "게이트를 통과했다"가 아니라 "머지 이후 회귀가 관측되지 않았다"로만 읽는다.
+- [04-user-roles-and-permissions.md](04-user-roles-and-permissions.md)의 **B1(direct push) = post-check** 서술은 이 사례로 약화되지 않는다. 오히려 실제로 밟힌 경로다.
+- 원격 경계에서 사전 강제를 세우는 일은 여전히 [14](14-product-strategy-and-roadmap.md) STR-01의 미구현 목표다.
+
+또한 packed-tarball smoke의 read-only/비파괴 검증은 **파일 경로 → 크기 맵만 비교**하므로(`scripts/smoke.mjs` `snapshot`), 크기가 같은 내용 변경은 놓칠 수 있다([gaps-and-decisions.md](gaps-and-decisions.md) G-10).
+
+### 9.5 이번 SSOT 동기화(§9) 자체의 검증
+
+| 검증 | 결과 |
+|---|---|
+| 변경 범위 | `git status`에서 변경 파일이 **전부 `docs/ssot-design/**` 아래**임을 확인. 코드·테스트·`package.json`·워크플로 무변경. 본 §9 항목의 담당 편집분은 13·14·gaps 3개 파일이다 |
+| 근거 대조 | `git log 94d59fe..0962d37`, `workflow/REQ-2026-014/responses/`(design r19/r20/r21 + phase r01 5건), `bin/init.ts`·`bin/migrate.ts`·`bin/dispatch.mjs`·`scripts/smoke.mjs`·`scripts/req/req-doctor.ts`·`scripts/req/review-codex.ts` read-only 확인 |
+| `git diff --check` | 통과(whitespace 오류 없음) |
+| Markdown 상대 링크 파일 존재 검사 | 13·14·gaps의 상대 링크 55개 전수 확인, 누락 0 |
+| fenced code block 짝 검사 | 통과(홀수 fence 없음) |
+| TypeScript·Vitest·smoke 재실행 | **수행** — 이 문서 브랜치(`docs/req-2026-014-ssot-sync`, base `0962d37`)에서 독립 재현: `npm run typecheck` 0 · `npm test` **17파일 925/925** · `npm run smoke` rc=0(packed tarball 실설치). §9.3의 보고 수치와 일치한다. 단 **CI 9/9은 재현 대상이 아니다** — 그것은 GitHub 러너의 3 OS × Node 3버전 매트릭스이고 여기 실행은 Windows·Node 20 단일 환경이다 |
+| 외부 Codex 리뷰 | **미수행** — 이번 변경분을 Reviewer 승인으로 표시하지 않는다. §4·§7.2·§8의 통과를 이월하지 않는다 |
+| git 작업 | 문서 편집만. stage·commit·push 없음 |
+
+**판정**: §9는 `0962d37` 코드와 대조한 문서 갱신이며, **외부 리뷰 승인은 주장하지 않는다.** 과거 §1~§8 기록은 각 시점의 사실로 보존했고 수정하지 않았다.
+
+### 9.6 이번 동기화가 과거 기록에 남긴 포인터 이동 (과거 기록은 수정하지 않음)
+
+과거 기록을 고치지 않는 원칙 때문에, 이번 변경으로 **과거 항목의 섹션 포인터 일부가 현재 문서와 어긋난다.** 삭제·개작 대신 여기 기록한다.
+
+| 과거 기록 | 당시 가리킨 것 | 현재 위치 | 이유 |
+|---|---|---|---|
+| §7 R1 요약의 `05 §9 fresh-thread 1회=계약지침` | `05`의 상태·빈·오류 UX 규칙 | **`05` §10** | `05`에 **화면 H(`commitgate migrate`)가 §9로 신설**되어 이후 절이 한 칸씩 밀렸다. 화면 A~G의 문자·번호는 [12](12-traceability-matrix.md)가 "화면 A"·"화면 G"로 참조하므로 고정했다 |
+| §6 R10 지적 ③의 `05 §9 "재시도 금지"` | 동일(상태·빈·오류 UX 규칙) | **`05` §10** | 동일 |
+
+두 지적의 **내용과 처리 결과는 유효**하다 — 절 번호만 이동했다. 과거 로그는 **당시 문서 기준**으로 읽는다.
+
+### 9.7 아카이브 라운드 번호의 재사용 (사실 기록)
+
+이 문서의 **r20·r21**(2026-07-17, base `fae8c81`)과 §7 이전 기록에 나오는 **r20~r30**(2026-07-15 이전, REQ-2026-014 설계 비수렴 이력)은 **같은 번호이나 다른 라운드**다.
+
+`nextArchiveRound`([scripts/req/review-codex.ts](../../scripts/req/review-codex.ts))가 라운드 번호를 실행 횟수가 아니라 **디스크에 남은 아카이브 파일명의 max+1**로 파생하기 때문이다. 과거 r20~r30은 아카이브되지 않아(승인분만 커밋되는 구조) 디스크에 r19만 남았고, 이번 리뷰가 r20을 **재사용**했다.
+
+추적되는 design 응답은 **r19·r20·r21 3개뿐**이며 `review_base_sha`로 시대가 구분된다: r19 = `c978358`(구), r20·r21 = `fae8c81`(현). 이 사실은 [gaps-and-decisions.md](gaps-and-decisions.md) G-06a의 "상한을 아카이브 라운드 수로 계산" 원칙을 약화시킨다 — 현재 번호로 상한을 걸면 실제 실행 횟수보다 **관대해진다**.

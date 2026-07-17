@@ -3,8 +3,10 @@
 %% 컨텍스트/여정/상태머신/시퀀스/릴리즈 다이어그램과 1:1 동일하지 않다.
 %% 관련 본문 다이어그램: 01(컨텍스트), 05(여정), 07(상태머신), 08(시퀀스), 10(릴리즈).
 flowchart TB
-    subgraph Setup["설치"]
-        I["npx commitgate"]
+    subgraph Setup["설치 (Stage B 런타임 패키지)"]
+        INS["npm install -D commitgate"]
+        I["npx commitgate init"]
+        MIG["npx commitgate migrate<br/>(legacy vendored 설치본 전환)"]
     end
     subgraph Loop["REQ 티켓 루프"]
         NEW["req:new --run"]
@@ -25,7 +27,8 @@ flowchart TB
         R3["R3 release"]
     end
 
-    I --> NEW --> DESIGN --> DREV
+    INS --> I --> NEW --> DESIGN --> DREV
+    INS --> MIG --> NEW
     DREV -->|needs-fix| DESIGN
     DREV -->|approved| IMPL --> DOC -->|PASS| PREV
     PREV -->|needs-fix| IMPL

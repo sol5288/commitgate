@@ -6,8 +6,10 @@
 
 | 기능/모듈 | 흐름 | CLI | API/이벤트 | 데이터 | 규칙 | 권한 | 테스트 | 근거 파일 | 문서 |
 |---|---|---|---|---|---|---|---|---|---|
-| 설치 | 화면 A | `commitgate [--dry-run/--strict/--force/--no-agent-entrypoints]` | npm/npx §4 | req.config.json, package.json 주입 | 프리플라이트(git·pkg·cross-spawn·gitignore·dirty) | 없음(로컬) | init.test.ts | [bin/init.ts](../../bin/init.ts) | [05](05-user-flows-and-ui-spec.md)·[06](06-api-and-integration-contracts.md) |
-| 제거 계획 | 화면 G | `commitgate uninstall` | — | 파일 분류·증거 보호 | 읽기 전용(쓰기 API 미포함) | 없음 | uninstall.test.ts | [bin/uninstall.ts](../../bin/uninstall.ts) | [05](05-user-flows-and-ui-spec.md) |
+| 설치(Stage B) | 화면 A | `npm install -D commitgate` → `commitgate init [--dry-run/--strict/--force/--no-agent-entrypoints]`(2단계) | npm/npx §4 | 관리 자산(스키마 2종·persona)·req.config.json·`req:*`=`commitgate <verb>` — **실행코드 무복사·devDeps 무주입** | 프리플라이트 **D19(Stage A 서명)→D14(선행 설치)** 순서 계약 + git·pkg·cross-spawn·gitignore·dirty | 없음(로컬) | init.test.ts | `planInstall`/`STAGE_B_REQ_SCRIPTS`([bin/init.ts](../../bin/init.ts)) | [05](05-user-flows-and-ui-spec.md)·[06](06-api-and-integration-contracts.md) |
+| 마이그레이션 | — | `commitgate migrate [--apply/--dir]`(기본 dry-run) | — | `package.json` 한 파일의 `req:*` | 바이트 정확 일치만 전환, 사용자 값 보존, **비파괴(삭제 0건)**, `--apply` 전 commitgate 선언 확인 | 없음(로컬) | migrate.test.ts | `planMigrate`/`decideScripts`([bin/migrate.ts](../../bin/migrate.ts)) | [05](05-user-flows-and-ui-spec.md)·[11](11-test-strategy-and-acceptance.md) §3 |
+| verb dispatch | — | `commitgate <verb>` | — | — | 알려진 verb→패키지 내부 모듈, 옵션·무인자→init, 미지 토큰 fail-closed | — | dispatch.test.ts | `resolveDispatch`/`VERB_MODULES`([bin/dispatch.mjs](../../bin/dispatch.mjs)) | [08](08-architecture-and-module-spec.md)·[11](11-test-strategy-and-acceptance.md) §3 |
+| 제거 계획 | 화면 G | `commitgate uninstall` | — | 파일 분류·증거 보호, Stage B 런타임 제거 **안내 문자열**(`npm uninstall -D commitgate` — npm 미spawn) | 읽기 전용(쓰기 API 미포함, `--apply` 없음) | 없음 | uninstall.test.ts | [bin/uninstall.ts](../../bin/uninstall.ts) | [05](05-user-flows-and-ui-spec.md) |
 | 진입점 포인터 | — | — | — | `.claude`/`.cursor`/CLAUDE.md/AGENTS.md | 얇은 포인터(계약=AGENTS.md) | 역할 계약 | init.test.ts(pm-중립) | [templates/](../../templates/) | [08](08-architecture-and-module-spec.md) §2.10 |
 
 ## B. 티켓·워크플로 진행
@@ -16,7 +18,8 @@
 |---|---|---|---|---|---|---|---|---|---|
 | 티켓 생성 | 화면 B | `req:new <slug> --run` | §1.1 | state.json 초기, 00/01/02 | clean-tree, 채번 max+1 | Builder | req-new.test.ts | [scripts/req/req-new.ts](../../scripts/req/req-new.ts) | [03](03-domain-and-data-model.md)·[05](05-user-flows-and-ui-spec.md) |
 | 다음 행동 계산 | 화면 E | `req:next <id> [--json]` | §1.2 | state.json(읽기) | 결정 머신 C, G1/G2 | 읽기 전용 | req-next.test.ts | [scripts/req/req-next.ts](../../scripts/req/req-next.ts) | [07](07-business-rules-and-state-machines.md) §6 |
-| 일관성 게이트 | 화면 D | `req:doctor <id> [--finalize]` | §1.4 | state·응답·증거 | D2~D18 | 게이트 | req-doctor.test.ts | [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) | [07](07-business-rules-and-state-machines.md) §3 |
+| 일관성 게이트 | 화면 D | `req:doctor <id> [--finalize]` | §1.4 | state·응답·증거 | D2~D19(`D1/D4/D4a/D7/D7b/D8/D12/D14`는 예약 결번) | 게이트 | req-doctor.test.ts | [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) | [07](07-business-rules-and-state-machines.md) §3 |
+| 설치 모드 진단(D19) | 화면 D | `req:doctor` | §1.4 | `package.json`의 `req:*` 값 | **값의 형태만**으로 stage-a/stage-b/mixed/none/custom 판정 → **mixed만 WARN·절대 FAIL 아님**. lockfile·`node_modules`·버전 skew 미검증 | 진단(비차단) | req-doctor.test.ts | `classifyInstallMode`([scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts)) | [07](07-business-rules-and-state-machines.md) §3·[11](11-test-strategy-and-acceptance.md) §2 |
 | 논리 수명주기 | 전체 여정 | `req:next` | §1.2 | design_approved·commit_allowed·consumed_approvals+git | 파생 상태, `state.phase` 자동 전이 아님 | — | req-next.test.ts | `resolveNext`/`nextPhaseId` | [03](03-domain-and-data-model.md) §2·[07](07-business-rules-and-state-machines.md) §4 |
 
 ## C. 리뷰(Codex 연동)
@@ -53,7 +56,7 @@
 | 기능/모듈 | 흐름 | CLI | API/이벤트 | 데이터 | 규칙 | 권한 | 테스트 | 근거 파일 | 문서 |
 |---|---|---|---|---|---|---|---|---|---|
 | CI 매트릭스 | — | (Actions) | push/PR/tag | — | 9-leg green 게이트 | — | 전 테스트 | [.github/workflows/ci.yml](../../.github/workflows/ci.yml) | [10](10-operations-deployment-and-observability.md) §2 |
-| 스모크 | — | `npm run smoke` | tarball 설치 | — | 설치·제거 검증 | — | smoke.mjs 자체 | [scripts/smoke.mjs](../../scripts/smoke.mjs) | [10](10-operations-deployment-and-observability.md) §3 |
+| Stage B 스모크 | — | `npm run smoke` | packed tarball 설치(`npm pack` → `npm i -D <tgz>`) | 임시 target repo | 무복사·무주입·`req:*`=`commitgate <verb>`·**dispatch 도달 증명**(rc≠0 + doctor 자신의 사용법 오류) · uninstall 읽기 전용 · migrate 비파괴. **한계: 트리 비교가 파일 크기 기준** | — | smoke.mjs 자체(vitest 밖) | [scripts/smoke.mjs](../../scripts/smoke.mjs) | [10](10-operations-deployment-and-observability.md) §3·[11](11-test-strategy-and-acceptance.md) §3 |
 | override 검증 | — | `npm run verify:overrides` | codex | — | 모델/effort 실효성 | — | (수동) | [scripts/verify-review-overrides.mjs](../../scripts/verify-review-overrides.mjs) | [10](10-operations-deployment-and-observability.md) §3 |
 | 릴리즈 통제점 | — | (수동) | I1/I2/B1/R1/R2/R3 | 버전 범프 | 통제점 승인 문장 | 통제점 | — | [docs/RELEASING.md](../../docs/RELEASING.md) | [04](04-user-roles-and-permissions.md)·[10](10-operations-deployment-and-observability.md) |
 
@@ -73,7 +76,7 @@
 | G-02 외부 전송 보호 없음 | 비밀·과대 payload 노출 | STR-03 전송 manifest·scanner·격리 컨텍스트 | P0 | 01·05·06·09·11·12 |
 | G-06a/b 비수렴·전면 재리뷰 | 비용 폭증·티켓 중단 | STR-04 상한·delta·escalation | P0 | 03·05·06·07·11·12 |
 | G-04/G-06c trunk·ID 충돌 | 팀/병렬 브랜치 오작동 | STR-05 ref scan·trunk 설정·UUID | P1 | 02·03·05·06·07·11·12 |
-| G-10 설치 버전 드리프트 | repo별 정책 불일치 | STR-06 install manifest·upgrade plan | P1 | 02·05·06·08·10·11·12 |
+| G-10 자산↔런타임 version skew·safe upgrade 부재 | repo별 정책 불일치 | STR-06 install manifest·upgrade plan | P1 | 02·05·06·08·10·11·12 |
 | G-01/G-03 진단·timeout | 멈춤·원인 유실 | STR-07 구조화 오류·자식 종료 | P1 | 05·06·09·10·11·12 |
 | G-11 제품 지표 없음 | 효과·비용 판단 불가 | STR-08 privacy-preserving report | P1 | 01·03·05·10·11·12 |
 

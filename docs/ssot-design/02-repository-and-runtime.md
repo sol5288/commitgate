@@ -5,8 +5,11 @@
 ```text
 commitgate/
 ├── bin/
-│   ├── commitgate.mjs        # npx 진입 런처(tsx 등록 후 init/uninstall 위임)
-│   ├── init.ts               # 설치 코어: 복사·주입·프리플라이트
+│   ├── commitgate.mjs        # 진입 런처(tsx 등록 후 dispatch 결정대로 모듈 위임)
+│   ├── dispatch.mjs          # verb → 패키지 내부 모듈 매핑(VERB_MODULES, 순수·무부작용)
+│   ├── dispatch.d.mts        # dispatch.mjs 타입 선언(.mjs를 TS에서 import)
+│   ├── init.ts               # 설치 코어: 관리 자산 배치·req:* 주입·프리플라이트(런타임 무복사)
+│   ├── migrate.ts            # Stage A → Stage B 전환(기본 dry-run, package.json 한 파일만)
 │   └── uninstall.ts          # 읽기 전용 제거 플래너: 아무 것도 지우지 않음
 ├── scripts/
 │   ├── req/
@@ -26,7 +29,7 @@ commitgate/
 │   ├── machine.schema.json    # Codex 구조화 응답 스키마(1.1)
 │   ├── req.config.schema.json # req.config.json 검증 스키마
 │   ├── review-persona.md      # 리뷰어(PM) 페르소나(프롬프트 첫 블록)
-│   └── REQ-2026-001..013,017,018/ # main에서 추적되는 기존 티켓
+│   └── REQ-2026-001..014,017,018/ # main에서 추적되는 기존 티켓
 ├── templates/                 # 얇은 포인터 진입점 원본 5종
 │   ├── claude-skill.md · claude-command.md · cursor-rule.mdc
 │   ├── CLAUDE.template.md · workflow.gitignore
@@ -35,10 +38,10 @@ commitgate/
 ├── AGENTS.template.md         # 계약 정본 템플릿(마커 <!-- commitgate:contract -->)
 ├── req.config.json(.sample)   # 프로젝트 설정(+샘플)
 ├── package.json · package-lock.json · tsconfig.json · vitest.config.ts
-└── tests/unit/*.test.ts       # 15개 테스트 파일
+└── tests/unit/*.test.ts       # 17개 테스트 파일
 ```
 
-현재 workspace에 `.agents/`가 보일 수 있으나 `git ls-files .agents` 결과는 비어 있다. 즉 재구현·패키지 페이로드에 포함되는 저장소 구성요소가 아니라 **로컬 미추적 디렉터리**다. 마찬가지로 main의 `workflow/REQ-2026-014/`에 보이는 파일이 있다면 과거 브랜치가 남긴 gitignore 대상 scratch이며, main 추적 인벤토리에 포함하지 않는다.
+현재 workspace에 `.agents/`가 보일 수 있으나 `git ls-files .agents` 결과는 비어 있다. 즉 재구현·패키지 페이로드에 포함되는 저장소 구성요소가 아니라 **로컬 미추적 디렉터리**다. 반면 `workflow/REQ-2026-014/`는 REQ-2026-014(Stage B)가 `main`에 반영되면서 **추적되는 감사 증거**가 됐다(`git ls-files workflow/REQ-2026-014` — 설계 문서 3종 + `codex-request.md` + `responses/` + `state.json`). 다른 티켓과 동일하게 main 추적 인벤토리에 포함한다.
 
 ## 2. 기술 스택과 버전
 
@@ -60,23 +63,43 @@ commitgate/
 
 ## 3. 명령 사전
 
-`req:*`는 PATH 실행 파일이 아니라 **`package.json` 스크립트**다. npm은 인자 전달에 `--` 구분자가 필요하다([scripts/req/lib/config.ts](../../scripts/req/lib/config.ts) `buildScriptInvocation`).
+**두 축을 혼동하지 말 것.** 아래 3.1은 CommitGate를 **설치한 대상 저장소**가 쓰는 명령(Stage B)이고, 3.2는 **이 저장소 자신**이 자기 스크립트를 개발·검증할 때 쓰는 명령이다. 두 축의 `req:*` 값이 다른 것은 정상이다(§3.3).
+
+두 축 모두에서 `req:*`는 PATH 실행 파일이 아니라 **`package.json` 스크립트**다. npm은 인자 전달에 `--` 구분자가 필요하다. 패키지 매니저별 호출 형식(`buildScriptInvocation`): pnpm/yarn → `<pm> <script> <args>`; npm → `npm run <script> -- <args>`([scripts/req/lib/config.ts](../../scripts/req/lib/config.ts) `buildScriptInvocation`).
+
+### 3.1 설치된 대상 저장소(Stage B)
+
+대상의 `req:*` 값은 `commitgate <verb>`이며([bin/init.ts](../../bin/init.ts) `STAGE_B_REQ_SCRIPTS`), 런처가 verb를 **패키지 내부 모듈**로 dispatch한다([bin/dispatch.mjs](../../bin/dispatch.mjs) `VERB_MODULES`). 대상 repo에 `scripts/req/**`는 존재하지 않는다.
 
 | 명령(npm 기준) | 용도 | 근거 |
 |---|---|---|
-| `npx commitgate` | 대상 repo에 설치 | [bin/init.ts](../../bin/init.ts) |
+| `npm install -D commitgate` | 런타임 패키지 설치(**init의 선행 조건**) | [bin/init.ts](../../bin/init.ts) `commitgateDeclared`(D14) |
+| `npx commitgate init` | 관리 자산 배치 + `req:*` 주입 | [bin/init.ts](../../bin/init.ts) `planInstall`·`runInit` |
+| `npx commitgate migrate [--apply]` | Stage A → Stage B 전환(기본 dry-run) | [bin/migrate.ts](../../bin/migrate.ts) `planMigrate`·`decideScripts` |
 | `npx commitgate uninstall` | 제거 계획 출력(읽기 전용) | [bin/uninstall.ts](../../bin/uninstall.ts) |
-| `npm run req:new -- <slug> --run` | 티켓·브랜치 생성 | `tsx scripts/req/req-new.ts` |
-| `npm run req:next -- <id> [--json]` | 다음 행동 계산(읽기 전용) | `tsx scripts/req/req-next.ts` |
-| `npm run req:review-codex -- <id> --kind design\|phase [--phase <p>] --run` | Codex 리뷰 | `tsx scripts/req/review-codex.ts` |
-| `npm run req:doctor -- <id> [--finalize]` | 일관성 게이트 | `tsx scripts/req/req-doctor.ts` |
-| `npm run req:commit -- <id> --run [-m msg\|--message-file f]` | 승인 커밋 | `tsx scripts/req/req-commit.ts` |
+| `npm run req:new -- <slug> --run` | 티켓·브랜치 생성 | `commitgate req:new` |
+| `npm run req:next -- <id> [--json]` | 다음 행동 계산(읽기 전용) | `commitgate req:next` |
+| `npm run req:review-codex -- <id> --kind design\|phase [--phase <p>] --run` | Codex 리뷰 | `commitgate req:review-codex` |
+| `npm run req:doctor -- <id> [--finalize]` | 일관성 게이트 | `commitgate req:doctor` |
+| `npm run req:commit -- <id> --run [-m msg\|--message-file f]` | 승인 커밋 | `commitgate req:commit` |
+
+argv가 없거나 첫 인자가 `-` 옵션이면 argv 전체가 `init`으로 간다(하위호환 — `npx commitgate --dry-run`). 그 외 비-옵션 미지 토큰은 **fail-closed**로 거부한다(오타를 조용히 init으로 보내지 않는다) — [bin/dispatch.mjs](../../bin/dispatch.mjs) `resolveDispatch`.
+
+### 3.2 이 저장소 자신의 개발 명령
+
+CommitGate 저장소는 자기 `req:*`를 **`tsx scripts/req/*.ts`로 직접 실행**한다([package.json](../../package.json) `scripts`). 패키지를 자신에게 설치하지 않으므로 dispatch를 거치지 않는다.
+
+| 명령 | 용도 | 근거 |
+|---|---|---|
+| `npm run req:new -- <slug> --run` 외 `req:*` 4종 | 자기 워크플로 실행(dogfooding) | `tsx scripts/req/*.ts` |
 | `npm test` | vitest 전체 | `vitest run` |
 | `npm run typecheck` | 타입검사 | `tsc --noEmit` |
 | `npm run smoke` | pack tarball 설치 스모크 | [scripts/smoke.mjs](../../scripts/smoke.mjs) |
 | `npm run verify:overrides` | codex 모델·추론강도 override 실효성(수동, codex 필요) | [scripts/verify-review-overrides.mjs](../../scripts/verify-review-overrides.mjs) |
 
-패키지 매니저별 호출 형식(`buildScriptInvocation`): pnpm/yarn → `<pm> <script> <args>`; npm → `npm run <script> -- <args>`.
+### 3.3 두 축이 공존하는 이유(doctor D19)
+
+이 저장소 자신의 `package.json`이 **Stage A 형태**인 것은 결함이 아니라 위 구조의 필연이다. doctor D19는 `req:*` **값의 형태만으로** `stage-a`/`stage-b`/`mixed`/`none`/`custom`을 분류하고, **`mixed`만 WARN하며 절대 FAIL하지 않는다**([scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `classifyInstallMode`). 이유는 구조적이다 — `req:commit`이 doctor를 exit≠0에 throw하는 하드 게이트로 spawn하므로, Stage A를 FAIL로 보면 **이 저장소 자신의 커밋이 영구 차단**된다. D19는 `bin/init.ts`를 import하지 않고(레이어 역전 방지) shape로만 판정하며, manifest·lockfile·`node_modules`·버전 skew는 **검증하지 않는다**.
 
 ### 로컬 개발·검증 순서
 1. `npm ci` (또는 `npm install`)
@@ -122,12 +145,20 @@ CommitGate 자체가 정의하는 환경 변수는 **1개**이며, 나머지는 
 - **Windows**: BOM(UTF-8 BOM) 방어(`stripBom`), `.cmd` 래퍼 안전 spawn, shell 연산자(`&&`) 회피, `%VAR%`/`!VAR!` 확장 경로는 명령 미출력. 상세 [09-security-and-reliability.md](09-security-and-reliability.md).
 - **POSIX(Linux/macOS)**: cross-spawn의 POSIX exec 경로. CI가 세 OS 모두 검증.
 
-## 6. 배포 모델과 버전 드리프트
+## 6. 배포 모델과 버전 skew
 
-현재 Stage A는 실행 코드를 대상 repo의 `scripts/req/`로 **복사**한다. 설치 후 대상 repo의 코드는 npm 패키지와 독립적으로 수정될 수 있고, 별도의 설치 manifest가 없다.
+현재 배포 모델은 **Stage B(런타임 패키지)**다. 실행 코드는 `node_modules/commitgate`에만 있고 대상 repo로 **복사되지 않는다**([bin/init.ts](../../bin/init.ts) `planInstall`). 런타임 갱신은 사용자가 package manager로 `commitgate` 버전을 올리는 것이며, 대상에 복사된 실행 코드가 패키지와 독립적으로 수정되는 **vendored drift 축은 Stage B 설치본에서 사라진다**. 다만 **legacy Stage A 설치본은 `commitgate migrate`로 전환하기 전까지 여전히 vendored 상태**이므로 이 축이 남아 있다.
 
+대신 남는 것이 **자산↔런타임 skew**다. init이 배치하는 **관리 자산**(스키마 2종·`review-persona.md`·`req.config.json`·진입점)은 배치 시점의 사본이며, 이후 패키지를 upgrade해도 **자동으로 갱신되지 않는다**.
+
+- **skew를 자동 감지할 수단이 없다.** 설치 당시 버전·원본 해시를 기록한 **설치 manifest가 없다.** `node_modules` realpath 검증은 **제거됐고**, 애초에 그 검증은 package upgrade 뒤의 자산 skew를 해결하지 못했다.
+- **doctor D19도 이 축을 보지 않는다.** D19는 `req:*` 값의 형태만 판정하며 manifest·lockfile·`node_modules`·버전 skew를 검증하지 않는다(§3.3).
 - `--force`는 kit 파일을 현재 패키지 원본으로 다시 쓸 수 있으나, 설치 당시 버전·원본 해시·사용자 수정 여부를 기록한 원장이 없다.
-- 제거 플래너는 **현재 실행 중인 패키지 원본**과 대상 파일의 바이트를 비교한다. 과거 버전 설치본이나 사용자 수정본은 `differs`로 분류해 자동 소유물로 단정하지 않는다.
-- `package.json` 주입은 기존 키를 보존하는 비파괴 정책이므로, 이미 존재하는 오래된 스크립트·의존성 선언이 자동 마이그레이션된다고 보장할 수 없다.
+- 제거 플래너는 **현재 실행 중인 패키지 원본**과 대상 파일의 바이트를 비교한다. 과거 버전 설치본이나 사용자 수정본은 `differs`로 분류해 자동 소유물로 단정하지 않는다([bin/uninstall.ts](../../bin/uninstall.ts)).
+- `package.json` 주입은 기존 키를 보존하는 비파괴 정책이므로, 이미 존재하는 오래된 스크립트 선언이 자동 마이그레이션된다고 보장할 수 없다. Stage A 설치본의 전환은 **명시적 `commitgate migrate`**가 담당하며, 이 역시 **현재 값이 정확히 Stage A 주입값인 키만** 바꾸고 사용자 정의 값은 보존한다([bin/migrate.ts](../../bin/migrate.ts) `decideScripts`).
+
+packed tarball smoke가 무복사·무주입·`req:*` 형태·dispatch 도달·uninstall read-only·migrate 비파괴를 검증한다([scripts/smoke.mjs](../../scripts/smoke.mjs)). 단 **snapshot 비교는 파일 크기 기준**이라 크기가 같은 내용 변경은 놓칠 수 있다.
+
+**이번 범위 밖**(지원한다고 읽지 말 것): Yarn PnP·nested workspace·lockfile/manifest 파서·자산 업그레이드/3-way merge.
 
 이 보수성은 데이터 파괴를 막지만, 여러 repo를 최신 계약으로 유지하는 운영 기능은 아니다. 설치 원장·plan 기반 upgrade는 [gaps-and-decisions.md](gaps-and-decisions.md) G-10 및 [14](14-product-strategy-and-roadmap.md) STR-06의 목표 상태다.
