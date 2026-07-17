@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"b71f7385c8951f624e211cc4dce69281be64c5eb","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"HIGH","review_kind":"design","findings":[],"next_action":"설계 승인 후 Phase 1(스킬 본문·번들·payload)을 계획된 테스트 oracle과 함께 구현하세요.","observations":[]}
