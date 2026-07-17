@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"66aed26299b967d28dd776e0ba561dfffc0099df","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","findings":[],"next_action":"커밋 진행 가능. 단, 쓰기 제한 환경에서는 Vitest가 설정 번들 임시 파일을 만들 수 없어 실행되지 않았으므로 Builder 환경에서 대상 단위 테스트를 실행해 확인하세요.","observations":[]}
