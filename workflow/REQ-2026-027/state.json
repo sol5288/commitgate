@@ -3,7 +3,7 @@
   "branch": "feat/req-2026-027-review-series-model",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
+  "codex_thread_id": "019f70a2-7451-7720-a5e1-65232175728e",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
@@ -11,6 +11,37 @@
   "design_approved": false,
   "design_approved_hash": null,
   "current_phase": null,
-  "phases": [],
-  "approval_evidence_required": true
+  "phases": [
+    {
+      "id": "phase-1-model-version-and-legacy",
+      "approved": false
+    },
+    {
+      "id": "phase-2-series-record-and-attempt",
+      "approved": false
+    }
+  ],
+  "approval_evidence_required": true,
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "needs-fix",
+    "compare_hash": "b692b0705bdb9530545b0c0778474077f4e1c0f0deba587cf09272eb329d62dc",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-17T15:14:48.274Z",
+    "findings": [
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-027/02-plan.md",
+        "detail": "계획은 각 phase의 Codex 승인 뒤 다음 단계로 진행하도록 하지만, in-flight stamp는 “phase-1 구현·커밋 직후”에 하도록 둔다. 정상 절차에서 phase-1 구현을 stage한 뒤 phase 리뷰를 요청하면, 아직 model version이 없는 이 티켓은 새 phase-1 "
+      },
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-027/02-plan.md",
+        "detail": "O2-6은 NEEDS_FIX·approved만 main()에서 검증한다. 따라서 구현이 그 두 outcome에는 afterAttempt를 쓰되, 구조적으로 유효하지만 미승인·findings 없는 응답의 blocked 처리(또는 invalid 처리)에는 pre-call state를 base로 최종 write하도록 분기해도 "
+      }
+    ],
+    "elided_count": 0
+  }
 }
