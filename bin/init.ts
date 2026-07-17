@@ -764,10 +764,20 @@ export function planInstall(targetRoot: string, force: boolean, pm: PackageManag
 }
 
 /**
- * 진입점 dest 경로들이 **실제로 만들어질 수 있는지** preflight에서 확인한다 (D8).
+ * 진입점 dest의 **ENOTDIR 조기 진단**(D8) — 더 나은 에러 메시지가 목적이다.
  *
  * `mkdirSync(recursive)`는 경로 중간 컴포넌트가 **파일**이면 ENOTDIR로 죽는다. apply 단계에서 그러면
- * 앞의 파일들은 이미 복사된 뒤라 **부분 설치**가 된다. 쓰기 전에 걸러서 preflight→apply 계약을 지킨다.
+ * 앞의 파일들은 이미 복사된 뒤라 **부분 설치**가 된다. 쓰기 전에 걸러서 preflight→apply 계약을 지키고,
+ * `--no-agent-entrypoints`라는 출구를 안내한다.
+ *
+ * 🔴 **이 함수는 confinement 방어가 아니다**(REQ-2026-024 D4). `existsSync`·`statSync`는 **링크를 따라간다** —
+ *    상위가 외부를 가리키는 symlink여도 `isDirectory()`가 true라 그대로 통과한다(실측: v0.7.0에서 `.cursor`
+ *    junction이 여기를 통과해 대상 밖에 파일을 만들었다).
+ *    **방어는 `statWritableDest`가 한다** — 이 함수 뒤의 `add()`·개별 dest 판정이 그것을 호출한다.
+ *    여기를 lstat 기반으로 바꾸지 **않는다**: 같은 규칙이 두 벌이 되고, 그 이중화가 이번 결함의 발생 방식이다.
+ *
+ * ⚠️ 순서 의존: symlink dest에 대해 이 함수가 먼저 **다른 메시지**로 throw할 수 있다(예: 상위가 파일 symlink면
+ *    "디렉터리가 아니라 파일입니다"). 보안상 무해하다 — 둘 다 쓰기 전 throw이고 메시지도 틀리지 않았다.
  */
 function assertEntrypointPathsUsable(targetRoot: string): void {
   const dests = [...KIT_AGENT_ENTRYPOINTS.map((e) => e.dest), KIT_CLAUDE_DEST_REL, KIT_AGENTS_CONTRACT_COPY_REL]
@@ -941,7 +951,10 @@ export function runInit(opts: InitOptions): InitResult {
   assertGitWorkTree(targetRoot) // 실제 git probe(fake .git 마커 거부)
 
   const pkgPath = join(targetRoot, 'package.json')
-  if (!existsSync(pkgPath))
+  // 🔴 confinement를 **읽기보다 앞**에 둔다(REQ-2026-024 D5). symlink면 `writeFileSync`가 링크를 따라
+  //    대상 **밖** package.json을 수정한다(실측 E6). 검사를 읽기 뒤에 두면 외부 파일을 읽고 나서 막는 셈이다.
+  //    부재(null)는 기존 메시지 그대로 — 동작 변경은 symlink/특수파일 케이스에 한정된다.
+  if (statWritableDest(targetRoot, 'package.json') === null)
     throw new Error(`package.json 없음: ${targetRoot} — 'npm init' 등으로 먼저 생성(req:* 스크립트 주입 대상).`)
   const pkg = parseJsonObject(pkgPath, 'package.json') as {
     scripts?: Record<string, string>
@@ -986,7 +999,9 @@ export function runInit(opts: InitOptions): InitResult {
   }
 
   const cfgPath = join(targetRoot, 'req.config.json')
-  const existingCfg = existsSync(cfgPath) ? parseJsonObject(cfgPath, 'req.config.json') : null
+  // 🔴 confinement를 **읽기보다 앞**에(D5). dangling이면 `writeFileSync`가 대상 밖에 **생성**하고(E4),
+  //    live symlink면 외부 파일을 읽어 병합한 뒤 링크를 따라 **수정**한다(E5). 아래 loadConfig도 이 파일을 읽는다.
+  const existingCfg = statWritableDest(targetRoot, 'req.config.json') !== null ? parseJsonObject(cfgPath, 'req.config.json') : null
   // 기존 config는 워크플로 CONFIG_SCHEMA(additionalProperties·enum·type) + 경로 confinement까지 preflight 검증(phase R2 P2).
   // kit의 loadConfig를 재사용 — schema-invalid(unknown key·bad enum·escaping ticketRoot 등)면 복사 전 throw(첫 req:* 지연 실패 방지).
   // 병합은 유효 키만 추가(handoffPath:null·packageManager)라 "기존 유효 ⇒ 병합 유효".
@@ -1035,7 +1050,9 @@ export function runInit(opts: InitOptions): InitResult {
   //    `REQ_DEV_DEPS` 상수는 남는다 — `bin/uninstall.ts`가 기존 Stage A 설치본의 devDeps를 분류하는 데 쓴다.
 
   const agentsPath = join(targetRoot, 'AGENTS.md')
-  const agentsCreated = !existsSync(agentsPath)
+  // 🔴 반환값이 곧 부재 판정이다(D2). `!existsSync`면 dangling을 부재로 오판해 `copyFileSync`가
+  //    링크를 따라 대상 밖에 AGENTS.md를 만든다(실측 E1). 아래 마커 읽기(readFileSync)도 이 검사 뒤에 온다.
+  const agentsCreated = statWritableDest(targetRoot, 'AGENTS.md') === null
 
   const agentEntrypointsSkipped = opts.noAgentEntrypoints === true
   if (!agentEntrypointsSkipped) assertEntrypointPathsUsable(targetRoot)
@@ -1046,11 +1063,16 @@ export function runInit(opts: InitOptions): InitResult {
     !agentEntrypointsSkipped && !agentsCreated && !readFileSync(agentsPath, 'utf8').includes(AGENTS_CONTRACT_MARKER)
 
   const claudeMdPath = join(targetRoot, KIT_CLAUDE_DEST_REL)
-  const claudeMdCreated = !agentEntrypointsSkipped && !existsSync(claudeMdPath)
+  // `--no-agent-entrypoints`면 이 dest를 쓰지 않으므로 검사도 돌리지 않는다(D5/D7 의미 유지 — 단락 평가).
+  const claudeMdCreated = !agentEntrypointsSkipped && statWritableDest(targetRoot, KIT_CLAUDE_DEST_REL) === null
 
   // 마커가 없으면 포인터가 참조할 계약 템플릿을 **대상 repo에** 놓는다 — 그러지 않으면 복구 지시가 막다른 길이다.
   const contractCopyPath = join(targetRoot, KIT_AGENTS_CONTRACT_COPY_REL)
-  const agentsContractCopyCreated = agentsMarkerMissing && (!existsSync(contractCopyPath) || opts.force)
+  // `agentsMarkerMissing`가 거짓이면 이 dest를 쓰지 않으므로 검사도 돌리지 않는다(단락 평가).
+  // ⚠️ `|| opts.force`가 남아 있다 — force면 **존재해도 덮어쓴다**. 그래서 symlink 거부가 특히 중요하다:
+  //    검사가 없으면 force가 링크를 따라 대상 밖 파일을 덮어쓴다(모드 C, `add()`의 E8과 같은 축).
+  const agentsContractCopyCreated =
+    agentsMarkerMissing && (statWritableDest(targetRoot, KIT_AGENTS_CONTRACT_COPY_REL) === null || opts.force)
 
   // workflow/.gitignore(kit 파일, REQ-2026-012). AGENTS.md 정책: **부재 시에만** 생성, --force로도 안 덮음(D12).
   // --no-agent-entrypoints와 무관(D13).

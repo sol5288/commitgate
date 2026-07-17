@@ -32,6 +32,7 @@ import {
   KIT_SCHEMA_RELPATHS,
   KIT_AGENT_ENTRYPOINTS,
   KIT_CLAUDE_TEMPLATE_REL,
+  KIT_CLAUDE_DEST_REL,
   KIT_AGENTS_CONTRACT_COPY_REL,
   KIT_GITIGNORE,
   KIT_COMPANION_SKILLS,
@@ -2998,6 +2999,148 @@ describe('[init] add() 경로 confinement (REQ-2026-024)', () => {
       runInit(OPTS(dir))
       for (const rel of KIT_COPY_RELPATHS) expect(existsSync(join(dir, rel)), rel).toBe(true)
       for (const e of KIT_AGENT_ENTRYPOINTS) expect(existsSync(join(dir, e.dest)), e.dest).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-024 phase-2 — 개별 쓰기 경로(`add()`를 타지 않는 5종)의 confinement.
+ *
+ * `AGENTS.md`·`CLAUDE.md`·`AGENTS.commitgate.md`·`req.config.json`·`package.json`은 seed-once 판정을
+ * 각자 `existsSync`로 하고 apply 블록에서 직접 `copyFileSync`/`writeFileSync`했다 → `add()`를 고쳐도
+ * 그대로 뚫려 있었다(실측 E1~E6).
+ *
+ * 🔴 이 5종은 **모드 D**의 유일한 실증 지점이다: `existsSync`=true인 live symlink에서 `writeFileSync`가
+ *    링크를 따라 **대상 밖 기존 파일을 수정**한다. dangling(A)만 테스트하면 그 축이 뚫린 채 초록이 된다.
+ *
+ * ⚠️ `applyCopies` 백스톱(phase-1 D3)은 이 경로들을 **가리지 않는다** — `plan.copies`를 타지 않기 때문이다.
+ *    그래서 여기선 정상 실행 단언만으로 변이를 잡을 수 있다(phase-1의 dry-run 이중 단언이 불필요).
+ */
+describe('[init] 개별 쓰기 경로 confinement (REQ-2026-024 phase-2)', () => {
+  const outsideDir = (): string => mkdtempSync(join(tmpdir(), 'reqwf-outside-'))
+  /** 계약 마커가 **없는** AGENTS.md — `agentsMarkerMissing`를 참으로 만들어 contract copy 분기를 발동시킨다. */
+  const AGENTS_NO_MARKER = '# AGENTS\n사용자가 직접 쓴 파일. 계약 마커 없음.\n'
+
+  const trySymlink = (target: string, path: string, type: 'junction' | 'file'): boolean => {
+    try {
+      symlinkSync(target, path, type)
+      return true
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (code === 'EPERM' || code === 'ENOSYS' || code === 'EACCES') return false
+      throw e
+    }
+  }
+
+  const expectRejectedWithNoWrites = (dir: string, outside: string, run: () => void): void => {
+    const beforeIn = snapshot(dir)
+    const beforeOut = snapshot(outside)
+    let threw = false
+    try {
+      run()
+    } catch {
+      threw = true
+    }
+    expect(snapshot(outside), '외부 tree 무변화 — 여기서 실패하면 대상 **밖**에 썼다는 뜻이다').toEqual(beforeOut)
+    expect(snapshot(dir), '대상 tree 무변화').toEqual(beforeIn)
+    expect(threw, 'preflight가 쓰기 전에 거부해야 한다').toBe(true)
+  }
+
+  /** 모드 A — dangling leaf. `existsSync`가 false라 seed-once가 부재로 오판하고 링크를 따라 대상 밖에 만든다. */
+  const danglingCase = (label: string, destRel: string, seed?: (dir: string) => void): void => {
+    it(`${destRel} leaf가 dangling symlink면 쓰기 0회로 거부한다 (${label}, 모드 A)`, () => {
+      const dir = tmpTarget()
+      const outside = outsideDir()
+      try {
+        seed?.(dir)
+        const escaped = join(outside, `ESCAPED-${destRel.replace(/[./]/g, '_')}`) // 아직 없는 파일 → dangling
+        if (!trySymlink(escaped, join(dir, destRel), 'file')) return
+        expect(existsSync(join(dir, destRel)), 'dangling이라 existsSync는 false다 — 이게 함정이다').toBe(false)
+        expect(lstatSync(join(dir, destRel)).isSymbolicLink(), 'lstat은 링크를 본다').toBe(true)
+        expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
+      } finally {
+        cleanup(dir)
+        rmSync(outside, { recursive: true, force: true })
+      }
+    })
+  }
+
+  danglingCase('E1', 'AGENTS.md')
+  danglingCase('E2', KIT_CLAUDE_DEST_REL, (dir) => writeFileSync(join(dir, 'AGENTS.md'), AGENTS_NO_MARKER))
+  // E3: contract copy는 `agentsMarkerMissing`일 때만 쓰인다 — 마커 없는 실제 AGENTS.md가 전제다.
+  //     이 전제가 틀리면 코드가 그 분기에 **도달조차 안 해** 테스트가 공허하게 초록이 된다.
+  danglingCase('E3', KIT_AGENTS_CONTRACT_COPY_REL, (dir) => writeFileSync(join(dir, 'AGENTS.md'), AGENTS_NO_MARKER))
+  danglingCase('E4', 'req.config.json')
+
+  /**
+   * 🔴 모드 D — live symlink. `existsSync`=true라 "기존 파일"로 읽고 병합한 뒤 `writeFileSync`가
+   * 링크를 따라 **대상 밖 파일을 수정**한다. A(생성)와 달리 **기존 데이터 파괴**다.
+   */
+  it('req.config.json이 외부 실파일을 가리키는 symlink면 그 파일을 수정하지 않는다 (E5, 모드 D)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      const real = join(outside, 'real-config.json')
+      writeFileSync(real, '{}\n')
+      if (!trySymlink(real, join(dir, 'req.config.json'), 'file')) return
+      expect(existsSync(join(dir, 'req.config.json')), 'live symlink라 existsSync는 true다').toBe(true)
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
+      expect(readFileSync(real, 'utf8'), '외부 config 바이트 불변').toBe('{}\n')
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('package.json이 외부 실파일을 가리키는 symlink면 그 파일을 수정하지 않는다 (E6, 모드 D)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      const real = join(outside, 'real-package.json')
+      const original = JSON.stringify({ name: 'outside', devDependencies: { commitgate: '^0.7.0' } }, null, 2)
+      writeFileSync(real, original)
+      rmSync(join(dir, 'package.json'))
+      if (!trySymlink(real, join(dir, 'package.json'), 'file')) return
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir)))
+      expect(readFileSync(real, 'utf8'), '외부 package.json 바이트 불변 — req:* 주입이 새어나가면 안 된다').toBe(original)
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /** 부재 메시지 회귀 — `statWritableDest`가 null을 주므로 기존 분기·문구가 그대로여야 한다(R8). */
+  it('package.json이 없으면 기존 에러 메시지를 그대로 낸다 (R8)', () => {
+    const dir = tmpTarget({ withPkg: false })
+    try {
+      expect(() => runInit(OPTS(dir))).toThrow(/package\.json 없음/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** dry-run 대조군(K1) — 검사는 전부 preflight라 dry-run도 같은 판정을 받고, 쓰기는 여전히 0건이다(R5). */
+  it('--dry-run도 같은 판정을 받고 외부·대상 둘 다 불변이다 (K1/R5)', () => {
+    const dir = tmpTarget()
+    const outside = outsideDir()
+    try {
+      if (!trySymlink(join(outside, 'ESCAPED-DRY.md'), join(dir, 'AGENTS.md'), 'file')) return
+      expectRejectedWithNoWrites(dir, outside, () => runInit(OPTS(dir, { dryRun: true })))
+    } finally {
+      cleanup(dir)
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  /** 정상 경로 대조군 — symlink가 없으면 5종이 그대로 만들어진다(위양성 방지). */
+  it('symlink가 없으면 개별 자산이 그대로 생성된다 (R8)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      for (const rel of ['AGENTS.md', KIT_CLAUDE_DEST_REL, 'req.config.json'])
+        expect(existsSync(join(dir, rel)), rel).toBe(true)
     } finally {
       cleanup(dir)
     }
