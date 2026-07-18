@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+## 0.8.1
+
+- **README에 0.8.0 기능 문서화** — 설정 표에 `reviewBudget`(재리뷰 시도 예산·상한), "무엇을 보장하나요?"에
+  무한 재리뷰 방지(예산 게이트), "설계 재리뷰는 delta로 좁혀집니다" 절(delta review·full review escalation)을
+  한/영 README에 추가했습니다. 코드 변경 없음(문서만).
+
 ## 0.8.0
 
 리뷰 루프 수렴 안정화와 design delta review가 핵심입니다. 모두 `0.7.0` 설치 모델 위의 **추가 기능**이라 기존

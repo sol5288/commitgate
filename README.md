@@ -119,6 +119,12 @@ npm run req:next -- 2026-002
 
 내용을 프로젝트에 맞게 고치거나, `req.config.json`의 `reviewPersonaPath`로 다른 파일을 지정할 수 있습니다. `null`로 두면 비활성화됩니다 — 다만 **delta design 리뷰에는 내장 delta 계약이 주입된다**(승인 baseline 이후 변경분만 재검토하도록 리뷰어에게 거는 계약이라, 설정 persona와 무관하게 붙습니다).
 
+### 설계 재리뷰는 delta로 좁혀집니다
+
+설계가 한 번 승인되면 그 시점의 문서(00/01/02)를 baseline으로 기억합니다. 이후 설계를 조금 고쳐 재리뷰하면, 리뷰어에게 **변경된 문서만** 심사하도록 프롬프트를 구성합니다 — 변경 문서는 `[변경됨]`, 나머지는 `[승인 baseline]`으로 표시하고, 승인된 영역을 다시 문제 삼지 말라는 계약을 겁니다. 미변경 문서 본문은 생략해 토큰을 아낍니다. 승인 후 작은 편집이 00/01/02 전체 재리뷰를 유발해 승인이 되돌려지던 문제를 줄입니다.
+
+변경이 너무 근본적이라 delta로 판단할 수 없으면, 리뷰어가 `full_review_requested`로 전체 재리뷰를 요청합니다. 그러면 baseline이 비워지고 다음 라운드가 full 모드로 돌아가며, 그 설계가 다시 승인되면 새 baseline이 잡혀 delta가 재개됩니다.
+
 main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 required checks를 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. 그리고 이때 CI는 push **이후에** 도는 **사후 검증**이라, 그 사실을 보고에서 생략하지 않습니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 별도 통제점이고 CI green 이후에 요청합니다. 자세한 계약은 [AGENTS.template.md](AGENTS.template.md)와 [docs/RELEASING.md](docs/RELEASING.md)를 참고하세요.
 
 ---
@@ -133,6 +139,7 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 - Codex CLI가 없거나 실행에 실패하면 조용히 통과하지 않고 실패합니다.
 - 리뷰 종료코드는 outcome 기준입니다: `0` 승인, `1` 무효/fail-closed, `2` blocked(지적 없음+미승인), `3` needs-fix.
 - 지적은 없지만 승인도 없는 응답은 NEEDS_FIX가 아니라 BLOCKED이며, 에이전트는 같은 리뷰를 반복하지 않습니다.
+- 같은 대상을 반복 재리뷰하면 시도를 계수해 자동 예산(`reviewBudget.autoBudget`, 기본 5)에서 사람 결정을 요구하고 하드캡(`hardCap`, 기본 8)에서 완전히 멈춥니다 — 무한 재리뷰 루프를 막습니다.
 - 설치 시 기존 `cross-spawn`이 검증 하한보다 낮으면 경고하고, `--strict`에서는 중단합니다.
 - 승인 응답과 증거 파일은 `workflow/REQ-.../responses/`에 남습니다.
 
@@ -497,6 +504,7 @@ yarn req:next 2026-002           # yarn
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | 리뷰 프롬프트 첫 블록. `null`이면 비활성 — 단 delta design 리뷰에는 내장 delta 계약이 주입된다 |
 | `reviewModel` | `"gpt-5.6-terra"` | codex 리뷰 모델(`-c model=`로 고정). `null`이면 codex 전역 설정을 상속 |
 | `reviewReasoningEffort` | `"high"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
+| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | 같은 대상 재리뷰 시도 상한. `autoBudget`(≤`hardCap`) 초과 시 사람 예외 손기록이 있어야 다음 회차 진행, `hardCap`(≤8)에서 완전 차단 |
 
 빈 `branchPrefix`나 프로젝트 밖으로 나가는 경로는 거부됩니다.
 

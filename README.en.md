@@ -119,6 +119,12 @@ Repeat this loop without stopping and it drives design → Codex review → impl
 
 Edit it for your project, or point `reviewPersonaPath` in `req.config.json` at a different file. Set it to `null` to disable — but **delta design reviews still inject the built-in delta contract** (the contract that tells the reviewer to re-check only what changed since the approved baseline, so it is attached regardless of the configured persona).
 
+### Design re-reviews narrow to a delta
+
+Once a design is approved, CommitGate remembers that snapshot of the docs (00/01/02) as a baseline. When you then edit the design slightly and re-review, the prompt is built so the reviewer assesses **only the changed documents** — changed docs are tagged `[변경됨]` (changed), the rest `[승인 baseline]` (approved baseline), with a contract not to re-litigate the approved areas. The bodies of unchanged docs are omitted to save tokens. This reduces the failure mode where a small post-approval edit triggered a full re-review and the approval got reverted.
+
+If a change is too fundamental to judge as a delta, the reviewer requests a full re-review via `full_review_requested`. The baseline is then cleared and the next round returns to full mode; once that design is approved again, a new baseline is captured and delta review resumes.
+
 Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses the required status checks**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. In that case CI runs **after** the push, so its green is post-hoc verification, and the agent must not omit that from its report. tag, npm publish, and GitHub release are control points of their own, requested after CI is green and never bundled with the integration approval. See [AGENTS.template.md](AGENTS.template.md) and [docs/RELEASING.md](docs/RELEASING.md) for the full contract.
 
 ---
@@ -133,6 +139,7 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - If Codex CLI is missing or fails, the workflow fails instead of silently passing.
 - Review exit codes are outcome-based: `0` approved, `1` invalid/fail-closed, `2` blocked/no actionable findings, `3` needs fix.
 - A no-findings/no-approval response is BLOCKED, not NEEDS_FIX, so agents must not loop on it.
+- Repeated re-reviews of the same target are counted: past the automatic budget (`reviewBudget.autoBudget`, default 5) a human decision is required, and the hard cap (`hardCap`, default 8) stops it entirely — this prevents infinite re-review loops.
 - During install, existing `cross-spawn` versions below the verified floor warn by default and fail with `--strict`.
 - Approval responses and evidence are kept under `workflow/REQ-.../responses/`.
 
@@ -497,6 +504,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it — but delta design reviews still inject the built-in delta contract |
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"high"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
+| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt cap per target. Past `autoBudget` (≤ `hardCap`) a human exception record is required to proceed; `hardCap` (≤ 8) blocks entirely |
 
 Empty `branchPrefix` values and paths that escape the project root are rejected.
 
