@@ -1,24 +1,25 @@
 {
   "id": "REQ-2026-028",
   "branch": "feat/req-2026-028-review-budget-escalation",
+  "user_commit_confirmed": null,
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": "019f72a8-024b-7e12-ba77-f2b9ef8b09ac",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f7358-8bdd-7643-a557-afeeea58de6d",
+  "review_base_sha": "24ea8da6e36f32e1c4a84466a4bdbe776303950b",
+  "review_diff_hash": "582bee158a006f58fc0e771f82f4c689b5645358",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
+  "design_approved": true,
+  "design_approved_hash": "3631f0b92e432057a93f84807c5b933a6a74e2bd7cf689e3bc47651cfb1e51a8",
+  "current_phase": "phase-2-req-next-g3",
   "phases": [
     {
       "id": "phase-1-budget-gate",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-req-next-g3",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -28,25 +29,61 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
-      "attempts": 3,
-      "closed_reason": null
+      "attempts": 4,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-budget-gate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-budget-gate",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-req-next-g3#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-req-next-g3",
+      "attempts": 6,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-req-next-g3",
+    "outcome": "approved",
+    "compare_hash": "d54bd6a1c8d3759a1c3aaf252afb56b0cbebcdaaa53a09a57bc302cbf0693b16",
+    "count": 3,
+    "errors": [],
+    "at": "2026-07-18T03:52:10.024Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-028/responses/design-r04-approved.json",
+    "response_sha256": "1c2f35972e6bd478d818f2825c0a728043e77a43949aab9e50b97c8f14a498d9",
     "review_kind": "design",
     "phase_id": null,
-    "outcome": "needs-fix",
-    "compare_hash": "0ce381274fcbe005779ace1da8eb8de0c0a720b40b343d0e6d687485b700758d",
-    "count": 1,
-    "errors": [],
-    "at": "2026-07-18T00:38:55.072Z",
-    "findings": [
-      {
-        "severity": "P1",
-        "file": "workflow/REQ-2026-028/01-design.md",
-        "detail": "D2가 `confirmed_at`의 ‘유효 ISO’를 기존 `ISO_RE` 일치로 정의하지만, 이 정규식은 달력상 존재하지 않는 값도 허용한다. 예를 들어 현재 series/attempt에 바인딩된 `{confirmed:true, method:'chat 승인', confirmed_at:'2026-99-99T99:99:99Z'}`는 정규식에"
-      }
-    ],
-    "elided_count": 0
-  }
+    "review_base_sha": "f16f7d3d8c66cff3f57caf6024f7f7355ffc8342",
+    "codex_thread_id": "019f72ab-3901-7b73-8ed9-c0be1fae128a",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-18T00:43:12.325Z",
+    "design_hash": "3631f0b92e432057a93f84807c5b933a6a74e2bd7cf689e3bc47651cfb1e51a8"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "1fb9ba6e8c5ce30962ed0070bee3327f0773597f",
+      "phase_id": "phase-1-budget-gate",
+      "consumed_by_commit_sha": "4638115408090be7e5d09fbf842cfde66691872e",
+      "approval_consumed_at": "2026-07-18T02:24:29.655Z"
+    },
+    {
+      "approved_tree": "582bee158a006f58fc0e771f82f4c689b5645358",
+      "phase_id": "phase-2-req-next-g3",
+      "consumed_by_commit_sha": "9f2e874f62c65c4c3dbdd08706a6efe25e575478",
+      "approval_consumed_at": "2026-07-18T03:53:43.003Z"
+    }
+  ],
+  "review_exception_confirmed": null
 }
