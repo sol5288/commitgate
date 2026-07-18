@@ -121,9 +121,9 @@ npm run req:next -- 2026-002
 
 ### 설계 재리뷰는 delta로 좁혀집니다
 
-설계가 한 번 승인되면 그 시점의 문서(00/01/02)를 baseline으로 기억합니다. 이후 설계를 조금 고쳐 재리뷰하면, 리뷰어에게 **변경된 문서만** 심사하도록 프롬프트를 구성합니다 — 변경 문서는 `[변경됨]`, 나머지는 `[승인 baseline]`으로 표시하고, 승인된 영역을 다시 문제 삼지 말라는 계약을 겁니다. 미변경 문서 본문은 생략해 토큰을 아낍니다. 승인 후 작은 편집이 00/01/02 전체 재리뷰를 유발해 승인이 되돌려지던 문제를 줄입니다.
+설계가 한 번 승인되면 그 시점의 설계 문서(기본 `00/01/02`, `designDocs` 설정으로 변경 가능)를 baseline으로 기억합니다. 이후 설계를 고쳐 재리뷰하면, 리뷰어에게 **변경된 문서와 그 직접 영향 범위만** 심사하도록 프롬프트를 구성합니다. 변경 문서는 `[변경됨 — 심사 대상]`, 미변경 문서는 `[승인 baseline — 변경 없음, 참조]`로 표시하고, 승인된 영역을 다시 문제 삼지 말라는 계약을 겁니다. 미변경 문서는 본문 대신 생략 표식만 전달해 토큰을 아낍니다. 승인 후 작은 편집이 전체 재리뷰를 유발해 승인이 되돌려지던 문제를 줄입니다.
 
-변경이 너무 근본적이라 delta로 판단할 수 없으면, 리뷰어가 `full_review_requested`로 전체 재리뷰를 요청합니다. 그러면 baseline이 비워지고 다음 라운드가 full 모드로 돌아가며, 그 설계가 다시 승인되면 새 baseline이 잡혀 delta가 재개됩니다.
+변경이 너무 근본적이라 delta로 판단할 수 없으면 리뷰어가 `full_review_requested: "yes"`(그때 `commit_approved: "no"`)로 전체 재리뷰를 요청합니다. 그러면 baseline이 비워져 다음 설계 리뷰가 full 모드로 돌아가고, 그 설계가 다시 승인되면 새 baseline이 잡혀 delta가 재개됩니다.
 
 main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 required checks를 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. 그리고 이때 CI는 push **이후에** 도는 **사후 검증**이라, 그 사실을 보고에서 생략하지 않습니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 별도 통제점이고 CI green 이후에 요청합니다. 자세한 계약은 [AGENTS.template.md](AGENTS.template.md)와 [docs/RELEASING.md](docs/RELEASING.md)를 참고하세요.
 
@@ -139,7 +139,8 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 - Codex CLI가 없거나 실행에 실패하면 조용히 통과하지 않고 실패합니다.
 - 리뷰 종료코드는 outcome 기준입니다: `0` 승인, `1` 무효/fail-closed, `2` blocked(지적 없음+미승인), `3` needs-fix.
 - 지적은 없지만 승인도 없는 응답은 NEEDS_FIX가 아니라 BLOCKED이며, 에이전트는 같은 리뷰를 반복하지 않습니다.
-- 같은 대상을 반복 재리뷰하면 시도를 계수해 자동 예산(`reviewBudget.autoBudget`, 기본 5)에서 사람 결정을 요구하고 하드캡(`hardCap`, 기본 8)에서 완전히 멈춥니다 — 무한 재리뷰 루프를 막습니다.
+- 열린 `(review_kind, phase_id)` review series별로 재리뷰 시도를 계수합니다. 기본값 `{ autoBudget: 5, hardCap: 8 }`에서 1~5회차는 자동, 6~8회차는 회차마다 사람 예외 기록이 있어야 진행, `hardCap` 회를 소진하면 그 다음 시도(9회차부터)는 예외가 있어도 차단합니다 — 무한 재리뷰 루프를 막습니다. 승인되면 그 series가 닫히고, 미수렴 series를 사람이 `human-resolution`으로 종료하면 같은 키의 자동 재개가 막힙니다.
+- 리뷰어는 한 호출에서 파악한 P1을 모두 `findings[]`에 함께 반환합니다(배칭). 한 건씩 내고 재검수받는 직렬 흐름이 리뷰 라운드를 부풀리던 문제를 줄입니다 — P1 기준을 낮추는 것이 아니라, 이미 아는 P1을 다음 라운드로 미루지 않는 것입니다.
 - 설치 시 기존 `cross-spawn`이 검증 하한보다 낮으면 경고하고, `--strict`에서는 중단합니다.
 - 승인 응답과 증거 파일은 `workflow/REQ-.../responses/`에 남습니다.
 
@@ -474,7 +475,7 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `npx commitgate migrate [--apply]` | 예전 vendored 설치본 → 런타임 패키지 전환 (기본: 계획만, 비파괴) |
 | `npx commitgate uninstall` | 제거 계획 확인 (읽기 전용 — 아무것도 지우지 않음) |
 | `npm uninstall -D commitgate` | 런타임 제거 |
-| `npm run req:new -- <slug> --run` | REQ 티켓, 브랜치, 설계문서 생성 |
+| `npm run req:new -- <slug> --run [--successor-of <REQ-id>]` | REQ 티켓, 브랜치, 설계문서 생성. `--successor-of`는 대체 REQ (아래 참조) |
 | `npm run req:next -- <id> [--json]` | **다음 행동 계산** (읽기 전용) |
 | `npm run req:review-codex -- <id> --kind design --run` | 설계 리뷰 |
 | `npm run req:review-codex -- <id> --kind phase --phase <p> --run` | 구현 리뷰 |
@@ -488,6 +489,8 @@ npm  run req:next -- 2026-002    # npm
 pnpm req:next 2026-002           # pnpm
 yarn req:next 2026-002           # yarn
 ```
+
+**대체 REQ (`--successor-of`)**: 어떤 review series가 미수렴이라고 판단해 사람이 그것을 `human-resolution`으로 **대체(replace)** 종결한 경우에만, `req:new --successor-of <REQ-id>`로 부모 이력(시도 합계·종결 기록)을 보존한 대체 REQ를 만들 수 있습니다. 부모에 유효한 replace 종결 기록이 없으면 티켓 생성이 fail-closed로 막힙니다 — 일반적인 새 REQ 생성 자체를 도구가 막는 것은 아닙니다.
 
 ---
 
@@ -504,7 +507,7 @@ yarn req:next 2026-002           # yarn
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | 리뷰 프롬프트 첫 블록. `null`이면 비활성 — 단 delta design 리뷰에는 내장 delta 계약이 주입된다 |
 | `reviewModel` | `"gpt-5.6-terra"` | codex 리뷰 모델(`-c model=`로 고정). `null`이면 codex 전역 설정을 상속 |
 | `reviewReasoningEffort` | `"high"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
-| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | 같은 대상 재리뷰 시도 상한. `autoBudget`(≤`hardCap`) 초과 시 사람 예외 손기록이 있어야 다음 회차 진행, `hardCap`(≤8)에서 완전 차단 |
+| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | 열린 `(review_kind, phase_id)` review series의 재리뷰 시도 예산. 기본값 기준 1~5회차는 자동, 6~8회차는 회차마다 그 series·회차에 바인딩된 사람 예외 기록이 있어야 진행, `hardCap` 회를 이미 소진하면 그 다음 시도(9회차부터)는 예외가 있어도 차단. `hardCap ≤ 8`·`autoBudget ≤ hardCap` |
 
 빈 `branchPrefix`나 프로젝트 밖으로 나가는 경로는 거부됩니다.
 

@@ -121,9 +121,9 @@ Edit it for your project, or point `reviewPersonaPath` in `req.config.json` at a
 
 ### Design re-reviews narrow to a delta
 
-Once a design is approved, CommitGate remembers that snapshot of the docs (00/01/02) as a baseline. When you then edit the design slightly and re-review, the prompt is built so the reviewer assesses **only the changed documents** — changed docs are tagged `[변경됨]` (changed), the rest `[승인 baseline]` (approved baseline), with a contract not to re-litigate the approved areas. The bodies of unchanged docs are omitted to save tokens. This reduces the failure mode where a small post-approval edit triggered a full re-review and the approval got reverted.
+Once a design is approved, CommitGate remembers that snapshot of the design docs (default `00/01/02`, configurable via `designDocs`) as a baseline. When you then edit the design and re-review, the prompt is built so the reviewer assesses **only the changed documents and their direct impact**. Changed docs are tagged `[변경됨 — 심사 대상]` (changed — under review), unchanged docs `[승인 baseline — 변경 없음, 참조]` (approved baseline — unchanged, for reference), with a contract not to re-litigate the approved areas. Unchanged docs carry only an omission marker instead of their body, to save tokens. This reduces the failure mode where a small post-approval edit triggered a full re-review and the approval got reverted.
 
-If a change is too fundamental to judge as a delta, the reviewer requests a full re-review via `full_review_requested`. The baseline is then cleared and the next round returns to full mode; once that design is approved again, a new baseline is captured and delta review resumes.
+If a change is too fundamental to judge as a delta, the reviewer requests a full re-review with `full_review_requested: "yes"` (which must come with `commit_approved: "no"`). The baseline is then cleared so the next design review returns to full mode; once that design is approved again, a new baseline is captured and delta review resumes.
 
 Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses the required status checks**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. In that case CI runs **after** the push, so its green is post-hoc verification, and the agent must not omit that from its report. tag, npm publish, and GitHub release are control points of their own, requested after CI is green and never bundled with the integration approval. See [AGENTS.template.md](AGENTS.template.md) and [docs/RELEASING.md](docs/RELEASING.md) for the full contract.
 
@@ -139,7 +139,8 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - If Codex CLI is missing or fails, the workflow fails instead of silently passing.
 - Review exit codes are outcome-based: `0` approved, `1` invalid/fail-closed, `2` blocked/no actionable findings, `3` needs fix.
 - A no-findings/no-approval response is BLOCKED, not NEEDS_FIX, so agents must not loop on it.
-- Repeated re-reviews of the same target are counted: past the automatic budget (`reviewBudget.autoBudget`, default 5) a human decision is required, and the hard cap (`hardCap`, default 8) stops it entirely — this prevents infinite re-review loops.
+- Re-review attempts are counted per open `(review_kind, phase_id)` review series. With `{ autoBudget: 5, hardCap: 8 }`, rounds 1–5 run automatically, rounds 6–8 each require a human exception record, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception — this prevents infinite re-review loops. An approval closes the series; if a human terminates an unconverged series with a `human-resolution`, automatic resumption for that key is stopped.
+- The reviewer returns every P1 it finds in a single call together in `findings[]` (batching). This avoids the serial one-finding-per-round flow that inflated review rounds — it does not lower the P1 bar; it just stops deferring already-known P1s to a later round.
 - During install, existing `cross-spawn` versions below the verified floor warn by default and fail with `--strict`.
 - Approval responses and evidence are kept under `workflow/REQ-.../responses/`.
 
@@ -474,7 +475,7 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `npx commitgate migrate [--apply]` | Move an older vendored install to the runtime package (plan-only by default, non-destructive) |
 | `npx commitgate uninstall` | Preview the removal plan (read-only — deletes nothing) |
 | `npm uninstall -D commitgate` | Remove the runtime |
-| `npm run req:new -- <slug> --run` | Create a REQ ticket, branch, and design docs |
+| `npm run req:new -- <slug> --run [--successor-of <REQ-id>]` | Create a REQ ticket, branch, and design docs. `--successor-of` creates a replacement REQ (see below) |
 | `npm run req:next -- <id> [--json]` | **Compute the next action** (read-only) |
 | `npm run req:review-codex -- <id> --kind design --run` | Review the design |
 | `npm run req:review-codex -- <id> --kind phase --phase <p> --run` | Review the implementation |
@@ -488,6 +489,8 @@ npm  run req:next -- 2026-002    # npm
 pnpm req:next 2026-002           # pnpm
 yarn req:next 2026-002           # yarn
 ```
+
+**Replacement REQ (`--successor-of`)**: only when a human has terminated a review series with a `human-resolution` **replace** decision can you create a replacement REQ that preserves the parent's lineage (total attempts and the resolution record) via `req:new --successor-of <REQ-id>`. If the parent has no valid replace resolution, ticket creation fails closed — this does not block ordinary new-REQ creation.
 
 ---
 
@@ -504,7 +507,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it — but delta design reviews still inject the built-in delta contract |
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"high"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
-| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt cap per target. Past `autoBudget` (≤ `hardCap`) a human exception record is required to proceed; `hardCap` (≤ 8) blocks entirely |
+| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically, rounds 6–8 each require a human exception record bound to that series and round, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception. `hardCap ≤ 8`, `autoBudget ≤ hardCap` |
 
 Empty `branchPrefix` values and paths that escape the project root are rejected.
 
