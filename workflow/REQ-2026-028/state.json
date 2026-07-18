@@ -3,7 +3,7 @@
   "branch": "feat/req-2026-028-review-budget-escalation",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
+  "codex_thread_id": "019f72a8-024b-7e12-ba77-f2b9ef8b09ac",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
@@ -11,7 +11,42 @@
   "design_approved": false,
   "design_approved_hash": null,
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-budget-gate",
+      "approved": false
+    },
+    {
+      "id": "phase-2-req-next-g3",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": null
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "needs-fix",
+    "compare_hash": "0ce381274fcbe005779ace1da8eb8de0c0a720b40b343d0e6d687485b700758d",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-18T00:38:55.072Z",
+    "findings": [
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-028/01-design.md",
+        "detail": "D2가 `confirmed_at`의 ‘유효 ISO’를 기존 `ISO_RE` 일치로 정의하지만, 이 정규식은 달력상 존재하지 않는 값도 허용한다. 예를 들어 현재 series/attempt에 바인딩된 `{confirmed:true, method:'chat 승인', confirmed_at:'2026-99-99T99:99:99Z'}`는 정규식에"
+      }
+    ],
+    "elided_count": 0
+  }
 }
