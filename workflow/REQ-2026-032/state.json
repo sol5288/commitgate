@@ -3,7 +3,7 @@
   "branch": "feat/req-2026-032-design-delta-review",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
+  "codex_thread_id": "019f7490-5965-7130-9a9a-f8556e2bf5a1",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
@@ -13,5 +13,47 @@
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 6,
+      "closed_reason": "human-resolution",
+      "human_resolution": {
+        "decision": "replace",
+        "method": "chat-approval: 사용자가 '권장하는 재분할로 진행' 승인 — B-2 비수렴(6R·persona 증강이 복잡도 근원) → B-2a(감지+표시)/B-2b(persona 계약+배선+문서)로 재분할",
+        "decided_at": "2026-07-18T09:35:46.433Z"
+      }
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "needs-fix",
+    "compare_hash": "db8e55eb6cd1465bb38c4025b81b24acdee176e9e4564fb197a7a3eb68ddfc2b",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-18T09:32:51.270Z",
+    "findings": [
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-032/02-plan.md",
+        "detail": "null base persona의 live policy_version 배선을 검증하는 oracle이 없습니다. 정상 경로에서 baseline 보유 + reviewPersonaPath:null + --run일 때, 구현이 프롬프트에는 단독 DESIGN_DELTA_CONTRACT를 전달하지만 로그에는 null인 기존 persona를 넘기면 preview O"
+      },
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-032/02-plan.md",
+        "detail": "delta 적용 범위를 design kind로 제한하는 main() oracle이 없습니다. design 승인 뒤 baseline이 있는 정상 phase 리뷰에서, 구현이 kind 검사보다 먼저 hasDesignBaseline(state)로 effectivePersona를 증강하면 phase 프롬프트와 review-call 로그에 delta 계약/"
+      },
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-032/01-design.md",
+        "detail": "지원·문서화된 reviewPersonaPath:null의 사용자 계약을 바꾸면서 사용자 문서/SSOT 갱신이 계획에서 누락되었습니다. 현재 README/README.en 및 SSOT는 null이 리뷰 프롬프트 첫 persona 블록을 비활성화한다고 약속하지만, 정상 경로인 baseline "
+      }
+    ],
+    "elided_count": 0
+  },
+  "review_exception_confirmed": null
 }
