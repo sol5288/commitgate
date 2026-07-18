@@ -15,6 +15,7 @@ import {
   computeDesignDelta,
   DELTA_CHANGED_TAG,
   DELTA_BASELINE_TAG,
+  DELTA_OMITTED_BODY,
   DESIGN_DELTA_CONTRACT,
   applyDeltaPersona,
   designDocPaths,
@@ -99,6 +100,12 @@ const E = (...lines: string[]): StatusEntry[] =>
     return { index, worktree, path: rest }
   })
 const e1 = (line: string): StatusEntry => E(line)[0] as StatusEntry
+
+// REQ-2026-036 B-3b: DELTA_OMITTED_BODY의 **정확 문구를 테스트 내부 literal로 고정**(SUT 독립, phase-r01 P1).
+// 모든 golden·buildExpected가 이 literal을 쓰고, O1-1이 상수===literal을 단언한다 — 상수에서 escalation
+// 안내(full_review_requested)를 빼는 변경이 여기서 잡힌다(import 상수로 expected를 만들면 함께 바뀌어 못 잡음).
+const EXPECTED_OMITTED_BODY =
+  '(본문 생략 — 승인 baseline·변경 없음. 전체가 필요하면 `full_review_requested: "yes"`로 full review를 요청하라.)'
 
 // Phase 2 config 배선: designDocPaths·validateResponseStructure가 config 파생값을 명시 인자로 받음.
 // 기존 호출을 **명시 기본값**(현재 동작)으로 갱신 — behavior-preserving. (config override 동작은 req-config.test 담당)
@@ -1900,7 +1907,8 @@ describe('[B-2a] assembleReviewPrompt — 하드코딩 golden(SUT 독립)', () =
     expect(out).toBe(expected)
   })
 
-  it('O1-4 🔴 delta 모드(00·02 변경, 01 baseline) 전체 문자열 === 하드코딩 golden(계약 블록 없음)', () => {
+  it('O1-4 🔴 delta 모드(00·02 변경, 01 baseline 생략) 전체 문자열 === 하드코딩 golden', () => {
+    // REQ-2026-036 B-3b 갱신: 미변경 문서(01-design=D)는 본문 생략(DELTA_OMITTED_BODY). 변경(00=R·02=P)은 full.
     const out = assembleReviewPrompt({
       ...base,
       designDelta: { changed: ['requirement', 'plan'], unchanged: ['design'] },
@@ -1911,9 +1919,10 @@ describe('[B-2a] assembleReviewPrompt — 하드코딩 golden(SUT 독립)', () =
       '---\nREQ\n' +
       '---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)\n' +
       `## 00-requirement.md ${DELTA_CHANGED_TAG}\nR\n` +
-      `## 01-design.md ${DELTA_BASELINE_TAG}\nD\n` +
+      `## 01-design.md ${DELTA_BASELINE_TAG}\n${EXPECTED_OMITTED_BODY}\n` +
       `## 02-plan.md ${DELTA_CHANGED_TAG}\nP`
     expect(out).toBe(expected)
+    expect(out).not.toContain('\nD\n') // 미변경 본문(01=D)은 생략됨
     // 계약/지시문 블록이 태그 외에 없다(전체 === 라 이미 봉쇄, 명시 재확인).
     expect(out).not.toContain('재litigate')
     expect(out).not.toContain('Delta Review 계약')
@@ -2005,11 +2014,13 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
       const d = o.designDocs as DesignDocs
       if (o.designDelta) {
         const tag = (k: DesignDocKey): string => (o.designDelta!.changed.includes(k) ? DELTA_CHANGED_TAG : DELTA_BASELINE_TAG)
+        // REQ-2026-036 B-3b: 미변경 문서 본문은 생략(DELTA_OMITTED_BODY), 변경은 full.
+        const body = (k: DesignDocKey, content: string): string => (o.designDelta!.changed.includes(k) ? content : EXPECTED_OMITTED_BODY)
         blocks.push(
           ['---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)',
-            `## 00-requirement.md ${tag('requirement')}`, d.requirement,
-            `## 01-design.md ${tag('design')}`, d.design,
-            `## 02-plan.md ${tag('plan')}`, d.plan].join('\n'),
+            `## 00-requirement.md ${tag('requirement')}`, body('requirement', d.requirement),
+            `## 01-design.md ${tag('design')}`, body('design', d.design),
+            `## 02-plan.md ${tag('plan')}`, body('plan', d.plan)].join('\n'),
         )
       } else {
         blocks.push(
@@ -2208,8 +2219,10 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
       const d = o.designDocs as DesignDocs
       if (o.designDelta) {
         const tag = (k: DesignDocKey): string => (o.designDelta!.changed.includes(k) ? DELTA_CHANGED_TAG : DELTA_BASELINE_TAG)
+        // REQ-2026-036 B-3b: 미변경 문서 본문은 생략(DELTA_OMITTED_BODY), 변경은 full.
+        const body = (k: DesignDocKey, content: string): string => (o.designDelta!.changed.includes(k) ? content : EXPECTED_OMITTED_BODY)
         blocks.push(['---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)',
-          `## 00-requirement.md ${tag('requirement')}`, d.requirement, `## 01-design.md ${tag('design')}`, d.design, `## 02-plan.md ${tag('plan')}`, d.plan].join('\n'))
+          `## 00-requirement.md ${tag('requirement')}`, body('requirement', d.requirement), `## 01-design.md ${tag('design')}`, body('design', d.design), `## 02-plan.md ${tag('plan')}`, body('plan', d.plan)].join('\n'))
       } else {
         blocks.push(['---\n# 권위 아티팩트 = 설계 문서 00/01/02 (리뷰 대상 = 바인딩 대상)',
           '## 00-requirement.md', d.requirement, '## 01-design.md', d.design, '## 02-plan.md', d.plan].join('\n'))
@@ -2475,6 +2488,65 @@ describe('[B-3a] processResponse — baseline 전환(near-e2e)', () => {
     expect(r.ok).toBe(false) // 모순으로 거부
     expect(r.nextState.design_baseline).toEqual(OLD) // 무효 응답은 baseline을 안 지운다(ok 가드)
     expect(hasDesignBaseline(r.nextState)).toBe(true)
+  })
+})
+
+// ───────────────────── [REQ-2026-036 B-3b] delta 미변경 문서 본문 생략 ──
+describe('[B-3b] assembleReviewPrompt — 미변경 본문 생략(하드코딩 golden, SUT 독립)', () => {
+  const base = {
+    reviewBaseSha: 'BASE', requestBody: 'REQ', reviewKind: 'design' as const,
+    designDocs: { requirement: 'R', design: 'D', plan: 'P' } as DesignDocs,
+  }
+  const header = '---\nREVIEW_BASE_SHA: BASE\n---\nREVIEW_KIND: design (응답 review_kind가 동일해야 함)\n---\nREQ\n'
+
+  it('O1-1 🔴 DELTA_OMITTED_BODY = 정확 literal(SUT 독립 고정)', () => {
+    // 정확 문구 고정 — 상수에서 escalation 안내를 빼거나 문구를 바꾸면 여기서 실패(substring이 아니라 전체 ===).
+    expect(DELTA_OMITTED_BODY).toBe(EXPECTED_OMITTED_BODY)
+    expect(EXPECTED_OMITTED_BODY).toContain('full_review_requested: "yes"') // escalation 안내가 문구에 있다
+  })
+
+  it('O1-2 🔴 01만 변경 → 00·02 생략, 01 full (하드코딩 golden 전체 ===)', () => {
+    const out = assembleReviewPrompt({ ...base, designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] } })
+    const expected = header +
+      '---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)\n' +
+      `## 00-requirement.md ${DELTA_BASELINE_TAG}\n${EXPECTED_OMITTED_BODY}\n` +
+      `## 01-design.md ${DELTA_CHANGED_TAG}\nD\n` +
+      `## 02-plan.md ${DELTA_BASELINE_TAG}\n${EXPECTED_OMITTED_BODY}`
+    expect(out).toBe(expected)
+    expect(out).not.toContain('\nR\n') // 00 본문 생략
+    expect(out).not.toContain('\nP') // 02 본문 생략
+  })
+
+  it('O1-3 🔴 full 모드(designDelta 없음) → 모든 본문 포함(생략 없음, 무회귀)', () => {
+    const out = assembleReviewPrompt({ ...base }) // full
+    expect(out).toContain('\nR\n')
+    expect(out).toContain('\nD\n')
+    expect(out).toContain('\nP')
+    expect(out).not.toContain(EXPECTED_OMITTED_BODY)
+  })
+
+  it('O1-3b 🔴 phase → 생략 없음(무회귀)', () => {
+    const out = assembleReviewPrompt({ reviewBaseSha: 'BASE', requestBody: 'REQ', reviewKind: 'phase', stagedDiff: 'DIFF' })
+    expect(out).not.toContain(EXPECTED_OMITTED_BODY)
+    expect(out).toContain('DIFF')
+  })
+
+  it('O1-4 🔴 zero-change(모두 미변경) → 세 본문 모두 생략', () => {
+    const out = assembleReviewPrompt({ ...base, designDelta: { changed: [], unchanged: ['requirement', 'design', 'plan'] } })
+    expect(out).not.toContain('\nR\n')
+    expect(out).not.toContain('\nD\n')
+    expect(out).not.toContain('\nP')
+    // 세 문서 모두 생략 placeholder + baseline 태그
+    expect((out.match(new RegExp(EXPECTED_OMITTED_BODY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length).toBe(3)
+    expect(out).toContain(`## 01-design.md ${DELTA_BASELINE_TAG}`)
+  })
+
+  it('O1-5 🔴 all-changed(모두 변경) → 생략 없음, 세 본문 full', () => {
+    const out = assembleReviewPrompt({ ...base, designDelta: { changed: ['requirement', 'design', 'plan'], unchanged: [] } })
+    expect(out).toContain('\nR\n')
+    expect(out).toContain('\nD\n')
+    expect(out).toContain('\nP')
+    expect(out).not.toContain(EXPECTED_OMITTED_BODY)
   })
 })
 

@@ -141,18 +141,21 @@ export function assembleReviewPrompt(input: ReviewPromptInput): string {
   if (kind === 'design') {
     if (!designDocs) throw new Error('design 리뷰 권위 아티팩트(00/01/02 designDocs) 필요')
     if (designDelta) {
-      // REQ-2026-033 B-2a: delta 모드 — 문서별 태그. 세 본문 모두 포함(미변경도 full, 문맥 보존). 태그만 다르다.
+      // REQ-2026-033 B-2a: delta 모드 — 문서별 태그. REQ-2026-036 B-3b: 변경 문서는 full 본문, 미변경(baseline)은
+      // DELTA_OMITTED_BODY로 생략(토큰 절감). 생략 문맥이 필요하면 리뷰어가 full_review_requested=yes(B-3a) 요청.
       const tag = (k: DesignDocKey): string =>
         designDelta.changed.includes(k) ? DELTA_CHANGED_TAG : DELTA_BASELINE_TAG
+      const body = (k: DesignDocKey, content: string): string =>
+        designDelta.changed.includes(k) ? content : DELTA_OMITTED_BODY
       blocks.push(
         [
           '---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)',
           `## 00-requirement.md ${tag('requirement')}`,
-          designDocs.requirement,
+          body('requirement', designDocs.requirement),
           `## 01-design.md ${tag('design')}`,
-          designDocs.design,
+          body('design', designDocs.design),
           `## 02-plan.md ${tag('plan')}`,
-          designDocs.plan,
+          body('plan', designDocs.plan),
         ].join('\n'),
       )
     } else {
@@ -337,6 +340,14 @@ export type DesignDocKey = 'requirement' | 'design' | 'plan'
  */
 export const DELTA_CHANGED_TAG = '[변경됨 — 심사 대상]'
 export const DELTA_BASELINE_TAG = '[승인 baseline — 변경 없음, 참조]'
+
+/**
+ * delta 리뷰에서 **미변경 문서 본문 자리**의 생략 placeholder(REQ-2026-036 B-3b). 변경 문서는 full 본문,
+ * 미변경은 이 문자열로 대체해 토큰을 절감한다. 생략된 문맥이 필요하면 리뷰어는 `full_review_requested=yes`
+ * (B-3a)로 full review를 요청한다 — 그 안전판을 안내한다.
+ */
+export const DELTA_OMITTED_BODY =
+  '(본문 생략 — 승인 baseline·변경 없음. 전체가 필요하면 `full_review_requested: "yes"`로 full review를 요청하라.)'
 
 /**
  * baseline(승인 시점 문서별 blob OID)과 현재 인덱스 OID를 **키별** 비교(REQ-2026-033 B-2a, R1). 순수.
