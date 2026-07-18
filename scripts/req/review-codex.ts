@@ -254,6 +254,59 @@ export function captureDesignBinding(
   return { designHash, paths }
 }
 
+/** design 문서 3종의 문서별 blob OID(REQ-2026-031 B-1). delta review(B-2)의 승인 baseline. */
+export interface DesignDocBlobs {
+  requirement: string
+  design: string
+  plan: string
+}
+
+/**
+ * design 문서 3종의 **문서별 blob OID**를 git 인덱스에서 뽑는다(REQ-2026-031 B-1, R1).
+ * `git ls-files -s -- <3경로>` 출력의 각 줄 `<mode> <oid> <stage>\t<path>`에서 **mode·stage는 무시하고
+ * `path`로 문서 키를 매핑**한다 — 커스텀 designDocs면 ls-files가 경로 알파벳순으로 나와 위치가 문서 순서와
+ * 달라지므로, 위치가 아니라 path로 매핑해야 baseline이 오염되지 않는다(design-r01 P1).
+ * `captureDesignBinding`의 designHash와 **독립**(그것을 바꾸지 않는다, R6). 3개 중 하나라도 없으면 fail-closed.
+ */
+export function captureDesignDocBlobs(
+  ticketRelDir: string,
+  gitFn: GitFn = git,
+  designDocs: DesignDocs = DEFAULTS.designDocs,
+): DesignDocBlobs {
+  const [reqP, designP, planP] = designDocPaths(ticketRelDir, designDocs)
+  const byPath = new Map<string, string>()
+  const out = gitFn(['ls-files', '-s', '--', reqP, designP, planP])
+  for (const line of out.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    const tab = line.indexOf('\t')
+    if (tab < 0) continue
+    const path = line.slice(tab + 1)
+    const oid = line.slice(0, tab).split(/\s+/)[1] // [mode, oid, stage] — stage·mode 무시
+    if (oid) byPath.set(path, oid)
+  }
+  const pick = (p: string): string => {
+    const oid = byPath.get(p)
+    if (!oid) throw new Error(`design baseline 실패: ${p} 의 blob OID 없음(git 미추적, fail-closed).`)
+    return oid
+  }
+  return { requirement: pick(reqP), design: pick(designP), plan: pick(planP) }
+}
+
+/**
+ * state에 유효한 design baseline(3 blob OID)이 있는지 판별(REQ-2026-031 B-1, R4·R5). 순수.
+ * B-1은 이 함수를 **제공만** 하고 아무 데서도 호출하지 않는다(R5) — B-2가 delta/full 분기에 쓴다.
+ * 부재(legacy·B-1 이전 승인) = false → B-2가 그런 티켓을 full review로 fallback한다.
+ */
+export function hasDesignBaseline(state: WorkflowState): boolean {
+  const b = (state as { design_baseline?: unknown }).design_baseline
+  if (!b || typeof b !== 'object') return false
+  const o = b as Record<string, unknown>
+  return (
+    typeof o.requirement === 'string' && o.requirement.length > 0 &&
+    typeof o.design === 'string' && o.design.length > 0 &&
+    typeof o.plan === 'string' && o.plan.length > 0
+  )
+}
+
 /**
  * 설계 문서 3종 본문을 git **인덱스**에서 읽는다(`git show :<path>`) — Codex P2.
  * 프롬프트 본문(리뷰 대상)과 design 바인딩 해시(`captureDesignBinding`, 인덱스 기반)가 **동일 대상**을 가리키게 하여
@@ -682,6 +735,9 @@ export interface WorkflowState {
   // REQ-016 A1: 승인 증거 핀(kind 격리) + grandfathering 트리거. 반대 kind 증거는 미오염.
   approval_evidence?: ApprovalEvidence
   design_approval_evidence?: ApprovalEvidence
+  // REQ-2026-031 B-1: 마지막 design 승인 시점의 문서별 blob OID(delta review baseline). top-level이라
+  // design 재리뷰의 evidence stale 제거(:1184)에 안 걸리고 NEEDS_FIX 사이클 내내 보존된다. 승인 시에만 갱신.
+  design_baseline?: DesignDocBlobs
   blocked_review?: BlockedReviewMarker
   approval_evidence_required?: boolean
   // REQ-2026-027 D1·D2: review series 모델 버전 + series 레코드. 필드 부재 = legacy(무침습).
@@ -1149,6 +1205,8 @@ export function processResponse(args: {
   // REQ-016 A1: 승인 시 증거 핀 정본(아카이브 경로+sha). 미제공 시 evidence 미부착(하위호환).
   archive?: { path: string; sha256: string }
   approvedAt?: string
+  // REQ-2026-031 B-1: design 승인 시 저장할 문서별 blob OID. 승인+archive 분기에서만 state.design_baseline에 설정.
+  designDocBlobs?: DesignDocBlobs
 }): ProcessResponseResult {
   const { ticketDir, state, binding, threadId, designHash, schemaPath } = args
   const kind: ReviewKind = args.kind ?? 'phase'
@@ -1186,6 +1244,13 @@ export function processResponse(args: {
     const nextState = ok
       ? applyVerdict({ base, binding, verdict, kind, designHash })
       : { ...base, design_approved: false, design_approved_hash: null }
+    // REQ-2026-031 B-1: baseline은 **유효 design 승인마다** 갱신("마지막 승인된 설계 스냅샷") — archive(evidence
+    // 핀)와 독립. archive 쓰기 실패로 evidence 없이 승인이 영속되는 경우(design_approved=true는 applyVerdict가
+    // archive와 무관하게 설정)에도 baseline은 저장돼야 B-2가 정상 승인을 legacy로 오판하지 않는다(R2·R3, phase-r01 P1).
+    // NEEDS_FIX·미승인은 이 분기를 안 타므로 stateRest(:1184)의 기존 design_baseline이 그대로 보존된다(NEEDS_FIX 생존).
+    if (ok && nextState.design_approved === true && args.designDocBlobs) {
+      nextState.design_baseline = args.designDocBlobs
+    }
     // A1(D-016-2): design 승인 + archive 제공 시에만 design_approval_evidence 재부착(fresh). 그 외엔 위 omit으로 미부착.
     if (ok && nextState.design_approved === true && args.archive) {
       nextState.design_approval_evidence = buildApprovalEvidence({
@@ -1668,10 +1733,13 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   let stagedDiff: string | undefined
   let designDocs: DesignDocs | undefined
   let designHash: string | undefined
+  let designDocBlobs: DesignDocBlobs | undefined
   if (opts.kind === 'design') {
     // 리뷰 본문·바인딩 해시 모두 git 인덱스에서 — "리뷰 대상 = 바인딩 대상"(결정#3, Codex P2). 누락 문서는 각 함수가 fail-closed.
     designDocs = readDesignDocsFromIndex(ticketRel, git, cfg.designDocs)
     designHash = captureDesignBinding(ticketRel, git, cfg.designDocs).designHash
+    // REQ-2026-031 B-1: 같은 인덱스에서 문서별 blob OID도 뽑아 둔다(승인 시 processResponse가 baseline에 저장).
+    designDocBlobs = captureDesignDocBlobs(ticketRel, git, cfg.designDocs)
   } else {
     stagedDiff = git(['diff', '--cached'])
   }
@@ -1791,6 +1859,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     phaseId,
     designValid,
     schemaPath: cfg.schemaPathAbs,
+    designDocBlobs, // REQ-2026-031 B-1: design kind일 때만 값 있음. 승인+archive 분기에서만 baseline에 저장.
   }
   const probe = processResponse(baseArgs) // 아카이브 없이 검증(진짜 승인 여부·유효성)
   const decision = archiveDecision(probe, opts.kind) // null=아카이브 안 함(무효), 'approved'|'needs-fix'

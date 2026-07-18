@@ -10,6 +10,8 @@ import {
   loadReviewPersona,
   captureGitBinding,
   captureDesignBinding,
+  captureDesignDocBlobs,
+  hasDesignBaseline,
   designDocPaths,
   readDesignDocsFromIndex,
   validateVerdict,
@@ -70,6 +72,8 @@ import {
   type Verdict,
   type WorkflowState,
   type LastReviewMarker,
+  type DesignDocBlobs,
+  type DesignDocs,
 } from '../../scripts/req/review-codex'
 import { createFakeReviewerAdapter } from '../../scripts/req/lib/adapters'
 import { reviewScratchPaths } from '../../scripts/req/lib/scratch'
@@ -1613,6 +1617,240 @@ describe('[A1] processResponse — 승인 증거 핀(kind 격리 / NEEDS_FIX 분
     expect(r.nextState.design_approved).toBe(true)
     expect(r.nextState.design_approval_evidence).toBeUndefined() // archive 없으면 옛 증거 재사용 금지
     expect(r.nextState.approval_evidence).toEqual(OLD_PHASE_EV) // 반대 kind 보존
+  })
+})
+
+// ───────────────────────── [REQ-2026-031 B-1] design 승인 baseline blob OID 보존 ──
+describe('[B-1] captureDesignDocBlobs — 문서별 blob OID(path 매핑)', () => {
+  const REQ = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1'
+  const DES = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2'
+  const PLN = 'ccccccccccccccccccccccccccccccccccccccc3'
+  const line = (oid: string, path: string): string => `100644 ${oid} 0\t${path}`
+
+  it('O1-1 🔴 `<mode> <oid> <stage>\\t<path>`에서 OID를 뽑아 path로 키 매핑, 정확한 args로 호출', () => {
+    let called: string[] = []
+    const out = [
+      line(REQ, 'workflow/REQ-1/00-requirement.md'),
+      line(DES, 'workflow/REQ-1/01-design.md'),
+      line(PLN, 'workflow/REQ-1/02-plan.md'),
+    ].join('\n')
+    const r = captureDesignDocBlobs('workflow/REQ-1', (args) => {
+      called = args
+      return out
+    })
+    expect(r).toEqual({ requirement: REQ, design: DES, plan: PLN })
+    // mode(100644)·stage(0)를 OID로 오독하지 않는다 — 정확히 2번째 토큰만.
+    expect(r.requirement).not.toBe('100644')
+    expect(called).toEqual([
+      'ls-files', '-s', '--',
+      'workflow/REQ-1/00-requirement.md', 'workflow/REQ-1/01-design.md', 'workflow/REQ-1/02-plan.md',
+    ])
+  })
+
+  it('O1-1 🔴 입력 라인 순서가 뒤바뀌어도 path로 매핑(위치 무관)', () => {
+    const out = [
+      line(PLN, 'workflow/REQ-1/02-plan.md'),
+      line(REQ, 'workflow/REQ-1/00-requirement.md'),
+      line(DES, 'workflow/REQ-1/01-design.md'),
+    ].join('\n')
+    const r = captureDesignDocBlobs('workflow/REQ-1', () => out)
+    expect(r).toEqual({ requirement: REQ, design: DES, plan: PLN })
+  })
+
+  it('O1-1 🔴 3개 중 하나라도 없으면 fail-closed throw', () => {
+    const out = [
+      line(REQ, 'workflow/REQ-1/00-requirement.md'),
+      line(DES, 'workflow/REQ-1/01-design.md'),
+    ].join('\n')
+    expect(() => captureDesignDocBlobs('workflow/REQ-1', () => out)).toThrow(/fail-closed/)
+  })
+
+  it('O1-1b 🔴 커스텀 designDocs·경로 알파벳순 출력 → 각 키가 해당 path OID(위치 할당은 실패)', () => {
+    // designDocs 파일명 z/a/m → ls-files -s는 경로 알파벳순(a,m,z)으로 방출. 위치로 할당하면
+    // requirement가 a.md OID(=DES)를 받아 오염. path 매핑이면 requirement=z.md OID(=REQ).
+    const custom = { requirement: 'z.md', design: 'a.md', plan: 'm.md' } as DesignDocs
+    const out = [
+      line(DES, 'workflow/REQ-1/a.md'), // 알파벳순 첫 줄 = a.md(=design 문서)
+      line(PLN, 'workflow/REQ-1/m.md'),
+      line(REQ, 'workflow/REQ-1/z.md'),
+    ].join('\n')
+    const r = captureDesignDocBlobs('workflow/REQ-1', () => out, custom)
+    expect(r).toEqual({ requirement: REQ, design: DES, plan: PLN })
+    // 위치 할당이면 requirement가 첫 줄(a.md=DES) OID를 받아 아래가 실패할 것.
+    expect(r.requirement).not.toBe(DES)
+  })
+
+  it('O1-2 captureDesignBinding.designHash와 독립 — 같은 출력에서 둘이 서로 안 바꾼다', () => {
+    const out = [
+      line(REQ, 'workflow/REQ-1/00-requirement.md'),
+      line(DES, 'workflow/REQ-1/01-design.md'),
+      line(PLN, 'workflow/REQ-1/02-plan.md'),
+    ].join('\n')
+    const gitFn = (): string => out
+    const expectHash = createHash('sha256')
+      .update([...out.split('\n')].sort().join('\n'))
+      .digest('hex')
+    expect(captureDesignBinding('workflow/REQ-1', gitFn).designHash).toBe(expectHash)
+    expect(captureDesignDocBlobs('workflow/REQ-1', gitFn)).toEqual({ requirement: REQ, design: DES, plan: PLN })
+    // 재호출해도 designHash 불변(blob 추출이 바인딩 계산에 안 샌다).
+    expect(captureDesignBinding('workflow/REQ-1', gitFn).designHash).toBe(expectHash)
+  })
+})
+
+describe('[B-1] hasDesignBaseline — legacy 판별(순수)', () => {
+  const S = (over: Partial<WorkflowState>): WorkflowState => ({ id: 'R', phase: 'P', ...over })
+  const blobs: DesignDocBlobs = { requirement: 'a1', design: 'b2', plan: 'c3' }
+
+  it('O1-3 🔴 3 OID 있으면 true', () => {
+    expect(hasDesignBaseline(S({ design_baseline: blobs }))).toBe(true)
+  })
+  it('O1-3 🔴 필드 부재(legacy) → false', () => {
+    expect(hasDesignBaseline(S({}))).toBe(false)
+  })
+  it('O1-3 🔴 불완전(한 문서 누락)·빈 OID → false (부재를 true로 보면 B-2 오작동)', () => {
+    expect(hasDesignBaseline(S({ design_baseline: { requirement: 'a1', design: 'b2' } as DesignDocBlobs }))).toBe(false)
+    expect(hasDesignBaseline(S({ design_baseline: { requirement: 'a1', design: '', plan: 'c3' } as DesignDocBlobs }))).toBe(false)
+  })
+})
+
+describe('[B-1] processResponse — baseline 저장·NEEDS_FIX 보존(near-e2e)', () => {
+  const dirs: string[] = []
+  const mkTicket = (verdict: unknown): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'req-b1-'))
+    dirs.push(dir)
+    writeFileSync(join(dir, 'codex-response.json'), JSON.stringify(verdict), 'utf8')
+    return dir
+  }
+  afterEach(() => {
+    while (dirs.length) rmSync(dirs.pop() as string, { recursive: true, force: true })
+  })
+
+  const designApproved = {
+    machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'COMPLETE',
+    commit_approved: 'yes', merge_ready: 'yes', risk_level: 'LOW', review_kind: 'design',
+    findings: [], next_action: 'done',
+  }
+  const designNeedsFix = {
+    machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'NEEDS_FIX',
+    commit_approved: 'no', merge_ready: 'no', risk_level: 'LOW', review_kind: 'design',
+    findings: [{ severity: 'P1', detail: 'x', file: null }], next_action: 'fix',
+  }
+  const phaseApproved = {
+    machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'COMPLETE',
+    commit_approved: 'yes', merge_ready: 'yes', risk_level: 'LOW', review_kind: 'phase',
+    findings: [], next_action: 'done',
+  }
+  const state: WorkflowState = { id: 'REQ-2026-031', phase: 'INTAKE', branch: 'feat/req-2026-031-x' }
+  const binding = { reviewBaseSha: 'BASE', reviewTree: 'TREE9' }
+  const NEW: DesignDocBlobs = { requirement: 'newA', design: 'newB', plan: 'newC' }
+  const OLD: DesignDocBlobs = { requirement: 'oldA', design: 'oldB', plan: 'oldC' }
+  const archive = { path: 'workflow/REQ-2026-031/responses/design-r01-approved.json', sha256: 'SHA' }
+  const PRIOR_DESIGN_EV = {
+    response_path: 'workflow/REQ-2026-031/responses/design-r00-approved.json',
+    response_sha256: 'PRIOR', review_kind: 'design', phase_id: null, review_base_sha: 'BASE',
+    design_hash: 'PRIORDH', codex_thread_id: 'PT', machine_schema_version: '1.1',
+    status: 'COMPLETE', commit_approved: 'yes', approved_at: 'PA',
+  }
+
+  it('O1-4 🔴 design 승인 → state.design_baseline 설정(hasDesignBaseline true)', () => {
+    const dir = mkTicket(designApproved)
+    const r = processResponse({
+      ticketDir: dir, state, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+      archive, approvedAt: 'AT', designDocBlobs: NEW,
+    } as Parameters<typeof processResponse>[0])
+    expect(r.nextState.design_approved).toBe(true)
+    expect(r.nextState.design_baseline).toEqual(NEW)
+    expect(hasDesignBaseline(r.nextState)).toBe(true)
+  })
+
+  it('O1-4b 🔴 archive 없는(=evidence 실패 fallback) design 승인에도 baseline 저장(phase-r01 P1)', () => {
+    // archive 쓰기 실패 시 evidence 없이 design_approved=true가 영속된다. baseline이 archive에 종속되면
+    // 이 정상 승인이 legacy로 오판된다. baseline은 archive와 독립해 저장돼야 한다.
+    const dir = mkTicket(designApproved)
+    const r = processResponse({
+      ticketDir: dir, state, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+      approvedAt: 'AT', designDocBlobs: NEW, // archive 생략
+    } as Parameters<typeof processResponse>[0])
+    expect(r.nextState.design_approved).toBe(true)
+    expect(r.nextState.design_approval_evidence).toBeUndefined() // archive 없으니 evidence 미부착
+    expect(r.nextState.design_baseline).toEqual(NEW) // 그래도 baseline은 저장
+    expect(hasDesignBaseline(r.nextState)).toBe(true)
+  })
+
+  it('O1-5 🔴 design NEEDS_FIX → baseline 미설정(없던 state는 그대로 없음)', () => {
+    const dir = mkTicket(designNeedsFix)
+    const r = processResponse({
+      ticketDir: dir, state, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+      archive, approvedAt: 'AT', designDocBlobs: NEW,
+    } as Parameters<typeof processResponse>[0])
+    expect(r.nextState.design_approved).toBe(false)
+    expect(r.nextState.design_baseline).toBeUndefined()
+  })
+
+  it('O1-5 🔴 phase 승인엔 baseline 미설정(design 전용)', () => {
+    const dir = mkTicket(phaseApproved)
+    const r = processResponse({
+      ticketDir: dir, state, binding, threadId: 'T', kind: 'phase', phaseId: null,
+      archive, approvedAt: 'AT', designDocBlobs: NEW,
+    } as Parameters<typeof processResponse>[0])
+    expect(r.nextState.commit_allowed).toBe(true)
+    expect(r.nextState.design_baseline).toBeUndefined()
+  })
+
+  it('O1-6 🔴 design NEEDS_FIX가 기존 baseline을 지우지 않는다 — 두 번째 재리뷰에도 보존(r04 P1)', () => {
+    // evidence는 stale 제거되지만 top-level design_baseline은 살아남는다.
+    const dir1 = mkTicket(designNeedsFix)
+    const r1 = processResponse({
+      ticketDir: dir1,
+      state: { ...state, design_baseline: OLD, design_approval_evidence: PRIOR_DESIGN_EV },
+      binding, threadId: 'T', kind: 'design', designHash: 'DH', archive, approvedAt: 'AT', designDocBlobs: NEW,
+    } as Parameters<typeof processResponse>[0])
+    expect(r1.nextState.design_approval_evidence).toBeUndefined() // evidence stale 제거
+    expect(r1.nextState.design_baseline).toEqual(OLD) // baseline 보존(NEW로 갱신 안 됨 — 미승인)
+    expect(hasDesignBaseline(r1.nextState)).toBe(true)
+
+    // 두 번째 재리뷰(다시 NEEDS_FIX)에도 여전히 살아있다.
+    const dir2 = mkTicket(designNeedsFix)
+    const r2 = processResponse({
+      ticketDir: dir2, state: r1.nextState,
+      binding, threadId: 'T', kind: 'design', designHash: 'DH', archive, approvedAt: 'AT', designDocBlobs: NEW,
+    } as Parameters<typeof processResponse>[0])
+    expect(r2.nextState.design_baseline).toEqual(OLD)
+    expect(hasDesignBaseline(r2.nextState)).toBe(true)
+  })
+
+  it('O1-7 🔴 baseline은 top-level state에만 — design_approval_evidence로 새지 않는다(매니페스트 무영향)', () => {
+    const dir = mkTicket(designApproved)
+    const r = processResponse({
+      ticketDir: dir, state, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+      archive, approvedAt: 'AT', designDocBlobs: NEW,
+    } as Parameters<typeof processResponse>[0])
+    expect(r.nextState.design_baseline).toEqual(NEW)
+    // evidence(→매니페스트 소스)엔 baseline 키가 없다. evidence에 저장한 r04-반려 구현은 여기서 실패.
+    expect(r.nextState.design_approval_evidence).toBeDefined()
+    expect(r.nextState.design_approval_evidence).not.toHaveProperty('design_baseline')
+    expect(r.nextState.design_approval_evidence).not.toHaveProperty('design_doc_blobs')
+  })
+
+  it('O1-8 🔴 baseline 유무가 게이트 판정을 안 바꾼다 — design_baseline 제외 시 동일', () => {
+    // legacy state vs baseline 보유 state에서 같은 응답(NEEDS_FIX) 처리 → 게이트 결과 동일.
+    const gate = (s: WorkflowState) => {
+      const dir = mkTicket(designNeedsFix)
+      const r = processResponse({
+        ticketDir: dir, state: s, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+        archive, approvedAt: 'AT', designDocBlobs: NEW,
+      } as Parameters<typeof processResponse>[0])
+      return {
+        ok: r.ok, errors: r.errors,
+        design_approved: r.nextState.design_approved,
+        design_approved_hash: r.nextState.design_approved_hash,
+        commit_allowed: r.nextState.commit_allowed ?? null,
+        design_approval_evidence: r.nextState.design_approval_evidence,
+      }
+    }
+    const legacy = gate({ ...state })
+    const withBaseline = gate({ ...state, design_baseline: OLD })
+    expect(withBaseline).toEqual(legacy) // 게이트 결과(design_baseline 제외) byte-identical
   })
 })
 
