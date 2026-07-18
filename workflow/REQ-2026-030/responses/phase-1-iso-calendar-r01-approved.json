@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"3539e79000d3cff83b2d75d2c93354fae44caf39","status":"COMPLETE","commit_approved":"yes","merge_ready":"yes","risk_level":"LOW","review_kind":"phase","findings":[],"next_action":"Staged 변경을 커밋하세요.","observations":[{"detail":"직접 typecheck는 통과했습니다. 이 읽기 전용 리뷰 환경에서는 Vitest가 설정 번들용 임시 파일을 만들 수 없어 단위 테스트 실행은 확인하지 못했습니다.","file":null}]}
