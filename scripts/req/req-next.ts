@@ -340,6 +340,14 @@ function autoCommitCmd(pm: PackageManager, target: NextTarget): string {
 }
 
 /**
+ * REQ-2026-037: 부분 커밋(source 커밋 후 consume 전) 복구 명령. `req:commit --finalize --run`은 source를
+ * 재커밋하지 않고 evidence/consume만 복구한다 — 복구 가드가 안내하는 정확한 명령(detail·command·approvalSentence 일관).
+ */
+function finalizeCmd(pm: PackageManager, target: NextTarget): string {
+  return buildScriptInvocation(pm, 'req:commit', [...targetArgs(target), '--finalize', '--run']).join(' ')
+}
+
+/**
  * 대상(REQ id 또는 `--ticket`) 미지정 에러 문구(DEC-011-1). **config 로드 이후**라 pm별로 파생한다.
  * 리터럴을 박으면 다른 pm 프로젝트의 사용자가 그대로 따라 할 수 없는 명령을 안내받는다.
  */
@@ -505,12 +513,18 @@ export function resolveNext(input: NextInput): NextAction {
       }
     // 복구 가드(R4): 승인이 살아 있는데 staged가 비었으면 부분 커밋(source 커밋 후 consume 전)일 수 있다.
     // 정상 커밋을 지시하면 req:commit이 `staged 변경 없음`으로 죽어 자동 루프가 스핀한다 → --finalize로 복구.
-    const recovering = !input.hasStagedChanges
+    // detail·command·controlPoint·approvalSentence를 모두 finalize로 맞춘다(phase-2 리뷰 observation).
+    if (!input.hasStagedChanges)
+      return {
+        kind: 'AWAIT_HUMAN',
+        detail: 'phase 승인이 살아 있으나 staged가 비었다 — 부분 커밋일 수 있다. `req:commit --finalize --run`으로 복구가 필요하다.',
+        command: finalizeCmd(pm, target),
+        controlPoint: 'req:commit --finalize --run 직전',
+        approvalSentence: 'req:commit --finalize --run 승인',
+      }
     return {
       kind: 'AWAIT_HUMAN',
-      detail: recovering
-        ? 'phase 승인이 살아 있으나 staged가 비었다 — 부분 커밋일 수 있다. `req:commit --finalize --run`으로 복구가 필요하다.'
-        : 'phase 승인이 살아 있다. 커밋 전 사람 확인이 필요하다.',
+      detail: 'phase 승인이 살아 있다. 커밋 전 사람 확인이 필요하다.',
       command: commitCmd(pm, target),
       controlPoint: 'req:commit --run 직전',
       approvalSentence: 'req:commit --run 승인',
@@ -586,12 +600,26 @@ export function resolveNext(input: NextInput): NextAction {
     })
   }
 
-  if (input.worktreeReviewClean && !input.hasStagedChanges)
+  if (input.worktreeReviewClean && !input.hasStagedChanges) {
+    // REQ-2026-037 R5: 자동 커밋(low-only)에선 매 phase 정지가 없으므로, 병합 전 **단일** 사람 확인을
+    // 종단에서 실체화한다 — DONE(exit 11)이 아니라 AWAIT_HUMAN(exit 10)으로 루프를 확실히 멈춘다.
+    // 승인 문장은 새로 만들지 않고 계약 통제점표(I1/I2/B1)의 정본을 가리킨다(design-r01 observation).
+    if (input.phaseCommitAutoApprove === 'low-only')
+      return {
+        kind: 'AWAIT_HUMAN',
+        detail:
+          '모든 phase가 자동 커밋됐다. feature→main 통합은 사람 승인이 필요하다 — 경로(PR 또는 direct push)와 승인 문장은 AGENTS.md 통제점표(I1/I2/B1)를 따른다.',
+        controlPoint: '통합(feature→main)',
+        approvalSentence:
+          '통합 경로를 택하고 그 통제점의 정본 승인 문장을 받는다 — [I1] feature branch push + PR 생성 승인 → [I2] required checks green 확인 후 PR merge 승인, 또는 [B1] branch protection bypass를 사용한 direct push 승인',
+      }
+    // never(기본): 현행 그대로 DONE — 기존 사용자 무회귀.
     return {
       kind: 'DONE',
       detail:
         '모든 phase가 승인·커밋됐다. 다음은 통합 통제점 — `[I1]` PR 생성 또는 `[B1]` protected branch direct push. 경로 선택과 승인은 사람이 한다.',
     }
+  }
 
   return {
     kind: 'BLOCKED',

@@ -325,7 +325,7 @@ describe('[req:next] phases[] 무결성 — 판정 전에 fail-closed', () => {
     expect(run.command).toContain('--ticket workflow/archive/REQ-2026-010')
     expect(run.command).not.toMatch(/--\s+2026-010\s/) // positional reqId를 쓰지 않는다
 
-    const await_ = resolveNext(baseInput({ target: t, state: baseState({ commit_allowed: true }) }))
+    const await_ = resolveNext(baseInput({ target: t, state: baseState({ commit_allowed: true }), hasStagedChanges: true }))
     expect(await_.kind).toBe('AWAIT_HUMAN')
     expect(await_.command).toContain('--ticket workflow/archive/REQ-2026-010')
   })
@@ -372,7 +372,7 @@ describe('[req:next] phases[] 무결성 — 판정 전에 fail-closed', () => {
 
   it('정상 --ticket 절대경로는 AWAIT_HUMAN 명령에도 보존된다', () => {
     const dir = 'D:\\proj\\workflow\\REQ-2026-010'
-    const a = resolveNext(baseInput({ target: { kind: 'ticket', ticketDir: dir }, state: baseState({ commit_allowed: true }) }))
+    const a = resolveNext(baseInput({ target: { kind: 'ticket', ticketDir: dir }, state: baseState({ commit_allowed: true }), hasStagedChanges: true }))
     expect(a.kind).toBe('AWAIT_HUMAN')
     expect(a.command).toContain(`--ticket ${dir}`)
   })
@@ -694,7 +694,7 @@ describe('[req:next] CLI 파싱 / 출력', () => {
   })
 
   it('AWAIT_HUMAN 출력에 통제점과 승인 문장이 그대로 보인다', () => {
-    const a = resolveNext(baseInput({ state: baseState({ commit_allowed: true }) }))
+    const a = resolveNext(baseInput({ state: baseState({ commit_allowed: true }), hasStagedChanges: true }))
     const text = renderAction('REQ-2026-010', a)
     expect(text).toContain('AWAIT_HUMAN')
     expect(text).toContain('승인 문장: "req:commit --run 승인"')
@@ -731,7 +731,7 @@ describe('REQ-2026-027 — legacy ticket 안내(resolveNext)', () => {
   })
 
   it('O1-5: 살아 있는 승인(commit_allowed)은 legacy보다 우선한다 — 소비만, 새 호출 아님', () => {
-    const a = resolveNext(baseInput({ state: legacyState({ commit_allowed: true }) }))
+    const a = resolveNext(baseInput({ state: legacyState({ commit_allowed: true }), hasStagedChanges: true }))
     expect(a.kind).toBe('AWAIT_HUMAN')
     expect(a.approvalSentence).toBe('req:commit --run 승인') // legacy 안내가 아니라 commit 안내
   })
@@ -904,10 +904,14 @@ describe('REQ-2026-037 — phaseCommit 자동 커밋 분기(commit_allowed=true)
     expect(a.approvalSentence).toBe('req:commit --run 승인')
   })
 
-  it('복구 가드(R4): commit_allowed=true인데 staged 없음 → AWAIT_HUMAN(자동 RUN 아님) + --finalize 안내', () => {
+  it('복구 가드(R4): commit_allowed=true인데 staged 없음 → AWAIT_HUMAN(자동 RUN 아님) + --finalize 일관', () => {
     const a = resolveNext(baseInput({ state: approved({ risk_level: 'LOW' }), phaseCommitAutoApprove: 'low-only', hasStagedChanges: false }))
     expect(a.kind).toBe('AWAIT_HUMAN') // staged 없으면 자동 커밋 억제(스핀 방지)
+    // detail·command·controlPoint·approvalSentence 모두 finalize로 일관(phase-2 리뷰 observation)
     expect(a.detail).toContain('--finalize')
+    expect(a.command).toContain('--finalize')
+    expect(a.controlPoint).toContain('--finalize')
+    expect(a.approvalSentence).toBe('req:commit --finalize --run 승인')
   })
 
   it('우선순위: state 손상(중복 phase id)은 low-only·LOW·staged라도 BLOCKED가 이긴다', () => {
@@ -929,5 +933,28 @@ describe('REQ-2026-037 — phaseCommit 자동 커밋 분기(commit_allowed=true)
     expect(text).toContain('$ ')
     expect(text).toContain('req:commit')
     expect(text).not.toContain('승인 문장')
+  })
+
+  // R5 병합 단일 게이트 — 모든 phase 소비 + 워킹트리 clean 종단.
+  const allConsumed = (over: Partial<WorkflowState> = {}) =>
+    baseState({
+      consumed_approvals: [
+        { approved_tree: HASH_A, phase_id: 'p1', consumed_by_commit_sha: 'aa', approval_consumed_at: '2026-07-18T00:00:00Z' },
+        { approved_tree: HASH_B, phase_id: 'p2', consumed_by_commit_sha: 'bb', approval_consumed_at: '2026-07-18T00:00:00Z' },
+      ],
+      ...over,
+    } as Partial<WorkflowState>)
+
+  it('병합 게이트(R5): 모든 phase 소비 + clean + low-only → AWAIT_HUMAN(통합, I1/I2/B1 정본 가리킴)', () => {
+    const a = resolveNext(baseInput({ state: allConsumed(), phaseCommitAutoApprove: 'low-only', hasStagedChanges: false, worktreeReviewClean: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN') // DONE(exit 11)이 아니라 AWAIT_HUMAN(exit 10)으로 병합 전 멈춘다
+    expect(a.controlPoint).toContain('통합')
+    expect(a.approvalSentence).toMatch(/I1/)
+    expect(a.approvalSentence).toMatch(/B1/)
+  })
+
+  it('병합 게이트: never(기본)는 종단 DONE 유지(무회귀)', () => {
+    const a = resolveNext(baseInput({ state: allConsumed(), phaseCommitAutoApprove: 'never', hasStagedChanges: false, worktreeReviewClean: true }))
+    expect(a.kind).toBe('DONE')
   })
 })
