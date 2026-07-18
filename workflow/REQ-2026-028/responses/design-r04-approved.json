@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"f16f7d3d8c66cff3f57caf6024f7f7355ffc8342","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"HIGH","review_kind":"design","findings":[],"next_action":"설계를 승인하고 phase-1-budget-gate 구현을 진행하세요.","observations":[]}
