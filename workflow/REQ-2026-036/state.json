@@ -3,15 +3,74 @@
   "branch": "feat/req-2026-036-delta-omit-unchanged",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f7546-df38-77c0-88ec-cfdaee2ad763",
+  "review_base_sha": "c6cc3a082f9e4715737f7e178c7216760945ec3a",
+  "review_diff_hash": "3946ccc49e4e12cc5082336500b54f50d24a2053",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
+  "design_approved": true,
+  "design_approved_hash": "a4e3dc90e78bd3b4273fff6b535fa4d04973a1c4b87abdcb00d572b4e0652464",
+  "current_phase": "phase-1-omit-unchanged",
+  "phases": [
+    {
+      "id": "phase-1-omit-unchanged",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-omit-unchanged#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-omit-unchanged",
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "91a050c2b6c774c180db6b31796171e0aa655b89",
+    "design": "68048b2a65c35cfa94041ae0494f25a2335249cc",
+    "plan": "0416af88a05e4896862dc77017a6d2221efbc64a"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-036/responses/design-r01-approved.json",
+    "response_sha256": "e25e110998ab2567c5e4e0ffb2c4a3b0be7be499ced94656247e48f5a8d8d0b8",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "10f5aa22657ca2aa7328dc5ffc00f530e9e30bf2",
+    "codex_thread_id": "019f7531-27b2-7671-beaa-c58c8c599a84",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-18T12:27:51.211Z",
+    "design_hash": "a4e3dc90e78bd3b4273fff6b535fa4d04973a1c4b87abdcb00d572b4e0652464"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-omit-unchanged",
+    "outcome": "approved",
+    "compare_hash": "248cf272dfaa9f32746e7742f0c79e7856bd30a7d7c99f5e9422b2917d8ec553",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-18T12:51:25.909Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "3946ccc49e4e12cc5082336500b54f50d24a2053",
+      "phase_id": "phase-1-omit-unchanged",
+      "consumed_by_commit_sha": "8dec48565776ad6c62b835804d81aa4899e3143d",
+      "approval_consumed_at": "2026-07-18T12:52:51.239Z"
+    }
+  ]
 }
