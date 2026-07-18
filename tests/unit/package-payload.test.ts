@@ -592,13 +592,14 @@ describe('[REQ-2026-023] companion 문서 정합', () => {
     expect(hits, '"자동 발견 · 모델 판단 호출"이 정확한 표현이다').toEqual([])
   })
 
-  /** CHANGELOG는 **계약 표면이 아니다** — `Unreleased` 아래 companion 항목 **존재만** 본다. */
-  it('CHANGELOG: Unreleased 아래 companion 항목이 있다 (존재 검사만)', () => {
+  /** CHANGELOG는 **계약 표면이 아니다** — companion 항목이 **문서화되어 있는지 존재만** 본다.
+   *  companion은 0.8.0에서 릴리스됐다(REQ-2026-020~024). Unreleased가 아니라 0.8.0 절에서 확인한다. */
+  it('CHANGELOG: 0.8.0 절에 companion 항목이 있다 (존재 검사만)', () => {
     const t = read('CHANGELOG.md')
-    const i = t.indexOf('## Unreleased')
-    expect(i, 'Unreleased 절이 있어야 한다').toBeGreaterThanOrEqual(0)
+    const i = t.indexOf('## 0.8.0')
+    expect(i, '0.8.0 절이 있어야 한다').toBeGreaterThanOrEqual(0)
     const next = t.indexOf('\n## ', i + 1)
     const section = next < 0 ? t.slice(i) : t.slice(i, next)
-    expect(section, 'Unreleased 아래 companion 변경 사실').toMatch(/companion/i)
+    expect(section, '0.8.0 아래 companion 변경 사실').toMatch(/companion/i)
   })
 })

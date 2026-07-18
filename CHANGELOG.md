@@ -4,9 +4,42 @@
 
 ## Unreleased
 
+## 0.8.0
+
+리뷰 루프 수렴 안정화와 design delta review가 핵심입니다. 모두 `0.7.0` 설치 모델 위의 **추가 기능**이라 기존
+사용자는 별도 조치가 필요 없습니다 — 패키지를 업그레이드한 뒤 `commitgate init`으로 갱신된 관리 자산을 받습니다.
+
+### Companion Skills
+
 - **Companion Skills 추가 및 lifecycle 문서화** — `commitgate init`이 `.claude/skills/commitgate-*/SKILL.md` 4종
   (`discovery`·`tdd`·`diagnosing-bugs`·`research`)을 함께 설치합니다. 설치·보존·경고·제거 계획·지원 범위는
   [README](README.md#companion-skills) / [README (English)](README.en.md#companion-skills)를 참조하세요.
+- **`init` 쓰기 경로 symlink confinement** — 설치 대상 전 경로에서 상위 디렉터리·leaf를 `lstat`으로 검사해
+  대상 루트 밖을 가리키는 symlink를 따라가지 않습니다(우발적 symlink로 인한 외부 파일 생성·덮어쓰기 차단).
+
+### 리뷰 루프 수렴 안정화
+
+- **리뷰 시도 계수·예산 게이트** — `(review_kind, phase_id)`별 review series로 시도를 계수하고, 자동 예산
+  (`reviewBudget.autoBudget`, 기본 5)을 넘으면 사람 예외 손기록이 있어야 진행, 하드캡(`reviewBudget.hardCap`,
+  기본 8)에서 완전 차단합니다. `req.config.json`의 `reviewBudget`로 조정합니다 — 무한 재리뷰 루프를 막습니다.
+- **리뷰 배칭** — 한 라운드에서 여러 P1을 함께 반환하도록 유도해 라운드 수를 줄입니다.
+- **대체 REQ lineage** — 미수렴 REQ를 사람 결정(`human-resolution`)으로 종료하고 `req:new --successor-of <REQ>`로
+  부모 이력을 보존한 대체 REQ를 만듭니다.
+
+### Design delta review
+
+- **design 재리뷰가 delta로 동작** — 승인된 설계 baseline 이후 **변경된 문서만** 심사하도록 리뷰 프롬프트를
+  구성합니다. 변경 문서는 `[변경됨]`, 미변경 문서는 `[승인 baseline]`으로 표시하고, "변경분·직접 영향만 심사,
+  승인 영역 재심사 금지" 계약을 리뷰어에게 겁니다. 미변경 문서 본문은 생략해 토큰을 절감합니다 — 승인 후
+  작은 편집이 전체 재리뷰를 유발해 승인이 되돌려지던 문제를 줄입니다.
+- **full review escalation** — 변경이 너무 근본적이라 delta로 판단할 수 없으면 리뷰어가 `full_review_requested`로
+  전체 재리뷰를 요청할 수 있습니다(다음 라운드가 full 모드로 전환). `reviewPersonaPath: null`이어도 delta
+  design 리뷰에는 내장 delta 계약이 주입됩니다.
+
+### 기타
+
+- **ISO 타임스탬프 달력 검증** — 손기록·evidence의 ISO 타임스탬프를 형식뿐 아니라 달력 유효성까지 검사합니다
+  (`2026-99-99T…` 같은 달력상 불가능한 값을 거부).
 
 ## 0.7.0
 
