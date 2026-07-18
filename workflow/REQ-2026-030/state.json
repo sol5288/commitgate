@@ -1,22 +1,71 @@
 {
   "id": "REQ-2026-030",
   "branch": "feat/req-2026-030-iso-calendar-validation",
+  "user_commit_confirmed": null,
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f73c8-8211-7630-876c-10bd3e68aa3f",
+  "review_base_sha": "3539e79000d3cff83b2d75d2c93354fae44caf39",
+  "review_diff_hash": "794a0d9d0ce554275aad4710d1599a8c27c1b7ae",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
+  "design_approved": true,
+  "design_approved_hash": "6e63ee36a8d016fc48d7d3288b1760ddeb19c76e076d2ce9366171d5d674d1fa",
+  "current_phase": "phase-1-iso-calendar",
   "phases": [
     {
       "id": "phase-1-iso-calendar",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-iso-calendar#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-iso-calendar",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-030/responses/design-r01-approved.json",
+    "response_sha256": "d666dba18a69f06a5567084d7b5eebcca709aa8ed8fdacb5d490f2e09b690cff",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "04b943426fd8b1e9679d59c41fb785c5deaa775e",
+    "codex_thread_id": "019f73bf-f146-7572-8617-cc7ecdaf437a",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-18T05:44:27.717Z",
+    "design_hash": "6e63ee36a8d016fc48d7d3288b1760ddeb19c76e076d2ce9366171d5d674d1fa"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-iso-calendar",
+    "outcome": "approved",
+    "compare_hash": "46e3a4c4ef0da9ff76592c2e64b20fbb7cbc43ddff39ab593595ec91005e9177",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-18T05:53:54.825Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "794a0d9d0ce554275aad4710d1599a8c27c1b7ae",
+      "phase_id": "phase-1-iso-calendar",
+      "consumed_by_commit_sha": "39c9260fe272fb121ad979ef7e867076b50ae213",
+      "approval_consumed_at": "2026-07-18T06:26:20.740Z"
+    }
+  ]
 }
