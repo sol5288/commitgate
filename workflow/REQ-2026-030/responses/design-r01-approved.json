@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"04b943426fd8b1e9679d59c41fb785c5deaa775e","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"HIGH","review_kind":"design","findings":[],"next_action":"설계 승인 후 phase-1-iso-calendar를 구현하고 typecheck 및 전체 단위 테스트를 실행한 뒤 phase 리뷰를 요청하세요.","observations":[]}
