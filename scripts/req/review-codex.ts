@@ -100,6 +100,9 @@ export interface ReviewPromptInput {
   reviewKind?: ReviewKind
   stagedDiff?: string
   designDocs?: DesignDocs | null
+  // REQ-2026-033 B-2a: delta 표시(design kind 전용). 있으면 authority 블록을 문서별 [변경됨]/[승인 baseline]
+  // 태그로 렌더. 없으면(full 모드·phase) 기존 플레인 블록 그대로(바이트 무변경). persona는 안 바꾼다.
+  designDelta?: { changed: DesignDocKey[]; unchanged: DesignDocKey[] } | null
 }
 
 /**
@@ -112,7 +115,7 @@ export interface ReviewPromptInput {
  * ⚠️ 이 함수는 파일을 읽지 않는다 — persona는 이미 읽힌 **본문**이다. 읽기·부재 판정은 `loadReviewPersona`가 한다.
  */
 export function assembleReviewPrompt(input: ReviewPromptInput): string {
-  const { persona, handoff, reviewContext, reviewBaseSha, requestBody, stagedDiff, designDocs } = input
+  const { persona, handoff, reviewContext, reviewBaseSha, requestBody, stagedDiff, designDocs, designDelta } = input
   const kind: ReviewKind = input.reviewKind ?? 'phase'
   if (!reviewBaseSha) throw new Error('reviewBaseSha 필요')
   if (!requestBody || !requestBody.trim()) throw new Error('codex-request.md 본문이 비어 있음')
@@ -137,17 +140,35 @@ export function assembleReviewPrompt(input: ReviewPromptInput): string {
   blocks.push(`---\n${requestBody.trim()}`)
   if (kind === 'design') {
     if (!designDocs) throw new Error('design 리뷰 권위 아티팩트(00/01/02 designDocs) 필요')
-    blocks.push(
-      [
-        '---\n# 권위 아티팩트 = 설계 문서 00/01/02 (리뷰 대상 = 바인딩 대상)',
-        '## 00-requirement.md',
-        designDocs.requirement,
-        '## 01-design.md',
-        designDocs.design,
-        '## 02-plan.md',
-        designDocs.plan,
-      ].join('\n'),
-    )
+    if (designDelta) {
+      // REQ-2026-033 B-2a: delta 모드 — 문서별 태그. 세 본문 모두 포함(미변경도 full, 문맥 보존). 태그만 다르다.
+      const tag = (k: DesignDocKey): string =>
+        designDelta.changed.includes(k) ? DELTA_CHANGED_TAG : DELTA_BASELINE_TAG
+      blocks.push(
+        [
+          '---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)',
+          `## 00-requirement.md ${tag('requirement')}`,
+          designDocs.requirement,
+          `## 01-design.md ${tag('design')}`,
+          designDocs.design,
+          `## 02-plan.md ${tag('plan')}`,
+          designDocs.plan,
+        ].join('\n'),
+      )
+    } else {
+      // full 모드(baseline 없음·첫/legacy) — B-1 이전과 바이트 동일 블록(R6).
+      blocks.push(
+        [
+          '---\n# 권위 아티팩트 = 설계 문서 00/01/02 (리뷰 대상 = 바인딩 대상)',
+          '## 00-requirement.md',
+          designDocs.requirement,
+          '## 01-design.md',
+          designDocs.design,
+          '## 02-plan.md',
+          designDocs.plan,
+        ].join('\n'),
+      )
+    }
   } else {
     blocks.push(`---\n# 권위 아티팩트 = staged diff (리뷰 대상 = 바인딩 대상)\n${stagedDiff ?? ''}`)
   }
@@ -305,6 +326,32 @@ export function hasDesignBaseline(state: WorkflowState): boolean {
     typeof o.design === 'string' && o.design.length > 0 &&
     typeof o.plan === 'string' && o.plan.length > 0
   )
+}
+
+/** 설계 문서 키(REQ-2026-033 B-2a). `DesignDocBlobs`·delta 표시의 문서 식별. */
+export type DesignDocKey = 'requirement' | 'design' | 'plan'
+
+/**
+ * delta review 문서 태그(REQ-2026-033 B-2a, R3). 변경/미변경 표시 — 코드 상수(오라클이 정확히 고정).
+ * 정보성 태그일 뿐이다: 리뷰 계약(재litigate 금지 지시)은 B-2b의 persona 몫. B-2a는 "무엇이 바뀌었나"만 표시.
+ */
+export const DELTA_CHANGED_TAG = '[변경됨 — 심사 대상]'
+export const DELTA_BASELINE_TAG = '[승인 baseline — 변경 없음, 참조]'
+
+/**
+ * baseline(승인 시점 문서별 blob OID)과 현재 인덱스 OID를 **키별** 비교(REQ-2026-033 B-2a, R1). 순수.
+ * 다르면 changed, 같으면 unchanged — 위치·순서가 아니라 키(requirement/design/plan)로 비교. 결정적 키 순서로
+ * 반환. delta 프롬프트가 어느 문서를 [변경됨]/[승인 baseline]으로 표시할지의 근거. baseline·current는 DesignDocBlobs.
+ */
+export function computeDesignDelta(
+  baseline: DesignDocBlobs,
+  current: DesignDocBlobs,
+): { changed: DesignDocKey[]; unchanged: DesignDocKey[] } {
+  const keys: DesignDocKey[] = ['requirement', 'design', 'plan']
+  const changed: DesignDocKey[] = []
+  const unchanged: DesignDocKey[] = []
+  for (const k of keys) (baseline[k] === current[k] ? unchanged : changed).push(k)
+  return { changed, unchanged }
 }
 
 /**
@@ -1734,12 +1781,17 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   let designDocs: DesignDocs | undefined
   let designHash: string | undefined
   let designDocBlobs: DesignDocBlobs | undefined
+  let designDelta: { changed: DesignDocKey[]; unchanged: DesignDocKey[] } | undefined
   if (opts.kind === 'design') {
     // 리뷰 본문·바인딩 해시 모두 git 인덱스에서 — "리뷰 대상 = 바인딩 대상"(결정#3, Codex P2). 누락 문서는 각 함수가 fail-closed.
     designDocs = readDesignDocsFromIndex(ticketRel, git, cfg.designDocs)
     designHash = captureDesignBinding(ticketRel, git, cfg.designDocs).designHash
     // REQ-2026-031 B-1: 같은 인덱스에서 문서별 blob OID도 뽑아 둔다(승인 시 processResponse가 baseline에 저장).
     designDocBlobs = captureDesignDocBlobs(ticketRel, git, cfg.designDocs)
+    // REQ-2026-033 B-2a: design **재리뷰**(baseline 있음)면 delta 표시. 이 분기 안이라 phase는 구조적으로 delta 불가(kind 격리).
+    // 게이트는 hasDesignBaseline이지 changed 수가 아니다 — 변경 0(baseline==current)이어도 delta 모드. persona는 안 바꾼다.
+    const baseline = state.design_baseline
+    if (hasDesignBaseline(state) && baseline) designDelta = computeDesignDelta(baseline, designDocBlobs)
   } else {
     stagedDiff = git(['diff', '--cached'])
   }
@@ -1767,6 +1819,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     reviewKind: opts.kind,
     stagedDiff,
     designDocs,
+    designDelta, // REQ-2026-033 B-2a: design 재리뷰(baseline 有)일 때만 값. 없으면 full 플레인 블록(무회귀).
   })
   const previewPath = join(ticketDir, '.review-preview.txt')
   writeFileSync(previewPath, prompt, 'utf8')

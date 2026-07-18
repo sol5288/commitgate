@@ -12,6 +12,9 @@ import {
   captureDesignBinding,
   captureDesignDocBlobs,
   hasDesignBaseline,
+  computeDesignDelta,
+  DELTA_CHANGED_TAG,
+  DELTA_BASELINE_TAG,
   designDocPaths,
   readDesignDocsFromIndex,
   validateVerdict,
@@ -74,6 +77,7 @@ import {
   type LastReviewMarker,
   type DesignDocBlobs,
   type DesignDocs,
+  type DesignDocKey,
 } from '../../scripts/req/review-codex'
 import { createFakeReviewerAdapter } from '../../scripts/req/lib/adapters'
 import { reviewScratchPaths } from '../../scripts/req/lib/scratch'
@@ -1851,6 +1855,265 @@ describe('[B-1] processResponse — baseline 저장·NEEDS_FIX 보존(near-e2e)'
     const legacy = gate({ ...state })
     const withBaseline = gate({ ...state, design_baseline: OLD })
     expect(withBaseline).toEqual(legacy) // 게이트 결과(design_baseline 제외) byte-identical
+  })
+})
+
+// ───────────────────── [REQ-2026-033 B-2a] design delta 감지·표시 ──
+describe('[B-2a] computeDesignDelta — 문서별 OID diff(순수)', () => {
+  const B = (r: string, d: string, p: string): DesignDocBlobs => ({ requirement: r, design: d, plan: p })
+
+  it('O1-1 🔴 한 문서(design)만 변경 → 그 키만 changed, 나머지 unchanged(키별)', () => {
+    const delta = computeDesignDelta(B('A', 'B', 'C'), B('A', 'B2', 'C'))
+    expect(delta.changed).toEqual(['design'])
+    expect(delta.unchanged).toEqual(['requirement', 'plan'])
+  })
+  it('O1-2 🔴 전부 동일 → changed 빈 배열', () => {
+    const delta = computeDesignDelta(B('A', 'B', 'C'), B('A', 'B', 'C'))
+    expect(delta.changed).toEqual([])
+    expect(delta.unchanged).toEqual(['requirement', 'design', 'plan'])
+  })
+  it('O1-3 🔴 전부 상이 → changed 3키', () => {
+    const delta = computeDesignDelta(B('A', 'B', 'C'), B('A2', 'B2', 'C2'))
+    expect(delta.changed).toEqual(['requirement', 'design', 'plan'])
+    expect(delta.unchanged).toEqual([])
+  })
+})
+
+describe('[B-2a] assembleReviewPrompt — 하드코딩 golden(SUT 독립)', () => {
+  // 고정 입력(persona·context 없음)이라 동적값 0 — expected를 하드코딩. assembleReviewPrompt를 재호출해
+  // expected를 만들지 않는다(design-r02 tautology 금지).
+  const base = {
+    reviewBaseSha: 'BASE', requestBody: 'REQ', reviewKind: 'design' as const,
+    designDocs: { requirement: 'R', design: 'D', plan: 'P' } as DesignDocs,
+  }
+
+  it('O1-5 🔴 full 모드(designDelta 없음) 전체 문자열 === 하드코딩 golden', () => {
+    const out = assembleReviewPrompt({ ...base })
+    const expected =
+      '---\nREVIEW_BASE_SHA: BASE\n' +
+      '---\nREVIEW_KIND: design (응답 review_kind가 동일해야 함)\n' +
+      '---\nREQ\n' +
+      '---\n# 권위 아티팩트 = 설계 문서 00/01/02 (리뷰 대상 = 바인딩 대상)\n' +
+      '## 00-requirement.md\nR\n## 01-design.md\nD\n## 02-plan.md\nP'
+    expect(out).toBe(expected)
+  })
+
+  it('O1-4 🔴 delta 모드(00·02 변경, 01 baseline) 전체 문자열 === 하드코딩 golden(계약 블록 없음)', () => {
+    const out = assembleReviewPrompt({
+      ...base,
+      designDelta: { changed: ['requirement', 'plan'], unchanged: ['design'] },
+    })
+    const expected =
+      '---\nREVIEW_BASE_SHA: BASE\n' +
+      '---\nREVIEW_KIND: design (응답 review_kind가 동일해야 함)\n' +
+      '---\nREQ\n' +
+      '---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)\n' +
+      `## 00-requirement.md ${DELTA_CHANGED_TAG}\nR\n` +
+      `## 01-design.md ${DELTA_BASELINE_TAG}\nD\n` +
+      `## 02-plan.md ${DELTA_CHANGED_TAG}\nP`
+    expect(out).toBe(expected)
+    // 계약/지시문 블록이 태그 외에 없다(전체 === 라 이미 봉쇄, 명시 재확인).
+    expect(out).not.toContain('재litigate')
+    expect(out).not.toContain('Delta Review 계약')
+  })
+})
+
+describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', () => {
+  // 프로덕션 git 어댑터와 동일하게 trailing 공백 제거(createGitAdapter: .replace(/\s+$/,'')).
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' }).replace(/\s+$/, '')
+  const TICKET_REL = 'workflow/REQ-2026-001'
+  const SCHEMA_SRC = readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')
+  const REQBODY = '# codex-request\nreview this delta\n'
+  const repos: string[] = []
+  afterEach(() => {
+    while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true })
+  })
+
+  /** temp repo + 커밋된 티켓. baseline: undefined=없음 / 'current'=현재 OID와 동일 / 'partial'=design만 다름 / 객체. */
+  const setupRepo = (o: {
+    persona: string | null
+    baseline?: DesignDocBlobs | 'current' | 'partial' | null
+    phase?: boolean
+  }): { repo: string; git: (a: string[]) => string; ticketAbs: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req033-'))
+    repos.push(repo)
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    let reviewPersonaPath: string | null = null
+    if (o.persona !== null) {
+      writeFileSync(join(repo, 'persona.md'), o.persona)
+      reviewPersonaPath = 'persona.md'
+    }
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath }))
+    const ticketAbs = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticketAbs, { recursive: true })
+    writeFileSync(join(repo, 'workflow', 'machine.schema.json'), SCHEMA_SRC) // --run 응답 검증용
+    writeFileSync(join(ticketAbs, '00-requirement.md'), '# req\nreq body\n')
+    writeFileSync(join(ticketAbs, '01-design.md'), '# design\ndesign body\n')
+    writeFileSync(join(ticketAbs, '02-plan.md'), '# plan\nplan body\n')
+    writeFileSync(join(ticketAbs, 'codex-request.md'), REQBODY)
+    const state: Record<string, unknown> = {
+      id: 'REQ-2026-001', phase: 'INTAKE', review_series_model_version: 1, phases: [], approval_evidence_required: true,
+    }
+    writeFileSync(join(ticketAbs, 'state.json'), JSON.stringify(state))
+    git(['add', '-A'])
+    git(['commit', '-qm', 'base'])
+    // baseline은 커밋 후 현재 OID를 알아야 구성 가능 → state.json 재작성(unstaged; non-run·SCRATCH 허용).
+    if (o.baseline !== undefined && o.baseline !== null) {
+      const cur = captureDesignDocBlobs(TICKET_REL, git)
+      let bl: DesignDocBlobs
+      if (o.baseline === 'current') bl = cur
+      else if (o.baseline === 'partial') bl = { ...cur, design: cur.design + 'X' } // design만 다르게
+      else bl = o.baseline
+      state.design_baseline = bl
+    }
+    if (o.phase) {
+      // phase 리뷰 designValid 전제: design_approved + 현재 designHash 일치.
+      state.design_approved = true
+      state.design_approved_hash = captureDesignBinding(TICKET_REL, git).designHash
+      state.phases = [{ id: 'phase-1', approved: false }]
+    }
+    writeFileSync(join(ticketAbs, 'state.json'), JSON.stringify(state))
+    return { repo, git, ticketAbs }
+  }
+
+  const preview = (ticketAbs: string): string => readFileSync(join(ticketAbs, '.review-preview.txt'), 'utf8')
+
+  /** production assembler와 독립적으로 프롬프트를 손 조립(design-r02 tautology 금지). */
+  const buildExpected = (o: {
+    persona: string | null
+    branch: string; sha: string; tree: string; phase: string
+    requestBody: string
+    kind: 'design' | 'phase'
+    designDocs?: DesignDocs
+    stagedDiff?: string
+    designDelta?: { changed: DesignDocKey[]; unchanged: DesignDocKey[] }
+  }): string => {
+    const blocks: string[] = []
+    if (o.persona && o.persona.trim()) blocks.push(o.persona.trim())
+    blocks.push(
+      ['# Review Context', `- branch: ${o.branch}`, `- review_base_sha: ${o.sha}`, `- review_tree: ${o.tree}`, `- phase: ${o.phase}`].join('\n'),
+    )
+    blocks.push(`---\nREVIEW_BASE_SHA: ${o.sha}`)
+    blocks.push(`---\nREVIEW_KIND: ${o.kind} (응답 review_kind가 동일해야 함)`)
+    blocks.push(`---\n${o.requestBody.trim()}`)
+    if (o.kind === 'design') {
+      const d = o.designDocs as DesignDocs
+      if (o.designDelta) {
+        const tag = (k: DesignDocKey): string => (o.designDelta!.changed.includes(k) ? DELTA_CHANGED_TAG : DELTA_BASELINE_TAG)
+        blocks.push(
+          ['---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)',
+            `## 00-requirement.md ${tag('requirement')}`, d.requirement,
+            `## 01-design.md ${tag('design')}`, d.design,
+            `## 02-plan.md ${tag('plan')}`, d.plan].join('\n'),
+        )
+      } else {
+        blocks.push(
+          ['---\n# 권위 아티팩트 = 설계 문서 00/01/02 (리뷰 대상 = 바인딩 대상)',
+            '## 00-requirement.md', d.requirement, '## 01-design.md', d.design, '## 02-plan.md', d.plan].join('\n'),
+        )
+      }
+    } else {
+      blocks.push(`---\n# 권위 아티팩트 = staged diff (리뷰 대상 = 바인딩 대상)\n${o.stagedDiff ?? ''}`)
+    }
+    return blocks.join('\n')
+  }
+
+  const gitCtx = (git: (a: string[]) => string) => ({
+    branch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
+    sha: git(['rev-parse', 'HEAD']),
+    tree: git(['write-tree']),
+  })
+
+  it('O1-6 🔴 baseline 있는 design 리뷰 → preview에 delta 태그(fake 호출 0)', () => {
+    const { ticketAbs, repo } = setupRepo({ persona: null, baseline: 'partial' })
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo], { reviewer: fake })
+    const p = preview(ticketAbs)
+    expect(p.includes(DELTA_CHANGED_TAG) || p.includes(DELTA_BASELINE_TAG)).toBe(true)
+    expect(fake.requests.length).toBe(0)
+  })
+
+  it('O1-7 🔴 baseline 없는(legacy) design → 무표시 + full 프롬프트 전체 === (hand-built)', () => {
+    const { git, ticketAbs, repo } = setupRepo({ persona: null }) // baseline 없음
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo], { reviewer: fake })
+    const p = preview(ticketAbs)
+    expect(p).not.toContain(DELTA_CHANGED_TAG)
+    expect(p).not.toContain(DELTA_BASELINE_TAG)
+    const { branch, sha, tree } = gitCtx(git)
+    const expected = buildExpected({
+      persona: null, branch, sha, tree, phase: 'INTAKE', requestBody: REQBODY, kind: 'design',
+      designDocs: readDesignDocsFromIndex(TICKET_REL, git),
+    })
+    expect(p).toBe(expected)
+  })
+
+  it('O1-8 🔴 부분 변경(design만) → 문서별 태그 정확, 00·02엔 변경 태그 안 붙음', () => {
+    const { git, ticketAbs, repo } = setupRepo({ persona: null, baseline: 'partial' })
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo], { reviewer: fake })
+    const p = preview(ticketAbs)
+    expect(p).toContain(`## 00-requirement.md ${DELTA_BASELINE_TAG}`)
+    expect(p).toContain(`## 01-design.md ${DELTA_CHANGED_TAG}`)
+    expect(p).toContain(`## 02-plan.md ${DELTA_BASELINE_TAG}`)
+    expect(p).not.toContain(`## 00-requirement.md ${DELTA_CHANGED_TAG}`)
+    expect(p).not.toContain(`## 02-plan.md ${DELTA_CHANGED_TAG}`)
+  })
+
+  it('O1-9 🔴 zero-change(baseline==current) → 세 문서 모두 baseline 태그(여전히 delta)', () => {
+    const { git, ticketAbs, repo } = setupRepo({ persona: null, baseline: 'current' })
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo], { reviewer: fake })
+    const p = preview(ticketAbs)
+    expect(p).toContain(`## 00-requirement.md ${DELTA_BASELINE_TAG}`)
+    expect(p).toContain(`## 01-design.md ${DELTA_BASELINE_TAG}`)
+    expect(p).toContain(`## 02-plan.md ${DELTA_BASELINE_TAG}`)
+    expect(p).not.toContain(DELTA_CHANGED_TAG) // 변경 0
+    expect(p).toContain('delta review — 변경분 심사') // full 헤더 아님
+  })
+
+  it('O1-10 🔴 kind 격리 — baseline 있어도 phase 프롬프트 전체 === (무표시, hand-built)', () => {
+    const { git, ticketAbs, repo } = setupRepo({ persona: null, baseline: 'current', phase: true })
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--root', repo], { reviewer: fake })
+    const p = preview(ticketAbs)
+    expect(p).not.toContain(DELTA_CHANGED_TAG)
+    expect(p).not.toContain(DELTA_BASELINE_TAG)
+    const { branch, sha, tree } = gitCtx(git)
+    const expected = buildExpected({
+      persona: null, branch, sha, tree, phase: 'INTAKE', requestBody: REQBODY, kind: 'phase',
+      stagedDiff: git(['diff', '--cached']),
+    })
+    expect(p).toBe(expected)
+  })
+
+  it('O1-11 🔴 base persona + baseline design --run → 전송 프롬프트 전체 === + policy_version==base', () => {
+    const PERSONA = 'BASE-PERSONA-CONTRACT'
+    const { git, ticketAbs, repo } = setupRepo({ persona: PERSONA, baseline: 'partial' })
+    const sha0 = git(['rev-parse', 'HEAD'])
+    const verdict = {
+      machine_schema_version: '1.1', review_base_sha: sha0, status: 'COMPLETE',
+      commit_approved: 'yes', merge_ready: 'yes', risk_level: 'LOW', review_kind: 'design',
+      findings: [], next_action: 'done',
+    }
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(verdict), threadId: 'TID', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    expect(fake.requests.length).toBe(1)
+    // ① 전송 프롬프트 전체 === hand-built delta expected(base persona + 태그, 계약 없음)
+    const { branch, sha, tree } = gitCtx(git)
+    const expected = buildExpected({
+      persona: PERSONA, branch, sha, tree, phase: 'INTAKE', requestBody: REQBODY, kind: 'design',
+      designDocs: readDesignDocsFromIndex(TICKET_REL, git),
+      designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
+    })
+    expect(fake.requests[0]!.prompt).toBe(expected)
+    // ② 로그 policy_version === base persona 해시(= full 모드와 동일; delta가 계약을 안 바꿈)
+    const logRaw = readFileSync(join(repo, REVIEW_CALL_LOG_REL), 'utf8').trim().split('\n')
+    const lastRow = JSON.parse(logRaw[logRaw.length - 1]!) as { policy_version?: string }
+    expect(lastRow.policy_version).toBe(reviewPolicyVersion(PERSONA))
   })
 })
 
