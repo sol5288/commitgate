@@ -1,0 +1,17 @@
+{
+  "id": "REQ-2026-030",
+  "branch": "feat/req-2026-030-iso-calendar-validation",
+  "phase": "INTAKE",
+  "risk_level": "HIGH",
+  "codex_thread_id": null,
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": false,
+  "design_approved_hash": null,
+  "current_phase": null,
+  "phases": [],
+  "approval_evidence_required": true,
+  "review_series_model_version": 1
+}
