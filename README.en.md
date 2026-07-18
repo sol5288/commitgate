@@ -113,6 +113,13 @@ Use `--json` for machine-readable output. It is **read-only** and changes no sta
 
 Repeat this loop without stopping and it drives design → Codex review → implementation → re-review → commit. You only confirm at `AWAIT_HUMAN`.
 
+> **Per-phase auto-commit (opt-in).** By default the loop stops at `AWAIT_HUMAN` before every phase commit. Set
+> `"phaseCommit": { "autoApprove": "low-only" }` in `req.config.json` and Codex-approved phases of **LOW-risk**
+> tickets commit without a human stop (`req:next` issues `req:commit --run` as a RUN), moving the single human
+> confirmation to just **before the feature→main merge** (the terminal becomes `AWAIT_HUMAN` (integration) instead
+> of `DONE`). **HIGH-risk tickets still stop at every phase** regardless of the policy. The Codex review gate is
+> unchanged either way — only the *human stop* on LOW phases is removed.
+
 ### The reviewer persona is injected by the tool
 
 `req:review-codex` puts `workflow/review-persona.md` in as the **first block** of the prompt. It is identical whether a human, Cursor, or Claude runs the command — it does not live where an agent can forget it. If the file is missing or empty, the review stops fail-closed.
@@ -508,6 +515,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"high"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically, rounds 6–8 each require a human exception record bound to that series and round, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception. `hardCap ≤ 8`, `autoBudget ≤ hardCap` |
+| `phaseCommit` | `{ "autoApprove": "never" }` | Per-phase auto-commit policy. `never` (default) stops for a human before every phase commit (current behavior). `low-only` auto-commits Codex-approved phases of **LOW-risk** tickets without a human stop and moves the single human confirmation to just before the feature→main merge. HIGH-risk tickets still stop at every phase under any value (`userConfirmGate` backstop). There is no `"all"` value (it would livelock on HIGH) |
 
 Empty `branchPrefix` values and paths that escape the project root are rejected.
 

@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+- **phase 자동 커밋(opt-in) — `phaseCommit.autoApprove`** (REQ-2026-037). `req.config.json`에
+  `"phaseCommit": { "autoApprove": "low-only" }`를 두면 **LOW 위험** 티켓의 Codex 승인 phase가 사람 정지 없이
+  자동 커밋되고(`req:next`가 `req:commit --run`을 RUN으로 지시), 사람 확인은 feature→main **병합 직전 한 번**으로
+  모입니다(종단이 `DONE` 대신 `AWAIT_HUMAN`(통합)). **기본값 `never`는 현행 동작(매 phase 확인)과 100% 동일**해
+  기존 사용자는 무회귀입니다. **HIGH 티켓은 정책과 무관하게 매 phase 확인**(`userConfirmGate` 백스톱)이고,
+  fail-closed로 `risk_level`이 정확히 `LOW`일 때만 자동입니다(누락·불명·`"all"` 정책은 없음 — HIGH livelock 방지).
+  Codex 리뷰 게이트·커밋시점 doctor 재검증은 무변경 — 제거되는 것은 LOW phase의 *사람 정지*뿐입니다.
+  (런타임은 이미 구현·커밋돼 있습니다: 설정 배선·enum은 [`scripts/req/lib/config.ts`](scripts/req/lib/config.ts)의
+  `phaseCommit`/`CONFIG_SCHEMA`, 자동 커밋 분기·복구 가드·병합 게이트는 [`scripts/req/req-next.ts`](scripts/req/req-next.ts)의
+  `resolveNext`. 이 문서 변경은 그 검증된 동작을 문서·기본 설정에 반영한 것입니다.)
+
 ## 0.8.1
 
 - **README에 0.8.0 기능 문서화** — 설정 표에 `reviewBudget`(재리뷰 시도 예산·상한), "무엇을 보장하나요?"에

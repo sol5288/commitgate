@@ -33,6 +33,11 @@
 - 각 phase는 의미 있는 커밋. "WIP" 금지.
 - 커밋 메시지 컨벤션: `test/feat/fix/refactor/docs/chore` 접두사. `[Codex]`/`[Claude]` 같은 메타 정보 금지(Reviewer 편향 방지).
 - HIGH 영향 phase는 `req:commit --run` 직전 사용자 확인(`state.user_commit_confirmed`).
+- **LOW phase 자동 커밋(opt-in)**: `req.config.json`의 `phaseCommit.autoApprove`가 `low-only`이고 `risk_level`이
+  `LOW`(정확 일치)면, Codex 승인 phase를 사람 정지 없이 자동 커밋한다(`req:next`가 `req:commit --run`을 RUN으로 지시).
+  기본값 `never`면 종전대로 매 phase 사람 확인. **HIGH는 정책과 무관하게 매 phase 확인**(`userConfirmGate` 백스톱).
+  자동 커밋을 켜면 사람 확인은 feature→main **통합 통제점**(I1/I2/B1)으로 모인다 — `req:next` 종단이 `DONE`이 아니라
+  `AWAIT_HUMAN`(통합)으로 멈춘다.
 
 ### 5. 승인 범위 해석 규칙
 

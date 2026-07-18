@@ -146,7 +146,9 @@ flowchart TD
 flowchart TD
     S0{state 신뢰가능?<br/>targetProblems+phaseModelProblems} -->|아니오| B0[BLOCKED]
     S0 -->|예| S1{commit_allowed=true?}
-    S1 -->|예| AH[AWAIT_HUMAN<br/>req:commit --run 승인]
+    S1 -->|예| S1a{low-only & risk=LOW & staged?}
+    S1a -->|예| RC["RUN: req:commit 자동 커밋"]
+    S1a -->|아니오| AH["AWAIT_HUMAN<br/>req:commit --run 승인<br/>(staged 없으면 --finalize)"]
     S1 -->|아니오| S2{설계docs 인덱스에?}
     S2 -->|아니오| A2[AGENT: git add 00/01/02]
     S2 -->|예| S3{designValid?}
@@ -156,7 +158,8 @@ flowchart TD
     S4 -->|아니오| S8{pending phase 있음?}
     S8 -->|예, staged 없음| A8[AGENT: phase 구현+git add]
     S8 -->|예, staged 있음| G8[RUN: phase 리뷰]
-    S8 -->|아니오, clean| D[DONE]
+    S8 -->|아니오, clean, low-only| MG["AWAIT_HUMAN<br/>통합 feature→main"]
+    S8 -->|아니오, clean, never| D[DONE]
     S8 -->|아니오, dirty| BX[BLOCKED]
 ```
 
