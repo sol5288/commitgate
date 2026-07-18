@@ -2,25 +2,100 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "ticketRoot": { "type": "string", "minLength": 1 },
-    "schemaPath": { "type": "string", "minLength": 1 },
-    "handoffPath": { "type": ["string", "null"] },
-    "reviewPersonaPath": { "type": ["string", "null"], "minLength": 1 },
-    "branchPrefix": { "type": "string", "minLength": 1 },
-    "packageManager": { "type": "string", "enum": ["pnpm", "npm", "yarn"] },
-    "granularityMaxFiles": { "type": "integer", "minimum": 1 },
-    "reviewModel": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "ticketRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "handoffPath": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reviewPersonaPath": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "branchPrefix": {
+      "type": "string",
+      "minLength": 1
+    },
+    "packageManager": {
+      "type": "string",
+      "enum": [
+        "pnpm",
+        "npm",
+        "yarn"
+      ]
+    },
+    "granularityMaxFiles": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "reviewModel": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
     "reviewReasoningEffort": {
-      "type": ["string", "null"],
-      "enum": ["none", "minimal", "low", "medium", "high", "xhigh", null]
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        null
+      ]
+    },
+    "reviewBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "autoBudget",
+        "hardCap"
+      ],
+      "properties": {
+        "autoBudget": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hardCap": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      }
     },
     "designDocs": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "requirement": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
-        "design": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
-        "plan": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+        "requirement": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "design": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "plan": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        }
       }
     }
   }

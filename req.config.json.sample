@@ -8,6 +8,7 @@
   "granularityMaxFiles": 8,
   "reviewModel": "gpt-5.6-terra",
   "reviewReasoningEffort": "high",
+  "reviewBudget": { "autoBudget": 5, "hardCap": 8 },
   "designDocs": {
     "requirement": "00-requirement.md",
     "design": "01-design.md",

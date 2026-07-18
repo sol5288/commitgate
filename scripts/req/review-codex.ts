@@ -31,7 +31,7 @@ import { resolve, join, relative, sep, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
-import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager } from './lib/config'
+import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget } from './lib/config'
 import {
   createGitAdapter,
   createCodexReviewerAdapter,
@@ -687,6 +687,8 @@ export interface WorkflowState {
   // REQ-2026-027 D1·D2: review series 모델 버전 + series 레코드. 필드 부재 = legacy(무침습).
   review_series_model_version?: number
   review_series?: SeriesRecord[]
+  // REQ-2026-028 D2: 사람 예외 손기록(6~8회차). 소비되면 null(무이월).
+  review_exception_confirmed?: ReviewExceptionConfirmed | null
   [k: string]: unknown
 }
 
@@ -760,24 +762,130 @@ export function closeSeriesApproved(state: WorkflowState, kind: ReviewKind, phas
   return { ...state, review_series: next }
 }
 
+// ──────────────────────────────── review 예산 게이트 (REQ-2026-028 A-2a) ──
+
+/** 예산 판정(REQ-2026-028 D1). `attempt`는 **이 다음 호출의 회차**(= openAttempts + 1). */
+export type BudgetDecision =
+  | { kind: 'allow' }
+  | { kind: 'needs-exception'; attempt: number }
+  | { kind: 'hard-blocked'; attempt: number }
+
 /**
- * attempt를 **외부 호출 직전**에 기록·`writeState`하고 `call()`을 부른다(REQ-2026-027 D3).
+ * 같은 `(kind, phase_id)`의 **열린** series의 attempts(없으면 0). 게이트 입력.
+ * `escalated`나 직전 outcome을 보지 않는다 — 계수만이 기준이다(R2, 배분표 ⑤).
+ */
+export function openSeriesAttempts(state: WorkflowState, kind: ReviewKind, phaseId: string | null): number {
+  const rec = openSeriesRecord(state, kind, phaseId)
+  return rec ? rec.attempts : 0
+}
+
+/**
+ * 예산 게이트 판정(REQ-2026-028 D1, 순수). **기준은 `openAttempts`뿐**(R2).
+ * - `openAttempts < autoBudget` → allow(자동)
+ * - `autoBudget <= openAttempts < hardCap` → needs-exception(6~8회차, 사람 예외 필요)
+ * - `openAttempts >= hardCap` → hard-blocked(9회차, 예외로도 차단)
+ */
+export function checkReviewBudget(openAttempts: number, budget: ReviewBudget): BudgetDecision {
+  const attempt = openAttempts + 1 // 이 다음 호출의 회차
+  if (openAttempts < budget.autoBudget) return { kind: 'allow' }
+  if (openAttempts < budget.hardCap) return { kind: 'needs-exception', attempt }
+  return { kind: 'hard-blocked', attempt }
+}
+
+/** ISO instant 형식(밀리초 선택). req-commit.ts의 ISO_RE와 같은 패턴(손기록 계약 통일). */
+const REVIEW_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/
+
+/**
+ * ISO instant 유효성(REQ-2026-028 D2). **형식 + 달력 유효성 둘 다**(design-r02·r03).
+ * `ISO_RE`만으론 `2026-99-99T99:99:99Z`가 통과하므로, 재파싱해 성분(연·월·일·시·분·초)이 보존되는지 확인.
+ * 밀리초 표기 차(`08Z` vs `08.000Z`)는 비교에서 무시 — 성분이 맞으면 유효.
+ */
+export function isValidIsoInstant(s: unknown): boolean {
+  if (typeof s !== 'string' || !REVIEW_ISO_RE.test(s)) return false
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return false
+  // 재직렬화 후 초까지 성분 비교(밀리초 절단). `2026-99-99...`는 여기서 불일치로 걸린다.
+  const canon = (x: string): string => x.replace(/\.\d+Z$/, 'Z').replace(/Z$/, '')
+  return canon(d.toISOString()) === canon(s)
+}
+
+/** 사람 예외 손기록(REQ-2026-028 D2). `user_commit_confirmed`와 같은 모양. */
+export interface ReviewExceptionConfirmed {
+  confirmed: boolean
+  method: string
+  confirmed_at: string
+  for_series_id: string
+  for_attempt: number
+  note?: string
+}
+
+/**
+ * 사람 예외 소비(REQ-2026-028 D2, 순수). 유효하면 소비된 state(`review_exception_confirmed=null`) 반환,
+ * 무효면 throw(fail-closed). **series는 닫지 않는다**(R10, 배분표 ①) — `closed_reason` 미변경.
  *
- * **순서가 계약이다**(R8): 기록·writeState가 `call()`보다 **먼저**다. `call()`이 throw해도 기록은 이미
- * 디스크에 있어 되돌아가지 않는다 — 외부 호출은 이미 일어났고 비용도 발생했다. "실패했으니 안 센다"는
- * 예산 세탁이다.
+ * 유효 조건: (1) 형식 — `confirmed===true` + 비어있지 않은 `method` + 유효 ISO `confirmed_at`(R8, 배분표 ⑪).
+ * (2) 바인딩 — `for_series_id === seriesId` && `for_attempt === nextAttempt`(R9).
+ */
+export function consumeReviewException(
+  state: WorkflowState,
+  seriesId: string,
+  nextAttempt: number,
+): WorkflowState {
+  const raw = (state as { review_exception_confirmed?: unknown }).review_exception_confirmed
+  if (!raw || typeof raw !== 'object') throw new Error(`review 예외 승인 없음 — ${nextAttempt}회차는 사람 승인이 필요하다`)
+  const ex = raw as Partial<ReviewExceptionConfirmed>
+  if (ex.confirmed !== true) throw new Error('review 예외: confirmed!==true (무효 손기록)')
+  if (typeof ex.method !== 'string' || ex.method.trim().length === 0)
+    throw new Error('review 예외: method 비어 있음 (무효 손기록)')
+  if (!isValidIsoInstant(ex.confirmed_at)) throw new Error(`review 예외: confirmed_at 비-ISO (${String(ex.confirmed_at)})`)
+  if (ex.for_series_id !== seriesId)
+    throw new Error(`review 예외: for_series_id 불일치(${String(ex.for_series_id)} ≠ ${seriesId}) — 다른 series 예외 재사용 불가`)
+  if (ex.for_attempt !== nextAttempt)
+    throw new Error(`review 예외: for_attempt 불일치(${String(ex.for_attempt)} ≠ ${nextAttempt}) — 다른 회차 예외 재사용 불가`)
+  const { review_exception_confirmed: _consumed, ...rest } = state // 1회 소비(무이월)
+  return { ...rest, review_exception_confirmed: null }
+}
+
+/**
+ * attempt를 **외부 호출 직전**에 기록·`writeState`하고 `call()`을 부른다(REQ-2026-027 D3 + REQ-2026-028 D1).
  *
- * **반환 `state`가 후처리의 유일한 base다**(R9): 호출자는 이 값을 이후 모든 처리에 써야 한다. 호출 전
- * state를 다시 쓰면 최종 `writeState`가 attempt를 되돌린다(정상 경로에서도).
+ * **순서가 계약이다**(R8): 예산 게이트 → (예외 소비) → 기록·writeState → `call()`. `call()`이 throw해도
+ * 기록은 이미 디스크에 있어 되돌아가지 않는다 — 외부 호출은 이미 일어났고 비용도 발생했다.
+ *
+ * **예산 게이트가 `recordAttempt` 전이다**(REQ-2026-028 R5): 막을 거면 호출도 기록도 하기 전에 막는다.
+ * throw 시 state는 바뀌지 않는다(예외 소비 성공 시에만 쓰기). **반환 `state`가 후처리의 유일한 base다**(R9).
  */
 export function withAttemptRecorded<T>(
-  ctx: { ticketDir: string; state: WorkflowState; kind: ReviewKind; phaseId: string | null },
+  ctx: { ticketDir: string; state: WorkflowState; kind: ReviewKind; phaseId: string | null; budget: ReviewBudget },
   call: () => T,
 ): { result: T; state: WorkflowState } {
-  const state = recordAttempt(ctx.state, ctx.kind, ctx.phaseId)
+  // REQ-2026-028 D1: recordAttempt **전**에 예산 검사. 초과면 호출·기록 전에 throw.
+  const openAttempts = openSeriesAttempts(ctx.state, ctx.kind, ctx.phaseId)
+  const decision = checkReviewBudget(openAttempts, ctx.budget)
+  let gated = ctx.state
+  if (decision.kind === 'hard-blocked')
+    throw new Error(
+      `review 예산 소진 — ${decision.attempt}회차는 어떤 경로로도 실행하지 않는다(hardCap=${ctx.budget.hardCap}). 종료하거나 정합한 대체 REQ를 작성한다.`,
+    )
+  if (decision.kind === 'needs-exception') {
+    // 🔴 열린 record의 series_id를 **직접** 쓴다(design-r01 P1). 재구성(`split('#')`)은 phase id에 `#`가
+    // 들어가면 깨진다(`phase#alpha` → `NaN`). needs-exception이면 openAttempts>=autoBudget≥1이라 열린
+    // record가 반드시 존재한다(attempts>=1).
+    const open = openSeriesRecord(ctx.state, ctx.kind, ctx.phaseId)
+    if (!open) throw new Error('review 예외: 열린 series를 찾을 수 없다(불변 위반)') // 방어(도달 불가)
+    gated = consumeReviewException(ctx.state, open.series_id, decision.attempt) // 무효면 throw
+  }
+  const state = recordAttempt(gated, ctx.kind, ctx.phaseId)
   writeState(ctx.ticketDir, state) // 호출 **전** 영속 — throw해도 남는다
   const result = call() // throw면 그대로 전파(기록은 이미 선행)
   return { result, state }
+}
+
+/** 같은 `(kind, phase_id)`의 열린 series record(없으면 undefined). series_id를 재구성하지 않고 직접 얻는다. */
+export function openSeriesRecord(state: WorkflowState, kind: ReviewKind, phaseId: string | null): SeriesRecord | undefined {
+  return readSeries(state).find(
+    (r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId && r.closed_reason === null,
+  )
 }
 
 /** state.phases를 안전하게 PhaseEntry[]로 읽음(부재/비배열→[], id 문자열 항목만). */
@@ -1542,7 +1650,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   // REQ-2026-027 D3: attempt를 **호출 직전**에 기록·writeState(withAttemptRecorded). 반환 state(afterAttempt)가
   // 이후 모든 처리의 base다 — 호출 전 `state`를 다시 쓰면 최종 writeState가 attempt를 되돌린다(R9).
   const { result: callRes, state: afterAttempt } = withAttemptRecorded(
-    { ticketDir, state, kind: opts.kind, phaseId },
+    { ticketDir, state, kind: opts.kind, phaseId, budget: cfg.reviewBudget },
     () =>
       callReviewer(reviewer, {
         prompt,

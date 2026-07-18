@@ -27,6 +27,12 @@ export interface DesignDocs {
  */
 export type ReviewReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
+/** review 예산(REQ-2026-028 A-2a). config↔review-codex 순환 방지를 위해 여기(config)에 정의. */
+export interface ReviewBudget {
+  autoBudget: number
+  hardCap: number
+}
+
 /** 사용자가 `req.config.json`에 줄 수 있는 부분 config(전부 선택). */
 export interface RawConfig {
   ticketRoot?: string
@@ -42,6 +48,8 @@ export interface RawConfig {
   reviewModel?: string | null
   /** codex 리뷰 추론강도(REQ-2026-013 P1). null = `-c model_reasoning_effort=` 생략. 미지정 = DEFAULTS. */
   reviewReasoningEffort?: ReviewReasoningEffort | null
+  /** REQ-2026-028 A-2a: review 예산. 미지정 = DEFAULTS(5/8). hardCap≤8·autoBudget≤hardCap은 loadConfig 검증. */
+  reviewBudget?: ReviewBudget
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -57,6 +65,7 @@ export interface ResolvedConfig {
   designDocs: DesignDocs
   reviewModel: string | null
   reviewReasoningEffort: ReviewReasoningEffort | null
+  reviewBudget: ReviewBudget
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -104,6 +113,8 @@ export const DEFAULTS = {
   // `as ... | null`은 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
   reviewModel: 'gpt-5.6-terra' as string | null,
   reviewReasoningEffort: 'high' as ReviewReasoningEffort | null,
+  // REQ-2026-028 A-2a: review 예산. autoBudget=자동 허용 회차, hardCap=절대 상한(9번째 차단 → 8).
+  reviewBudget: { autoBudget: 5, hardCap: 8 } as ReviewBudget,
 }
 
 const BASENAME_RE = '^[A-Za-z0-9][A-Za-z0-9._-]*$' // basename만(슬래시·백슬래시·선행 `.`(→`..`) 금지)
@@ -125,6 +136,16 @@ export const CONFIG_SCHEMA = {
     reviewModel: { type: ['string', 'null'], pattern: BASENAME_RE },
     // effort는 실측 확정 enum(R15) + null. null을 enum에 포함해야 `{effort:null}`이 통과(JSON Schema enum은 타입 무관 전체 적용).
     reviewReasoningEffort: { type: ['string', 'null'], enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', null] },
+    // REQ-2026-028 A-2a: 예산. 스키마는 타입·상한(hardCap≤8·최소 1)까지. 교차검증(autoBudget≤hardCap)은 loadConfig.
+    reviewBudget: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['autoBudget', 'hardCap'],
+      properties: {
+        autoBudget: { type: 'integer', minimum: 1 },
+        hardCap: { type: 'integer', minimum: 1, maximum: 8 },
+      },
+    },
     designDocs: {
       type: 'object',
       additionalProperties: false,
@@ -209,7 +230,16 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     reviewModel: raw.reviewModel !== undefined ? raw.reviewModel : DEFAULTS.reviewModel,
     reviewReasoningEffort:
       raw.reviewReasoningEffort !== undefined ? raw.reviewReasoningEffort : DEFAULTS.reviewReasoningEffort,
+    reviewBudget: raw.reviewBudget ?? DEFAULTS.reviewBudget,
   }
+
+  // REQ-2026-028 R7: 교차검증(스키마가 표현 못 함). AJV가 이미 hardCap∈[1,8]·autoBudget≥1을 잡았고,
+  // 여기서 autoBudget ≤ hardCap을 강제(fail-closed). R4("9번째는 어떤 경로로도 차단")는 설정을 넘는 코드
+  // 상수 경계다 — hardCap>8은 스키마가 거부하므로 config 한 줄로 뚫을 수 없다.
+  if (merged.reviewBudget.autoBudget > merged.reviewBudget.hardCap)
+    throw new Error(
+      `req.config: reviewBudget.autoBudget(${merged.reviewBudget.autoBudget}) > hardCap(${merged.reviewBudget.hardCap}) — autoBudget는 hardCap 이하여야 한다`,
+    )
 
   // repo-내부 자원(ticketRoot·schemaPath·reviewPersonaPath)은 **상대경로 + root 하위**만(절대경로·탈출 금지 → portable).
   // handoffPath만 면제 — 형제 repo의 SSOT 문서를 읽는 **외부 참조**이기 때문.

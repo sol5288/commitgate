@@ -413,3 +413,36 @@ describe('[REQ-2026-010 D4] init이 reviewPersonaPath를 req.config.json에 주�
     }
   })
 })
+
+/** REQ-2026-028 phase-1 — reviewBudget config + 범위 검증(fail-closed). */
+describe('REQ-2026-028 — reviewBudget 설정·범위 검증', () => {
+  it('미설정 → 기본값 {5,8}', () => {
+    const dir = tmpRoot({})
+    try {
+      expect(loadConfig({ root: dir }).reviewBudget).toEqual({ autoBudget: 5, hardCap: 8 })
+    } finally { cleanup(dir) }
+  })
+  it('정상값 통과', () => {
+    const dir = tmpRoot({ reviewBudget: { autoBudget: 3, hardCap: 6 } })
+    try {
+      expect(loadConfig({ root: dir }).reviewBudget).toEqual({ autoBudget: 3, hardCap: 6 })
+    } finally { cleanup(dir) }
+  })
+  it('O1-6 🔴 hardCap>8 → throw(R4는 설정 상한이 아니다, 배분표 ⑥)', () => {
+    const dir = tmpRoot({ reviewBudget: { autoBudget: 5, hardCap: 9 } })
+    try { expect(() => loadConfig({ root: dir })).toThrow() } finally { cleanup(dir) }
+  })
+  it('O1-6 🔴 하한: hardCap<1·autoBudget<1 → throw(design-r01 P1)', () => {
+    const d1 = tmpRoot({ reviewBudget: { autoBudget: 1, hardCap: 0 } })
+    try { expect(() => loadConfig({ root: d1 })).toThrow() } finally { cleanup(d1) }
+    const d2 = tmpRoot({ reviewBudget: { autoBudget: 0, hardCap: 8 } })
+    try { expect(() => loadConfig({ root: d2 })).toThrow() } finally { cleanup(d2) }
+  })
+  it('O1-6 🔴 교차: autoBudget>hardCap → throw', () => {
+    const dir = tmpRoot({ reviewBudget: { autoBudget: 6, hardCap: 5 } })
+    try { expect(() => loadConfig({ root: dir })).toThrow(/autoBudget/) } finally { cleanup(dir) }
+  })
+  it('O1-6b 🔴 CONFIG_SCHEMA에 reviewBudget 존재(배포 스키마 동치는 드리프트 가드가 고정)', () => {
+    expect((CONFIG_SCHEMA.properties as Record<string, unknown>).reviewBudget).toBeDefined()
+  })
+})

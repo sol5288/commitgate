@@ -376,6 +376,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   designDocs: { requirement: '00-requirement.md', design: '01-design.md', plan: '02-plan.md' },
   reviewModel: 'gpt-5.6-terra',
   reviewReasoningEffort: 'high',
+  reviewBudget: { autoBudget: 5, hardCap: 8 },
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,
