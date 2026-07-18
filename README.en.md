@@ -117,7 +117,7 @@ Repeat this loop without stopping and it drives design → Codex review → impl
 
 `req:review-codex` puts `workflow/review-persona.md` in as the **first block** of the prompt. It is identical whether a human, Cursor, or Claude runs the command — it does not live where an agent can forget it. If the file is missing or empty, the review stops fail-closed.
 
-Edit it for your project, or point `reviewPersonaPath` in `req.config.json` at a different file. Set it to `null` to disable.
+Edit it for your project, or point `reviewPersonaPath` in `req.config.json` at a different file. Set it to `null` to disable — but **delta design reviews still inject the built-in delta contract** (the contract that tells the reviewer to re-check only what changed since the approved baseline, so it is attached regardless of the configured persona).
 
 Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses the required status checks**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. In that case CI runs **after** the push, so its green is post-hoc verification, and the agent must not omit that from its report. tag, npm publish, and GitHub release are control points of their own, requested after CI is green and never bundled with the integration approval. See [AGENTS.template.md](AGENTS.template.md) and [docs/RELEASING.md](docs/RELEASING.md) for the full contract.
 
@@ -494,7 +494,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `ticketRoot` | `"workflow"` | REQ ticket directory |
 | `packageManager` | auto-detected | `npm`, `pnpm`, or `yarn` |
 | `designDocs` | `00/01/02` docs | Design document filenames |
-| `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it |
+| `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it — but delta design reviews still inject the built-in delta contract |
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"high"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
 

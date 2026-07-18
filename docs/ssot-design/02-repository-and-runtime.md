@@ -129,7 +129,7 @@ CommitGate 자체가 정의하는 환경 변수는 **1개**이며, 나머지는 
 | `branchPrefix` | `"feat/req-"` | 새 브랜치 prefix(빈 값 금지 — D11 무력화 방지) |
 | `ticketRoot` | `"workflow"` | REQ 티켓 폴더(프로젝트 밖 경로 금지) |
 | `packageManager` | `pnpm`(런타임 `DEFAULTS`) | `npm`/`pnpm`/`yarn`. **자동 감지는 설치기만 수행**(lockfile 기준, [bin/init.ts](../../bin/init.ts) `detectPackageManager`)해 `req.config.json`에 주입한다. 런타임 코어 기본값은 `pnpm`([scripts/req/lib/config.ts](../../scripts/req/lib/config.ts) `DEFAULTS`) |
-| `reviewPersonaPath` | `"workflow/review-persona.md"` | 리뷰 프롬프트 첫 블록. `null`=비활성 |
+| `reviewPersonaPath` | `"workflow/review-persona.md"` | 리뷰 프롬프트 첫 블록. `null`=비활성 — 단 delta design 리뷰에는 내장 delta 계약이 주입된다(REQ-B-2b) |
 | `reviewModel` | `"gpt-5.6-terra"` | codex 리뷰 모델(`-c model=` 고정). `null`=전역 상속 |
 | `reviewReasoningEffort` | `"high"` | 추론강도(`none`~`xhigh`). `null`=전역 상속 |
 | `granularityMaxFiles` | `8` | phase당 변경 파일 권고 상한(D18 WARN) |

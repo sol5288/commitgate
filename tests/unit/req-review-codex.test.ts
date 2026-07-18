@@ -15,6 +15,8 @@ import {
   computeDesignDelta,
   DELTA_CHANGED_TAG,
   DELTA_BASELINE_TAG,
+  DESIGN_DELTA_CONTRACT,
+  applyDeltaPersona,
   designDocPaths,
   readDesignDocsFromIndex,
   validateVerdict,
@@ -2071,7 +2073,9 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
     expect(p).toContain(`## 00-requirement.md ${DELTA_BASELINE_TAG}`)
     expect(p).toContain(`## 01-design.md ${DELTA_BASELINE_TAG}`)
     expect(p).toContain(`## 02-plan.md ${DELTA_BASELINE_TAG}`)
-    expect(p).not.toContain(DELTA_CHANGED_TAG) // 변경 0
+    // 변경 0 → 어떤 **문서 헤더**도 변경 태그를 안 단다. (B-2b 이후 계약 텍스트가 태그 문자열을 포함하므로
+    // 전체 preview 부정이 아니라 doc 헤더로 스코프. REQ-2026-034.)
+    expect(p).not.toMatch(/##[^\n]*\.md \[변경됨/)
     expect(p).toContain('delta review — 변경분 심사') // full 헤더 아님
   })
 
@@ -2090,9 +2094,11 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
     expect(p).toBe(expected)
   })
 
-  it('O1-11 🔴 base persona + baseline design --run → 전송 프롬프트 전체 === + policy_version==base', () => {
+  it('O1-11 🔴 live delta(--run): 문서 태그가 전송 프롬프트에 실린다(감지 배선)', () => {
+    // B-2a 관심 = live 전송 프롬프트에 문서별 delta 태그가 실림(감지→프롬프트 배선). base persona 계약 주입·
+    // policy_version 배선은 B-2b(REQ-2026-034) O1-3 소관이라 여기선 안 본다(B-2b 이후 persona=base+계약).
     const PERSONA = 'BASE-PERSONA-CONTRACT'
-    const { git, ticketAbs, repo } = setupRepo({ persona: PERSONA, baseline: 'partial' })
+    const { git, repo } = setupRepo({ persona: PERSONA, baseline: 'partial' })
     const sha0 = git(['rev-parse', 'HEAD'])
     const verdict = {
       machine_schema_version: '1.1', review_base_sha: sha0, status: 'COMPLETE',
@@ -2102,18 +2108,238 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(verdict), threadId: 'TID', rawStdout: '' })
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     expect(fake.requests.length).toBe(1)
-    // ① 전송 프롬프트 전체 === hand-built delta expected(base persona + 태그, 계약 없음)
-    const { branch, sha, tree } = gitCtx(git)
+    const sent = fake.requests[0]!.prompt
+    expect(sent).toContain(`## 01-design.md ${DELTA_CHANGED_TAG}`) // design만 변경(partial)
+    expect(sent).toContain(`## 00-requirement.md ${DELTA_BASELINE_TAG}`)
+    expect(sent).toContain(`## 02-plan.md ${DELTA_BASELINE_TAG}`)
+    expect(sent).toContain(PERSONA) // base persona도 전송(계약 주입은 B-2b가 추가)
+  })
+})
+
+// ───────────────────── [REQ-2026-034 B-2b] design-delta persona 계약 ──
+describe('[B-2b] applyDeltaPersona·DESIGN_DELTA_CONTRACT(순수)', () => {
+  it('O1-1 🔴 DESIGN_DELTA_CONTRACT 내용 + 태그 상수 값 포함', () => {
+    expect(DESIGN_DELTA_CONTRACT).toContain('재litigate')
+    expect(DESIGN_DELTA_CONTRACT).toContain('직접 영향')
+    expect(DESIGN_DELTA_CONTRACT).toContain('finding')
+    expect(DESIGN_DELTA_CONTRACT).toContain(DELTA_CHANGED_TAG)
+    expect(DESIGN_DELTA_CONTRACT).toContain(DELTA_BASELINE_TAG)
+  })
+  it('O1-2 🔴 applyDeltaPersona 4경우', () => {
+    expect(applyDeltaPersona('BASE', true)).toBe(`BASE\n${DESIGN_DELTA_CONTRACT}`) // (a)
+    expect(applyDeltaPersona(null, true)).toBe(DESIGN_DELTA_CONTRACT) // (b) 단독
+    expect(applyDeltaPersona(null, true)).not.toContain('null') // coercion 없음
+    expect(applyDeltaPersona('BASE', false)).toBe('BASE') // (c) 불변
+    expect(applyDeltaPersona(null, false)).toBe(null) // (d)
+  })
+})
+
+describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)', () => {
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' }).replace(/\s+$/, '')
+  const TICKET_REL = 'workflow/REQ-2026-001'
+  const SCHEMA_SRC = readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')
+  const REQBODY = '# codex-request\nreview this delta\n'
+  const repos: string[] = []
+  afterEach(() => {
+    while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true })
+  })
+
+  const setupRepo = (o: { persona: string | null; baseline?: 'partial' | null; phase?: boolean }): {
+    repo: string; git: (a: string[]) => string; ticketAbs: string
+  } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req034-'))
+    repos.push(repo)
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    let reviewPersonaPath: string | null = null
+    if (o.persona !== null) {
+      writeFileSync(join(repo, 'persona.md'), o.persona)
+      reviewPersonaPath = 'persona.md'
+    }
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath }))
+    const ticketAbs = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticketAbs, { recursive: true })
+    writeFileSync(join(repo, 'workflow', 'machine.schema.json'), SCHEMA_SRC)
+    writeFileSync(join(ticketAbs, '00-requirement.md'), '# req\nreq body\n')
+    writeFileSync(join(ticketAbs, '01-design.md'), '# design\ndesign body\n')
+    writeFileSync(join(ticketAbs, '02-plan.md'), '# plan\nplan body\n')
+    writeFileSync(join(ticketAbs, 'codex-request.md'), REQBODY)
+    const state: Record<string, unknown> = {
+      id: 'REQ-2026-001', phase: 'INTAKE', review_series_model_version: 1, phases: [], approval_evidence_required: true,
+    }
+    writeFileSync(join(ticketAbs, 'state.json'), JSON.stringify(state))
+    git(['add', '-A'])
+    git(['commit', '-qm', 'base'])
+    if (o.baseline === 'partial') {
+      const cur = captureDesignDocBlobs(TICKET_REL, git)
+      state.design_baseline = { ...cur, design: cur.design + 'X' } // design만 변경
+    }
+    if (o.phase) {
+      state.design_approved = true
+      state.design_approved_hash = captureDesignBinding(TICKET_REL, git).designHash
+      state.phases = [{ id: 'phase-1', approved: false }]
+    }
+    writeFileSync(join(ticketAbs, 'state.json'), JSON.stringify(state))
+    return { repo, git, ticketAbs }
+  }
+
+  const preview = (t: string): string => readFileSync(join(t, '.review-preview.txt'), 'utf8')
+
+  /** production assembler와 독립적으로 프롬프트를 손 조립(033 tautology 금지). persona = effective persona. */
+  const buildExpected = (o: {
+    persona: string | null
+    branch: string; sha: string; tree: string; phase: string
+    kind: 'design' | 'phase'
+    designDocs?: DesignDocs
+    stagedDiff?: string
+    designDelta?: { changed: DesignDocKey[]; unchanged: DesignDocKey[] }
+  }): string => {
+    const blocks: string[] = []
+    if (o.persona && o.persona.trim()) blocks.push(o.persona.trim())
+    blocks.push(['# Review Context', `- branch: ${o.branch}`, `- review_base_sha: ${o.sha}`, `- review_tree: ${o.tree}`, `- phase: ${o.phase}`].join('\n'))
+    blocks.push(`---\nREVIEW_BASE_SHA: ${o.sha}`)
+    blocks.push(`---\nREVIEW_KIND: ${o.kind} (응답 review_kind가 동일해야 함)`)
+    blocks.push(`---\n${REQBODY.trim()}`)
+    if (o.kind === 'design') {
+      const d = o.designDocs as DesignDocs
+      if (o.designDelta) {
+        const tag = (k: DesignDocKey): string => (o.designDelta!.changed.includes(k) ? DELTA_CHANGED_TAG : DELTA_BASELINE_TAG)
+        blocks.push(['---\n# 권위 아티팩트 = 설계 문서 00/01/02 (delta review — 변경분 심사)',
+          `## 00-requirement.md ${tag('requirement')}`, d.requirement, `## 01-design.md ${tag('design')}`, d.design, `## 02-plan.md ${tag('plan')}`, d.plan].join('\n'))
+      } else {
+        blocks.push(['---\n# 권위 아티팩트 = 설계 문서 00/01/02 (리뷰 대상 = 바인딩 대상)',
+          '## 00-requirement.md', d.requirement, '## 01-design.md', d.design, '## 02-plan.md', d.plan].join('\n'))
+      }
+    } else {
+      blocks.push(`---\n# 권위 아티팩트 = staged diff (리뷰 대상 = 바인딩 대상)\n${o.stagedDiff ?? ''}`)
+    }
+    return blocks.join('\n')
+  }
+
+  const ctx = (git: (a: string[]) => string) => ({
+    branch: git(['rev-parse', '--abbrev-ref', 'HEAD']), sha: git(['rev-parse', 'HEAD']), tree: git(['write-tree']),
+  })
+  const validVerdict = (sha: string) => ({
+    machine_schema_version: '1.1', review_base_sha: sha, status: 'COMPLETE', commit_approved: 'yes',
+    merge_ready: 'yes', risk_level: 'LOW', review_kind: 'design', findings: [], next_action: 'done',
+  })
+  const validPhaseVerdict = (sha: string) => ({ ...validVerdict(sha), review_kind: 'phase' })
+  const logPolicy = (repo: string): string => {
+    const rows = readFileSync(join(repo, REVIEW_CALL_LOG_REL), 'utf8').trim().split('\n')
+    return (JSON.parse(rows[rows.length - 1]!) as { policy_version?: string }).policy_version as string
+  }
+
+  it('O1-3 🔴 base persona + baseline design --run → 프롬프트·로그 둘 다 base+계약', () => {
+    const PERSONA = 'BASE-PERSONA'
+    const { git, repo } = setupRepo({ persona: PERSONA, baseline: 'partial' })
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    const c = ctx(git)
     const expected = buildExpected({
-      persona: PERSONA, branch, sha, tree, phase: 'INTAKE', requestBody: REQBODY, kind: 'design',
-      designDocs: readDesignDocsFromIndex(TICKET_REL, git),
-      designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
+      persona: `${PERSONA}\n${DESIGN_DELTA_CONTRACT}`, ...c, phase: 'INTAKE', kind: 'design',
+      designDocs: readDesignDocsFromIndex(TICKET_REL, git), designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
     })
     expect(fake.requests[0]!.prompt).toBe(expected)
-    // ② 로그 policy_version === base persona 해시(= full 모드와 동일; delta가 계약을 안 바꿈)
-    const logRaw = readFileSync(join(repo, REVIEW_CALL_LOG_REL), 'utf8').trim().split('\n')
-    const lastRow = JSON.parse(logRaw[logRaw.length - 1]!) as { policy_version?: string }
-    expect(lastRow.policy_version).toBe(reviewPolicyVersion(PERSONA))
+    expect(logPolicy(repo)).toBe(reviewPolicyVersion(`${PERSONA}\n${DESIGN_DELTA_CONTRACT}`))
+    expect(logPolicy(repo)).not.toBe(reviewPolicyVersion(PERSONA))
+  })
+
+  it('O1-4 🔴 null persona + baseline design --run → 계약 단독 + 로그 hash(계약)', () => {
+    const { git, repo } = setupRepo({ persona: null, baseline: 'partial' })
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    const c = ctx(git)
+    const expected = buildExpected({
+      persona: DESIGN_DELTA_CONTRACT, ...c, phase: 'INTAKE', kind: 'design',
+      designDocs: readDesignDocsFromIndex(TICKET_REL, git), designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
+    })
+    expect(fake.requests[0]!.prompt).toBe(expected)
+    expect(fake.requests[0]!.prompt).not.toContain('\nnull\n')
+    expect(logPolicy(repo)).toBe(reviewPolicyVersion(DESIGN_DELTA_CONTRACT))
+    expect(logPolicy(repo)).not.toBe('none')
+  })
+
+  it('O1-5 🔴 base persona + baseline 없음(full) design --run → 계약 없음, 프롬프트 === + 로그 base', () => {
+    const PERSONA = 'BASE-PERSONA'
+    const { git, repo } = setupRepo({ persona: PERSONA }) // baseline 없음
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
+    const c = ctx(git)
+    const expected = buildExpected({ persona: PERSONA, ...c, phase: 'INTAKE', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
+    expect(fake.requests[0]!.prompt).toBe(expected)
+    expect(logPolicy(repo)).toBe(reviewPolicyVersion(PERSONA))
+  })
+
+  it('O1-6 🔴 null persona + baseline 없음(full) design --run → 프롬프트 === + policy=none', () => {
+    const { git, repo } = setupRepo({ persona: null })
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
+    const c = ctx(git)
+    const expected = buildExpected({ persona: null, ...c, phase: 'INTAKE', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
+    expect(fake.requests[0]!.prompt).toBe(expected)
+    expect(logPolicy(repo)).toBe('none')
+  })
+
+  it('O1-7 🔴 kind 격리 — base persona + baseline phase --run → 계약 없음, 프롬프트 === + 로그 base', () => {
+    const PERSONA = 'BASE-PERSONA'
+    const { git, repo } = setupRepo({ persona: PERSONA, baseline: 'partial', phase: true })
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validPhaseVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--run', '--root', repo], { reviewer: fake })
+    expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
+    const c = ctx(git)
+    const expected = buildExpected({ persona: PERSONA, ...c, phase: 'INTAKE', kind: 'phase', stagedDiff: git(['diff', '--cached']) })
+    expect(fake.requests[0]!.prompt).toBe(expected)
+    expect(logPolicy(repo)).toBe(reviewPolicyVersion(PERSONA))
+  })
+
+  it('O1-9 🔴 kind 격리 — null persona + baseline phase --run → 무-persona 프롬프트 === + policy=none', () => {
+    const { git, repo } = setupRepo({ persona: null, baseline: 'partial', phase: true })
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validPhaseVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--run', '--root', repo], { reviewer: fake })
+    expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
+    const c = ctx(git)
+    const expected = buildExpected({ persona: null, ...c, phase: 'INTAKE', kind: 'phase', stagedDiff: git(['diff', '--cached']) })
+    expect(fake.requests[0]!.prompt).toBe(expected)
+    expect(logPolicy(repo)).toBe('none')
+  })
+})
+
+describe('[B-2b] 사용자 문서 계약 갱신(O1-8, touchpoint별 canonical)', () => {
+  const root = packageRoot()
+  const KR = 'delta design 리뷰에는 내장 delta 계약이 주입된다'
+  const EN = 'delta design reviews still inject the built-in delta contract'
+  const readDoc = (rel: string): string => readFileSync(join(root, rel), 'utf8')
+
+  it('O1-8 🔴 README.md 본문 null 설명 + 설정 표 행 둘 다 canonical', () => {
+    const md = readDoc('README.md')
+    // 본문(:120): null 설명 줄에 canonical
+    const bodyLine = md.split('\n').find((l) => l.includes('reviewPersonaPath') && l.includes('null') && l.includes('비활성'))
+    expect(bodyLine).toBeDefined()
+    expect(bodyLine).toContain(KR)
+    // 표 행(:497): `| reviewPersonaPath | ... |` 에 canonical
+    const tableRow = md.split('\n').find((l) => l.startsWith('| `reviewPersonaPath`'))
+    expect(tableRow).toBeDefined()
+    expect(tableRow).toContain(KR)
+  })
+  it('O1-8 🔴 README.en.md 본문 + 표 둘 다 canonical', () => {
+    const en = readDoc('README.en.md')
+    const bodyLine = en.split('\n').find((l) => l.includes('reviewPersonaPath') && l.includes('null') && l.includes('disable'))
+    expect(bodyLine).toBeDefined()
+    expect(bodyLine).toContain(EN)
+    const tableRow = en.split('\n').find((l) => l.startsWith('| `reviewPersonaPath`'))
+    expect(tableRow).toBeDefined()
+    expect(tableRow).toContain(EN)
+  })
+  it('O1-8 🔴 SSOT 02-repository-and-runtime.md reviewPersonaPath 항목 canonical', () => {
+    const ssot = readDoc('docs/ssot-design/02-repository-and-runtime.md')
+    const row = ssot.split('\n').find((l) => l.startsWith('| `reviewPersonaPath`'))
+    expect(row).toBeDefined()
+    expect(row).toContain('delta')
+    expect(row).toContain('계약')
   })
 })
 

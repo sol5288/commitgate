@@ -355,6 +355,29 @@ export function computeDesignDelta(
 }
 
 /**
+ * design delta 리뷰의 **행동 계약**(REQ-2026-034 B-2b, R1). delta 모드 persona에 얹혀 "표시된 변경분·직접
+ * 영향만 심사, 승인 영역 재litigate 금지"를 건다. 태그 문구는 `DELTA_*_TAG` **상수 참조**(하드코딩 금지 —
+ * 태그가 바뀌면 계약도 자동 반영). B-2a 태그를 리뷰어가 어떻게 쓸지의 계약이다.
+ */
+export const DESIGN_DELTA_CONTRACT = [
+  '# Delta Review 계약',
+  `- ${DELTA_CHANGED_TAG} 표시 문서·섹션과 그 직접 영향 범위만 심사한다.`,
+  `- ${DELTA_BASELINE_TAG}은 직전 라운드에 승인되었다. 재심사·재litigate 금지 — 참조 문맥으로만 쓴다.`,
+  '- 단, 이번 변경이 승인 영역의 재고를 강제하면(모순·전제 붕괴) finding으로 명확히 밝혀라.',
+].join('\n')
+
+/**
+ * delta 모드 effective persona 계산(REQ-2026-034 B-2b, R2·R4). 순수. `deltaActive`(= main의 `designDelta`가
+ * 설정됨 = design + baseline)면 계약을 얹는다 — base 있으면 `base + '\n' + 계약`, **base null(reviewPersonaPath:null,
+ * 지원 설정)이면 계약 단독**. `deltaActive` 아니면 base 그대로(null이면 null — full·phase 무회귀).
+ * main은 이 결과 **하나**를 프롬프트와 review-call 로그 policy_version 양쪽에 흘린다(단일 배선, 032 r02·r03).
+ */
+export function applyDeltaPersona(base: string | null, deltaActive: boolean): string | null {
+  if (!deltaActive) return base
+  return base ? `${base}\n${DESIGN_DELTA_CONTRACT}` : DESIGN_DELTA_CONTRACT
+}
+
+/**
  * 설계 문서 3종 본문을 git **인덱스**에서 읽는다(`git show :<path>`) — Codex P2.
  * 프롬프트 본문(리뷰 대상)과 design 바인딩 해시(`captureDesignBinding`, 인덱스 기반)가 **동일 대상**을 가리키게 하여
  * "리뷰 대상 = 바인딩 대상"(결정#3)을 워킹트리 dirty 여부와 무관하게 보장한다.
@@ -1795,6 +1818,10 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   } else {
     stagedDiff = git(['diff', '--cached'])
   }
+  // REQ-2026-034 B-2b: delta 모드(designDelta 설정 = design + baseline)면 persona에 delta 계약을 얹는다.
+  // 이 effectivePersona **하나**를 프롬프트와 review-call 로그 policy_version 양쪽에 흘린다(단일 배선, 032 r02·r03).
+  // designDelta는 B-2a에서 design 전용이므로 phase·full은 base 그대로(kind 격리 구조적 재사용, 032 r06-2).
+  const effectivePersona = applyDeltaPersona(persona, designDelta !== undefined)
   const blockedTarget = buildBlockedReviewTarget({
     kind: opts.kind,
     phaseId,
@@ -1811,7 +1838,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     previousFindingsToClose: buildPreviousFindingsBlock(state, opts.kind, phaseId),
   }
   const prompt = assembleReviewPrompt({
-    persona,
+    persona: effectivePersona, // REQ-2026-034 B-2b: delta면 base+계약(null이면 계약 단독), 아니면 base 그대로.
     handoff,
     reviewContext,
     reviewBaseSha,
@@ -1970,7 +1997,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
       outcome,
       verdict: result.verdict,
       timestamp: approvedAt,
-      policyVersion: reviewPolicyVersion(persona),
+      policyVersion: reviewPolicyVersion(effectivePersona), // REQ-2026-034 B-2b: 전송 persona와 동일(단일 배선).
     }),
   )
 
