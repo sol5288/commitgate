@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -295,4 +295,88 @@ describe('req:new — 레거시 scratch만 허용하는 clean-tree 판정', () =
       rmSync(dir, { recursive: true, force: true })
     }
   }, 60_000)
+})
+
+/** REQ-2026-029 phase-2 — req:new --successor-of lineage(통합, spawnSync). */
+describe('req:new — --successor-of lineage(REQ-2026-029)', () => {
+  const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+  const TSX_CLI = join(PACKAGE_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+  const REQ_NEW_CLI = join(PACKAGE_ROOT, 'scripts', 'req', 'req-new.ts')
+  const g = (dir: string, args: readonly string[]): string => execFileSync('git', [...args], { cwd: dir, encoding: 'utf8' })
+
+  /** 부모 REQ를 심은 repo. parentReplace=true면 부모에 유효 replace 종결 기록. */
+  const fixture = (parentReplace: boolean): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'req-new-succ-'))
+    g(dir, ['init', '-q'])
+    g(dir, ['config', '--local', 'user.email', 't@t.invalid']); g(dir, ['config', '--local', 'user.name', 'T'])
+    g(dir, ['config', '--local', 'commit.gpgSign', 'false'])
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }) + '\n')
+    writeFileSync(join(dir, 'req.config.json'), JSON.stringify({ packageManager: 'npm' }) + '\n')
+    const parentDir = join(dir, 'workflow', 'REQ-2026-020')
+    mkdirSync(parentDir, { recursive: true })
+    const series = parentReplace
+      ? [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 8, closed_reason: 'human-resolution', human_resolution: { decision: 'replace', method: '대체 승인', decided_at: '2026-07-18T00:00:00Z' } }]
+      : [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 3, closed_reason: 'approved' }]
+    writeFileSync(join(parentDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-020', phase: 'INTAKE', phases: [], approval_evidence_required: true, review_series_model_version: 1, review_series: series }, null, 2) + '\n')
+    g(dir, ['add', '-A']); g(dir, ['commit', '-qm', 'base'])
+    return dir
+  }
+  const run = (dir: string, args: string[]) => spawnSync('node', [TSX_CLI, REQ_NEW_CLI, ...args, '--root', dir], { cwd: dir, encoding: 'utf8' })
+  const childState = (dir: string): Record<string, unknown> | null => {
+    const p = join(dir, 'workflow', 'REQ-2026-021', 'state.json')
+    return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null
+  }
+  // 🔴 R6: 실패 경로에서 브랜치·티켓 **디렉터리**가 남지 않아야 한다(state 부재만으론 부족 — design-r01 P1).
+  const branchExists = (dir: string, reqId: string): boolean =>
+    g(dir, ['branch', '--list', `feat/req-${reqId.replace('REQ-', '')}-*`]).trim().length > 0
+  const childDirExists = (dir: string): boolean => existsSync(join(dir, 'workflow', 'REQ-2026-021'))
+
+  const expectNoSideEffects = (dir: string): void => {
+    expect(childState(dir)).toBeNull()           // state 파일 없음
+    expect(childDirExists(dir)).toBe(false)       // 🔴 티켓 디렉터리도 없음
+    expect(branchExists(dir, 'REQ-2026-021')).toBe(false) // 🔴 브랜치도 안 생김
+  }
+
+  it('O2-4 🔴 부모에 replace 기록 없으면 throw + 브랜치·디렉터리 미생성(R6)', () => {
+    const dir = fixture(false)
+    try {
+      const r = run(dir, ['succ-child', '--successor-of', 'REQ-2026-020', '--run'])
+      expect(r.status).not.toBe(0)
+      expectNoSideEffects(dir) // checkout -b·mkdir가 lineage 해소 前이면 실패
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('O2-4 🔴 존재하지 않는 부모 → throw + 브랜치·디렉터리 미생성(R6)', () => {
+    const dir = fixture(true)
+    try {
+      const r = run(dir, ['succ-child', '--successor-of', 'REQ-2026-999', '--run'])
+      expect(r.status).not.toBe(0)
+      expectNoSideEffects(dir)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('O2-5 정상 successor → 자식 생성 + successor_of 부모에서 채워짐 + 빈 review_series(새 예산)', () => {
+    const dir = fixture(true)
+    try {
+      const r = run(dir, ['succ-child', '--successor-of', 'REQ-2026-020', '--run'])
+      expect(r.status).toBe(0)
+      const s = childState(dir)!
+      const so = s.successor_of as Record<string, unknown>
+      expect(so.req_id).toBe('REQ-2026-020')
+      expect(so.parent_attempts_total).toBe(8) // 부모에서 읽음
+      expect((so.parent_replace_resolution as Record<string, unknown>).decision).toBe('replace')
+      expect(s.review_series ?? []).toEqual([]) // 새 예산(빈 series)
+      expect(s.review_series_model_version).toBe(1)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('O2-6 --successor-of 없으면 successor_of 없이 정상 생성(opt-in, R9)', () => {
+    const dir = fixture(true)
+    try {
+      const r = run(dir, ['plain-child', '--run'])
+      expect(r.status).toBe(0)
+      const s = childState(dir)!
+      expect(s.successor_of).toBeUndefined()
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
 })

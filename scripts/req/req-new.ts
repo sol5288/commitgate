@@ -7,12 +7,14 @@
  *   - 기본 dry-run(계획 출력), `--run` 시 실제 브랜치 생성·티켓 파일·스캐폴드 커밋.
  *   - REQ id 채번은 registry 미사용(1차) — workflow/REQ-* 디렉터리 스캔으로 max+1.
  *
- * 사용: req:new <slug> [--run] [--risk LOW|HIGH] [--title "..."]   (저장소 패키지매니저의 실행 형식으로)
+ * 사용: req:new <slug> [--run] [--risk LOW|HIGH] [--title "..."] [--successor-of <REQ-id>]
+ *   --successor-of: 대체 REQ. 부모에 replace 종결(human-resolution) 기록이 있어야 하며, 없으면 fail-closed
+ *     (티켓 미생성). lineage는 부모 state에서 읽는다(REQ-2026-029 A-2b).
  */
 import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { writeState, type WorkflowState } from './review-codex'
+import { writeState, loadState, resolveSuccessorLineage, type WorkflowState, type SuccessorOf } from './review-codex'
 import { loadConfig, packageRoot, buildScriptInvocation, type DesignDocs, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { parseStatusZ, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
@@ -69,7 +71,7 @@ export function nextStepHint(pm: PackageManager, reqId: string): string {
   return `코드 변경 → git add → ${buildScriptInvocation(pm, 'req:review-codex', [id, '--run']).join(' ')}`
 }
 
-export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | 'HIGH'): WorkflowState {
+export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | 'HIGH', successorOf?: SuccessorOf): WorkflowState {
   return {
     id: reqId,
     branch,
@@ -90,6 +92,8 @@ export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | '
     // REQ-2026-027 D1: review series 모델 버전. 첫 리뷰 전에도 존재해 "새 ticket(레코드 없음)"과
     // "legacy(필드 부재)"를 구분한다. 필드 부재 = legacy → 새 재리뷰 시 AWAIT_HUMAN/throw(자동 초기화 금지).
     review_series_model_version: 1,
+    // REQ-2026-029 D3: 대체 REQ면 부모 lineage(--successor-of). 빈 review_series로 새 예산 — 부모 이력만 보존.
+    ...(successorOf ? { successor_of: successorOf } : {}),
   } as WorkflowState
 }
 
@@ -106,11 +110,12 @@ export interface Opts {
   title: string | null
   run: boolean
   root: string | null
+  successorOf: string | null // REQ-2026-029 D3: 부모 REQ id(대체 REQ lineage)
 }
 
 /** 인자 파싱(fail-closed): 잘못된 --risk·값 누락·알 수 없는 옵션은 즉시 throw(조용한 fallback 금지). */
 export function parseArgs(argv: string[]): Opts {
-  const o: Opts = { slug: null, risk: 'LOW', title: null, run: false, root: null }
+  const o: Opts = { slug: null, risk: 'LOW', title: null, run: false, root: null, successorOf: null }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === undefined) continue
@@ -123,6 +128,10 @@ export function parseArgs(argv: string[]): Opts {
       const v = argv[++i]
       if (v === undefined) throw new Error('--root 값 필요')
       o.root = v
+    } else if (a === '--successor-of') {
+      const v = argv[++i]
+      if (v === undefined) throw new Error('--successor-of 값 필요(부모 REQ id)')
+      o.successorOf = v
     } else if (a === '--risk') {
       const v = argv[++i]
       if (v !== 'LOW' && v !== 'HIGH')
@@ -159,12 +168,29 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const ticketRootRel = relative(cfg.root, cfg.workflowDirAbs).replace(/\\/g, '/')
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
 
+  // REQ-2026-029 D3: --successor-of lineage 해소. **branch 생성·mkdir 前**에 검증(design-r01 observation) —
+  // 부모 없음·replace 기록 없음·형식 위반이면 여기서 throw해 티켓이 생성되지 않는다(R6 fail-closed).
+  let successorOf: SuccessorOf | undefined
+  if (o.successorOf !== null) {
+    const parentId = o.successorOf.startsWith('REQ-') ? o.successorOf : `REQ-${o.successorOf}`
+    const parentDir = join(cfg.workflowDirAbs, parentId)
+    let parentState: WorkflowState
+    try {
+      parentState = loadState(parentDir)
+    } catch {
+      throw new Error(`--successor-of ${parentId}: 부모 티켓 state를 읽을 수 없다(${parentDir})`)
+    }
+    // recorded_at은 자식 생성 시각(부모 값 아님). dry-run에선 검증만 하고 값은 버린다.
+    successorOf = resolveSuccessorLineage(parentState, parentId, new Date().toISOString())
+  }
+
   if (!o.run) {
     console.log('[req:new] DRY-RUN (--run 시 실제 생성)')
     console.log(`  REQ    : ${reqId}`)
     console.log(`  branch : ${branch}`)
     console.log(`  ticket : ${ticketRel}/ (state.json·${dd.requirement}·${dd.design}·${dd.plan}·codex-request.md)`)
     console.log(`  risk   : ${o.risk}`)
+    if (successorOf) console.log(`  successor_of : ${successorOf.req_id} (부모 ${successorOf.parent_attempts_total}회 · replace 승인 확인)`)
     return
   }
 
@@ -185,7 +211,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   git(['checkout', '-b', branch]) // D11/DEC-WF-020: feat/req-* 생성·체크아웃
   mkdirSync(ticketDir, { recursive: true })
-  writeState(ticketDir, buildInitialState(reqId, branch, o.risk))
+  writeState(ticketDir, buildInitialState(reqId, branch, o.risk, successorOf))
   writeFileSync(join(ticketDir, dd.requirement), `# ${reqId} 요구사항\n\n${o.title ?? '(요구사항 작성)'}\n`, 'utf8')
   // DEC-WF-027 design-first: design·plan 스캐폴드도 함께 생성 — 첫 --kind design 리뷰가 문서 누락으로 fail-closed 되지 않게.
   writeFileSync(

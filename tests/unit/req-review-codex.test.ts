@@ -64,6 +64,7 @@ import {
   isValidHumanResolution,
   closeSeriesHumanResolution,
   isSeriesKeyTerminal,
+  resolveSuccessorLineage,
   type SeriesRecord,
   type HumanResolution,
   type Verdict,
@@ -2836,5 +2837,35 @@ describe('REQ-2026-029 phase-1 — terminal 가드(withAttemptRecorded)', () => 
       expect(series[1]!.attempts).toBe(1)
       expect(series[1]!.closed_reason).toBeNull()
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+/** REQ-2026-029 phase-2 — resolveSuccessorLineage(순수). 부모에서 읽는다(배분표 ⑩). */
+describe('REQ-2026-029 phase-2 — resolveSuccessorLineage 순수', () => {
+  const replaceHR: HumanResolution = { decision: 'replace', method: '대체 승인', decided_at: '2026-07-18T00:00:00Z' }
+  const parentWith = (series: SeriesRecord[]): WorkflowState => ({ id: 'REQ-2026-020', phase: 'INTAKE', review_series_model_version: 1, review_series: series })
+
+  it('O2-1 🔴 부모에 replace 기록 없으면 throw(배분표 ⑩)', () => {
+    // 전부 approved
+    expect(() => resolveSuccessorLineage(parentWith([{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 5, closed_reason: 'approved' }]), 'REQ-2026-020', '2026-07-18T01:00:00Z')).toThrow(/replace/)
+    // human-resolution이지만 terminate
+    expect(() => resolveSuccessorLineage(parentWith([{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 8, closed_reason: 'human-resolution', human_resolution: { ...replaceHR, decision: 'terminate' } }]), 'REQ-2026-020', '2026-07-18T01:00:00Z')).toThrow(/replace/)
+  })
+
+  it('O2-2 🔴 lineage는 부모에서 읽는다 — attempts 합·replace resolution', () => {
+    const parent = parentWith([
+      { series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 8, closed_reason: 'human-resolution', human_resolution: replaceHR },
+      { series_id: 'phase:p1#1', review_kind: 'phase', phase_id: 'p1', attempts: 4, closed_reason: 'approved' },
+    ])
+    const out = resolveSuccessorLineage(parent, 'REQ-2026-020', '2026-07-18T01:00:00Z')
+    expect(out.req_id).toBe('REQ-2026-020')
+    expect(out.parent_attempts_total).toBe(12) // 8+4, 모든 series 합
+    expect(out.parent_replace_resolution).toEqual(replaceHR) // 부모 레코드 그대로
+    expect(out.recorded_at).toBe('2026-07-18T01:00:00Z') // 자식 생성 시각(인자)
+  })
+
+  it('O2-3 🔴 형식 위반 replace는 거부(enum만 보면 뚫림)', () => {
+    const parent = parentWith([{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 8, closed_reason: 'human-resolution', human_resolution: { ...replaceHR, method: '' } }])
+    expect(() => resolveSuccessorLineage(parent, 'REQ-2026-020', '2026-07-18T01:00:00Z')).toThrow(/replace/)
   })
 })

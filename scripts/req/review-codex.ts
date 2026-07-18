@@ -689,6 +689,8 @@ export interface WorkflowState {
   review_series?: SeriesRecord[]
   // REQ-2026-028 D2: 사람 예외 손기록(6~8회차). 소비되면 null(무이월).
   review_exception_confirmed?: ReviewExceptionConfirmed | null
+  // REQ-2026-029 D3: 대체 REQ의 부모 lineage(--successor-of로만 채워짐).
+  successor_of?: SuccessorOf
   [k: string]: unknown
 }
 
@@ -823,6 +825,39 @@ export function isSeriesKeyTerminal(state: WorkflowState, kind: ReviewKind, phas
   return readSeries(state).some(
     (r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId && r.closed_reason === 'human-resolution',
   )
+}
+
+/**
+ * 대체 REQ의 부모 lineage(REQ-2026-029 D3). **`recorded_at`만 자식 생성 시각**이고 나머지는 부모에서 읽는다
+ * (design-r01 observation — provenance 명확화).
+ */
+export interface SuccessorOf {
+  req_id: string                              // 부모 REQ id
+  parent_attempts_total: number               // 부모 **모든** series attempts 합
+  parent_replace_resolution: HumanResolution  // 부모의 replace 종결 손기록 그대로
+  recorded_at: string                          // 자식 생성 시각(부모 값 아님)
+}
+
+/**
+ * 부모에서 lineage를 읽어 채운다(REQ-2026-029 D3, 순수, R6·R7·배분표 ⑩). 부모에 `decision='replace'` +
+ * 유효 형식(`isValidHumanResolution`)인 human-resolution series가 **없으면 throw**(fail-closed — 티켓 미생성).
+ *
+ * **lineage 근거 세 필드(`req_id`·`parent_attempts_total`·`parent_replace_resolution`)는 부모 state에서 온다**
+ * — CLI로 받지 않는다(전사 오류·날조 통로 차단). `recorded_at`만 자식 생성 시각(부모 값 아님, 호출자가 넘김).
+ */
+export function resolveSuccessorLineage(parentState: WorkflowState, parentReqId: string, recordedAt: string): SuccessorOf {
+  const replace = readSeries(parentState).find(
+    (r) => r.closed_reason === 'human-resolution' && r.human_resolution?.decision === 'replace' && isValidHumanResolution(r.human_resolution),
+  )
+  if (!replace || !replace.human_resolution)
+    throw new Error(`--successor-of ${parentReqId}: 부모에 대체(replace)를 허용한 유효한 사람 결정 기록이 없다`)
+  const parentAttemptsTotal = readSeries(parentState).reduce((sum, r) => sum + (typeof r.attempts === 'number' ? r.attempts : 0), 0)
+  return {
+    req_id: parentReqId,
+    parent_attempts_total: parentAttemptsTotal,
+    parent_replace_resolution: replace.human_resolution,
+    recorded_at: recordedAt,
+  }
 }
 
 // ──────────────────────────────── review 예산 게이트 (REQ-2026-028 A-2a) ──
