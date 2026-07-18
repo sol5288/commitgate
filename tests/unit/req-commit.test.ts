@@ -6,6 +6,7 @@ import {
   validateManifest,
   expectedArchivePaths,
   userConfirmGate,
+  userConfirmProblem,
   consumeState,
   evidencePreflight,
   recoveryClassify,
@@ -486,5 +487,42 @@ describe('REQ-018 — parseArgs --message-file', () => {
   it('회귀: -m·--finalize 기존 파싱 불변', () => {
     expect(parseArgs(['2026-018', '-m', 'msg']).message).toBe('msg')
     expect(parseArgs(['2026-018', '--finalize']).finalize).toBe(true)
+  })
+})
+
+/** REQ-2026-030 — ISO 달력 검증 통일(isValidIsoInstant). 달력 불가능 값 거부 + 정상 값 약화 없음. */
+describe('REQ-2026-030 — ISO 달력 검증(req-commit)', () => {
+  const T2 = 'workflow/REQ-2026-001'
+  const opts = { ticketRel: T2, validPhaseIds: ['p1'] }
+  const validManifest = (over: Record<string, unknown> = {}): string => JSON.stringify({
+    kind: 'phase', phase_id: 'p1',
+    response_path: `${T2}/responses/p1-r02-approved.json`,
+    response_sha256: 'a'.repeat(64), review_base_sha: 'b'.repeat(40),
+    approved_tree: 'c'.repeat(40), approved_at: '2026-07-18T00:00:00.000Z',
+    consumed_at: '2026-07-18T00:00:01.000Z', consumed_by_commit_sha: 'd'.repeat(40),
+    user_commit_confirmed: null, ...over,
+  }) + '\n'
+  const hasProblem = (line: string): boolean => validateManifest(line, opts).length > 0
+
+  it('O1-1 🔴 approved_at·consumed_at에 달력 불가능 값 → 거부(2026-99-99, 13월, 2월30일)', () => {
+    expect(hasProblem(validManifest({ approved_at: '2026-99-99T99:99:99Z' }))).toBe(true)
+    expect(hasProblem(validManifest({ approved_at: '2026-13-01T00:00:00Z' }))).toBe(true)
+    expect(hasProblem(validManifest({ consumed_at: '2026-02-30T00:00:00Z' }))).toBe(true)
+  })
+  it('O1-2 🔴 정상 ISO(밀리초 유·무)는 통과 — 약화 없음', () => {
+    expect(hasProblem(validManifest({ approved_at: '2026-07-18T00:00:00Z', consumed_at: '2026-07-18T00:00:01Z' }))).toBe(false)
+    expect(hasProblem(validManifest({ approved_at: '2026-07-18T00:00:00.480Z' }))).toBe(false)
+  })
+  it('O1-3 형식 위반 거부(통일 후에도 유지)', () => {
+    expect(hasProblem(validManifest({ approved_at: 'not-a-date' }))).toBe(true)
+    expect(hasProblem(validManifest({ consumed_at: '2026-07-18' }))).toBe(true)
+  })
+
+  it('O1-1/O1-2/O1-3 🔴 userConfirmProblem(confirmed_at)도 동일하게', () => {
+    const ucc = (at: unknown) => ({ confirmed: true, method: 'user-direct', confirmed_at: at })
+    expect(userConfirmProblem(ucc('2026-99-99T99:99:99Z'))).not.toBeNull() // 달력 거부
+    expect(userConfirmProblem(ucc('2026-07-18T00:00:00Z'))).toBeNull()     // 정상 통과
+    expect(userConfirmProblem(ucc('2026-07-18T00:00:00.480Z'))).toBeNull() // 밀리초 통과
+    expect(userConfirmProblem(ucc('not-a-date'))).not.toBeNull()           // 형식 거부
   })
 })

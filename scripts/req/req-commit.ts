@@ -20,6 +20,7 @@ import {
   readPhases,
   archiveBaseName,
   isArchiveFileName,
+  isValidIsoInstant,
   type ApprovalEvidence,
   type ReviewKind,
   type WorkflowState,
@@ -34,7 +35,7 @@ let pkgManager: PackageManager = DEFAULTS.packageManager
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 const SHA256_RE = /^[0-9a-f]{64}$/i
 const GIT_OID_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i // git OID: 40(SHA-1) 또는 64(SHA-256)
-const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/ // new Date().toISOString() 형식
+// ISO 검증은 review-codex의 isValidIsoInstant(형식+달력 유효성) 재사용 — 달력 불가능 값 거부(REQ-2026-030).
 // evidencePreflight 구조 사전검증용 placeholder(실제 sourceSha/consumedAt는 source 커밋 후 채움). valid OID/ISO 형식.
 const PREFLIGHT_PLACEHOLDER_OID = '0'.repeat(40)
 const PREFLIGHT_PLACEHOLDER_ISO = '2000-01-01T00:00:00.000Z'
@@ -163,8 +164,8 @@ export function validateManifest(
     if (typeof e.response_sha256 !== 'string' || !SHA256_RE.test(e.response_sha256)) problems.push(`line ${ln}: response_sha256 형식 오류(64hex)`)
     if (typeof e.review_base_sha !== 'string' || !GIT_OID_RE.test(e.review_base_sha)) problems.push(`line ${ln}: review_base_sha 비-OID`)
     if (typeof e.consumed_by_commit_sha !== 'string' || !GIT_OID_RE.test(e.consumed_by_commit_sha)) problems.push(`line ${ln}: consumed_by_commit_sha 비-OID`)
-    if (typeof e.approved_at !== 'string' || !ISO_RE.test(e.approved_at)) problems.push(`line ${ln}: approved_at 비-ISO`)
-    if (typeof e.consumed_at !== 'string' || !ISO_RE.test(e.consumed_at)) problems.push(`line ${ln}: consumed_at 비-ISO`)
+    if (!isValidIsoInstant(e.approved_at)) problems.push(`line ${ln}: approved_at 비-ISO`)
+    if (!isValidIsoInstant(e.consumed_at)) problems.push(`line ${ln}: consumed_at 비-ISO`)
     // kind별 strict 바인딩(반대 kind 필드 금지).
     if (kind === 'phase') {
       if (typeof e.phase_id !== 'string' || !e.phase_id || !opts.validPhaseIds.includes(e.phase_id))
@@ -228,7 +229,7 @@ export function userConfirmProblem(ucc: unknown): string | null {
   const c = ucc as { confirmed?: unknown; method?: unknown; confirmed_at?: unknown }
   if (c.confirmed !== true) return 'confirmed=true 아님'
   if (typeof c.method !== 'string' || !c.method.trim()) return 'method(공백 아닌 문자열) 필요'
-  if (typeof c.confirmed_at !== 'string' || !ISO_RE.test(c.confirmed_at)) return 'confirmed_at(ISO) 필요'
+  if (!isValidIsoInstant(c.confirmed_at)) return 'confirmed_at(ISO) 필요'
   return null
 }
 
