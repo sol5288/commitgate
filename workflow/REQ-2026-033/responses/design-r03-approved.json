@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"f89644e72228a4c84dfecdb3d6984134d2c9ae3b","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","findings":[],"next_action":"설계를 커밋하고 phase-1-delta-detect 구현을 진행하세요.","observations":[]}
