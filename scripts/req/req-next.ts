@@ -36,7 +36,7 @@ import {
   type ReviewKind,
   type LastReviewMarker,
 } from './review-codex'
-import type { ReviewBudget } from './lib/config'
+import type { ReviewBudget, PhaseCommitPolicy } from './lib/config'
 
 // ─────────────────────────────────────────────── 읽기 전용 git 경계 (D6-1) ──
 
@@ -136,6 +136,11 @@ export interface NextInput {
   currentIndexHash: string | null
   /** REQ-2026-028 A-2a: review 예산(G3 escalated 판정용). main이 cfg에서 채운다. */
   reviewBudget: ReviewBudget
+  /**
+   * REQ-2026-037: phase 자동 커밋 정책. main이 `cfg.phaseCommit.autoApprove`로 채운다(항상 존재 — DEFAULTS=never).
+   * 필수 필드다(선택 아님): 해소는 config 계층에서 끝나므로 resolveNext는 내부 기본값을 두지 않는다.
+   */
+  phaseCommitAutoApprove: PhaseCommitPolicy
 }
 
 /** `consumed_approvals[]`에서 phase_id를 안전하게 읽는다. */
@@ -326,6 +331,15 @@ function commitCmd(pm: PackageManager, target: NextTarget): string {
 }
 
 /**
+ * REQ-2026-037: 자동 커밋 RUN 명령. `commitCmd`와 달리 `-m "<메시지>"` 자리표시자를 싣는다 — `req:commit`은
+ * 메시지 없이는 fail-closed로 죽기 때문(read-only인 req:next는 메시지를 합성할 수 없다). 에이전트가 이
+ * 자리표시자를 실제 conventional 메시지로 바꿔 실행한다(AGENT 단계에서 `git add` 대상을 고르는 것과 동형).
+ */
+function autoCommitCmd(pm: PackageManager, target: NextTarget): string {
+  return buildScriptInvocation(pm, 'req:commit', [...targetArgs(target), '--run', '-m', '"<이 phase의 conventional 커밋 메시지>"']).join(' ')
+}
+
+/**
  * 대상(REQ id 또는 `--ticket`) 미지정 에러 문구(DEC-011-1). **config 로드 이후**라 pm별로 파생한다.
  * 리터럴을 박으면 다른 pm 프로젝트의 사용자가 그대로 따라 할 수 없는 명령을 안내받는다.
  */
@@ -477,14 +491,31 @@ export function resolveNext(input: NextInput): NextAction {
     }
 
   // 1. 살아 있는 승인이 가장 쉽게 상한다 — 다른 어떤 행동도 D9(staged tree == approved tree)를 깨뜨린다.
-  if (state.commit_allowed === true)
+  if (state.commit_allowed === true) {
+    // REQ-2026-037: opt-in 자동 커밋. **fail-closed** — `risk_level==='LOW'` 정확 일치 AND 정책 low-only AND
+    // staged 존재일 때만 RUN(자동 커밋). "HIGH가 아님"이 "자동 안전"을 의미하지 않는다: 누락·`'Low'` 오타·
+    // 손상·HIGH는 전부 else(AWAIT_HUMAN)로 떨어지고, HIGH는 req-commit의 Gate B가 이중 백스톱.
+    const autoCommit =
+      input.phaseCommitAutoApprove === 'low-only' && state.risk_level === 'LOW' && input.hasStagedChanges
+    if (autoCommit)
+      return {
+        kind: 'RUN',
+        detail: 'phase 승인이 살아 있다(LOW · 자동 커밋). 이 phase의 conventional 커밋 메시지를 작성해 실행하라.',
+        command: autoCommitCmd(pm, target),
+      }
+    // 복구 가드(R4): 승인이 살아 있는데 staged가 비었으면 부분 커밋(source 커밋 후 consume 전)일 수 있다.
+    // 정상 커밋을 지시하면 req:commit이 `staged 변경 없음`으로 죽어 자동 루프가 스핀한다 → --finalize로 복구.
+    const recovering = !input.hasStagedChanges
     return {
       kind: 'AWAIT_HUMAN',
-      detail: 'phase 승인이 살아 있다. 커밋 전 사람 확인이 필요하다.',
+      detail: recovering
+        ? 'phase 승인이 살아 있으나 staged가 비었다 — 부분 커밋일 수 있다. `req:commit --finalize --run`으로 복구가 필요하다.'
+        : 'phase 승인이 살아 있다. 커밋 전 사람 확인이 필요하다.',
       command: commitCmd(pm, target),
       controlPoint: 'req:commit --run 직전',
       approvalSentence: 'req:commit --run 승인',
     }
+  }
 
   // 1.5 legacy ticket(REQ-2026-027 D1): 모델 버전 부재 = legacy. 살아 있는 승인(1번)보다는 뒤 —
   // 그건 소비만 하면 되고 새 외부 호출이 아니다. design/phase RUN 후보(2·3번)보다는 **앞** — 그 후보를
@@ -692,6 +723,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     worktreeReviewClean: findUnstagedOrUntracked(statusEntries, scratch, ticketRel).length === 0,
     currentIndexHash: captureIndexHash(roGit),
     reviewBudget: cfg.reviewBudget,
+    phaseCommitAutoApprove: cfg.phaseCommit.autoApprove,
   })
 
   if (opts.json) console.log(JSON.stringify({ req_id: state.id, ...action }, null, 2))

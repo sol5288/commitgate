@@ -61,6 +61,8 @@ function baseInput(over: Partial<NextInput> = {}): NextInput {
     worktreeReviewClean: true,
     currentIndexHash: HASH_A,
     reviewBudget: { autoBudget: 5, hardCap: 8 },
+    // REQ-2026-037: 기본은 never(현행 매 phase 정지) — 대부분의 기존 테스트가 이 무회귀 경로를 검증한다.
+    phaseCommitAutoApprove: 'never',
     ...over,
   }
 }
@@ -68,8 +70,9 @@ function baseInput(over: Partial<NextInput> = {}): NextInput {
 // ═══════════════════════════════════════════════════ 판정표 (D6) ══
 
 describe('[req:next] 판정표 — 먼저 매치되는 분기가 이긴다', () => {
-  it('1. commit_allowed=true → AWAIT_HUMAN (승인 문장 포함)', () => {
-    const a = resolveNext(baseInput({ state: baseState({ commit_allowed: true }) }))
+  it('1. commit_allowed=true (기본 never·정상 staged) → AWAIT_HUMAN (승인 문장 포함)', () => {
+    // REQ-2026-037: 기본 정책 never + staged 존재 = 현행 무회귀 경로(매 phase 정지).
+    const a = resolveNext(baseInput({ state: baseState({ commit_allowed: true }), hasStagedChanges: true }))
     expect(a.kind).toBe('AWAIT_HUMAN')
     expect(a.approvalSentence).toBe('req:commit --run 승인')
     expect(a.controlPoint).toContain('req:commit --run')
@@ -863,5 +866,68 @@ describe('REQ-2026-029 — human-resolution terminal 안내(resolveNext)', () =>
     const a = resolveNext(baseInput({ state, hasStagedChanges: true }))
     expect(a.kind).toBe('RUN')
     expect(a.command).toContain('--kind phase')
+  })
+})
+
+// REQ-2026-037 phase-2 — LOW phase 자동 커밋(opt-in, fail-closed) + 복구 가드.
+describe('REQ-2026-037 — phaseCommit 자동 커밋 분기(commit_allowed=true)', () => {
+  const approved = (over: Partial<WorkflowState> = {}) => baseState({ commit_allowed: true, ...over } as Partial<WorkflowState>)
+
+  it('auto: low-only + risk=LOW + staged → RUN(자동 커밋), 명령에 req:commit·--run·-m', () => {
+    const a = resolveNext(baseInput({ state: approved({ risk_level: 'LOW' }), phaseCommitAutoApprove: 'low-only', hasStagedChanges: true }))
+    expect(a.kind).toBe('RUN')
+    expect(a.command).toContain('req:commit')
+    expect(a.command).toContain('--run')
+    expect(a.command).toContain('-m')
+    expect(nextExitCode(a.kind)).toBe(0) // RUN=0 → 셸 루프가 자동 진행
+    expect(a.approvalSentence).toBeUndefined() // 자동 = 사람 정지 아님
+  })
+
+  it('HIGH 유지: low-only + risk=HIGH + staged → AWAIT_HUMAN(정책 무관, LOW만 자동)', () => {
+    const a = resolveNext(baseInput({ state: approved({ risk_level: 'HIGH' }), phaseCommitAutoApprove: 'low-only', hasStagedChanges: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.controlPoint).toBe('req:commit --run 직전')
+    expect(a.approvalSentence).toBe('req:commit --run 승인')
+  })
+
+  it('fail-closed: risk_level 누락/오타/MEDIUM은 자동 아님(→ AWAIT_HUMAN)', () => {
+    for (const risk of [undefined, 'Low', 'low', 'MEDIUM', '']) {
+      const a = resolveNext(baseInput({ state: approved({ risk_level: risk as never }), phaseCommitAutoApprove: 'low-only', hasStagedChanges: true }))
+      expect(a.kind, `risk=${String(risk)}`).toBe('AWAIT_HUMAN') // "HIGH 아님"이 "자동 안전"이 아니다
+    }
+  })
+
+  it('never 무회귀: never + risk=LOW + staged → AWAIT_HUMAN(현행 통제점 그대로)', () => {
+    const a = resolveNext(baseInput({ state: approved({ risk_level: 'LOW' }), phaseCommitAutoApprove: 'never', hasStagedChanges: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.controlPoint).toBe('req:commit --run 직전')
+    expect(a.approvalSentence).toBe('req:commit --run 승인')
+  })
+
+  it('복구 가드(R4): commit_allowed=true인데 staged 없음 → AWAIT_HUMAN(자동 RUN 아님) + --finalize 안내', () => {
+    const a = resolveNext(baseInput({ state: approved({ risk_level: 'LOW' }), phaseCommitAutoApprove: 'low-only', hasStagedChanges: false }))
+    expect(a.kind).toBe('AWAIT_HUMAN') // staged 없으면 자동 커밋 억제(스핀 방지)
+    expect(a.detail).toContain('--finalize')
+  })
+
+  it('우선순위: state 손상(중복 phase id)은 low-only·LOW·staged라도 BLOCKED가 이긴다', () => {
+    const bad = approved({ risk_level: 'LOW', phases: [{ id: 'p1', approved: false }, { id: 'p1', approved: false }] } as Partial<WorkflowState>)
+    const a = resolveNext(baseInput({ state: bad, phaseCommitAutoApprove: 'low-only', hasStagedChanges: true }))
+    expect(a.kind).toBe('BLOCKED') // 분기 0(modelProblems)이 자동 커밋 분기보다 앞
+  })
+
+  it('auto RUN도 --ticket 대상을 보존한다', () => {
+    const dir = join(PACKAGE_ROOT, 'workflow', 'REQ-2026-010')
+    const a = resolveNext(baseInput({ target: { kind: 'ticket', ticketDir: dir }, state: approved({ risk_level: 'LOW' }), phaseCommitAutoApprove: 'low-only', hasStagedChanges: true }))
+    expect(a.kind).toBe('RUN')
+    expect(a.command).toContain('--ticket')
+  })
+
+  it('renderAction: auto RUN은 `$ ...req:commit ... --run` 줄을 내고 통제점/승인 문장은 없다', () => {
+    const a = resolveNext(baseInput({ state: approved({ risk_level: 'LOW' }), phaseCommitAutoApprove: 'low-only', hasStagedChanges: true }))
+    const text = renderAction('REQ-2026-010', a)
+    expect(text).toContain('$ ')
+    expect(text).toContain('req:commit')
+    expect(text).not.toContain('승인 문장')
   })
 })
