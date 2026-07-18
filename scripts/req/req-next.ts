@@ -30,10 +30,12 @@ import {
   captureIndexHash,
   findUnstagedOrUntracked,
   isLegacyTicket,
+  openSeriesAttempts,
   type WorkflowState,
   type ReviewKind,
   type LastReviewMarker,
 } from './review-codex'
+import type { ReviewBudget } from './lib/config'
 
 // ─────────────────────────────────────────────── 읽기 전용 git 경계 (D6-1) ──
 
@@ -131,6 +133,8 @@ export interface NextInput {
   worktreeReviewClean: boolean
   /** 현재 인덱스 전체 해시(`captureIndexHash`). 계산 불가면 null. */
   currentIndexHash: string | null
+  /** REQ-2026-028 A-2a: review 예산(G3 escalated 판정용). main이 cfg에서 채운다. */
+  reviewBudget: ReviewBudget
 }
 
 /** `consumed_approvals[]`에서 phase_id를 안전하게 읽는다. */
@@ -355,6 +359,36 @@ function gateRunCandidate(input: NextInput, cand: RunCandidate): NextAction {
       detail:
         '워킹트리에 unstaged/untracked 변경이 있어 리뷰(D10)가 실패한다. 의도한 변경은 `git add`, 그 외는 정리한 뒤 다시 req:next.',
     }
+
+  // G3 (REQ-2026-028 A-2a): 자동 예산 소진(escalated) → AWAIT_HUMAN. **G2보다 앞**(R13) — 5회차 NEEDS_FIX
+  // 직후엔 escalated와 같은 바인딩 needs-fix가 동시 성립하는데, G2가 먼저 "findings 고치고 다시 add"(AGENT)를
+  // 내면 그 조언이 거짓이다(고쳐도 사람 승인 없이 6회차가 안 열린다). escalated는 파생값(저장 안 함, R11).
+  const openAttempts = openSeriesAttempts(input.state, cand.kind, cand.phaseId)
+  const { autoBudget, hardCap } = input.reviewBudget
+  if (openAttempts >= autoBudget) {
+    const nextAttempt = openAttempts + 1
+    const lrOutcome = (input.state.last_review as LastReviewMarker | undefined)?.outcome ?? '(없음)'
+    const hardBlocked = openAttempts >= hardCap
+    // ⚠️ "위험 수용"은 어느 문구에도 넣지 않는다(배분표 ④ — 부정문으로도 금지). 긍정 선택지만 나열.
+    const options = hardBlocked
+      ? '예외로도 진행 불가 — 종료하거나 정합한 대체 REQ를 작성한다.'
+      : '사람 승인 시 1회 예외 가능(review_exception_confirmed) · 종료 · 정합한 대체 REQ 작성.'
+    return {
+      kind: 'AWAIT_HUMAN',
+      detail: hardBlocked
+        ? `이 series는 하드 상한(hardCap=${hardCap})에 도달했다. ${nextAttempt}회차는 어떤 경로로도 실행하지 않는다.`
+        : `이 series는 자동 예산(autoBudget=${autoBudget})을 소진했다. ${nextAttempt}회차는 사람 결정이 필요하다.`,
+      controlPoint: 'review 예산 소진(escalated)',
+      approvalSentence: hardBlocked
+        ? 'review 하드 상한 도달 — 종료 또는 대체 REQ 작성(둘 중 하나를 사람이 결정)'
+        : `review ${nextAttempt}회차 예외 승인(또는 종료·대체 REQ 작성)`,
+      diagnostics: [
+        `series 시도 수(openAttempts)=${openAttempts} · 다음 회차=${nextAttempt}`,
+        `직전 리뷰 outcome=${lrOutcome}`,
+        `선택지: ${options}`,
+      ],
+    }
+  }
 
   // G2
   const lr = input.state.last_review as LastReviewMarker | undefined
@@ -644,6 +678,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     hasStagedChanges: roGit(['diff', '--cached', '--name-only']).trim().length > 0,
     worktreeReviewClean: findUnstagedOrUntracked(statusEntries, scratch, ticketRel).length === 0,
     currentIndexHash: captureIndexHash(roGit),
+    reviewBudget: cfg.reviewBudget,
   })
 
   if (opts.json) console.log(JSON.stringify({ req_id: state.id, ...action }, null, 2))

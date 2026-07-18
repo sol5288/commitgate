@@ -60,6 +60,7 @@ function baseInput(over: Partial<NextInput> = {}): NextInput {
     hasStagedChanges: false,
     worktreeReviewClean: true,
     currentIndexHash: HASH_A,
+    reviewBudget: { autoBudget: 5, hardCap: 8 },
     ...over,
   }
 }
@@ -743,5 +744,92 @@ describe('REQ-2026-027 — legacy ticket 안내(resolveNext)', () => {
     expect(resolveNext(baseInput({ state: baseState({ commit_allowed: true }) })).kind).toBe('AWAIT_HUMAN')
     expect(resolveNext(baseInput({ state: baseState({ design_approved: false, design_approved_hash: null }) })).command).toContain('--kind design')
     expect(resolveNext(baseInput({ hasStagedChanges: true })).command).toContain('--kind phase')
+  })
+})
+
+// REQ-2026-028 phase-2 — G3 예산 소진 안내(resolveNext). 우선순위 G1→G3→G2.
+describe('REQ-2026-028 — G3 예산 소진 안내(resolveNext)', () => {
+  /** 열린 phase series(attempts)를 심는다. phase p1 RUN 경로가 나오는 baseState 기반. */
+  const withOpenSeries = (attempts: number, over: Partial<WorkflowState> = {}): WorkflowState =>
+    baseState({ review_series: [{ series_id: 'phase:p1#1', review_kind: 'phase', phase_id: 'p1', attempts, closed_reason: null }], ...over } as Partial<WorkflowState>)
+
+  it('O2-1 🔴 escalated → AWAIT_HUMAN + 실제 시도 수·실제 outcome·선택지 내용(phase-2 r03 P1)', () => {
+    const state = withOpenSeries(5, {
+      last_review: { review_kind: 'phase', phase_id: 'p1', outcome: 'needs-fix', compare_hash: 'HH', count: 1, errors: [], at: 'T', findings: [] },
+    } as Partial<WorkflowState>)
+    const a = resolveNext(baseInput({ state, hasStagedChanges: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.controlPoint).toBe('review 예산 소진(escalated)')
+    const diag = a.diagnostics?.join(' ') ?? ''
+    // 🔴 라벨 존재가 아니라 **실제 값**을 단언 — =0·(없음)으로 고정하면 실패한다.
+    expect(diag).toContain('openAttempts)=5')
+    expect(diag).toContain('다음 회차=6')
+    expect(diag).toContain('직전 리뷰 outcome=needs-fix')
+    // 선택지 내용까지 — soft-escalated는 예외·종료·대체 REQ.
+    expect(diag).toContain('선택지:')
+    expect(diag).toContain('예외 가능')
+    expect(diag).toContain('종료')
+    expect(diag).toContain('대체 REQ')
+  })
+
+  it('O2-2 🔴 G3가 G2보다 앞선다 — escalated + 같은 바인딩 needs-fix 동시 성립', () => {
+    // 5회차 NEEDS_FIX 직후: escalated이고 last_review가 같은 compare_hash로 needs-fix. G2가 먼저면 AGENT.
+    const state = withOpenSeries(5, {
+      last_review: { review_kind: 'phase', phase_id: 'p1', outcome: 'needs-fix', compare_hash: HASH_A, count: 1, errors: [], at: 'T', findings: [] },
+    } as Partial<WorkflowState>)
+    const a = resolveNext(baseInput({ state, hasStagedChanges: true, currentIndexHash: HASH_A }))
+    expect(a.kind).toBe('AWAIT_HUMAN') // G3 승 — G2의 AGENT가 아니다
+  })
+
+  it('O2-3 G1이 G3보다 앞선다 — 워킹트리 dirty + escalated → AGENT(정리 먼저)', () => {
+    const a = resolveNext(baseInput({ state: withOpenSeries(5), hasStagedChanges: true, worktreeReviewClean: false }))
+    expect(a.kind).toBe('AGENT')
+  })
+
+  it('O2-4 🔴 정상 series(attempts<autoBudget)는 G2 무변경 — RUN + 경계값 same-binding NEEDS_FIX→AGENT', () => {
+    // attempts=2면 escalated 아님. staged 있으면 종전대로 phase RUN.
+    const a = resolveNext(baseInput({ state: withOpenSeries(2), hasStagedChanges: true }))
+    expect(a.kind).toBe('RUN')
+    expect(a.command).toContain('--kind phase')
+    // 🔴 경계값(phase-2 r03 P1): attempts=4(=autoBudget-1, 아직 escalated 아님) + 같은 바인딩 needs-fix →
+    // G2가 AGENT. G3 조건을 `>= autoBudget-1`로 잘못 넓히면 이게 AWAIT_HUMAN이 되어 실패한다.
+    const boundary = withOpenSeries(4, {
+      last_review: { review_kind: 'phase', phase_id: 'p1', outcome: 'needs-fix', compare_hash: HASH_A, count: 1, errors: [], at: 'T', findings: [] },
+    } as Partial<WorkflowState>)
+    const b = resolveNext(baseInput({ state: boundary, hasStagedChanges: true, currentIndexHash: HASH_A }))
+    expect(b.kind).toBe('AGENT') // G2 — escalated 아니므로 "고치고 다시 add"가 유효한 조언
+  })
+
+  it('O2-5 🔴 hard-blocked 선택지는 "예외로도 진행 불가 — 종료/대체 REQ"(soft와 구분, 위험 수용 없음)', () => {
+    const a = resolveNext(baseInput({ state: withOpenSeries(8), hasStagedChanges: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.detail).toContain('하드 상한')
+    const diag = a.diagnostics?.join(' ') ?? ''
+    // 🔴 hard-blocked 선택지 내용까지 단언(phase-2 r02 P1) — soft 문구로 바꾸면 실패한다.
+    expect(diag).toContain('예외로도 진행 불가')
+    expect(diag).not.toContain('예외 가능') // soft-escalated 문구가 새면 안 됨
+    expect(diag).toContain('종료')
+    expect(diag).toContain('대체 REQ')
+    // 🔴 detail 포함 **전체 문자열**에 "위험 수용" 부재(phase-2 r03 P1) — detail 끝에 붙여도 잡힌다.
+    const allText = [a.detail, a.approvalSentence, ...(a.diagnostics ?? [])].join(' ')
+    expect(allText).not.toContain('위험 수용') // 배분표 ④, 어느 문구에도
+  })
+
+  it('O2-5b 🔴 soft-escalated(6~8회차)에도 "위험 수용" 표현 없음 — 부정문으로도(phase-2 r01 P1)', () => {
+    // hard-blocked만 검사하면 soft 문구의 "위험 수용은 선택지가 아니다"를 놓친다.
+    const a = resolveNext(baseInput({ state: withOpenSeries(5), hasStagedChanges: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    const allText = [a.detail, a.approvalSentence, ...(a.diagnostics ?? [])].join(' ')
+    expect(allText).not.toContain('위험 수용') // 부정문으로도 금지
+  })
+
+  it('O2-6 기존 분기 무변경 — commit_allowed·design RUN은 G3 삽입에도 그대로', () => {
+    expect(resolveNext(baseInput({ state: baseState({ commit_allowed: true }) })).kind).toBe('AWAIT_HUMAN')
+    expect(resolveNext(baseInput({ state: baseState({ design_approved: false, design_approved_hash: null }) })).command).toContain('--kind design')
+  })
+
+  it('O2-6 config 예산이 G3 경계를 움직인다 — autoBudget=3이면 attempts=3에서 escalated', () => {
+    const a = resolveNext(baseInput({ state: withOpenSeries(3), hasStagedChanges: true, reviewBudget: { autoBudget: 3, hardCap: 6 } }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
   })
 })
