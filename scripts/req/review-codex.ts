@@ -364,6 +364,8 @@ export const DESIGN_DELTA_CONTRACT = [
   `- ${DELTA_CHANGED_TAG} 표시 문서·섹션과 그 직접 영향 범위만 심사한다.`,
   `- ${DELTA_BASELINE_TAG}은 직전 라운드에 승인되었다. 재심사·재litigate 금지 — 참조 문맥으로만 쓴다.`,
   '- 단, 이번 변경이 승인 영역의 재고를 강제하면(모순·전제 붕괴) finding으로 명확히 밝혀라.',
+  // REQ-2026-035 B-3a: escalation 사용법. 신호(full_review_requested)만으론 언제 쓸지 모르므로 계약에 명시.
+  '- 변경이 너무 근본적이어서 delta(변경분만)로 판단할 수 없으면 `full_review_requested: "yes"`로 응답해 전체 설계 재리뷰를 요청하라(그때 `commit_approved: "no"`).',
 ].join('\n')
 
 /**
@@ -431,6 +433,9 @@ export interface Verdict {
   next_action?: string
   // REQ-2026-005: optional 비차단 코멘트. classifyReview는 이 필드를 보지 않는다(findings 존재만으로 분류).
   observations?: Observation[]
+  // REQ-2026-035 B-3a: design delta 리뷰에서 리뷰어가 full review를 요청하는 신호(yes/no, optional). yes면
+  // processResponse가 baseline을 비워 다음 리뷰를 full로 되돌린다. yes는 commit_approved=no·review_kind=design 필수.
+  full_review_requested?: string
 }
 
 const STATUS_VALUES = ['NEEDS_FIX', 'STEP_COMPLETE', 'COMPLETE']
@@ -481,6 +486,12 @@ export function validateVerdict(
   //   비차단 코멘트가 필요하면 findings가 아니라 별도 필드(예: observations)를 도입해야 한다(findings 오버로드 금지).
   if (v.commit_approved === 'yes' && Array.isArray(v.findings) && v.findings.length > 0)
     errors.push('모순: commit_approved=yes 인데 findings가 비어있지 않음 (승인은 findings 0건 — 지적이 있으면 미승인)')
+
+  // REQ-2026-035 B-3a: full review 요청은 미승인·design 전용(교차필드). enum(yes/no)은 AJV가 강제.
+  if (v.full_review_requested === 'yes' && v.commit_approved !== 'no')
+    errors.push('모순: full_review_requested=yes 인데 commit_approved≠no (full review 요청은 미승인이어야 함)')
+  if (v.full_review_requested === 'yes' && v.review_kind !== 'design')
+    errors.push('모순: full_review_requested=yes 인데 review_kind≠design (delta/baseline은 design 전용)')
 
   return { ok: errors.length === 0, errors }
 }
@@ -1334,6 +1345,12 @@ export function processResponse(args: {
         approvedAt: args.approvedAt ?? new Date().toISOString(),
       })
     }
+    // REQ-2026-035 B-3a: 리뷰어가 full review를 요청하면 baseline을 비워 다음 design 리뷰를 full로 되돌린다
+    // (hasDesignBaseline 게이트 재사용 — main·게이트 무변경). full_review_requested=yes는 commit_approved=no
+    // (validateVerdict R2)라 위 승인-baseline 분기를 안 타고, stateRest에서 온 기존 baseline만 지운다. ordinary
+    // NEEDS_FIX(full_review_requested≠yes)는 baseline을 보존한다(B-1 NEEDS_FIX 생존 무회귀).
+    // `ok` 가드: 무효 응답(예: yes인데 commit_approved=yes 모순)은 baseline을 안 건드린다(응답 거부).
+    if (ok && verdict.full_review_requested === 'yes') delete nextState.design_baseline
     return { ok, errors, nextState, verdict }
   }
 

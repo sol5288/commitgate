@@ -81,7 +81,7 @@ import {
   type DesignDocs,
   type DesignDocKey,
 } from '../../scripts/req/review-codex'
-import { createFakeReviewerAdapter } from '../../scripts/req/lib/adapters'
+import { createFakeReviewerAdapter, deriveStrictOutputSchema } from '../../scripts/req/lib/adapters'
 import { reviewScratchPaths } from '../../scripts/req/lib/scratch'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 
@@ -2124,6 +2124,8 @@ describe('[B-2b] applyDeltaPersona·DESIGN_DELTA_CONTRACT(순수)', () => {
     expect(DESIGN_DELTA_CONTRACT).toContain('finding')
     expect(DESIGN_DELTA_CONTRACT).toContain(DELTA_CHANGED_TAG)
     expect(DESIGN_DELTA_CONTRACT).toContain(DELTA_BASELINE_TAG)
+    // REQ-2026-035 B-3a: escalation 사용법도 계약에 포함(신호 사용 지침).
+    expect(DESIGN_DELTA_CONTRACT).toContain('full_review_requested')
   })
   it('O1-2 🔴 applyDeltaPersona 4경우', () => {
     expect(applyDeltaPersona('BASE', true)).toBe(`BASE\n${DESIGN_DELTA_CONTRACT}`) // (a)
@@ -2340,6 +2342,139 @@ describe('[B-2b] 사용자 문서 계약 갱신(O1-8, touchpoint별 canonical)',
     expect(row).toBeDefined()
     expect(row).toContain('delta')
     expect(row).toContain('계약')
+  })
+})
+
+// ───────────────────── [REQ-2026-035 B-3a] FULL_REVIEW_REQUESTED escalation ──
+describe('[B-3a] escalation 신호·검증·전환', () => {
+  const baseDesign = (over: Record<string, unknown>): Verdict => ({
+    machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'NEEDS_FIX', commit_approved: 'no',
+    merge_ready: 'no', risk_level: 'LOW', review_kind: 'design',
+    findings: [{ severity: 'P1', detail: 'fundamental change', file: null }], next_action: 'full review',
+    ...over,
+  } as Verdict)
+  const vv = (v: Verdict) => validateVerdict(v, { reviewBaseSha: 'BASE' })
+
+  it('O1-0 🔴 DESIGN_DELTA_CONTRACT에 escalation 지침(신호 사용법)', () => {
+    expect(DESIGN_DELTA_CONTRACT).toContain('full_review_requested')
+    expect(DESIGN_DELTA_CONTRACT).toContain('근본적') // escalation 조건
+  })
+
+  it('O1-1 🔴 full_review_requested=yes + commit_approved=yes → 무효', () => {
+    const r = vv(baseDesign({ status: 'COMPLETE', commit_approved: 'yes', findings: [], full_review_requested: 'yes' }))
+    expect(r.ok).toBe(false)
+    expect(r.errors.join(' ')).toContain('commit_approved≠no')
+  })
+  it('O1-2 🔴 full_review_requested=yes + review_kind=phase → 무효', () => {
+    const r = vv(baseDesign({ review_kind: 'phase', full_review_requested: 'yes' }))
+    expect(r.ok).toBe(false)
+    expect(r.errors.join(' ')).toContain('review_kind≠design')
+  })
+  it('O1-3 🔴 유효 escalation(no+design+NEEDS_FIX+findings)은 통과', () => {
+    expect(vv(baseDesign({ full_review_requested: 'yes' })).ok).toBe(true)
+  })
+  it('O1-4 full_review_requested=no/부재 → 제약 없음(정상 경로 무영향)', () => {
+    expect(vv(baseDesign({ full_review_requested: 'no' })).ok).toBe(true)
+    expect(vv(baseDesign({})).ok).toBe(true) // 부재
+    // 정상 승인도 무영향
+    expect(vv(baseDesign({ status: 'COMPLETE', commit_approved: 'yes', findings: [] })).ok).toBe(true)
+  })
+
+  it('O1-5 🔴 full_review_requested 없는 응답도 구조검증 통과(하위호환)', () => {
+    const resp = { machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'COMPLETE', commit_approved: 'yes',
+      merge_ready: 'no', risk_level: 'LOW', review_kind: 'design', findings: [], next_action: 'done', observations: [] }
+    expect(validateResponseStructure(resp, MACHINE_SCHEMA_PATH).ok).toBe(true)
+  })
+  it('O1-6 🔴 full_review_requested=yes 응답 구조검증 통과, enum 밖은 거부', () => {
+    const ok = { machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'NEEDS_FIX', commit_approved: 'no',
+      merge_ready: 'no', risk_level: 'LOW', review_kind: 'design', findings: [{ severity: 'P1', detail: 'x', file: null }],
+      next_action: 'full', observations: [], full_review_requested: 'yes' }
+    expect(validateResponseStructure(ok, MACHINE_SCHEMA_PATH).ok).toBe(true)
+    expect(validateResponseStructure({ ...ok, full_review_requested: 'maybe' }, MACHINE_SCHEMA_PATH).ok).toBe(false)
+  })
+  it('O1-7 🔴 파생 출력 스키마는 full_review_requested를 required + enum 보존', () => {
+    const schemaText = readFileSync(MACHINE_SCHEMA_PATH, 'utf8')
+    const derived = JSON.parse(deriveStrictOutputSchema(schemaText)) as {
+      required: string[]; properties: Record<string, { enum?: string[] } | undefined>
+    }
+    expect(derived.required).toContain('full_review_requested') // codex가 emit 강제
+    expect(derived.properties.full_review_requested?.enum).toEqual(['yes', 'no'])
+    // 원본은 여전히 optional(required에 없음)
+    const orig = JSON.parse(schemaText) as { required: string[] }
+    expect(orig.required).not.toContain('full_review_requested')
+  })
+})
+
+describe('[B-3a] processResponse — baseline 전환(near-e2e)', () => {
+  const dirs: string[] = []
+  const mkTicket = (verdict: unknown): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'req-b3a-'))
+    dirs.push(dir)
+    writeFileSync(join(dir, 'codex-response.json'), JSON.stringify(verdict), 'utf8')
+    return dir
+  }
+  afterEach(() => { while (dirs.length) rmSync(dirs.pop() as string, { recursive: true, force: true }) })
+
+  const binding = { reviewBaseSha: 'BASE', reviewTree: 'TREE9' }
+  const state: WorkflowState = { id: 'REQ-2026-001', phase: 'INTAKE', branch: 'feat/x' }
+  const OLD: DesignDocBlobs = { requirement: 'oldA', design: 'oldB', plan: 'oldC' }
+  const NEW: DesignDocBlobs = { requirement: 'newA', design: 'newB', plan: 'newC' }
+  const escalation = {
+    machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'NEEDS_FIX', commit_approved: 'no',
+    merge_ready: 'no', risk_level: 'LOW', review_kind: 'design',
+    findings: [{ severity: 'P1', detail: 'too fundamental', file: null }], next_action: 'full', full_review_requested: 'yes',
+  }
+  const ordinaryNeedsFix = { ...escalation, full_review_requested: 'no' }
+  const approved = {
+    machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'COMPLETE', commit_approved: 'yes',
+    merge_ready: 'no', risk_level: 'LOW', review_kind: 'design', findings: [], next_action: 'done', full_review_requested: 'no',
+  }
+
+  it('O1-8 🔴 full_review_requested=yes → baseline 제거(다음 full)', () => {
+    const dir = mkTicket(escalation)
+    const r = processResponse({
+      ticketDir: dir, state: { ...state, design_baseline: OLD }, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+    } as Parameters<typeof processResponse>[0])
+    expect(r.ok).toBe(true) // 유효 escalation
+    expect(r.nextState.design_baseline).toBeUndefined()
+    expect(hasDesignBaseline(r.nextState)).toBe(false)
+  })
+
+  it('O1-9 🔴 ordinary NEEDS_FIX(full_review_requested=no) → baseline 보존(B-1 무회귀)', () => {
+    const dir = mkTicket(ordinaryNeedsFix)
+    const r = processResponse({
+      ticketDir: dir, state: { ...state, design_baseline: OLD }, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+    } as Parameters<typeof processResponse>[0])
+    expect(r.nextState.design_baseline).toEqual(OLD)
+    expect(hasDesignBaseline(r.nextState)).toBe(true)
+  })
+
+  it('O1-10 🔴 escalation 후 full review 승인 → baseline 재설정(delta 재개)', () => {
+    const dir = mkTicket(approved)
+    const r = processResponse({
+      ticketDir: dir, state: { ...state }, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+      archive: { path: 'workflow/REQ-2026-001/responses/design-r02-approved.json', sha256: 'S' },
+      approvedAt: 'AT', designDocBlobs: NEW,
+    } as Parameters<typeof processResponse>[0])
+    expect(r.nextState.design_approved).toBe(true)
+    expect(r.nextState.design_baseline).toEqual(NEW) // B-1 재사용 — delta 재개
+    expect(hasDesignBaseline(r.nextState)).toBe(true)
+  })
+
+  it('O1-11 🔴 무효 escalation(yes+commit_approved=yes) → ok=false, baseline 보존(ok 가드, phase-r01 P1)', () => {
+    // full_review_requested=yes인데 commit_approved=yes는 모순(무효). 거부되는 응답이 정상 저장 baseline을
+    // 파괴하면 state 손실 — processResponse의 `ok &&` 가드가 없으면 baseline이 지워진다.
+    const invalidEscalation = {
+      machine_schema_version: '1.1', review_base_sha: 'BASE', status: 'COMPLETE', commit_approved: 'yes',
+      merge_ready: 'no', risk_level: 'LOW', review_kind: 'design', findings: [], next_action: 'done', full_review_requested: 'yes',
+    }
+    const dir = mkTicket(invalidEscalation)
+    const r = processResponse({
+      ticketDir: dir, state: { ...state, design_baseline: OLD }, binding, threadId: 'T', kind: 'design', designHash: 'DH',
+    } as Parameters<typeof processResponse>[0])
+    expect(r.ok).toBe(false) // 모순으로 거부
+    expect(r.nextState.design_baseline).toEqual(OLD) // 무효 응답은 baseline을 안 지운다(ok 가드)
+    expect(hasDesignBaseline(r.nextState)).toBe(true)
   })
 })
 

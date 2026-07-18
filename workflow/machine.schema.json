@@ -24,6 +24,11 @@
     "merge_ready": { "type": "string", "enum": ["yes", "no"] },
     "risk_level": { "type": "string", "enum": ["LOW", "HIGH"] },
     "review_kind": { "type": "string", "enum": ["design", "phase"] },
+    "full_review_requested": {
+      "type": "string",
+      "enum": ["yes", "no"],
+      "description": "REQ-B-3a. For review_kind=design delta reviews only. Set yes ONLY when the change is too fundamental to assess as a delta against the approved baseline and you need the full design re-reviewed from scratch; you must also set commit_approved=no. Setting yes clears the stored design baseline so the next design review is a full review. In all normal cases set no."
+    },
     "findings": {
       "type": "array",
       "items": {
