@@ -80,6 +80,22 @@
         }
       }
     },
+    "phaseCommit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "autoApprove"
+      ],
+      "properties": {
+        "autoApprove": {
+          "type": "string",
+          "enum": [
+            "never",
+            "low-only"
+          ]
+        }
+      }
+    },
     "designDocs": {
       "type": "object",
       "additionalProperties": false,

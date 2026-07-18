@@ -67,6 +67,8 @@ describe('[P1] DEFAULTS — 코어 기본값 계약', () => {
     expect(DEFAULTS.packageManager).toBe('pnpm')
     expect(DEFAULTS.granularityMaxFiles).toBe(8)
     expect(DEFAULTS.designDocs).toEqual({ requirement: '00-requirement.md', design: '01-design.md', plan: '02-plan.md' })
+    // REQ-2026-037: phase 자동 커밋은 opt-in — 코어 기본은 never(현행 동작 = 매 phase 정지).
+    expect(DEFAULTS.phaseCommit).toEqual({ autoApprove: 'never' })
   })
 
   it('DEFAULTS.handoffPath의 정적 타입은 string | null 로 유지된다(직접 import 소비자 하위호환)', () => {
@@ -444,5 +446,47 @@ describe('REQ-2026-028 — reviewBudget 설정·범위 검증', () => {
   })
   it('O1-6b 🔴 CONFIG_SCHEMA에 reviewBudget 존재(배포 스키마 동치는 드리프트 가드가 고정)', () => {
     expect((CONFIG_SCHEMA.properties as Record<string, unknown>).reviewBudget).toBeDefined()
+  })
+})
+
+/**
+ * REQ-2026-037 phase-1 — `phaseCommit.autoApprove` (opt-in, 기본 never).
+ *
+ * LOW phase 자동 커밋은 **opt-in**이다: 설정 부재/`never`면 현행(매 phase 정지)과 100% 동일.
+ * `low-only`만 자동 커밋을 켠다. 정책 `"all"`은 존재하지 않는다(HIGH+Gate B livelock·위조 유인 → 비목표).
+ */
+describe('REQ-2026-037 — phaseCommit.autoApprove 설정(opt-in)', () => {
+  it('미설정(부분 config) → 기본 never (무회귀)', () => {
+    const dir = tmpRoot({})
+    try {
+      expect(loadConfig({ root: dir }).phaseCommit).toEqual({ autoApprove: 'never' })
+    } finally { cleanup(dir) }
+  })
+  it('req.config.json 파일 부재 → 기본 never', () => {
+    const dir = tmpRoot() // 파일 없음
+    try {
+      expect(loadConfig({ root: dir }).phaseCommit.autoApprove).toBe('never')
+    } finally { cleanup(dir) }
+  })
+  it('low-only override 반영', () => {
+    const dir = tmpRoot({ phaseCommit: { autoApprove: 'low-only' } })
+    try {
+      expect(loadConfig({ root: dir }).phaseCommit.autoApprove).toBe('low-only')
+    } finally { cleanup(dir) }
+  })
+  it('enum 밖(오타) → throw (fail-closed)', () => {
+    const dir = tmpRoot({ phaseCommit: { autoApprove: 'lowonly' } })
+    try { expect(() => loadConfig({ root: dir })).toThrow(/스키마 위반/) } finally { cleanup(dir) }
+  })
+  it('autoApprove 누락 → throw (required)', () => {
+    const dir = tmpRoot({ phaseCommit: {} })
+    try { expect(() => loadConfig({ root: dir })).toThrow() } finally { cleanup(dir) }
+  })
+  it('정책 "all"은 거부(비목표 — HIGH livelock 방지)', () => {
+    const dir = tmpRoot({ phaseCommit: { autoApprove: 'all' } })
+    try { expect(() => loadConfig({ root: dir })).toThrow() } finally { cleanup(dir) }
+  })
+  it('CONFIG_SCHEMA에 phaseCommit 존재(배포 스키마 동치는 드리프트 가드가 고정)', () => {
+    expect((CONFIG_SCHEMA.properties as Record<string, unknown>).phaseCommit).toBeDefined()
   })
 })

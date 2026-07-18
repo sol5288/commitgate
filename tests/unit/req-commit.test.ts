@@ -378,6 +378,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   reviewModel: 'gpt-5.6-terra',
   reviewReasoningEffort: 'high',
   reviewBudget: { autoBudget: 5, hardCap: 8 },
+  phaseCommit: { autoApprove: 'never' },
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,

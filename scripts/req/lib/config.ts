@@ -33,6 +33,18 @@ export interface ReviewBudget {
   hardCap: number
 }
 
+/**
+ * phase 자동 커밋 정책(REQ-2026-037). **opt-in** — 코어 기본은 `never`(현행: 매 phase `AWAIT_HUMAN` 정지).
+ *   - `never`   : Codex 승인 phase마다 사람 확인(`req:commit --run`). 배포 안전도구의 무회귀 기본값.
+ *   - `low-only`: `risk_level==='LOW'`(정확 일치)인 phase를 사람 정지 없이 자동 커밋. HIGH는 정책과 무관하게
+ *     정지(`req-commit`의 Gate B가 이중 백스톱). 정책 `"all"`은 **없다** — HIGH는 매 phase 신선한
+ *     `user_commit_confirmed`를 요구하므로 자동 커밋이 livelock/위조를 부른다(REQ-2026-019 폐기 사유).
+ */
+export type PhaseCommitPolicy = 'never' | 'low-only'
+export interface PhaseCommit {
+  autoApprove: PhaseCommitPolicy
+}
+
 /** 사용자가 `req.config.json`에 줄 수 있는 부분 config(전부 선택). */
 export interface RawConfig {
   ticketRoot?: string
@@ -50,6 +62,8 @@ export interface RawConfig {
   reviewReasoningEffort?: ReviewReasoningEffort | null
   /** REQ-2026-028 A-2a: review 예산. 미지정 = DEFAULTS(5/8). hardCap≤8·autoBudget≤hardCap은 loadConfig 검증. */
   reviewBudget?: ReviewBudget
+  /** REQ-2026-037: phase 자동 커밋 정책. 미지정 = DEFAULTS(never = 현행 매 phase 정지). */
+  phaseCommit?: PhaseCommit
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -66,6 +80,7 @@ export interface ResolvedConfig {
   reviewModel: string | null
   reviewReasoningEffort: ReviewReasoningEffort | null
   reviewBudget: ReviewBudget
+  phaseCommit: PhaseCommit
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -115,6 +130,8 @@ export const DEFAULTS = {
   reviewReasoningEffort: 'high' as ReviewReasoningEffort | null,
   // REQ-2026-028 A-2a: review 예산. autoBudget=자동 허용 회차, hardCap=절대 상한(9번째 차단 → 8).
   reviewBudget: { autoBudget: 5, hardCap: 8 } as ReviewBudget,
+  // REQ-2026-037: phase 자동 커밋은 opt-in. 코어 기본 never = 현행(매 phase 정지) — 업그레이드로 완화되지 않는다.
+  phaseCommit: { autoApprove: 'never' } as PhaseCommit,
 }
 
 const BASENAME_RE = '^[A-Za-z0-9][A-Za-z0-9._-]*$' // basename만(슬래시·백슬래시·선행 `.`(→`..`) 금지)
@@ -144,6 +161,15 @@ export const CONFIG_SCHEMA = {
       properties: {
         autoBudget: { type: 'integer', minimum: 1 },
         hardCap: { type: 'integer', minimum: 1, maximum: 8 },
+      },
+    },
+    // REQ-2026-037: phase 자동 커밋 정책. autoApprove enum이 정책을 고정 — `"all"`은 없다(HIGH livelock 방지).
+    phaseCommit: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['autoApprove'],
+      properties: {
+        autoApprove: { type: 'string', enum: ['never', 'low-only'] },
       },
     },
     designDocs: {
@@ -231,6 +257,8 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     reviewReasoningEffort:
       raw.reviewReasoningEffort !== undefined ? raw.reviewReasoningEffort : DEFAULTS.reviewReasoningEffort,
     reviewBudget: raw.reviewBudget ?? DEFAULTS.reviewBudget,
+    // REQ-2026-037: 미지정 → DEFAULTS(never). `?? `로 충분(phaseCommit은 nullable 아님 — null 탈출구 없음).
+    phaseCommit: raw.phaseCommit ?? DEFAULTS.phaseCommit,
   }
 
   // REQ-2026-028 R7: 교차검증(스키마가 표현 못 함). AJV가 이미 hardCap∈[1,8]·autoBudget≥1을 잡았고,
