@@ -3,15 +3,74 @@
   "branch": "feat/req-2026-034-design-delta-persona",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f7505-4c59-77e3-8f40-85dd1265d994",
+  "review_base_sha": "0c4953c1077924c803bfdc886dbc89919e45a42c",
+  "review_diff_hash": "6f5b7f7dc6125c8743a7f52388a9af50705488a5",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
+  "design_approved": true,
+  "design_approved_hash": "645bc21f94cda0a12c72b495e8eb54ae42e260d20604b2d4f0b168be60aa9873",
+  "current_phase": "phase-1-delta-persona",
+  "phases": [
+    {
+      "id": "phase-1-delta-persona",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 5,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-delta-persona#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-delta-persona",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-delta-persona",
+    "outcome": "approved",
+    "compare_hash": "6b3a2e0126eaf04b22675383a0c273520c84329991fb61568fdb2495c4b05d4f",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-18T11:39:37.152Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "46757780d93eb97e9caeb1915ab5678c5fd19d26",
+    "design": "701dc1c807d5f8d993769a4bfdd27d898cc9f412",
+    "plan": "70e9c86a255af2f26f660c9fca3ae6a53dc3bb99"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-034/responses/design-r05-approved.json",
+    "response_sha256": "fa0f56beba3a8f8342180e849c9e18f61619b280aba5f341676bed8835626442",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "853bfe98161ef348012b03dfd39d2fcc5171d353",
+    "codex_thread_id": "019f74e7-e4ef-79a0-bec6-c73062304249",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-18T11:07:38.276Z",
+    "design_hash": "645bc21f94cda0a12c72b495e8eb54ae42e260d20604b2d4f0b168be60aa9873"
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "6f5b7f7dc6125c8743a7f52388a9af50705488a5",
+      "phase_id": "phase-1-delta-persona",
+      "consumed_by_commit_sha": "5c97badd8bda76235032f99d9b3b80b55c9d4703",
+      "approval_consumed_at": "2026-07-18T11:41:12.492Z"
+    }
+  ]
 }
