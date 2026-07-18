@@ -3,15 +3,125 @@
   "branch": "feat/req-2026-037-auto-phase-commit",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f75f6-740c-7c53-950f-51b849e34e44",
+  "review_base_sha": "a3be0f290e64265464fb3e562a9c6b41a1b40c71",
+  "review_diff_hash": "11282ece24b29de4ae555cd4afbbe0684a9b1bfc",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
+  "user_commit_confirmed": null,
+  "design_approved": true,
+  "design_approved_hash": "1e6852a3ab9e233ff486cf3518615db933924656a6b19964c3063d6be4ca0644",
+  "current_phase": "phase-4-docs-optin",
+  "phases": [
+    {
+      "id": "phase-1-config-policy",
+      "approved": true
+    },
+    {
+      "id": "phase-2-autocommit-branch",
+      "approved": true
+    },
+    {
+      "id": "phase-3-merge-gate",
+      "approved": true
+    },
+    {
+      "id": "phase-4-docs-optin",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-config-policy#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-config-policy",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-autocommit-branch#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-autocommit-branch",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-merge-gate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-merge-gate",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-docs-optin#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4-docs-optin",
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "798920d21e49b31ee3d273211ab30bb20fda266e",
+    "design": "cfdfc8305b0181d8649eb690e21f434d22bc6310",
+    "plan": "64f35f5d571d20e3d15f53c8fae4dd3c18f0c91d"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-037/responses/design-r01-approved.json",
+    "response_sha256": "bdf101b768c54ac4269f2430ea207ad8aa6fcca048c6e743de44529b0f4522d2",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "928e9e047231f3ad2d67f722d15a64ef225c220b",
+    "codex_thread_id": "019f75af-3d57-7361-bf6c-2f1ca24a6a25",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-18T14:46:06.168Z",
+    "design_hash": "1e6852a3ab9e233ff486cf3518615db933924656a6b19964c3063d6be4ca0644"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-4-docs-optin",
+    "outcome": "approved",
+    "compare_hash": "389ddb78778fb91924d55abcc667838d64c2683c6911fc8e1ca7b09a6b76650c",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-18T16:02:41.455Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "19b79efb7a600ec989c87c7ff5c43b2331d031fd",
+      "phase_id": "phase-1-config-policy",
+      "consumed_by_commit_sha": "4eca7cbdf9a193d4bba11aebfdf896913312f1c7",
+      "approval_consumed_at": "2026-07-18T15:10:09.065Z"
+    },
+    {
+      "approved_tree": "ea38ae1b51602a47f6f00c796f47e44c38c685e7",
+      "phase_id": "phase-2-autocommit-branch",
+      "consumed_by_commit_sha": "ca965d9675eae9c94a48b5ffacfa43bcab23393c",
+      "approval_consumed_at": "2026-07-18T15:28:32.653Z"
+    },
+    {
+      "approved_tree": "52a75d813c4a48eb3a4154994b520d48084d5b02",
+      "phase_id": "phase-3-merge-gate",
+      "consumed_by_commit_sha": "7e6bced86bf078f54dec99a652fbd8fd1e884a02",
+      "approval_consumed_at": "2026-07-18T15:46:40.206Z"
+    },
+    {
+      "approved_tree": "11282ece24b29de4ae555cd4afbbe0684a9b1bfc",
+      "phase_id": "phase-4-docs-optin",
+      "consumed_by_commit_sha": "caac55246bdaec5c07f1c15033577d7cd7397668",
+      "approval_consumed_at": "2026-07-18T16:08:54.185Z"
+    }
+  ]
 }
