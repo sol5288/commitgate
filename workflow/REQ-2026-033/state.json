@@ -1,0 +1,27 @@
+{
+  "id": "REQ-2026-033",
+  "branch": "feat/req-2026-033-design-delta-detect",
+  "phase": "INTAKE",
+  "risk_level": "HIGH",
+  "codex_thread_id": null,
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": false,
+  "design_approved_hash": null,
+  "current_phase": null,
+  "phases": [],
+  "approval_evidence_required": true,
+  "review_series_model_version": 1,
+  "successor_of": {
+    "req_id": "REQ-2026-032",
+    "parent_attempts_total": 6,
+    "parent_replace_resolution": {
+      "decision": "replace",
+      "method": "chat-approval: 사용자가 '권장하는 재분할로 진행' 승인 — B-2 비수렴(6R·persona 증강이 복잡도 근원) → B-2a(감지+표시)/B-2b(persona 계약+배선+문서)로 재분할",
+      "decided_at": "2026-07-18T09:35:46.433Z"
+    },
+    "recorded_at": "2026-07-18T09:36:23.119Z"
+  }
+}
