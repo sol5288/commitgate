@@ -3,15 +3,69 @@
   "branch": "feat/req-2026-031-design-baseline",
   "phase": "INTAKE",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f743a-faf8-7f93-b951-32803b1ffd60",
+  "review_base_sha": "7f10ad2f05c4a04f2b67606ee36cfd50a12e8302",
+  "review_diff_hash": "8131803ee850780d780755e598b15f234853109b",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
+  "design_approved": true,
+  "design_approved_hash": "59d310aad7d0b23967221999f8369899357c4ad26556da60e8b323a520742b9f",
+  "current_phase": "phase-1-baseline-capture",
+  "phases": [
+    {
+      "id": "phase-1-baseline-capture",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 5,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-baseline-capture#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-baseline-capture",
+      "attempts": 3,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-baseline-capture",
+    "outcome": "approved",
+    "compare_hash": "fc9e9dfaf89c2b60b4c7b561e30b214817dd128021144c3a9ab7398f5a97a498",
+    "count": 2,
+    "errors": [],
+    "at": "2026-07-18T07:58:54.225Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-031/responses/design-r05-approved.json",
+    "response_sha256": "4c28cda5ffb13e5b47c613e5da16be34ef68c739478b9266e54486e5c16fd495",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "ce0846fc03ad793cc8da72ac20807fce9db5120f",
+    "codex_thread_id": "019f7426-5779-73d2-a34a-f862f7d80952",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-18T07:36:37.924Z",
+    "design_hash": "59d310aad7d0b23967221999f8369899357c4ad26556da60e8b323a520742b9f"
+  },
+  "user_commit_confirmed": null,
+  "consumed_approvals": [
+    {
+      "approved_tree": "8131803ee850780d780755e598b15f234853109b",
+      "phase_id": "phase-1-baseline-capture",
+      "consumed_by_commit_sha": "5be3e6e5b8f4b8ca421f0d4e78303cc9065e5b16",
+      "approval_consumed_at": "2026-07-18T08:55:50.194Z"
+    }
+  ]
 }
