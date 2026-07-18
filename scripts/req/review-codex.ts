@@ -701,7 +701,18 @@ export interface SeriesRecord {
   review_kind: ReviewKind
   phase_id: string | null
   attempts: number
-  closed_reason: 'approved' | null
+  // REQ-2026-029 A-2b: 'human-resolution' 추가(A-2a가 열린 확장으로 남긴 타입). approved와 재개방 규칙 정반대.
+  closed_reason: 'approved' | 'human-resolution' | null
+  // closed_reason='human-resolution'일 때만. 사람이 escalate된 series를 종료·대체로 결정한 손기록.
+  human_resolution?: HumanResolution
+}
+
+/** 사람의 series 종결 결정(REQ-2026-029 A-2b D1). accept-risk 없음(배분표 ④ — decision은 둘뿐). */
+export interface HumanResolution {
+  decision: 'terminate' | 'replace'
+  method: string        // 받은 승인 문장 그대로
+  decided_at: string    // 실제 시계(REQ-019 날조 폐기 이력)
+  note?: string
 }
 
 /**
@@ -760,6 +771,58 @@ export function closeSeriesApproved(state: WorkflowState, kind: ReviewKind, phas
   if (openIdx < 0) return state
   const next = series.map((r, i) => (i === openIdx ? { ...r, closed_reason: 'approved' as const } : r))
   return { ...state, review_series: next }
+}
+
+// ──────────────────────────────── review lineage — human-resolution (REQ-2026-029 A-2b) ──
+
+/**
+ * 사람 종결 손기록 형식 검증(REQ-2026-029 D1, 순수, R3·배분표 ⑪). `decision ∈ {terminate,replace}` +
+ * 비어있지 않은 `method` + 유효 ISO `decided_at`(A-2a `isValidIsoInstant` 재사용 — 형식+달력).
+ * 검증 없으면 `{decision:'',decided_at:'x'}`도 통과해 날조 종결(REQ-019 부류).
+ */
+export function isValidHumanResolution(r: unknown): r is HumanResolution {
+  if (!r || typeof r !== 'object') return false
+  const h = r as Partial<HumanResolution>
+  if (h.decision !== 'terminate' && h.decision !== 'replace') return false
+  if (typeof h.method !== 'string' || h.method.trim().length === 0) return false
+  if (!isValidIsoInstant(h.decided_at)) return false
+  return true
+}
+
+/**
+ * 사람 종결로 series 닫기(REQ-2026-029 D1, 순수). 같은 `(kind,phase_id)`의 **열린** 레코드를
+ * `closed_reason='human-resolution'`+`human_resolution`으로 닫는다. 열린 게 없으면 throw(종결 대상이 없음).
+ * resolution 형식이 무효면 throw(fail-closed).
+ */
+export function closeSeriesHumanResolution(
+  state: WorkflowState,
+  kind: ReviewKind,
+  phaseId: string | null,
+  resolution: HumanResolution,
+): WorkflowState {
+  if (!isValidHumanResolution(resolution)) throw new Error('human_resolution 형식 무효(decision·method·decided_at)')
+  const series = readSeries(state)
+  const openIdx = series.findIndex(
+    (r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId && r.closed_reason === null,
+  )
+  if (openIdx < 0) throw new Error('human-resolution 종결 대상(열린 series)이 없다')
+  const next = series.map((r, i) =>
+    i === openIdx ? { ...r, closed_reason: 'human-resolution' as const, human_resolution: resolution } : r,
+  )
+  return { ...state, review_series: next }
+}
+
+/**
+ * series 키 terminal 판정(REQ-2026-029 D2, 순수, R4·배분표 ③). `(kind,phase_id)`에 `closed_reason=
+ * 'human-resolution'` 레코드가 **하나라도 있으면** true. `approved`만/null인 키는 false(재개방 정상).
+ *
+ * **approved와 재개방 규칙이 정반대다**: approved=문제 해결 → 새 series 정당. human-resolution=미해결·사람
+ * 개입 → 같은 키에서 계속하면 개입 무효화 → 자동으로 안 연다.
+ */
+export function isSeriesKeyTerminal(state: WorkflowState, kind: ReviewKind, phaseId: string | null): boolean {
+  return readSeries(state).some(
+    (r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId && r.closed_reason === 'human-resolution',
+  )
 }
 
 // ──────────────────────────────── review 예산 게이트 (REQ-2026-028 A-2a) ──
@@ -859,6 +922,12 @@ export function withAttemptRecorded<T>(
   ctx: { ticketDir: string; state: WorkflowState; kind: ReviewKind; phaseId: string | null; budget: ReviewBudget },
   call: () => T,
 ): { result: T; state: WorkflowState } {
+  // REQ-2026-029 D2: terminal 가드 — 예산 게이트보다 **앞**. human-resolution으로 종결된 키는 예산을 볼
+  // 필요도 없이 막는다(배분표 ③). 가드 없으면 recordAttempt가 새 series(0회)를 열어 예산이 리셋된다.
+  if (isSeriesKeyTerminal(ctx.state, ctx.kind, ctx.phaseId))
+    throw new Error(
+      '이 series는 human-resolution으로 종결됐다 — 같은 키에서 자동으로 재개하지 않는다. 대체가 필요하면 `req:new --successor-of <이 REQ>`로 만든다.',
+    )
   // REQ-2026-028 D1: recordAttempt **전**에 예산 검사. 초과면 호출·기록 전에 throw.
   const openAttempts = openSeriesAttempts(ctx.state, ctx.kind, ctx.phaseId)
   const decision = checkReviewBudget(openAttempts, ctx.budget)

@@ -833,3 +833,35 @@ describe('REQ-2026-028 — G3 예산 소진 안내(resolveNext)', () => {
     expect(a.kind).toBe('AWAIT_HUMAN')
   })
 })
+
+// REQ-2026-029 phase-1 — terminal 안내(resolveNext). 우선순위 G1→terminal→G3→G2.
+describe('REQ-2026-029 — human-resolution terminal 안내(resolveNext)', () => {
+  const hr = { decision: 'replace' as const, method: '대체 승인', decided_at: '2026-07-18T00:00:00Z' }
+  const withTerminal = (over: Partial<WorkflowState> = {}): WorkflowState =>
+    baseState({ review_series: [{ series_id: 'phase:p1#1', review_kind: 'phase', phase_id: 'p1', attempts: 8, closed_reason: 'human-resolution', human_resolution: hr }], ...over } as Partial<WorkflowState>)
+
+  it('O1-6 🔴 terminal 키 → RUN이 아니라 AWAIT_HUMAN(종결됨 — 대체 REQ 안내)', () => {
+    const a = resolveNext(baseInput({ state: withTerminal(), hasStagedChanges: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.controlPoint).toBe('human-resolution 종결됨')
+    expect(a.approvalSentence).toContain('--successor-of')
+  })
+
+  it('O1-6 terminal이 G3(escalated)보다 앞 — attempts=8이지만 예산 안내가 아니라 종결 안내', () => {
+    const a = resolveNext(baseInput({ state: withTerminal(), hasStagedChanges: true }))
+    expect(a.controlPoint).toBe('human-resolution 종결됨') // 예산 소진(escalated) 아님
+    expect(a.detail).not.toContain('예산')
+  })
+
+  it('O1-6 G1이 terminal보다 앞 — 워킹트리 dirty면 AGENT(정리 먼저)', () => {
+    const a = resolveNext(baseInput({ state: withTerminal(), hasStagedChanges: true, worktreeReviewClean: false }))
+    expect(a.kind).toBe('AGENT')
+  })
+
+  it('O1-7 terminal 아닌 정상 series는 무변경 — approved 뒤 새 series(attempts<budget)는 RUN', () => {
+    const state = baseState({ review_series: [{ series_id: 'phase:p1#1', review_kind: 'phase', phase_id: 'p1', attempts: 2, closed_reason: null }] } as Partial<WorkflowState>)
+    const a = resolveNext(baseInput({ state, hasStagedChanges: true }))
+    expect(a.kind).toBe('RUN')
+    expect(a.command).toContain('--kind phase')
+  })
+})

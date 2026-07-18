@@ -31,6 +31,7 @@ import {
   findUnstagedOrUntracked,
   isLegacyTicket,
   openSeriesAttempts,
+  isSeriesKeyTerminal,
   type WorkflowState,
   type ReviewKind,
   type LastReviewMarker,
@@ -358,6 +359,18 @@ function gateRunCandidate(input: NextInput, cand: RunCandidate): NextAction {
       kind: 'AGENT',
       detail:
         '워킹트리에 unstaged/untracked 변경이 있어 리뷰(D10)가 실패한다. 의도한 변경은 `git add`, 그 외는 정리한 뒤 다시 req:next.',
+    }
+
+  // terminal (REQ-2026-029 A-2b): human-resolution으로 종결된 키 → AWAIT_HUMAN. **G3보다 앞**(R4) — 종결된
+  // series는 예산 안내("고치고 예외 받으라")가 아니라 "이미 끝났다 — 대체 REQ" 안내가 맞다. G1보다는 뒤
+  // (dirty면 정리 먼저). 우선순위: G1 → terminal → G3 → G2.
+  if (isSeriesKeyTerminal(input.state, cand.kind, cand.phaseId))
+    return {
+      kind: 'AWAIT_HUMAN',
+      detail: '이 series는 human-resolution으로 종결됐다. 같은 키에서 자동으로 재개하지 않는다.',
+      controlPoint: 'human-resolution 종결됨',
+      approvalSentence: '대체가 필요하면 `req:new --successor-of <이 REQ>`로 만든다(종결 상태 유지 결정도 사람이 한다)',
+      diagnostics: ['종결 사유: human-resolution', '재개는 자동으로 일어나지 않는다 — 대체 REQ 또는 종결 유지.'],
     }
 
   // G3 (REQ-2026-028 A-2a): 자동 예산 소진(escalated) → AWAIT_HUMAN. **G2보다 앞**(R13) — 5회차 NEEDS_FIX

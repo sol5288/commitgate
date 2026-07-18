@@ -61,7 +61,11 @@ import {
   consumeReviewException,
   isValidIsoInstant,
   openSeriesAttempts,
+  isValidHumanResolution,
+  closeSeriesHumanResolution,
+  isSeriesKeyTerminal,
   type SeriesRecord,
+  type HumanResolution,
   type Verdict,
   type WorkflowState,
   type LastReviewMarker,
@@ -2756,6 +2760,81 @@ describe('REQ-2026-028 phase-1 — 예산 게이트 강제(main near-e2e)', () =
       const { state: after } = withAttemptRecorded({ ticketDir: dir, state, kind: 'phase', phaseId: 'phase#alpha', budget: { autoBudget: 5, hardCap: 8 } }, () => 'ok')
       expect((after.review_series as SeriesRecord[])[0]!.attempts).toBe(6)
       expect(after.review_exception_confirmed).toBeNull() // 소비됨 — series_id 매칭 성공
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+/**
+ * REQ-2026-029 phase-1 — human-resolution terminal(순수 + 가드).
+ * 예산 세탁 방지의 실체: 사람이 종결한 series 키는 자동으로 재개하지 않는다(배분표 ③).
+ */
+describe('REQ-2026-029 phase-1 — human-resolution 순수', () => {
+  const validHR: HumanResolution = { decision: 'replace', method: '대체 REQ 작성 승인', decided_at: '2026-07-18T00:00:00Z' }
+  const openState = (): WorkflowState => ({ id: 'X', phase: 'INTAKE', review_series_model_version: 1,
+    review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 8, closed_reason: null }] })
+
+  it('O1-1: closeSeriesHumanResolution — 열린 series를 human-resolution으로 닫는다, 열린 게 없으면 throw', () => {
+    const out = closeSeriesHumanResolution(openState(), 'design', null, validHR)
+    const r = (out.review_series as SeriesRecord[])[0]!
+    expect(r.closed_reason).toBe('human-resolution')
+    expect(r.human_resolution).toEqual(validHR)
+    // approved만 있어 열린 게 없으면 throw
+    const closed: WorkflowState = { ...openState(), review_series: [{ ...(openState().review_series as SeriesRecord[])[0]!, closed_reason: 'approved' }] }
+    expect(() => closeSeriesHumanResolution(closed, 'design', null, validHR)).toThrow(/종결 대상/)
+  })
+
+  it('O1-2 🔴 isValidHumanResolution — 형식 fail-closed(배분표 ⑪)', () => {
+    expect(isValidHumanResolution(validHR)).toBe(true)
+    expect(isValidHumanResolution({ ...validHR, decision: 'accept-risk' })).toBe(false) // enum 밖
+    expect(isValidHumanResolution({ ...validHR, decision: '' })).toBe(false)
+    expect(isValidHumanResolution({ ...validHR, method: '' })).toBe(false)
+    expect(isValidHumanResolution({ ...validHR, method: '   ' })).toBe(false)
+    expect(isValidHumanResolution({ ...validHR, decided_at: 'not-a-date' })).toBe(false)
+    expect(isValidHumanResolution({ ...validHR, decided_at: '2026-99-99T99:99:99Z' })).toBe(false) // 달력 불가능
+    expect(isValidHumanResolution({ ...validHR, decided_at: '2026-07-18T00:00:00.500Z' })).toBe(true) // 밀리초 OK
+    // closeSeriesHumanResolution도 무효 resolution이면 throw
+    expect(() => closeSeriesHumanResolution(openState(), 'design', null, { ...validHR, method: '' })).toThrow(/형식 무효/)
+  })
+
+  it('O1-3 🔴 isSeriesKeyTerminal — human-resolution 있으면 true, approved/null은 false(재개방 정상)', () => {
+    const hr = closeSeriesHumanResolution(openState(), 'design', null, validHR)
+    expect(isSeriesKeyTerminal(hr, 'design', null)).toBe(true)
+    // approved만: 재개방 정상 → false
+    const approved: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1,
+      review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 3, closed_reason: 'approved' }] }
+    expect(isSeriesKeyTerminal(approved, 'design', null)).toBe(false)
+    // 다른 키는 무관
+    expect(isSeriesKeyTerminal(hr, 'phase', 'p1')).toBe(false)
+  })
+})
+
+describe('REQ-2026-029 phase-1 — terminal 가드(withAttemptRecorded)', () => {
+  const validHR: HumanResolution = { decision: 'terminate', method: '종결 승인', decided_at: '2026-07-18T00:00:00Z' }
+  const B = { autoBudget: 5, hardCap: 8 }
+
+  it('O1-4 🔴 human-resolution terminal 키는 recordAttempt 전에 막힌다(배분표 ③)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'req029-'))
+    try {
+      const state: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1,
+        review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 8, closed_reason: 'human-resolution', human_resolution: validHR }] }
+      let called = false
+      expect(() => withAttemptRecorded({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: B }, () => { called = true; return 'x' })).toThrow(/human-resolution/)
+      expect(called).toBe(false) // call 도달 안 함
+      // 새 series가 안 열렸다(디스크에 안 쓰임 — terminal은 recordAttempt·writeState 전 throw)
+      expect(existsSync(join(dir, 'state.json'))).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('O1-5 🔴 approved 뒤 재개방은 정상 — 새 series 열림(terminal 아님)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'req029-'))
+    try {
+      const state: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1,
+        review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 3, closed_reason: 'approved' }] }
+      const { state: after } = withAttemptRecorded({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: B }, () => 'ok')
+      const series = after.review_series as SeriesRecord[]
+      expect(series).toHaveLength(2) // 이전 approved 보존 + 새 series
+      expect(series[1]!.attempts).toBe(1)
+      expect(series[1]!.closed_reason).toBeNull()
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
