@@ -11,7 +11,12 @@
   "design_approved": false,
   "design_approved_hash": null,
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-iso-calendar",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "review_series_model_version": 1
 }
