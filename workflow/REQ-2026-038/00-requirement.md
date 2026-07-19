@@ -92,14 +92,16 @@ vendored 자산 skew 감지·복구(`commitgate sync` + doctor D20 WARN) 및 0.x
   `assertConfinedDest`([init.ts:399](../../bin/init.ts))·`sha256File`([init.ts:561](../../bin/init.ts))에 `export`만 추가한다(동작 무변경).
 - **R7 — doctor D20 (WARN).** `runChecks`에 순수 검사 추가. `main()`이 `sha256(packageRoot()/workflow/machine.schema.json)`
   [shipped]와 `sha256(cfg.schemaPathAbs)`[vendored]를 계산해 optional DoctorInputs로 주입한다. 결정표(D19의 undefined→OK 선례):
-  sha 미존재(dev repo/미설치)→OK; `packageRoot()===cfg.root`(dogfood)→OK; `cfg.schemaPath`가 non-default custom→OK(unmanaged);
-  동일→OK; 상이→**WARN**('vendored machine.schema.json이 설치된 commitgate `<version>`과 불일치 — `commitgate sync` 실행.
-  stale 스키마는 delta 리뷰 에스컬레이션을 조용히 비활성화'). **절대 FAIL 아님.**
+  sha 미존재(dev repo/미설치)→OK; `packageRoot()===cfg.root`(dogfood)→OK; **정규화 절대경로 기준** non-default schemaPath
+  →OK(unmanaged) — 문자열이 아니라 `cfg.schemaPathAbs === resolve(cfg.root, DEFAULTS.schemaPath)`로 판정해 `./workflow/...`
+  같은 동치 상대경로를 기본으로 인식(Codex design-r01 P1); 동일→OK; 상이→**WARN**('vendored machine.schema.json이 설치된
+  commitgate `<version>`과 불일치 — `commitgate sync` 실행. stale 스키마는 delta 리뷰 에스컬레이션을 조용히 비활성화'). **절대 FAIL 아님.**
 - **R8 — req.config.schema.json은 cosmetic.** sync가 이 파일도 갱신하되(에디터 `$schema` 정합), 런타임은 인라인
   `CONFIG_SCHEMA`([config.ts:140-188](../../scripts/req/lib/config.ts))를 쓰므로 게이트 영향 0. **어떤 드리프트 WARN에도 등장 금지.**
 - **R9 — 테스트·회귀망.** pkgRoot≠repoRoot 픽스처(repo 내부, 사용자 node_modules 미사용)로: sync plan/apply 정상경로;
   `cfg.root===packageRoot()` 거부; custom/null/수정 페르소나 미훼손; seed-once 자산 미접촉; D20 결정표(undefined→OK,
-  동일→OK, 상이→WARN, custom→OK). 상시 회귀망 2개: (a) `MACHINE_SCHEMA_VERSION`([review-codex.ts:62](../../scripts/req/review-codex.ts))이
+  동일→OK, 상이→WARN, custom→OK); **동치 상대경로 skew 케이스**(`schemaPath:"./workflow/machine.schema.json"` + stale vendored →
+  문자열≠이지만 절대경로 동일이라 WARN 유지, Codex design-r01 P1 회귀). 상시 회귀망 2개: (a) `MACHINE_SCHEMA_VERSION`([review-codex.ts:62](../../scripts/req/review-codex.ts))이
   shipped `machine.schema.json` enum에 존재; (b) 모든 KIT_COPY/KIT_SCHEMA 자산이 `package.json` `files[]`에 존재.
 - **R10 — 무회귀 확인.** `typecheck` clean, 전체 `vitest` 통과. 기존 REQ 아카이브 doctor 검증 유지.
 

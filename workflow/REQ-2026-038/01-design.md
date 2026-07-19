@@ -96,6 +96,9 @@ kit 관리 위치로 간주한다.
                                           shipped로 교체(직접 커스터마이즈했다면 custom 경로로 옮기세요)" 경고.
 ```
 
+- **"기본 경로" 판정도 정규화 절대경로 기준**(D6 P1과 동일 이유): `cfg.reviewPersonaPathAbs === resolve(cfg.root, DEFAULT_REVIEW_PERSONA_RELPATH)`.
+  문자열 비교면 `./workflow/review-persona.md` 동치 경로를 custom으로 오판해 `--persona`가 조용히 no-op이 된다(여기선 fail-safe지만
+  일관성·UX를 위해 절대경로로 판정).
 - 이로써 **custom/null 페르소나는 어떤 경우에도 미훼손**. 기본 경로 페르소나는 명시적 `--persona`에서만 교체되며, manifest가
   없어 stale-kit과 사용자-편집을 구별할 수 없으므로 plan이 명확히 경고하고 opt-in을 요구한다(사용자 편집 보존 방향으로 fail).
 
@@ -109,7 +112,10 @@ const shippedSchemaAbs = join(packageRoot(), 'workflow', 'machine.schema.json')
 const shippedSchemaSha  = safeSha(shippedSchemaAbs)          // 없으면 null
 const vendoredSchemaSha = safeSha(cfg.schemaPathAbs)         // 없으면 null
 const packageRootDiffers = packageRoot() !== cfg.root
-const schemaPathIsDefault = cfg.schemaPath === DEFAULTS.schemaPath
+// 🔴 정규화 **절대경로** 비교(문자열 비교 금지 — Codex design-r01 P1). `schemaPath: "./workflow/machine.schema.json"`
+//    같은 동치 상대경로는 문자열로는 DEFAULTS.schemaPath와 다르지만 같은 vendored 기본 스키마를 가리킨다.
+//    문자열 비교면 그 소비자를 custom/unmanaged로 오판해 OK 처리 → stale skew를 놓쳐 에스컬레이션이 조용히 죽는다.
+const schemaPathIsDefault = cfg.schemaPathAbs === resolve(cfg.root, DEFAULTS.schemaPath)
 const installedVersion = safeReadVersion(join(packageRoot(),'package.json'))  // 메시지용
 ```
 
