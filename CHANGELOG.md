@@ -2,7 +2,10 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.9.1
+
+신규 설치의 온보딩을 개선하는 **문서 릴리스**입니다(REQ-2026-039). 실행 코드·의존성 변경이 없어 기존
+사용자는 무회귀이고, **신규 설치에만** 반영됩니다(seed-once — 기존 `CLAUDE.md`/`AGENTS.md`는 보존).
 
 - **온보딩 Quick Start — always-loaded 템플릿 자립화** (REQ-2026-039). 신규 설치가 생성하는
   `CLAUDE.md`(Claude Code가 항상 로드)와 `AGENTS.md`(Codex·Cursor가 항상 읽는 계약) **앞부분**에,

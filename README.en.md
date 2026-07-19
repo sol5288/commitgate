@@ -62,6 +62,8 @@ git commit -m "chore: install commitgate"
 | `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
 | `CLAUDE.md` | Claude Code (always loaded) — created only if absent |
 
+> **On a fresh install, `CLAUDE.md` and `AGENTS.md` open with a self-sufficient Quick Start** (clarify the four-box requirement → `req:new` → the `req:next` loop). Because these are always-loaded channels, the agent picks the correct first action on the first request without reading the full contract. An existing `CLAUDE.md`/`AGENTS.md` is preserved — the Quick Start is not injected in that case.
+
 Just give the agent a requirement.
 
 ```text
