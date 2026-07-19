@@ -2,6 +2,10 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## 0.9.4
+
+**README 랜딩 서사 보강 + 히어로 이미지** (문서 릴리스). 0.9.3의 랜딩 위에 제품 서사를 강화했습니다 — "코드는 한 AI가 만들고, 다른 AI가 다시 봅니다"(자기 검수의 맹점 → 교대 검수 동기), "사람은 결정에만 참여합니다"(직접 챙기던 일 ↔ CommitGate가 연결 표), 4단계 흐름, 그리고 워크플로를 나타내는 히어로 이미지(빌더 AI → 리뷰어 AI → 사람 확인 → 커밋 게이트)를 추가했습니다. 이미지는 **WebP(~70KB)**로 GitHub raw URL에서 서빙 — `files[]`·npm tarball·payload 축은 **무변경**입니다. 실행 코드·의존성 변경이 없어 기존 사용자는 무회귀입니다.
+
 ## 0.9.3
 
 **README 전면 개편 — 랜딩 페이지 + `docs/` 분리(한/영)** (REQ-2026-042). ~620줄의 `README.md`가 제품 소개·온보딩·운영·제거·안전 계약·개발 현황을 한 화면에 섞어 초점이 흐렸습니다. **README를 랜딩(제품 1줄·핵심 보장·⚠️ 주의·3분 시작·작동 방식·자주 쓰는 명령·docs 허브)으로 줄이고**, 상세를 `docs/` 9종(quick-start·agent-prompt·workflow·guarantees·configuration·upgrade·uninstall·troubleshooting·development)으로 **손실 없이 이동**했습니다. `README.md`/`README.en.md`는 각각 랜딩으로, `docs/*.md`·`docs/*.en.md`로 완전 이중언어. 순수 문서 재배치 — 코드·런타임·게이트·npm payload 축은 **무변경**(`docs/`는 `files[]`에 넣지 않아 tarball 비대화 없음, README→docs 링크는 GitHub 절대 blob URL이라 npm 페이지에서도 해소됨). 링크·앵커 무결성은 `remark-validate-links`로, README→docs 절대 URL·안전 4문구 존재·위치는 전용 테스트로 검증합니다. 기존 사용자 무회귀(설치본에 영향 없음).

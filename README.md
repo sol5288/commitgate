@@ -8,9 +8,35 @@
 [![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-AI 에이전트가 코드를 빠르게 만들어도, 리뷰 없이 바로 커밋되면 위험합니다. CommitGate는 변경을 티켓(REQ) 단위로 묶고, **Codex가 승인한 staged tree만** 커밋되게 합니다. 승인 후 코드가 바뀌거나 증거가 부족하면 기본적으로 막습니다.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sol5288/commitgate/main/assets/commitgate-workflow-hero.webp" alt="개발 AI와 독립 검수 AI가 검토한 뒤 사람이 확인하고 최종 커밋 게이트를 통과하는 모습" width="1200">
+</p>
 
-## 무엇을 막아 주나요
+## 코드는 한 AI가 만들고, 다른 AI가 다시 봅니다
+
+AI 코딩 에이전트는 설계·구현·테스트를 아주 빠르게 처리합니다. 하지만 한 에이전트가 자기 변경까지 검수하면, 같은 가정과 같은 작업 맥락 안에서 결함을 놓치기 쉽습니다.
+
+그래서 개발 AI가 만든 변경을 다른 AI에 복사해 붙여 넣고 다시 검수하는 방식이 생깁니다. 문제는 그 과정이 번거롭고, 어느 diff를 검수했는지·검수 뒤 코드가 바뀌었는지·언제 사람이 결정해야 하는지를 계속 사람이 챙겨야 한다는 점입니다.
+
+CommitGate는 이 교대 작업을 REQ 워크플로로 묶습니다. **개발 AI는 만들고, Codex는 독립 Reviewer로 검수하고, 사람은 결정이 필요한 통제점에서만 확인합니다.**
+
+## 사람은 결정에만 참여합니다
+
+| 매번 직접 챙기던 일 | CommitGate가 연결하는 흐름 |
+|---|---|
+| 개발 AI의 변경을 다른 모델에 복사해 검수 요청 | 현재 **staged tree**를 Codex Reviewer에게 검수 요청 |
+| 검수 뒤 코드가 바뀌었는지 수동 대조 | 승인된 tree와 현재 staged tree를 바인딩해 변경 시 재검수 요구 |
+| 커밋·push·릴리스 전에 무엇을 확인할지 판단 | `req:next`가 다음 행동과 사람 확인 지점을 계산 |
+| 모든 단계에 사람이 개입 | `AWAIT_HUMAN` 통제점에서만 명시적인 승인 요청 |
+
+## 이렇게 흘러갑니다
+
+1. **개발 AI가 작업을 시작합니다.** `req:new`가 REQ 티켓·브랜치·설계 문서를 만듭니다.
+2. **Codex가 별도 관점으로 검수합니다.** 설계와 구현의 staged tree를 보고, 승인하거나 수정 사항을 남깁니다.
+3. **사람이 중요한 결정을 확인합니다.** 커밋, 통합, 릴리스처럼 되돌리기 어렵거나 영향이 큰 통제점에서만 승인을 요청합니다.
+4. **최종 게이트가 커밋을 묶습니다.** 사람 확인과 Codex 승인을 통과한, 바로 그 staged tree만 `req:commit`이 커밋합니다.
+
+## 무엇을 보장하나요
 
 - 🔒 **Codex 리뷰 승인 없이는 커밋되지 않습니다.** 리뷰가 실패하거나 아예 없으면 `req:commit`이 통과시키지 않습니다.
 - 🔁 **승인 후 staged 변경이 바뀌면 다시 리뷰를 요구합니다.** 승인된 tree와 지금 커밋하려는 tree가 다르면 stale로 보고 막습니다.

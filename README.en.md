@@ -8,9 +8,35 @@
 [![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-AI coding agents can move quickly, but unreviewed changes should not go straight into your history. CommitGate wraps each change in a REQ ticket and only lets **the staged tree Codex approved** be committed. If the code changes after approval, or if evidence is missing, it fails closed by default.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sol5288/commitgate/main/assets/commitgate-workflow-hero.webp" alt="A builder AI and an independent reviewer AI are followed by a human approval point and a final commit gate" width="1200">
+</p>
 
-## What it blocks
+## One AI builds. Another one reviews.
+
+AI coding agents can plan, implement, and test at remarkable speed. But when the same agent also reviews its own change, it can miss defects through the same assumptions and context that produced the code.
+
+The usual workaround is to copy a change into another model and ask for a second opinion. That is tedious, and it leaves you to track which diff was reviewed, whether it changed afterwards, and when a person actually needs to decide.
+
+CommitGate turns that handoff into a REQ workflow. **Your builder AI makes the change, Codex reviews it independently, and a human is asked only at the control points that need a decision.**
+
+## Humans decide only at control points
+
+| What you would otherwise track yourself | What CommitGate connects |
+|---|---|
+| Copy a builder's change into another model for review | Send the current **staged tree** to the Codex Reviewer |
+| Check manually whether code changed after review | Bind the approved tree to the staged tree and require a new review when it moves |
+| Decide what to check before commit, push, or release | Let `req:next` compute the next action and human control point |
+| Step into every stage | Request an explicit approval only at an `AWAIT_HUMAN` control point |
+
+## The workflow
+
+1. **A builder AI starts the work.** `req:new` creates the REQ ticket, branch, and design documents.
+2. **Codex reviews from an independent perspective.** It reviews the staged tree for design and implementation, then approves it or returns findings.
+3. **A human confirms the important decisions.** Commit, integration, and release are explicit control points because they can be hard to undo or have broader impact.
+4. **The final gate binds the commit.** `req:commit` commits only the exact staged tree that passed the human confirmation and Codex approval.
+
+## What it guarantees
 
 - 🔒 **Nothing is committed without an approved Codex review.** If the review fails or is absent, `req:commit` does not let it through.
 - 🔁 **A staged change that moves after approval is re-reviewed.** If the approved tree differs from the tree you are about to commit, it is blocked as stale.
