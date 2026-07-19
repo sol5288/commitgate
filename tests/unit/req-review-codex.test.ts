@@ -2340,9 +2340,9 @@ describe('[B-2b] 사용자 문서 계약 갱신(O1-8, touchpoint별 canonical)',
     expect(tableRow).toBeDefined()
     expect(tableRow).toContain(KR)
   })
-  // phase-3(REQ-042)에서 README.en.md 재작성 시 이 EN 정본을 docs/configuration.en.md 로 옮긴다.
-  it('O1-8 🔴 README.en.md 본문 + 표 둘 다 canonical', () => {
-    const en = readDoc('README.en.md')
+  // REQ-2026-042 phase-3: EN reviewPersonaPath 정본도 README.en.md → docs/configuration.en.md 로 이동.
+  it('O1-8 🔴 docs/configuration.en.md(영) reviewPersonaPath 표 행이 canonical', () => {
+    const en = readDoc('docs/configuration.en.md')
     const bodyLine = en.split('\n').find((l) => l.includes('reviewPersonaPath') && l.includes('null') && l.includes('disable'))
     expect(bodyLine).toBeDefined()
     expect(bodyLine).toContain(EN)

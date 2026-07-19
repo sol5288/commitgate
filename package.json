@@ -38,7 +38,7 @@
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "verify:overrides": "node scripts/verify-review-overrides.mjs",
-    "docs:lint": "remark docs README.md --quiet --frail"
+    "docs:lint": "remark docs README.md README.en.md --quiet --frail"
   },
   "files": [
     "scripts/req",

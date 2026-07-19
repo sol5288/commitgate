@@ -18,17 +18,17 @@ const read = (rel: string): string => readFileSync(join(PACKAGE_ROOT, rel), 'utf
 const BLOB_PREFIX = 'https://github.com/sol5288/commitgate/blob/main/docs/'
 
 describe('[REQ-2026-042] 랜딩 README — docs 절대 URL (D5-b)', () => {
-  // phase-3에서 'README.en.md' 추가.
-  const LANDINGS = ['README.md'] as const
+  const LANDINGS = ['README.md', 'README.en.md'] as const
 
   it.each(LANDINGS)('%s: docs 링크가 정확한 GitHub blob URL이고 대상 파일이 실재한다', (rel) => {
     const md = read(rel)
-    const names = [...md.matchAll(/https:\/\/github\.com\/sol5288\/commitgate\/blob\/main\/docs\/([a-z0-9-]+)\.md/g)].map(
+    // KO 랜딩은 docs/<name>.md, EN 랜딩은 docs/<name>.en.md 로 링크한다 → 전체 파일명을 캡처해 존재 확인.
+    const targets = [...md.matchAll(/https:\/\/github\.com\/sol5288\/commitgate\/blob\/main\/docs\/([a-z0-9.-]+\.md)/g)].map(
       (m) => m[1] as string,
     )
-    expect(names.length, `${rel}: docs 허브 링크가 있어야 한다`).toBeGreaterThan(0)
-    for (const name of names) {
-      expect(existsSync(join(PACKAGE_ROOT, 'docs', `${name}.md`)), `${rel}: docs/${name}.md 가 존재해야 한다`).toBe(true)
+    expect(targets.length, `${rel}: docs 허브 링크가 있어야 한다`).toBeGreaterThan(0)
+    for (const t of targets) {
+      expect(existsSync(join(PACKAGE_ROOT, 'docs', t)), `${rel}: docs/${t} 가 존재해야 한다`).toBe(true)
     }
   })
 
@@ -55,16 +55,30 @@ const SAFETY_KO = [
   { id: '④ 애매하면 fail-closed', needle: '애매하면 막습니다(fail-closed)' },
 ] as const
 
+/** 영문 랜딩의 안전 4문구·헤딩. needle은 README.en.md에 **바이트 그대로** 있어야 한다. */
+const HEADING_EN = '## Get started in 3 minutes'
+const SAFETY_EN = [
+  { id: '① no commit without review', needle: 'Nothing is committed without an approved Codex review' },
+  { id: '② staged diff off-machine', needle: 'sends your staged diff in full to an external service' },
+  { id: '③ no git hook (bypassable)', needle: 'No git hook is installed' },
+  { id: '④ fail-closed', needle: 'it fails closed' },
+] as const
+
+/** (파일, 헤딩, 4문구) 튜플을 공유 로직으로 검사한다. */
+const SAFETY_CASES = [
+  { file: 'README.md', heading: HEADING, phrases: SAFETY_KO },
+  { file: 'README.en.md', heading: HEADING_EN, phrases: SAFETY_EN },
+] as const
+
 describe('[REQ-2026-042] 랜딩 README — 안전 4문구 존재+위치 (D5-c)', () => {
-  // phase-3에서 README.en.md(영문 4문구) 추가.
-  it('README.md(한): 4문구가 모두 있고 각 첫 등장이 "3분 시작"보다 앞이다', () => {
-    const lines = read('README.md').split('\n')
-    const headingLine = lines.findIndex((l) => l.trim() === HEADING)
-    expect(headingLine, `"${HEADING}" 헤딩이 있어야 한다`).toBeGreaterThanOrEqual(0)
-    for (const { id, needle } of SAFETY_KO) {
+  it.each(SAFETY_CASES)('$file: 4문구가 모두 있고 각 첫 등장이 시작 헤딩보다 앞이다', ({ file, heading, phrases }) => {
+    const lines = read(file).split('\n')
+    const headingLine = lines.findIndex((l) => l.trim() === heading)
+    expect(headingLine, `${file}: "${heading}" 헤딩이 있어야 한다`).toBeGreaterThanOrEqual(0)
+    for (const { id, needle } of phrases) {
       const first = lines.findIndex((l) => l.includes(needle))
-      expect(first, `${id}: "${needle}" 문구가 있어야 한다`).toBeGreaterThanOrEqual(0)
-      expect(first, `${id}: 안전문구는 "3분 시작" 헤딩보다 앞이어야 한다`).toBeLessThan(headingLine)
+      expect(first, `${file} ${id}: "${needle}" 문구가 있어야 한다`).toBeGreaterThanOrEqual(0)
+      expect(first, `${file} ${id}: 안전문구는 시작 헤딩보다 앞이어야 한다`).toBeLessThan(headingLine)
     }
   })
 })

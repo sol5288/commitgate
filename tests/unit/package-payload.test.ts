@@ -499,11 +499,10 @@ describe('[REQ-2026-020] D12 진단 스킬 안전 경계', () => {
  */
 describe('[REQ-2026-023] companion 문서 정합', () => {
   const read = (rel: string): string => lf(readFileSync(join(PACKAGE_ROOT, rel), 'utf8'))
-  // REQ-2026-042 phase-2: companion 상세의 **정본 사용자 문서**가 README → docs/agent-prompt.md 로 이동했다
-  //   (README 랜딩화 · 이동 맵 00 · 설계 D2). 한국어 정본 = docs/agent-prompt.md.
-  //   README.en.md는 phase-3에서 재작성되며 그때 정본을 docs/agent-prompt.en.md 로 옮긴다.
+  // REQ-2026-042: companion 상세의 **정본 사용자 문서**가 README 한/영 → docs/agent-prompt.{md,en.md} 로 이동했다
+  //   (README 랜딩화 · 이동 맵 00 · 설계 D2). phase-2가 한국어(docs/agent-prompt.md), phase-3가 영문(.en.md).
   //   불변식(4 스킬명·SHA·installer·--force 보존·승인증거 경계)은 동일하게 유지하고 **대상만** 이동한다.
-  const COMPANION_DOCS = ['docs/agent-prompt.md', 'README.en.md'] as const
+  const COMPANION_DOCS = ['docs/agent-prompt.md', 'docs/agent-prompt.en.md'] as const
   /** `printHelp` 본문만 잘라낸다(주변 코드가 아니라 사용자가 보는 문자열을 검사). */
   const helpBody = (): string => {
     const src = read('bin/init.ts')
@@ -567,11 +566,11 @@ describe('[REQ-2026-023] companion 문서 정합', () => {
   })
 
   /**
-   * 🔴 SHA 일치(R1/R7) — companion 정본 문서와 ATTRIBUTION.md가 같은 값을 가리켜야 한다.
-   * REQ-2026-042: SHA 정본이 README → docs/agent-prompt.md 로 이동(랜딩화). README.en.md는 phase-3에서 이동.
+   * 🔴 SHA 일치(R1/R7) — companion 정본 문서 한/영과 ATTRIBUTION.md가 같은 값을 가리켜야 한다.
+   * REQ-2026-042: SHA 정본이 README 한/영 → docs/agent-prompt.{md,en.md} 로 이동(랜딩화).
    */
-  it('upstream SHA가 companion 정본 문서·ATTRIBUTION.md에서 동일하다', () => {
-    const surfaces = ['docs/agent-prompt.md', 'README.en.md', 'skills/ATTRIBUTION.md']
+  it('upstream SHA가 companion 정본 문서 한/영·ATTRIBUTION.md에서 동일하다', () => {
+    const surfaces = ['docs/agent-prompt.md', 'docs/agent-prompt.en.md', 'skills/ATTRIBUTION.md']
     for (const rel of surfaces) expect(read(rel), `${rel}: SHA`).toContain(UPSTREAM_SHA)
     // upstream 문맥 줄에 **다른** 40자 hex가 있으면 옛 pin 잔재다.
     for (const rel of surfaces) {
