@@ -44,6 +44,10 @@ import {
   STAGE_B_REQ_SCRIPTS,
   detectStageA,
   commitgateDeclared,
+  statWritableDest,
+  assertConfinedDest,
+  sha256File,
+  PACKAGE_ROOT,
   type InitOptions,
 } from '../../bin/init'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
@@ -3143,6 +3147,58 @@ describe('[init] 개별 쓰기 경로 confinement (REQ-2026-024 phase-2)', () =>
         expect(existsSync(join(dir, rel)), rel).toBe(true)
     } finally {
       cleanup(dir)
+    }
+  })
+})
+
+describe('[init] confinement 헬퍼 export (REQ-2026-038 phase-1)', () => {
+  // sync(bin/sync.ts)가 confinement를 재구현하지 않고 재사용하도록 export됨(REQ-2026-024 결함 재발 방지). 동작 불변 smoke.
+  const mk = () => mkdtempSync(join(tmpdir(), 'cg-export-'))
+
+  it('세 헬퍼 + PACKAGE_ROOT가 export되어 있다', () => {
+    expect(typeof statWritableDest).toBe('function')
+    expect(typeof assertConfinedDest).toBe('function')
+    expect(typeof sha256File).toBe('function')
+    expect(typeof PACKAGE_ROOT).toBe('string')
+  })
+
+  it('sha256File — 파일 바이트의 sha256과 일치(동작 불변)', () => {
+    const dir = mk()
+    try {
+      const f = join(dir, 'x.txt')
+      writeFileSync(f, 'hello commitgate')
+      const want = createHash('sha256').update(readFileSync(f)).digest('hex')
+      expect(sha256File(f)).toBe(want)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('statWritableDest — 부재 leaf=null · 일반 파일=Stats · 디렉터리 leaf=throw', () => {
+    const dir = mk()
+    try {
+      expect(statWritableDest(dir, 'absent.json')).toBeNull()
+      writeFileSync(join(dir, 'f.json'), '{}')
+      expect(statWritableDest(dir, 'f.json')?.isFile()).toBe(true)
+      mkdirSync(join(dir, 'sub'))
+      expect(() => statWritableDest(dir, 'sub')).toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('assertConfinedDest — 정상 중첩 통과 · symlink 상위 거부(confinement)', () => {
+    const dir = mk()
+    try {
+      expect(() => assertConfinedDest(dir, 'a/b/c.json')).not.toThrow()
+      try {
+        symlinkSync(tmpdir(), join(dir, 'linkdir'), 'dir')
+      } catch {
+        return // symlink 권한 없는 환경(Windows) — 이 assert만 skip
+      }
+      expect(() => assertConfinedDest(dir, 'linkdir/x.json')).toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })

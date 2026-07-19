@@ -396,7 +396,7 @@ export function findIgnoredArtifacts(targetRoot: string, paths: readonly string[
  *      - 그 밖의 오류(EACCES 등) → fail-closed throw.
  *    `workflow/.gitignore`로 preflight에서 돌리면 같은 `workflow/`를 쓰는 스키마 복사도 함께 보호된다.
  */
-function assertConfinedDest(targetRoot: string, destRel: string): void {
+export function assertConfinedDest(targetRoot: string, destRel: string): void {
   const segs = destRel.split('/')
   let cur = targetRoot
   for (let i = 0; i < segs.length - 1; i++) {
@@ -439,7 +439,7 @@ function assertConfinedDest(targetRoot: string, destRel: string): void {
  * ⚠️ **TOCTOU는 막지 않는다.** 이 판정과 실제 쓰기 사이에 경로가 바뀌는 경쟁은 남는다
  *    (Node에 `O_NOFOLLOW` 원자 API가 없다). **협조적 사용자의 우발적 symlink**를 막는 것이다.
  */
-function statWritableDest(targetRoot: string, destRel: string): ReturnType<typeof lstatSync> | null {
+export function statWritableDest(targetRoot: string, destRel: string): ReturnType<typeof lstatSync> | null {
   assertConfinedDest(targetRoot, destRel) // 상위 컴포넌트 전부 lstat (leaf는 아래에서)
   const abs = join(targetRoot, destRel)
   let st: ReturnType<typeof lstatSync>
@@ -558,7 +558,7 @@ function gitignoreJoinsInstall(nodeModulesDirty: boolean, entries: readonly Stat
   return entries.some((e) => entryPaths(e).includes('.gitignore'))
 }
 
-function sha256File(abs: string): string {
+export function sha256File(abs: string): string {
   return createHash('sha256').update(readFileSync(abs)).digest('hex')
 }
 
