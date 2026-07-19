@@ -62,7 +62,7 @@ git commit -m "chore: install commitgate"
 | `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
 | `CLAUDE.md` | Claude Code (always loaded) — created only if absent |
 
-> **On a fresh install, `CLAUDE.md` and `AGENTS.md` open with a self-sufficient Quick Start** (clarify the four-box requirement → `req:new` → the `req:next` loop). Because these are always-loaded channels, the agent picks the correct first action on the first request without reading the full contract. An existing `CLAUDE.md`/`AGENTS.md` is preserved — the Quick Start is not injected in that case.
+> **On a fresh install, `CLAUDE.md` and `AGENTS.md` open with a self-sufficient Quick Start** (clarify the four-box requirement → `req:new` → the `req:next` loop). Because these are always-loaded channels, the agent picks the correct first action on the first request without reading the full contract. An existing `CLAUDE.md`/`AGENTS.md` is preserved, so the block is not injected there — **to backfill an existing file, run `npx commitgate quickstart --apply`** (inserts only the managed block, preserves the rest, idempotent).
 
 Just give the agent a requirement.
 
@@ -519,6 +519,7 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `npx commitgate init --strict` | Treat integrity warnings as install failures — stops before writing any file |
 | `npx commitgate init --no-agent-entrypoints` | Skip `.claude/`, `.cursor/`, and `CLAUDE.md` |
 | `npx commitgate sync [--apply] [--persona]` | Re-sync vendored **schema-axis** assets (machine/req.config schema) to the installed package copy after an upgrade (plan-only by default). `--persona` **restores a missing persona only** (never overwrites your edits). See [Upgrading (0.x)](#upgrading-0x) |
+| `npx commitgate quickstart [--apply]` | Backfill the Quick Start block into an existing `CLAUDE.md`/`AGENTS.md` (plan-only by default). Inserts only the managed block, preserves the rest, idempotent. `AGENTS.md` only when it carries the contract marker |
 | `npx commitgate migrate [--apply]` | Move an older vendored install to the runtime package (plan-only by default, non-destructive) |
 | `npx commitgate uninstall` | Preview the removal plan (read-only — deletes nothing) |
 | `npm uninstall -D commitgate` | Remove the runtime |

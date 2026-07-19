@@ -21,6 +21,7 @@ export const VERB_MODULES = {
   uninstall: 'uninstall.ts',
   migrate: 'migrate.ts',
   sync: 'sync.ts',
+  quickstart: 'quickstart.ts',
   init: 'init.ts',
 }
 

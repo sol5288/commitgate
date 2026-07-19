@@ -2,6 +2,15 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+- **기존 파일 Quick Start 백필 — `commitgate quickstart` + doctor D21** (REQ-2026-040). REQ-2026-039가 신규
+  설치의 `CLAUDE.md`/`AGENTS.md`에 Quick Start를 넣었지만 seed-once라 **기존 파일엔 닿지 않았습니다**. 새 verb
+  `commitgate quickstart`(기본 dry-run·`--apply`)가 기존 파일에 관리 블록(`<!-- commitgate:quickstart -->`)만
+  **멱등 주입**하고 블록 밖 내용은 보존합니다(CommonMark 코드펜스 인지·줄바꿈 dominant EOL 정렬). `AGENTS.md`는
+  계약 마커가 있을 때만 대상입니다. `req:doctor` **D21**이 기존 파일에 블록이 없으면 **WARN**(FAIL 아님)으로
+  백필을 안내합니다. sync(whole-file 복사)와 달리 read-merge-write이므로 별도 verb입니다.
+
 ## 0.9.1
 
 신규 설치의 온보딩을 개선하는 **문서 릴리스**입니다(REQ-2026-039). 실행 코드·의존성 변경이 없어 기존

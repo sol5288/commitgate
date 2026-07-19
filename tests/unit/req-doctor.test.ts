@@ -84,6 +84,19 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     expect(fails).toEqual([])
   })
 
+  it('D21(REQ-2026-040): Quick Start 블록 부재는 WARN — dev/dogfood·미계산·최신은 OK, 절대 FAIL 아님', () => {
+    // dev/dogfood(packageRootDiffers=false) → OK skip
+    expect(lvl(runChecks(mk({ packageRootDiffers: false, quickstartMissing: ['CLAUDE.md'] })), 'D21')).toBe('OK')
+    // 미계산(undefined) → OK
+    expect(lvl(runChecks(mk({ packageRootDiffers: true })), 'D21')).toBe('OK')
+    // 없음/최신([]) → OK
+    expect(lvl(runChecks(mk({ packageRootDiffers: true, quickstartMissing: [] })), 'D21')).toBe('OK')
+    // 소비 repo + 블록 부재 → WARN
+    const warned = runChecks(mk({ packageRootDiffers: true, quickstartMissing: ['CLAUDE.md', 'AGENTS.md'] }))
+    expect(lvl(warned, 'D21')).toBe('WARN')
+    expect(warned.filter((c) => c.level === 'FAIL')).toEqual([]) // 게이트를 벽돌로 만들지 않는다
+  })
+
   it('D2: state.branch != 현재 브랜치 → FAIL', () => {
     expect(lvl(runChecks(mk({ currentBranch: 'other' })), 'D2')).toBe('FAIL')
   })

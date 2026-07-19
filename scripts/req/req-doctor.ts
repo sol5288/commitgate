@@ -26,6 +26,7 @@ import {
 } from './review-codex'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
+import { missingQuickstartFiles } from '../../bin/quickstart'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — config 부재 시 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -93,6 +94,10 @@ export interface DoctorInputs {
   packageRootDiffers?: boolean
   schemaPathIsDefault?: boolean
   installedVersion?: string | null
+  // D21(REQ-2026-040): 기존 always-loaded 파일 중 Quick Start 블록이 없는 것(bin/quickstart.missingQuickstartFiles).
+  //   undefined = 미계산(2-arg/legacy) → OK. [] = 없음/최신/대상없음 → OK. 비어있지 않음 → WARN.
+  //   dev/dogfood(packageRootDiffers===false)면 D20처럼 skip. optional이어야 테스트 base 리터럴이 안 깨진다.
+  quickstartMissing?: string[]
 }
 
 /**
@@ -460,6 +465,23 @@ export function runChecks(inp: DoctorInputs): Check[] {
     })
   }
 
+  // D21(REQ-2026-040): 기존 CLAUDE.md/AGENTS.md에 Quick Start 블록 부재 진단. **WARN — 절대 FAIL 아님**
+  // (D20과 동일 근거: req:commit이 이 doctor를 하드 게이트로 spawn하므로 FAIL이면 커밋이 벽돌이 된다).
+  // seed-once라 REQ-2026-039 이전 설치본/기존 파일엔 신규 블록이 닿지 않는다 — 백필 필요를 알릴 뿐 막지 않는다.
+  if (inp.packageRootDiffers === false) {
+    c.push({ id: 'D21', level: 'OK', msg: 'Quick Start 백필 점검 불요(dev repo/dogfood — packageRoot === config root)' })
+  } else if (inp.quickstartMissing === undefined) {
+    c.push({ id: 'D21', level: 'OK', msg: 'Quick Start 백필 점검 불요(2-arg/미계산)' })
+  } else if (inp.quickstartMissing.length === 0) {
+    c.push({ id: 'D21', level: 'OK', msg: '기존 always-loaded 파일에 Quick Start 블록 있음(또는 대상 없음)' })
+  } else {
+    c.push({
+      id: 'D21',
+      level: 'WARN',
+      msg: `${inp.quickstartMissing.join(', ')} 에 Quick Start 블록이 없습니다 — \`commitgate quickstart --apply\` 로 백필하세요. seed-once라 신규 블록이 기존 파일엔 자동으로 닿지 않습니다(REQ-2026-040).`,
+    })
+  }
+
   return c
 }
 
@@ -676,6 +698,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     packageRootDiffers: packageRoot() !== cfg.root,
     schemaPathIsDefault: cfg.schemaPathAbs === resolve(cfg.root, DEFAULTS.schemaPath), // 정규화 절대경로 비교(동치 상대경로 포함)
     installedVersion: safeReadVersion(join(packageRoot(), 'package.json')),
+    quickstartMissing: missingQuickstartFiles(cfg.root),
   }
 
   const checks = runChecks(inp)

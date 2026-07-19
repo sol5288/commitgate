@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { extractQuickstartBlock, injectQuickstart } from '../../bin/quickstart'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  extractQuickstartBlock,
+  injectQuickstart,
+  missingQuickstartFiles,
+  runQuickstart,
+  shippedQuickstartBlock,
+} from '../../bin/quickstart'
+import { AGENTS_CONTRACT_MARKER, PACKAGE_ROOT } from '../../bin/init'
 
 /**
  * REQ-2026-040 phase-1 — 순수 주입 lib.
@@ -127,5 +138,119 @@ describe('[REQ-2026-040] injectQuickstart', () => {
     expect(r.insertAt).toBe('after-heading')
     expect(r.content.indexOf('# 진짜')).toBeLessThan(r.content.indexOf(BLOCK))
     expect(r.content.indexOf('# 안쪽')).toBeLessThan(r.content.indexOf(BLOCK))
+  })
+})
+
+// ─────────────── phase-2: verb + missingQuickstartFiles 통합 (temp repo) ───────────────
+
+function tmpRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'cg-qs-'))
+  execFileSync('git', ['init', '-q'], { cwd: dir })
+  return dir
+}
+function cleanup(dir: string): void {
+  rmSync(dir, { recursive: true, force: true })
+}
+const SHIPPED = shippedQuickstartBlock() // 실제 배포되는 Quick Start 블록
+const MARK = 'commitgate:quickstart'
+
+describe('[REQ-2026-040] missingQuickstartFiles', () => {
+  it('CLAUDE.md 블록 없음 → 목록에, 있음 → 제외', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), '# 지침\n내용\n')
+      expect(missingQuickstartFiles(dir)).toContain('CLAUDE.md')
+      writeFileSync(join(dir, 'CLAUDE.md'), `# 지침\n\n${SHIPPED}\n\n내용\n`)
+      expect(missingQuickstartFiles(dir)).not.toContain('CLAUDE.md')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('AGENTS.md는 계약 마커가 있을 때만 대상', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), '# 일반 지침\n계약 아님\n') // 마커 없음 → 미접촉
+      expect(missingQuickstartFiles(dir)).not.toContain('AGENTS.md')
+      writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 계약\n`) // 마커 有·블록 無
+      expect(missingQuickstartFiles(dir)).toContain('AGENTS.md')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('부재 파일은 목록에 없다', () => {
+    const dir = tmpRepo()
+    try {
+      expect(missingQuickstartFiles(dir)).toEqual([])
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+describe('[REQ-2026-040] runQuickstart (verb)', () => {
+  it('plan(기본)은 쓰지 않고, --apply가 CLAUDE.md에 블록 주입·나머지 보존', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), '# 내 지침\n\n소중한 내용\n')
+      const plan = runQuickstart({ dir, apply: false })
+      expect(plan.files.find((f) => f.rel === 'CLAUDE.md')?.action).toBe('insert')
+      expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8')).not.toContain(MARK) // dry-run은 안 씀
+      runQuickstart({ dir, apply: true })
+      const after = readFileSync(join(dir, 'CLAUDE.md'), 'utf8')
+      expect(after).toContain(MARK)
+      expect(after).toContain('소중한 내용') // 블록 밖 보존
+      expect(after.startsWith('# 내 지침')).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('멱등 — --apply 두 번째는 noop(쓰기 0건)', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), '# 지침\n내용\n')
+      runQuickstart({ dir, apply: true })
+      const p2 = runQuickstart({ dir, apply: true })
+      expect(p2.files.find((f) => f.rel === 'CLAUDE.md')?.action).toBe('noop')
+      expect(p2.writes.length).toBe(0)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('AGENTS.md: 계약 마커 有→주입, 無→skip(미접촉)', () => {
+    const withMarker = tmpRepo()
+    const noMarker = tmpRepo()
+    try {
+      writeFileSync(join(withMarker, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 계약\n규칙\n`)
+      runQuickstart({ dir: withMarker, apply: true })
+      expect(readFileSync(join(withMarker, 'AGENTS.md'), 'utf8')).toContain(MARK)
+
+      writeFileSync(join(noMarker, 'AGENTS.md'), '# 일반 지침\n')
+      const plan = runQuickstart({ dir: noMarker, apply: true })
+      expect(plan.files.find((f) => f.rel === 'AGENTS.md')?.action).toBe('skip')
+      expect(readFileSync(join(noMarker, 'AGENTS.md'), 'utf8')).not.toContain(MARK)
+    } finally {
+      cleanup(withMarker)
+      cleanup(noMarker)
+    }
+  })
+
+  it('부재 파일은 skip — 생성하지 않는다', () => {
+    const dir = tmpRepo()
+    try {
+      const plan = runQuickstart({ dir, apply: true })
+      expect(plan.files.every((f) => f.action === 'skip')).toBe(true)
+      expect(existsSync(join(dir, 'CLAUDE.md'))).toBe(false)
+      expect(existsSync(join(dir, 'AGENTS.md'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('대상이 CommitGate 패키지 자신이면 거부(fail-closed)', () => {
+    expect(() => runQuickstart({ dir: PACKAGE_ROOT, apply: false })).toThrow(/패키지 자신/)
   })
 })

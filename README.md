@@ -62,7 +62,7 @@ git commit -m "chore: install commitgate"
 | `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
 | `CLAUDE.md` | Claude Code (항상 로드) — 부재 시에만 생성 |
 
-> **신규 설치에서 `CLAUDE.md`와 `AGENTS.md`는 맨 앞에 자립형 Quick Start**(요구 4칸 확인 → `req:new` → `req:next` 루프)를 담습니다. 항상 읽히는 채널이라, 에이전트가 계약 본문을 더 읽지 않아도 첫 요청에서 올바른 첫 행동을 고릅니다. 기존 `CLAUDE.md`/`AGENTS.md`가 있으면 보존되어 이때 Quick Start는 새로 주입되지 않습니다.
+> **신규 설치에서 `CLAUDE.md`와 `AGENTS.md`는 맨 앞에 자립형 Quick Start**(요구 4칸 확인 → `req:new` → `req:next` 루프)를 담습니다. 항상 읽히는 채널이라, 에이전트가 계약 본문을 더 읽지 않아도 첫 요청에서 올바른 첫 행동을 고릅니다. 기존 `CLAUDE.md`/`AGENTS.md`가 있으면 보존되므로 새로 주입되지 않습니다 — **기존 파일에도 넣으려면 `npx commitgate quickstart --apply`**(관리 블록만 삽입·나머지 보존·멱등).
 
 에이전트에게 요구사항만 주면 됩니다.
 
@@ -516,6 +516,7 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `npx commitgate init --strict` | 정합성 경고를 설치 실패로 처리 (gitignore된 계약 포인터, 설치 커밋을 안전하게 만들 수 없는 워킹트리 등) — 파일을 하나도 쓰기 전에 중단 |
 | `npx commitgate init --no-agent-entrypoints` | `.claude/`·`.cursor/`·`CLAUDE.md` 설치 건너뛰기 |
 | `npx commitgate sync [--apply] [--persona]` | 업그레이드 후 vendored **스키마 축**(machine·req.config schema)을 설치 패키지 사본으로 재동기화 (기본: 계획만). `--persona`는 페르소나 **부재 복원만**(사용자 수정본 미훼손). 자세히는 [업그레이드 (0.x)](#업그레이드-0x) |
+| `npx commitgate quickstart [--apply]` | 기존 `CLAUDE.md`/`AGENTS.md`에 Quick Start 블록을 멱등 주입(기본: 계획만). 관리 블록만 삽입·나머지 보존. `AGENTS.md`는 계약 마커 있을 때만. seed-once로 기존 파일에 안 닿는 [REQ-2026-039]를 백필 |
 | `npx commitgate migrate [--apply]` | 예전 vendored 설치본 → 런타임 패키지 전환 (기본: 계획만, 비파괴) |
 | `npx commitgate uninstall` | 제거 계획 확인 (읽기 전용 — 아무것도 지우지 않음) |
 | `npm uninstall -D commitgate` | 런타임 제거 |
