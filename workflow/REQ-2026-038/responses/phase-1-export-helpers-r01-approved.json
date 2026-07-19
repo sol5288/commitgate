@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"47de2c0a00b3ef83a4a8a679401a5e78a63696bc","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"Phase-1 변경을 커밋하고, 후속 phase에서 sync·D20·문서 변경을 각각 staged diff로 검토받으세요.","observations":[]}

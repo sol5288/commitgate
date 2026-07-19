@@ -11,7 +11,7 @@
  * (Stage B에서 init.ts를 JS로 빌드하면 이 런처는 제거 가능.)
  *
  * verb dispatch(REQ-2026-014 Stage B, 설계 D3): 로컬 패키지 bin이 `req:*`를 dispatch한다.
- *    - 알려진 verb(`req:new`/`req:next`/`req:review-codex`/`req:doctor`/`req:commit`/`uninstall`/`init`) → 해당 모듈(verb 토큰 소비).
+ *    - 알려진 verb(`req:new`/`req:next`/`req:review-codex`/`req:doctor`/`req:commit`/`uninstall`/`migrate`/`sync`/`init`) → 해당 모듈(verb 토큰 소비).
  *    - argv 없음 **또는 첫 인자가 `-` 옵션**(`--dry-run`·`--dir`·`--strict`·`--force`·`--no-agent-entrypoints`·`-h`) → **init에 argv 전체 전달**(하위호환).
  *    - 그 외 비-옵션 미지 토큰 → fail-closed(오타를 조용히 init으로 보내지 않는다). `migrate`는 Phase 3에서 등록.
  *    각 대상 모듈은 `runCli(argv)`(예외→친절한 1줄+exit1 경계)를 export한다. import되면 대상의 `if (isMain)` 가드는 발화하지 않으므로 중복 실행 없음.

@@ -37,7 +37,7 @@ codex login status
 ```
 
 > **Why two steps?** CommitGate does **not** copy its runtime code into your project. Step 1 puts the runtime in `node_modules/commitgate`; step 2 adds only **governance assets** (config, contract, schemas, persona) plus `req:* = commitgate <verb>` scripts.
-> That means updating is a single `npm update commitgate`, and removing the runtime is `npm uninstall -D commitgate`.
+> Removing the runtime is a single `npm uninstall -D commitgate`. **For updates, follow the [Upgrading (0.x)](#upgrading-0x) section below** — the runtime (`node_modules`) is bumped with `npm`, but the vendored assets (schemas, persona) in your project must be re-synced separately with `commitgate sync`, and a 0.x caret range (`^0.y`) does not cross a minor automatically.
 > `init` **stops** if `devDependencies.commitgate` is not declared — there would be no runtime for `req:*` to point at.
 
 Installation writes files but never commits them. `req:new` **requires a clean working tree**, so commit the scaffold first. The installer's `다음:` (next steps) output prints the exact paths to stage.
@@ -235,7 +235,7 @@ runtime — these are pinned copies inside the package. Each SKILL.md carries th
 | `scripts/req/**` runtime code | `node_modules/commitgate` — never copied into your project |
 | `tsx` · `ajv` · `cross-spawn` | runtime dependencies of the `commitgate` package — never injected into your `package.json` |
 
-What stays in your project is **governance and audit data** only: config, contract, schemas, persona, and `workflow/REQ-*` evidence. Because the runtime lives in the package, `npm update commitgate` updates it in one step and vendored copies cannot drift.
+What stays in your project is **governance and audit data** only: config, contract, schemas, persona, and `workflow/REQ-*` evidence. The **runtime code** lives in the package, so `npm update commitgate` refreshes it with no drift. But the **vendored assets** (schemas, persona) are separate from the runtime — on a minor upgrade you must also run `commitgate sync` (see [Upgrading (0.x)](#upgrading-0x)) or the runtime and assets will drift apart.
 
 The `req:*` scripts call the installed package bin — `npm run req:new -- <slug>` → `commitgate req:new <slug>` → `node_modules/.bin/commitgate`.
 
@@ -266,6 +266,43 @@ CommitGate stops **before writing any file** if a contract pointer would be swal
 > `--strict` also treats the `package.json`/lockfile changes left by the required `npm install -D commitgate` as pre-existing dirt. Recommended order: `npm i -D commitgate` → **commit** → `npx commitgate init --strict` → commit the scaffold.
 
 > `workflow/machine.schema.json` and `workflow/req.config.schema.json` are always copied under `workflow/`, regardless of the `ticketRoot` setting in `req.config.json`.
+
+---
+
+## Upgrading (0.x)
+
+Bumping the runtime takes **two** steps — `npm update` alone is not enough.
+
+**① The caret range blocks 0.x minors.** `npm install -D commitgate` writes a `^0.y.z` range. In npm semver,
+`^0.7.0` means `>=0.7.0 <0.8.0`, so `npm update`/`pnpm update` **will not cross a 0.x minor** (it stays within 0.7.x).
+To cross a minor, raise the range explicitly:
+
+```sh
+npm install -D commitgate@latest     # or a specific version: commitgate@^0.8.0
+```
+
+**② Vendored assets update separately from the runtime.** The command above refreshes the runtime
+(`node_modules/commitgate`), but the contract assets in your project's `workflow/`
+(`machine.schema.json`, `req.config.schema.json`) **stay as they were**. If you bump the runtime but leave the
+assets, the new runtime **reads the old contract**, and newer features (e.g. the full-review escalation of design
+delta reviews) are silently disabled. `commitgate sync` restores those assets from the installed package copy:
+
+```sh
+npx commitgate sync                    # plan only (dry-run — see what would change)
+npx commitgate sync --apply            # re-sync the schema axis
+npx commitgate sync --apply --persona  # persona too (restore if missing; your edits are preserved)
+```
+
+- `sync` restores the **schema axis only** (contracts, always kept current). It does not touch companion skills,
+  `workflow/.gitignore`, `package.json`, or `req:*`.
+- The **persona (`review-persona.md`) is handled only with `--persona`**, and only as a **restore-if-missing**. A
+  persona you edited yourself is never overwritten (if it differs, it is preserved and only reported) — to customize
+  it, point `reviewPersonaPath` in `req.config.json` at a separate file.
+- `req:doctor`'s **D20** WARNs when the vendored schema drifts from the installed copy (it never blocks the commit).
+
+**③ If you are on an older (vendored) install**, follow up with `migrate` below to move to the Stage B runtime.
+
+> In short: install `commitgate@latest` → `commitgate sync --apply` → (if needed) `commitgate migrate`.
 
 ---
 

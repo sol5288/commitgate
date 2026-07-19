@@ -20,6 +20,7 @@ export const VERB_MODULES = {
   'req:commit': '../scripts/req/req-commit.ts',
   uninstall: 'uninstall.ts',
   migrate: 'migrate.ts',
+  sync: 'sync.ts',
   init: 'init.ts',
 }
 

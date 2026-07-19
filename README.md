@@ -37,7 +37,7 @@ codex login status
 ```
 
 > **왜 두 단계인가요?** CommitGate는 실행 코드를 프로젝트에 **복사하지 않습니다**. 1단계가 런타임을 `node_modules/commitgate`에 넣고, 2단계는 프로젝트에 **거버넌스 자산**(설정·계약·스키마·persona)과 `req:* = commitgate <verb>` 스크립트만 깝니다.
-> 그래서 업데이트는 `npm update commitgate` 한 번이고, 런타임 제거는 `npm uninstall -D commitgate`입니다.
+> 런타임 제거는 `npm uninstall -D commitgate` 한 번입니다. **업데이트는 아래 [업그레이드 (0.x)](#업그레이드-0x) 절을 따르세요** — 런타임(`node_modules`)은 `npm`으로 올리지만, 프로젝트에 깔린 vendored 자산(스키마·persona)은 `commitgate sync`로 따로 맞춰야 하고, 0.x 캐럿 범위(`^0.y`)는 minor를 자동으로 넘지 않습니다.
 > `init`은 `devDependencies.commitgate` 선언이 없으면 **중단**합니다 — `req:*`가 가리킬 런타임이 없기 때문입니다.
 
 설치는 파일을 놓기만 하고 커밋하지 않습니다. `req:new`는 **clean 워킹트리를 요구**하므로, 설치분을 먼저 커밋하세요. 설치 출력의 `다음:` 안내가 stage할 정확한 경로 목록을 알려 줍니다.
@@ -231,7 +231,7 @@ Matt Pocock의 MIT 공개 skills를 기준 SHA `d574778f94cf620fcc8ce741584093bc
 | `scripts/req/**` 실행 코드 | `node_modules/commitgate` — 프로젝트에 복사하지 않습니다 |
 | `tsx` · `ajv` · `cross-spawn` | `commitgate` 패키지의 runtime dependency — 대상 `package.json`에 주입하지 않습니다 |
 
-프로젝트에 남는 것은 **거버넌스·감사 데이터**(설정·계약·스키마·persona·`workflow/REQ-*` 증거)뿐입니다. 실행 코드는 패키지에만 있으므로 `npm update commitgate` 한 번으로 갱신되고, 복사본 버전이 갈라지지 않습니다.
+프로젝트에 남는 것은 **거버넌스·감사 데이터**(설정·계약·스키마·persona·`workflow/REQ-*` 증거)뿐입니다. **실행 코드**는 패키지에만 있으므로 `npm update commitgate`로 갱신되고 복사본이 갈라질 일이 없습니다. 다만 프로젝트에 깔린 **vendored 자산**(스키마·persona)은 런타임과 별개라, minor 업그레이드 때 [업그레이드 (0.x)](#업그레이드-0x) 절을 따라 `commitgate sync`를 함께 실행해야 런타임과 갈라지지 않습니다.
 
 `req:*` 스크립트는 설치된 패키지 bin을 호출합니다 — `npm run req:new -- <slug>` → `commitgate req:new <slug>` → `node_modules/.bin/commitgate`.
 
@@ -267,6 +267,41 @@ npx commitgate --strict
 > `--strict`는 **선행 `npm install -D commitgate`가 남긴 `package.json`·lockfile 변경도** preexisting-dirty로 봅니다. 권장 순서: `npm i -D commitgate` → **커밋** → `npx commitgate init --strict` → 설치분 커밋.
 
 > `workflow/machine.schema.json`과 `workflow/req.config.schema.json`은 `req.config.json`의 `ticketRoot` 설정과 무관하게 **항상 `workflow/` 아래**에 복사됩니다.
+
+---
+
+## 업그레이드 (0.x)
+
+런타임을 새 버전으로 올릴 때 **두 가지**를 챙겨야 합니다. `npm update`만으로는 부족합니다.
+
+**① 캐럿 범위가 0.x minor를 막습니다.** `npm install -D commitgate`는 `^0.y.z` 범위를 씁니다. npm semver에서
+`^0.7.0`은 `>=0.7.0 <0.8.0`을 뜻하므로 `npm update`/`pnpm update`는 **0.x minor를 넘지 않습니다**(0.7.x 안에 머뭅니다).
+minor를 넘으려면 범위를 명시적으로 올려야 합니다:
+
+```sh
+npm install -D commitgate@latest     # 또는 특정 버전: commitgate@^0.8.0
+```
+
+**② vendored 자산은 런타임과 별개로 갱신됩니다.** 런타임(`node_modules/commitgate`)은 위 명령이 갱신하지만,
+프로젝트 `workflow/`에 깔린 계약 자산(`machine.schema.json`·`req.config.schema.json`)은 **그대로 남습니다**.
+런타임만 올리고 자산을 두면, 새 런타임이 **옛 계약을 읽어** 새 기능(예: design delta 리뷰의 full-review
+에스컬레이션)이 조용히 비활성화될 수 있습니다. `commitgate sync`가 이 자산을 설치된 패키지 사본으로 되돌립니다:
+
+```sh
+npx commitgate sync                  # 계획만 출력(dry-run — 무엇이 바뀔지 확인)
+npx commitgate sync --apply          # 스키마 축 재동기화
+npx commitgate sync --apply --persona  # 페르소나도 함께(부재면 복원, 직접 수정본은 보존)
+```
+
+- `sync`는 **스키마 축만** 되돌립니다(계약이라 항상 최신으로). companion skills·`workflow/.gitignore`·
+  `package.json`·`req:*`는 건드리지 않습니다.
+- **페르소나(`review-persona.md`)는 `--persona`에서만**, 그것도 **부재 복원**만 합니다. 직접 수정한 페르소나는
+  덮지 않습니다(다르면 보존하고 알림만) — 커스터마이즈하려면 `req.config.json`의 `reviewPersonaPath`를 별도 파일로 지정하세요.
+- `req:doctor`의 **D20**이 vendored 스키마가 설치 사본과 어긋나면 **WARN**으로 알려 줍니다(커밋은 막지 않습니다).
+
+**③ 예전(vendored) 설치본이면** 이어서 아래 `migrate`로 Stage B 전환까지 하세요.
+
+> 정리: `commitgate@latest` 설치 → `commitgate sync --apply` → (필요 시) `commitgate migrate`.
 
 ---
 

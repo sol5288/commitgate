@@ -1,12 +1,17 @@
 import { describe, it, expect } from 'vitest'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   runChecks,
   phaseGranularityWarnings,
   parseArgs,
   classifyInstallMode,
+  safeSha256,
   type DoctorInputs,
   type Check,
 } from '../../scripts/req/req-doctor'
+import { packageRoot } from '../../scripts/req/lib/config'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 import type { WorkflowState, Verdict } from '../../scripts/req/review-codex'
 
@@ -615,5 +620,62 @@ describe('req:doctor — parseArgs(--root·--ticket·--finalize)', () => {
   })
   it('알 수 없는 옵션은 throw(fail-closed)', () => {
     expect(() => parseArgs(['--nope'])).toThrow(/알 수 없는/)
+  })
+})
+
+describe('req:doctor — D20 (자산 skew content-hash, REQ-2026-038)', () => {
+  const D20 = (over: Parameters<typeof mk>[0]) => lvl(runChecks(mk(over)), 'D20')
+
+  it('필드 미지정(legacy/2-arg) → OK(점검 불요)', () => {
+    expect(D20({})).toBe('OK')
+  })
+  it('dev repo/dogfood(packageRootDiffers=false) → OK', () => {
+    expect(D20({ packageRootDiffers: false, schemaPathIsDefault: true, packagedSchemaSha: 'a', vendoredSchemaSha: 'b' })).toBe('OK')
+  })
+  it('custom schemaPath(schemaPathIsDefault=false) → OK(unmanaged)', () => {
+    expect(D20({ packageRootDiffers: true, schemaPathIsDefault: false, packagedSchemaSha: 'a', vendoredSchemaSha: 'b' })).toBe('OK')
+  })
+  it('shipped/vendored 조회 불가(sha null) → OK', () => {
+    expect(D20({ packageRootDiffers: true, schemaPathIsDefault: true, packagedSchemaSha: null, vendoredSchemaSha: 'b' })).toBe('OK')
+    expect(D20({ packageRootDiffers: true, schemaPathIsDefault: true, packagedSchemaSha: 'a', vendoredSchemaSha: null })).toBe('OK')
+  })
+  it('shipped === vendored → OK(동기화됨)', () => {
+    expect(D20({ packageRootDiffers: true, schemaPathIsDefault: true, packagedSchemaSha: 'same', vendoredSchemaSha: 'same' })).toBe('OK')
+  })
+  it('shipped !== vendored(skew) → WARN', () => {
+    expect(
+      D20({ packageRootDiffers: true, schemaPathIsDefault: true, packagedSchemaSha: 'shipped', vendoredSchemaSha: 'stale', installedVersion: '0.8.1' }),
+    ).toBe('WARN')
+  })
+  it('skew여도 D20은 절대 FAIL이 아니다(커밋 게이트 무영향)', () => {
+    const checks = runChecks(mk({ packageRootDiffers: true, schemaPathIsDefault: true, packagedSchemaSha: 'x', vendoredSchemaSha: 'y' }))
+    expect(checks.filter((c) => c.id === 'D20' && c.level === 'FAIL').length).toBe(0)
+  })
+
+  // main() 경로 증명(REQ-2026-038 phase-2 리뷰 대응): 합성 sha 문자열이 아니라 req-doctor의 **실제 createHash 경로**
+  // (safeSha256)를 구동한다. createHash import가 결함이면 safeSha256이 null을 반환해 아래 hex 단언이 실패한다.
+  it('safeSha256 — 실제 createHash 경로 동작(파일 sha 64hex)', () => {
+    const sha = safeSha256(join(packageRoot(), 'workflow', 'machine.schema.json'))
+    expect(sha).toMatch(/^[0-9a-f]{64}$/)
+  })
+  it('실제 shipped-vs-stale sha로 D20 WARN(main() sha 계산 end-to-end)', () => {
+    const shipped = safeSha256(join(packageRoot(), 'workflow', 'machine.schema.json'))
+    const dir = mkdtempSync(join(tmpdir(), 'cg-d20-'))
+    try {
+      const stalePath = join(dir, 'stale.json')
+      writeFileSync(stalePath, '{"machine_schema_version":["1.1"],"_stale":"0.7.0"}')
+      const stale = safeSha256(stalePath)
+      expect(shipped).toMatch(/^[0-9a-f]{64}$/)
+      expect(stale).toMatch(/^[0-9a-f]{64}$/)
+      expect(shipped).not.toBe(stale)
+      expect(
+        D20({ packageRootDiffers: true, schemaPathIsDefault: true, packagedSchemaSha: shipped, vendoredSchemaSha: stale, installedVersion: '0.8.1' }),
+      ).toBe('WARN')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+  it('safeSha256 — 부재 파일은 null(fail-safe → D20 OK 처리)', () => {
+    expect(safeSha256(join(tmpdir(), 'cg-nonexistent-xyz-123.json'))).toBeNull()
   })
 })

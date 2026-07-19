@@ -39,6 +39,15 @@ describe('[dispatch] resolveDispatch — 알려진 req:* verb 라우팅(verb 토
     })
   })
 
+  it('sync verb 라우팅 — REQ-2026-038 파일 생성과 동시에 등록(인자 통과)', () => {
+    expect('sync' in VERB_MODULES).toBe(true)
+    expect(resolveDispatch(['sync'])).toEqual({ entry: 'sync.ts', rest: [] })
+    expect(resolveDispatch(['sync', '--apply', '--persona', '--dir', 'x'])).toEqual({
+      entry: 'sync.ts',
+      rest: ['--apply', '--persona', '--dir', 'x'],
+    })
+  })
+
   it('verb 뒤 bare `--`는 그대로 전달된다(스트립은 각 스크립트 parseArgs의 몫)', () => {
     expect(resolveDispatch(['req:next', '--', '2026-014'])).toEqual({
       entry: '../scripts/req/req-next.ts',

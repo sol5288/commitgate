@@ -3803,3 +3803,14 @@ describe('REQ-2026-029 phase-2 — resolveSuccessorLineage 순수', () => {
     expect(() => resolveSuccessorLineage(parent, 'REQ-2026-020', '2026-07-18T01:00:00Z')).toThrow(/replace/)
   })
 })
+
+describe('[review-codex] MACHINE_SCHEMA_VERSION ↔ shipped 스키마 enum 정합 (REQ-2026-038 R9)', () => {
+  // 상수(review-codex.ts:62)와 machine.schema.json enum이 주석으로만 동기화돼 있었다 — 한쪽만 bump하면 조용히
+  // 어긋나 모든 리뷰가 machine_schema_version 불일치로 deadlock한다. 이 net이 그 드리프트를 빌드에서 잡는다.
+  it('MACHINE_SCHEMA_VERSION 이 machine.schema.json 의 enum에 포함된다', () => {
+    const schema = JSON.parse(readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')) as {
+      properties: { machine_schema_version: { enum: string[] } }
+    }
+    expect(schema.properties.machine_schema_version.enum).toContain(MACHINE_SCHEMA_VERSION)
+  })
+})
