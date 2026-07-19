@@ -2,6 +2,10 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## 0.9.5
+
+**리뷰 게이트 모델·reasoning effort를 review-call 로그에 기록** (REQ-2026-043). `req:review-codex`가 남기는 측정 로그(`workflow/.review-calls.jsonl`)의 각 행에 `review_model`·`review_reasoning_effort` 두 필드를 추가합니다. 값은 commitgate가 그 리뷰에 해소·전달한 값(`req.config.json`의 `reviewModel`/`reviewReasoningEffort`, 미지정 시 코어 기본 `gpt-5.6-terra`/`high`)이며, 두 값을 `null`로 두어 codex 전역 설정을 상속하는 경우 `null`로 기록해 **미핀 상태를 드러냅니다**. 이로써 "어떤 모델이 각 리뷰를 통과시켰는가"를 로그에서 감사·재현할 수 있습니다. 로그는 `.gitignore` 대상 측정 전용이라 커밋 산출물·승인 원장(`approvals.jsonl`)·게이트 판정에 영향이 없는 **순수 additive**이며, 기존 사용자는 무회귀입니다.
+
 ## 0.9.4
 
 **README 랜딩 서사 보강 + 히어로 이미지** (문서 릴리스). 0.9.3의 랜딩 위에 제품 서사를 강화했습니다 — "코드는 한 AI가 만들고, 다른 AI가 다시 봅니다"(자기 검수의 맹점 → 교대 검수 동기), "사람은 결정에만 참여합니다"(직접 챙기던 일 ↔ CommitGate가 연결 표), 4단계 흐름, 그리고 워크플로를 나타내는 히어로 이미지(빌더 AI → 리뷰어 AI → 사람 확인 → 커밋 게이트)를 추가했습니다. 이미지는 **WebP(~70KB)**로 GitHub raw URL에서 서빙 — `files[]`·npm tarball·payload 축은 **무변경**입니다. 실행 코드·의존성 변경이 없어 기존 사용자는 무회귀입니다.
