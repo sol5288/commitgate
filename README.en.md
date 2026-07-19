@@ -304,7 +304,19 @@ npx commitgate sync --apply --persona  # persona too (restore if missing; your e
 
 **③ If you are on an older (vendored) install**, follow up with `migrate` below to move to the Stage B runtime.
 
-> In short: install `commitgate@latest` → `commitgate sync --apply` → (if needed) `commitgate migrate`.
+**④ The Quick Start block also does not reach existing files automatically (0.9.2+).** A fresh install puts the
+onboarding Quick Start at the top of `CLAUDE.md`/`AGENTS.md`, but `init` is seed-once, so it is **not applied to
+files that already existed**. After upgrading, backfill existing files with `commitgate quickstart`:
+
+```sh
+npx commitgate quickstart              # plan only (dry-run — see what would change)
+npx commitgate quickstart --apply      # inject only the managed block (preserves the rest, idempotent)
+```
+
+- `AGENTS.md` is targeted only when it carries the CommitGate contract marker. Absent files are left untouched.
+- `req:doctor`'s **D21** WARNs when an existing file is missing the Quick Start block (it never blocks the commit).
+
+> In short: install `commitgate@latest` → `commitgate sync --apply` → `commitgate quickstart --apply` → (if needed) `commitgate migrate`.
 
 ---
 

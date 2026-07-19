@@ -303,7 +303,19 @@ npx commitgate sync --apply --persona  # 페르소나도 함께(부재면 복원
 
 **③ 예전(vendored) 설치본이면** 이어서 아래 `migrate`로 Stage B 전환까지 하세요.
 
-> 정리: `commitgate@latest` 설치 → `commitgate sync --apply` → (필요 시) `commitgate migrate`.
+**④ Quick Start 블록도 기존 파일엔 자동으로 안 닿습니다(0.9.2+).** 신규 설치는 `CLAUDE.md`/`AGENTS.md` 앞에
+온보딩 Quick Start를 넣지만, init은 seed-once라 **이미 있던 파일**엔 반영되지 않습니다. 업그레이드 후 기존
+파일에 넣으려면 `commitgate quickstart`로 백필하세요:
+
+```sh
+npx commitgate quickstart              # 계획만 출력(dry-run — 무엇이 바뀔지 확인)
+npx commitgate quickstart --apply      # 관리 블록만 주입(블록 밖 내용 보존·멱등)
+```
+
+- `AGENTS.md`는 CommitGate 계약 마커가 있을 때만 대상입니다. 부재 파일은 건드리지 않습니다.
+- `req:doctor`의 **D21**이 기존 파일에 Quick Start 블록이 없으면 **WARN**으로 알려 줍니다(커밋은 막지 않습니다).
+
+> 정리: `commitgate@latest` 설치 → `commitgate sync --apply` → `commitgate quickstart --apply` → (필요 시) `commitgate migrate`.
 
 ---
 
