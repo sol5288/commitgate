@@ -15,7 +15,7 @@ Exit: typecheck0 · 기존 init 단위 전부 그린(회귀 없음) · Codex pha
 범위: 신규 `bin/sync.ts`(D1~D5·R2·R3·R4·R5) — 동기 `runCli`, 기본 plan/dry-run·`--apply`·`--dir`·`--persona`,
 `targetRoot===PACKAGE_ROOT` 하드 가드, 스키마 축 재동기화(statWritableDest·sha skip), persona opt-in·custom/null 불가침.
 `bin/dispatch.mjs`에 `sync` 등록(동일 phase — 없는 모듈 등록 금지), `bin/commitgate.mjs` help. `tests/unit/sync.test.ts`(신규:
-plan/apply·packageRoot 거부·custom/null/기본-경로 persona·seed-once 미접촉·멱등)·`tests/unit/dispatch.test.ts`(sync 라우팅).
+plan/apply·packageRoot 거부·persona 수정본 `--persona`에도 불변·부재 복원·custom/null 미접촉·seed-once 미접촉·멱등)·`tests/unit/dispatch.test.ts`(sync 라우팅).
 Exit: typecheck0 · sync·dispatch 단위 그린 · Codex phase 리뷰 승인.
 
 ## Phase 3 — doctor D20 content-hash WARN + 회귀망 (`phase-3-doctor-d20`)

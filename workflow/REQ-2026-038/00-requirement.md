@@ -85,9 +85,10 @@ vendored 자산 skew 감지·복구(`commitgate sync` + doctor D20 WARN) 및 0.x
   `packageRoot()/<rel>` → `<root>/<rel>`로 `statWritableDest` 경유 복사. sha256 동일하면 skip(멱등). 변경 파일 목록 출력.
   **companion skills·`workflow/.gitignore`·`package.json`·`req:*`·`req.config.json`·에이전트 진입점은 절대 미접촉.**
 - **R4 — packageRoot 가드.** `cfg.root === packageRoot()`(또는 대상 루트가 패키지 루트)면 쓰기 전 하드 거부(fail-closed).
-- **R5 — 페르소나 보존.** `--persona` **없이는** 페르소나를 쓰지 않는다. `--persona`가 있어도 `reviewPersonaPath`가
-  기본 경로가 아니거나 `null`이면 'unmanaged'로 보고하고 미접촉. 기본 경로여도 vendored 내용이 shipped와 다르면
-  (사용자 수정 가능성) plan은 diff 안내만 하고, opt-in 없이는 덮지 않는다. **custom/null/사용자 수정 페르소나는 절대 미훼손.**
+- **R5 — 페르소나 보존(파괴적 쓰기 0건).** `--persona` **없이는** 페르소나를 쓰지 않는다. `--persona`가 있어도 sync의 유일한
+  persona 쓰기는 **부재 복원**(dest 없음 → shipped 복사)뿐이다. 내용이 다른 기본 경로 persona는 `--persona`가 있어도
+  **덮지 않고 report-only** — manifest 없이 stale-kit↔사용자편집을 구별 못 하므로 편집 보존 쪽으로 실패(Codex design-r02 P1).
+  custom 경로(정규화 절대경로 기준 ≠기본)·`null`은 'unmanaged' 미접촉. **custom·null·기본경로-편집 페르소나 전부 어떤 경우에도 미훼손.**
 - **R6 — confinement 헬퍼 재사용.** `bin/init.ts`의 `statWritableDest`([init.ts:442](../../bin/init.ts))·
   `assertConfinedDest`([init.ts:399](../../bin/init.ts))·`sha256File`([init.ts:561](../../bin/init.ts))에 `export`만 추가한다(동작 무변경).
 - **R7 — doctor D20 (WARN).** `runChecks`에 순수 검사 추가. `main()`이 `sha256(packageRoot()/workflow/machine.schema.json)`
@@ -99,7 +100,8 @@ vendored 자산 skew 감지·복구(`commitgate sync` + doctor D20 WARN) 및 0.x
 - **R8 — req.config.schema.json은 cosmetic.** sync가 이 파일도 갱신하되(에디터 `$schema` 정합), 런타임은 인라인
   `CONFIG_SCHEMA`([config.ts:140-188](../../scripts/req/lib/config.ts))를 쓰므로 게이트 영향 0. **어떤 드리프트 WARN에도 등장 금지.**
 - **R9 — 테스트·회귀망.** pkgRoot≠repoRoot 픽스처(repo 내부, 사용자 node_modules 미사용)로: sync plan/apply 정상경로;
-  `cfg.root===packageRoot()` 거부; custom/null/수정 페르소나 미훼손; seed-once 자산 미접촉; D20 결정표(undefined→OK,
+  `cfg.root===packageRoot()` 거부; **기본경로 수정 persona가 `--apply --persona`에도 불변**(design-r02 P1 회귀)·custom·null 미훼손·
+  부재 persona는 `--persona`로 복원; seed-once 자산 미접촉; D20 결정표(undefined→OK,
   동일→OK, 상이→WARN, custom→OK); **동치 상대경로 skew 케이스**(`schemaPath:"./workflow/machine.schema.json"` + stale vendored →
   문자열≠이지만 절대경로 동일이라 WARN 유지, Codex design-r01 P1 회귀). 상시 회귀망 2개: (a) `MACHINE_SCHEMA_VERSION`([review-codex.ts:62](../../scripts/req/review-codex.ts))이
   shipped `machine.schema.json` enum에 존재; (b) 모든 KIT_COPY/KIT_SCHEMA 자산이 `package.json` `files[]`에 존재.
