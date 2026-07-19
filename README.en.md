@@ -516,6 +516,7 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `npx commitgate init --dry-run` | Preview the install plan without writing files |
 | `npx commitgate init --strict` | Treat integrity warnings as install failures — stops before writing any file |
 | `npx commitgate init --no-agent-entrypoints` | Skip `.claude/`, `.cursor/`, and `CLAUDE.md` |
+| `npx commitgate sync [--apply] [--persona]` | Re-sync vendored **schema-axis** assets (machine/req.config schema) to the installed package copy after an upgrade (plan-only by default). `--persona` **restores a missing persona only** (never overwrites your edits). See [Upgrading (0.x)](#upgrading-0x) |
 | `npx commitgate migrate [--apply]` | Move an older vendored install to the runtime package (plan-only by default, non-destructive) |
 | `npx commitgate uninstall` | Preview the removal plan (read-only — deletes nothing) |
 | `npm uninstall -D commitgate` | Remove the runtime |

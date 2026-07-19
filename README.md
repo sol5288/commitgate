@@ -513,6 +513,7 @@ npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 | `npx commitgate init --dry-run` | 파일을 쓰지 않고 설치 계획 확인 |
 | `npx commitgate init --strict` | 정합성 경고를 설치 실패로 처리 (gitignore된 계약 포인터, 설치 커밋을 안전하게 만들 수 없는 워킹트리 등) — 파일을 하나도 쓰기 전에 중단 |
 | `npx commitgate init --no-agent-entrypoints` | `.claude/`·`.cursor/`·`CLAUDE.md` 설치 건너뛰기 |
+| `npx commitgate sync [--apply] [--persona]` | 업그레이드 후 vendored **스키마 축**(machine·req.config schema)을 설치 패키지 사본으로 재동기화 (기본: 계획만). `--persona`는 페르소나 **부재 복원만**(사용자 수정본 미훼손). 자세히는 [업그레이드 (0.x)](#업그레이드-0x) |
 | `npx commitgate migrate [--apply]` | 예전 vendored 설치본 → 런타임 패키지 전환 (기본: 계획만, 비파괴) |
 | `npx commitgate uninstall` | 제거 계획 확인 (읽기 전용 — 아무것도 지우지 않음) |
 | `npm uninstall -D commitgate` | 런타임 제거 |
