@@ -2,7 +2,11 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.9.0
+
+phase 자동 커밋 opt-in(REQ-2026-037)과 업그레이드 자산 skew 감지·복구(REQ-2026-038)가 핵심입니다. 둘 다 0.8.x 위
+**추가 기능**(opt-in·additive·backward-compatible)이라 기존 사용자는 무회귀입니다. 업그레이드는 `npm install -D commitgate@latest`
+후 `commitgate sync --apply`로 vendored 자산을 맞추세요(README "업그레이드 (0.x)" 절).
 
 - **자산 skew 감지·복구 — `commitgate sync` + doctor D20** (REQ-2026-038). 소비 프로젝트가 런타임을 minor 넘어
   업그레이드할 때의 두 함정을 닫습니다. **(1) 캐럿 범위**: `^0.y`는 0.x minor를 자동으로 넘지 않아(`npm update`가
