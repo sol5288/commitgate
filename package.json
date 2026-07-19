@@ -37,7 +37,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
-    "verify:overrides": "node scripts/verify-review-overrides.mjs"
+    "verify:overrides": "node scripts/verify-review-overrides.mjs",
+    "docs:lint": "remark docs --quiet --frail"
   },
   "files": [
     "scripts/req",
@@ -67,6 +68,8 @@
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^22.7.4",
     "@types/semver": "^7.5.8",
+    "remark-cli": "^12.0.1",
+    "remark-validate-links": "^13.1.0",
     "typescript": "^5.6.2",
     "vitest": "^2.1.2"
   }
