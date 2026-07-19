@@ -3202,3 +3202,17 @@ describe('[init] confinement 헬퍼 export (REQ-2026-038 phase-1)', () => {
     }
   })
 })
+
+describe('[init] 세 축 정합 — KIT 자산 ⊆ package.json files[] (REQ-2026-038 R9)', () => {
+  // 복사 축(KIT_COPY/KIT_SCHEMA)에 있는데 tarball 축(files[])에 없으면, 설치는 시도하나 패키지에 실리지 않아
+  // 신규 설치본에서 파일이 없다(REQ-2026-010 P1 재발 방지). init.ts:56-65가 이 혼동을 경고한다.
+  const files = (JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { files: string[] }).files
+  const norm = (p: string) => p.replace(/\\/g, '/')
+  const covered = (rel: string) => files.some((f) => norm(f) === norm(rel))
+
+  for (const rel of KIT_COPY_RELPATHS) {
+    it(`${rel} 가 files[]에 실린다(설치=배포 정합)`, () => {
+      expect(covered(rel), `${rel} 이 package.json files[]에 없음`).toBe(true)
+    })
+  }
+})

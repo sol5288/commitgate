@@ -70,6 +70,17 @@
 - **근거**: [bin/init.ts](../../bin/init.ts) `planInstall`/`runInit`, [bin/migrate.ts](../../bin/migrate.ts), [bin/uninstall.ts](../../bin/uninstall.ts) `identical|differs` 분류, [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `classifyInstallMode`.
 - **관련 관측 — smoke snapshot은 크기만 비교한다**: [scripts/smoke.mjs](../../scripts/smoke.mjs) `snapshot`은 `.git`·`node_modules`를 제외한 **파일 경로 → 바이트 크기** 맵만 만들고 `assertSameTree`가 그것을 비교한다. uninstall read-only·migrate dry-run 비파괴 검증은 이 비교에 의존하므로 **크기가 같은 내용 변경은 놓친다**(내용 해시 미사용). 현재 검증하는 위반(파일 변경·삭제)에는 충분하다는 것이 코드 주석의 근거지만, 보장 범위를 "바이트 동일성"으로 읽으면 안 된다.
 - **재구현 원칙**: 기존 비파괴 동작을 유지. 개선은 install manifest(패키지 버전 + 자산별 sha256)·`upgrade --plan`·3-way 분류·rollback을 함께 제공하고, **런타임 버전과 자산 원장 버전의 skew를 명시적으로 보고**해야 한다([14](14-product-strategy-and-roadmap.md) STR-06). manifest가 이미 존재한다거나 안전한 upgrade가 제공된다고 읽어선 안 된다 — 둘 다 없다.
+- **부분 해결(2026-07-19, REQ-2026-038) — MVP manifest-free content-oracle**: 두 함정 중 **감지·복구·문서**를 닫았다.
+  **(1)** 신규 **`commitgate sync`**([bin/sync.ts](../../bin/sync.ts))가 vendored **스키마 축**(`machine.schema.json`·`req.config.schema.json`)을
+  설치 패키지 사본으로 되돌린다(쓰기는 init confinement 경로 재사용, `targetRoot===패키지 루트` 하드 거부). 페르소나는
+  `--persona` opt-in에서 **부재 복원만** — 내용이 다르면 사용자 편집으로 보고 보존한다(파괴적 쓰기 0건).
+  **(2)** **`req:doctor` D20**([scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts))이 shipped(packageRoot) vs vendored(cfg.schemaPathAbs)
+  `machine.schema.json`을 **content-hash**로 비교해 skew를 WARN한다(**FAIL 아님** — `req:commit` 하드 게이트를 벽돌로 만들지 않음, D19 WARN 상한과 동일 근거).
+  버전 비교가 아닌 이유: `machine_schema_version`이 minor 간 불변일 수 있다(실측 0.7.0/0.8.1 둘 다 "1.1").
+  **(3)** README(한/영)에 "업그레이드 (0.x)" 절 신설 + "업데이트 한 번" 오도 문구 교정(캐럿 범위가 0.x minor를 막음).
+  - **여전히 미해결(후속)**: 커밋되는 install manifest(패키지 버전 + 자산별 sha)·`upgrade --plan` 3-way 분류·rollback·
+    persona **자동** 3-way 구별·버전 원장 skew 보고. content-oracle은 shipped 사본(node_modules)을 살아있는 기준으로
+    쓰므로 원장 없이 동작하지만, persona의 stale-kit↔사용자편집 자동 구별은 manifest가 있어야 한다(STR-06 존치).
 
 ### G-11. 사용자 가치·비용·수렴 관측 지표 없음 (영향: 중)
 - **사실**: 텔레메트리·메트릭·집계 CLI가 없다. 개별 archive와 exit code는 있으나 온보딩 시간, 리뷰 라운드 P50/P95, 대기 시간, 실패 코드 비율, fresh-clone 복구율을 자동 산출하지 않는다.

@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+- **자산 skew 감지·복구 — `commitgate sync` + doctor D20** (REQ-2026-038). 소비 프로젝트가 런타임을 minor 넘어
+  업그레이드할 때의 두 함정을 닫습니다. **(1) 캐럿 범위**: `^0.y`는 0.x minor를 자동으로 넘지 않아(`npm update`가
+  0.7.x에 머묾) 범위를 명시적으로 올려야 합니다 — README에 "업그레이드 (0.x)" 절을 신설하고, "업데이트는 한 번"이라던
+  기존 오도 문구(한/영)를 교정했습니다. **(2) vendored 자산 skew**: 런타임은 스키마·persona를 소비 repo의 사본에서
+  읽는데 `npm update`는 그 사본을 갱신하지 않아, 새 런타임이 옛 계약을 읽어 신규 필드(`full_review_requested`)가
+  조용히 죽습니다(`machine_schema_version`이 minor 간 불변이라 버전으로는 감지 불가 — **content-hash로만** 잡힘).
+  신규 **`commitgate sync`**(기본 dry-run·`--apply`·`--persona`)가 vendored 스키마 축을 설치된 패키지 사본으로
+  되돌리고(모든 쓰기는 init의 confinement 경로 재사용, `targetRoot===패키지 루트`면 하드 거부), 페르소나는 opt-in에서
+  **부재 복원만**(사용자 수정본 불가침). **`req:doctor` D20**이 vendored 스키마가 설치 사본과 어긋나면 WARN합니다
+  (**절대 FAIL 아님** — 커밋 게이트를 벽돌로 만들지 않음). SSOT 갭 **G-10**·로드맵 **STR-06**을 MVP(manifest-free
+  content-oracle) 범위로 부분 해결했습니다(커밋 install 원장·persona 3-way·rollback은 후속).
+
 - **phase 자동 커밋(opt-in) — `phaseCommit.autoApprove`** (REQ-2026-037). `req.config.json`에
   `"phaseCommit": { "autoApprove": "low-only" }`를 두면 **LOW 위험** 티켓의 Codex 승인 phase가 사람 정지 없이
   자동 커밋되고(`req:next`가 `req:commit --run`을 RUN으로 지시), 사람 확인은 feature→main **병합 직전 한 번**으로

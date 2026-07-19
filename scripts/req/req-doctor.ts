@@ -24,7 +24,7 @@ import {
   type Verdict,
   type ApprovalEvidence,
 } from './review-codex'
-import { loadConfig, packageRoot, stripBom, type ResolvedConfig } from './lib/config'
+import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — config 부재 시 현재 동작 보존).
@@ -81,6 +81,18 @@ export interface DoctorInputs {
    *    리터럴이 즉시 tsc 오류가 난다(기존 optional 필드 관례와 동일).
    */
   reqScripts?: Record<string, string> | null
+  // D20(REQ-2026-038): vendored 자산 skew content-hash 검사. main()이 계산해 채운다(runChecks는 순수).
+  //   - packagedSchemaSha : packageRoot()/workflow/machine.schema.json 의 sha256 (조회 불가 시 null)
+  //   - vendoredSchemaSha : cfg.schemaPathAbs(소비 repo 사본)의 sha256 (조회 불가 시 null)
+  //   - packageRootDiffers: packageRoot() !== cfg.root (dogfood/dev repo면 false → OK, D19 자기보호와 동일 취지)
+  //   - schemaPathIsDefault: cfg.schemaPathAbs === resolve(cfg.root, DEFAULTS.schemaPath) (**정규화 절대경로** 비교 — 동치 상대경로 포함)
+  //   - installedVersion  : packageRoot()/package.json 의 version (WARN 메시지용)
+  // 미지정(undefined) = 계산 안 함(legacy/2-arg 호출) → OK '점검 불요'. optional이어야 테스트의 base 리터럴이 안 깨진다(reqScripts와 동일).
+  packagedSchemaSha?: string | null
+  vendoredSchemaSha?: string | null
+  packageRootDiffers?: boolean
+  schemaPathIsDefault?: boolean
+  installedVersion?: string | null
 }
 
 /**
@@ -422,6 +434,32 @@ export function runChecks(inp: DoctorInputs): Check[] {
     else c.push({ id: 'D19', level: 'OK', msg: `설치 모드: ${INSTALL_MODE_LABEL[mode]}(req:* 스크립트 형태 기준)` })
   }
 
+  // D20(REQ-2026-038): vendored machine.schema.json 자산 skew(content-hash) 진단.
+  //
+  // 🔴 **level 상한은 WARN — 절대 FAIL이 아니다**(D19 :406-411과 동일 근거). `req:commit`이 이 doctor를 exit≠0에
+  //    throw하는 하드 게이트로 spawn하므로, FAIL이면 skew난 소비자의 모든 커밋이 `commitgate sync` 전까지 벽돌이 된다.
+  //    확인된 피해는 데이터 손실이 아니라 **조용한 기능 상실**(stale 스키마가 full_review_requested를 제거해 delta 리뷰
+  //    full-review 에스컬레이션이 죽음) → WARN이 정확한 강도.
+  // 🔴 **content-hash 비교**(버전 비교 아님): machine_schema_version이 minor 간 불변일 수 있어(0.7.0/0.8.1 둘 다 "1.1")
+  //    버전으로는 이 skew를 못 잡는다. sha256(shipped) vs sha256(vendored)만 잡는다.
+  // 결정표(D19의 undefined→OK 선례): dev repo/dogfood·custom schemaPath·조회 불가·동일 → OK. 상이 → WARN.
+  if (inp.packageRootDiffers === false) {
+    c.push({ id: 'D20', level: 'OK', msg: '자산 skew 점검 불요(dev repo/dogfood — packageRoot === config root)' })
+  } else if (inp.schemaPathIsDefault === false) {
+    c.push({ id: 'D20', level: 'OK', msg: 'custom schemaPath(kit 관리 자산 아님 — unmanaged, 점검 불요)' })
+  } else if (!inp.packagedSchemaSha || !inp.vendoredSchemaSha) {
+    c.push({ id: 'D20', level: 'OK', msg: '자산 skew 점검 불요(shipped/vendored 스키마 조회 불가 — Stage A/미설치/2-arg)' })
+  } else if (inp.packagedSchemaSha === inp.vendoredSchemaSha) {
+    c.push({ id: 'D20', level: 'OK', msg: 'vendored machine.schema.json 동기화됨(shipped와 동일)' })
+  } else {
+    const ver = inp.installedVersion ? `commitgate ${inp.installedVersion}` : '설치된 commitgate'
+    c.push({
+      id: 'D20',
+      level: 'WARN',
+      msg: `vendored workflow/machine.schema.json 이 ${ver} 사본과 불일치(stale) — \`commitgate sync --apply\` 로 재동기화하세요. stale 스키마는 신규 필드(full_review_requested)를 조용히 제거해 design delta 리뷰의 full-review 에스컬레이션을 비활성화합니다(content-hash 감지).`,
+    })
+  }
+
   return c
 }
 
@@ -504,6 +542,32 @@ function branchExistsLocal(branch: string): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+/**
+ * 파일 sha256(hex). 부재·오류 시 null — D20 fail-safe(조회 불가는 OK로 처리, 게이트를 막지 않는다).
+ *
+ * ⚠️ `createHash`는 이 파일 상단(`import { createHash } from 'node:crypto'`, :13)에 **이미** import돼 있다
+ *    — D16 live-sha·evidence archive sha가 공유하는 기존 import다. D20용으로 추가 import는 필요 없다(중복이면 오류).
+ * `export`인 이유: 테스트가 **실제 createHash 경로**를 직접 구동해(합성 sha 문자열이 아니라) req-doctor의 sha 계산이
+ *    실제로 동작함을 증명하기 위함이다(REQ-2026-038 phase-2 리뷰 대응).
+ */
+export function safeSha256(abs: string): string | null {
+  try {
+    return createHash('sha256').update(readFileSync(abs)).digest('hex')
+  } catch {
+    return null
+  }
+}
+
+/** package.json의 version 문자열. 부재·파손 시 null(D20 WARN 메시지용 — 없어도 무해). */
+function safeReadVersion(pkgAbs: string): string | null {
+  try {
+    const raw = JSON.parse(stripBom(readFileSync(pkgAbs, 'utf8'))) as { version?: unknown }
+    return typeof raw.version === 'string' ? raw.version : null
+  } catch {
+    return null
   }
 }
 
@@ -606,6 +670,12 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     finalize,
     finalizeSourceTree,
     reqScripts: readReqScripts(cfg.root),
+    // D20(REQ-2026-038): 자산 skew content-hash 입력. shipped=packageRoot 사본, vendored=cfg.schemaPathAbs(소비 repo 사본).
+    packagedSchemaSha: safeSha256(join(packageRoot(), 'workflow', 'machine.schema.json')),
+    vendoredSchemaSha: safeSha256(cfg.schemaPathAbs),
+    packageRootDiffers: packageRoot() !== cfg.root,
+    schemaPathIsDefault: cfg.schemaPathAbs === resolve(cfg.root, DEFAULTS.schemaPath), // 정규화 절대경로 비교(동치 상대경로 포함)
+    installedVersion: safeReadVersion(join(packageRoot(), 'package.json')),
   }
 
   const checks = runChecks(inp)

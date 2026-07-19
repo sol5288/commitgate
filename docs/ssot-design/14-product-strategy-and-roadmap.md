@@ -104,7 +104,7 @@ VCCR만 높이기 위해 위험한 변경을 쉽게 승인하면 안 되므로, 
 | 3 | **STR-03** | 외부 전송 안전 경계 | P0 | secret/크기/경로 정책 위반을 Codex 호출 전에 차단 | 오류 코드 |
 | 4 | **STR-04** | 리뷰 수렴·델타 재리뷰·escalation | P0 | 무한 리뷰 제거, P95 5라운드 이내 의사결정 | 내구 이벤트·지표 |
 | 5 | **STR-05** | 티켓 ID·trunk·동시성 기초 | P1 | 브랜치 간 번호 충돌과 `main` 하드코딩 제거 | 상태 재구축 |
-| 6 | **STR-06** | 설치 원장·업그레이드·마이그레이션 | P1 | 관리 자산↔런타임 version skew를 감지하고 자산을 안전하게 갱신 | 포맷 버전 |
+| 6 | **STR-06** | 설치 원장·업그레이드·마이그레이션 (**부분 실현: REQ-2026-038**) | P1 | 관리 자산↔런타임 version skew를 감지하고 자산을 안전하게 갱신 — `commitgate sync`+doctor D20으로 감지·복구·문서 실현, 커밋 install 원장·3-way·rollback은 미착수 | 포맷 버전 |
 | 7 | **STR-07** | 타임아웃·진단·구조화 오류 | P1 | 멈춤과 원인 유실 제거, 자동화 가능한 실패 | 오류 코드 |
 | 8 | **STR-08** | 로컬 품질 리포트 | P1 | 비용·수렴·차단 원인을 코드 유출 없이 측정 | 이벤트 계약 |
 | 9 | **STR-09** | 설명 가능한 단일 진입 UX | P1 | “왜 막혔고 무엇을 할지” 한 명령에서 확인 | STR-05/07 |
@@ -202,6 +202,17 @@ VCCR만 높이기 위해 위험한 변경을 쉽게 승인하면 안 되므로, 
 - unchanged만 자동 교체하고 user-modified는 3-way merge 제안 또는 명시적 보존을 요구한다.
 - upgrade 전 백업 manifest와 rollback 명령을 출력하며, 감사 티켓 데이터는 절대 자동 삭제하지 않는다.
 - 기존 Stage A 설치본은 [bin/migrate.ts](../../bin/migrate.ts)가 `package.json`의 `req:*`만 전환하는 것으로 끝난다 — 자산 업그레이드는 이 항목의 범위이며 아직 없다.
+
+**부분 실현(2026-07-19, REQ-2026-038) — MVP manifest-free content-oracle**
+
+- **감지·복구·문서**를 원장 없이 실현했다. **`commitgate sync`**([bin/sync.ts](../../bin/sync.ts))가 vendored 스키마 축을
+  설치 패키지 사본으로 되돌리고(페르소나는 opt-in·부재 복원만·사용자 편집 불가침), **`req:doctor` D20**이 shipped vs
+  vendored `machine.schema.json`을 **content-hash**로 비교해 skew를 WARN한다(FAIL 아님 — 커밋 게이트 무영향).
+  README(한/영)에 "업그레이드 (0.x)" 절 신설 + 캐럿 범위 함정 문서화.
+- **원장(`installation.json`)을 쓰지 않는 이유**: shipped 사본(`packageRoot/workflow`, `npm update`가 갱신)을 **살아있는
+  기준**으로 삼으면 커밋 원장 없이도 skew를 잡을 수 있고, 커밋 아티팩트·rollback 기계장치가 clean-tree 요구와 충돌하지 않는다.
+- **여전히 이 항목(STR-06)에 남는 것**: 커밋 install 원장(패키지 버전 + 자산별 sha)·`upgrade --plan`의 4-way 분류·백업/rollback·
+  **persona 자동 3-way 구별**(현재는 다르면 보존만 — manifest 없이는 stale-kit↔사용자편집을 자동 구분 못 함)·버전 원장 skew 보고.
 
 ### 7.7 STR-07~09 — 운영성과 UX
 
