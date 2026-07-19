@@ -2329,17 +2329,18 @@ describe('[B-2b] 사용자 문서 계약 갱신(O1-8, touchpoint별 canonical)',
   const EN = 'delta design reviews still inject the built-in delta contract'
   const readDoc = (rel: string): string => readFileSync(join(root, rel), 'utf8')
 
-  it('O1-8 🔴 README.md 본문 null 설명 + 설정 표 행 둘 다 canonical', () => {
-    const md = readDoc('README.md')
-    // 본문(:120): null 설명 줄에 canonical
+  // REQ-2026-042 phase-2: reviewPersonaPath 설명의 정본 사용자 문서가 README → docs/configuration.md 로 이동
+  //   (README 랜딩화 · 이동 맵 00 · 설계 D2). 설정 표 행이 곧 null·비활성 canonical 설명이다.
+  it('O1-8 🔴 docs/configuration.md(한) reviewPersonaPath 표 행이 canonical', () => {
+    const md = readDoc('docs/configuration.md')
     const bodyLine = md.split('\n').find((l) => l.includes('reviewPersonaPath') && l.includes('null') && l.includes('비활성'))
     expect(bodyLine).toBeDefined()
     expect(bodyLine).toContain(KR)
-    // 표 행(:497): `| reviewPersonaPath | ... |` 에 canonical
     const tableRow = md.split('\n').find((l) => l.startsWith('| `reviewPersonaPath`'))
     expect(tableRow).toBeDefined()
     expect(tableRow).toContain(KR)
   })
+  // phase-3(REQ-042)에서 README.en.md 재작성 시 이 EN 정본을 docs/configuration.en.md 로 옮긴다.
   it('O1-8 🔴 README.en.md 본문 + 표 둘 다 canonical', () => {
     const en = readDoc('README.en.md')
     const bodyLine = en.split('\n').find((l) => l.includes('reviewPersonaPath') && l.includes('null') && l.includes('disable'))

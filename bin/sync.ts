@@ -252,7 +252,7 @@ function printHelp(): void {
 
 하지 않는 일:
   companion skills · workflow/.gitignore · package.json · req:* · req.config.json 은 건드리지 않습니다.
-  캐럿 범위(^0.x)는 자동으로 못 넘깁니다 — README '업그레이드(0.x)' 절을 참고해 범위를 먼저 올리세요.
+  캐럿 범위(^0.x)는 자동으로 못 넘깁니다 — 업그레이드(0.x) 문서(github.com/sol5288/commitgate/blob/main/docs/upgrade.md)를 참고해 범위를 먼저 올리세요.
 `)
 }
 

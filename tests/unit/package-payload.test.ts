@@ -499,7 +499,11 @@ describe('[REQ-2026-020] D12 진단 스킬 안전 경계', () => {
  */
 describe('[REQ-2026-023] companion 문서 정합', () => {
   const read = (rel: string): string => lf(readFileSync(join(PACKAGE_ROOT, rel), 'utf8'))
-  const READMES = ['README.md', 'README.en.md'] as const
+  // REQ-2026-042 phase-2: companion 상세의 **정본 사용자 문서**가 README → docs/agent-prompt.md 로 이동했다
+  //   (README 랜딩화 · 이동 맵 00 · 설계 D2). 한국어 정본 = docs/agent-prompt.md.
+  //   README.en.md는 phase-3에서 재작성되며 그때 정본을 docs/agent-prompt.en.md 로 옮긴다.
+  //   불변식(4 스킬명·SHA·installer·--force 보존·승인증거 경계)은 동일하게 유지하고 **대상만** 이동한다.
+  const COMPANION_DOCS = ['docs/agent-prompt.md', 'README.en.md'] as const
   /** `printHelp` 본문만 잘라낸다(주변 코드가 아니라 사용자가 보는 문자열을 검사). */
   const helpBody = (): string => {
     const src = read('bin/init.ts')
@@ -509,7 +513,7 @@ describe('[REQ-2026-023] companion 문서 정합', () => {
     return rest.slice(0, rest.indexOf('\n}\n'))
   }
 
-  it.each(READMES)('%s: companion 불변값을 담는다 (R5)', (rel) => {
+  it.each(COMPANION_DOCS)('%s: companion 불변값을 담는다 (R5)', (rel) => {
     const t = read(rel)
     for (const name of COMPANION_SKILLS) expect(t, `${rel}: ${name}`).toContain(name)
     expect(t, `${rel}: opt-out 플래그`).toContain('--no-agent-entrypoints')
@@ -521,7 +525,7 @@ describe('[REQ-2026-023] companion 문서 정합', () => {
   })
 
   /** 🔴 승인 증거 경계(R6) — 외부·companion skill 결과는 CommitGate/Codex 승인 근거가 아니다. */
-  it.each(READMES)('%s: 승인 증거 경계를 명시한다 (R6)', (rel) => {
+  it.each(COMPANION_DOCS)('%s: 승인 증거 경계를 명시한다 (R6)', (rel) => {
     expect(read(rel), `${rel}: 승인 증거가 아니라는 경계`).toMatch(/승인 증거가 아|승인 근거가 아|not approval evidence|is not .{0,30}approval/i)
   })
 
@@ -529,7 +533,7 @@ describe('[REQ-2026-023] companion 문서 정합', () => {
    * 🔴 **표면 정합** — README가 `--force`를 "companion도 덮는다"로 읽히게 쓰면 안 된다.
    *    실제로는 seed-once로 **보존**된다(REQ-020 D3). 존재 검사만 하면 이 모순을 놓친다.
    */
-  it.each(READMES)('%s: --force가 companion을 덮는다고 쓰지 않는다 (표면 정합)', (rel) => {
+  it.each(COMPANION_DOCS)('%s: --force가 companion을 덮는다고 쓰지 않는다 (표면 정합)', (rel) => {
     const t = read(rel)
     // ⚠️ "같은 줄에 '보존'이 있으면 통과"로 짜면 **자기 라벨에 속는다** — 예:
     //    "**기존 파일 보존(seed-once)**: … 수정한 스킬도 **`--force`면 덮어씁니다.**"
@@ -562,9 +566,12 @@ describe('[REQ-2026-023] companion 문서 정합', () => {
     expect(helpBody()).toContain('--no-agent-entrypoints')
   })
 
-  /** 🔴 SHA 일치(R1/R7) — README 한/영과 ATTRIBUTION.md가 같은 값을 가리켜야 한다. */
-  it('upstream SHA가 README 한/영·ATTRIBUTION.md에서 동일하다', () => {
-    const surfaces = ['README.md', 'README.en.md', 'skills/ATTRIBUTION.md']
+  /**
+   * 🔴 SHA 일치(R1/R7) — companion 정본 문서와 ATTRIBUTION.md가 같은 값을 가리켜야 한다.
+   * REQ-2026-042: SHA 정본이 README → docs/agent-prompt.md 로 이동(랜딩화). README.en.md는 phase-3에서 이동.
+   */
+  it('upstream SHA가 companion 정본 문서·ATTRIBUTION.md에서 동일하다', () => {
+    const surfaces = ['docs/agent-prompt.md', 'README.en.md', 'skills/ATTRIBUTION.md']
     for (const rel of surfaces) expect(read(rel), `${rel}: SHA`).toContain(UPSTREAM_SHA)
     // upstream 문맥 줄에 **다른** 40자 hex가 있으면 옛 pin 잔재다.
     for (const rel of surfaces) {

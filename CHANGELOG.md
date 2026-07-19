@@ -2,6 +2,10 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+**README 전면 개편 — 랜딩 페이지 + `docs/` 분리** (REQ-2026-042). ~620줄의 `README.md`가 제품 소개·온보딩·운영·제거·안전 계약·개발 현황을 한 화면에 섞어 초점이 흐렸습니다. **README를 랜딩(제품 1줄·핵심 보장·⚠️ 주의·3분 시작·작동 방식·자주 쓰는 명령·docs 허브)으로 줄이고**, 상세를 `docs/` 9종(quick-start·agent-prompt·workflow·guarantees·configuration·upgrade·uninstall·troubleshooting·development)으로 **손실 없이 이동**합니다. 순수 문서 재배치 — 코드·런타임·게이트·npm payload 축은 무변경(`docs/`는 `files[]`에 넣지 않아 tarball 비대화 없음, README→docs 링크는 GitHub 절대 blob URL). 링크·앵커 무결성은 `remark-validate-links`로, 안전 4문구 존재·위치는 전용 테스트로 검증합니다. (phase-2: 한국어 landing + docs, phase-3: 영문 미러.)
+
 ## 0.9.2
 
 REQ-2026-039(0.9.1)이 **신규 설치**의 온보딩을 고쳤다면, 0.9.2는 **기존 설치까지 백필**합니다(REQ-2026-040).
