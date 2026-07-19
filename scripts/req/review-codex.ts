@@ -572,6 +572,13 @@ export interface ReviewCallLogRow {
   observations_count: number
   timestamp: string
   policy_version: string
+  /**
+   * REQ-2026-043: commitgate가 **이 리뷰에 핀한** 모델·추론강도(감사·재현성). 값 원천은 해소된 config
+   * (`cfg.reviewModel`·`cfg.reviewReasoningEffort`) — codex `-c` override로 흘러가는 그 값(단일 배선, policy_version과 동형).
+   * `null`=미핀(`-c` 생략 → codex 전역 `~/.codex/config.toml` 상속). **codex가 실제 실행한 모델을 주장하지 않는다**(00 정직성 경계).
+   */
+  review_model: string | null
+  review_reasoning_effort: string | null
 }
 
 /**
@@ -591,6 +598,8 @@ export function buildReviewCallLogRow(args: {
   verdict: Verdict
   timestamp: string
   policyVersion: string
+  reviewModel: string | null
+  reviewReasoningEffort: string | null
 }): ReviewCallLogRow {
   return {
     ticket_id: args.ticketId,
@@ -602,6 +611,8 @@ export function buildReviewCallLogRow(args: {
     observations_count: args.verdict.observations?.length ?? 0,
     timestamp: args.timestamp,
     policy_version: args.policyVersion,
+    review_model: args.reviewModel,
+    review_reasoning_effort: args.reviewReasoningEffort,
   }
 }
 
@@ -2026,6 +2037,9 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
       verdict: result.verdict,
       timestamp: approvedAt,
       policyVersion: reviewPolicyVersion(effectivePersona), // REQ-2026-034 B-2b: 전송 persona와 동일(단일 배선).
+      // REQ-2026-043: codex에 흘러간 값(1942-1943)과 동일 원천. null=미핀(전역 상속).
+      reviewModel: cfg.reviewModel,
+      reviewReasoningEffort: cfg.reviewReasoningEffort,
     }),
   )
 

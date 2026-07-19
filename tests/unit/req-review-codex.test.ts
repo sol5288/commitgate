@@ -3061,7 +3061,7 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       observations: Array.from({ length: observations }, (_, i) => ({ detail: `o${i}`, file: `f${i}` })),
     })
 
-    it('R6 9개 필드가 전부 존재한다', () => {
+    it('R6+REQ-043: 11개 필드가 전부 존재한다(model·effort 포함, 핀 케이스)', () => {
       const row = buildReviewCallLogRow({
         ticketId: 'REQ-2026-025',
         kind: 'phase',
@@ -3071,6 +3071,8 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         verdict: verdict(2, 1),
         timestamp: '2026-07-17T00:00:00.000Z',
         policyVersion: 'abc123def456',
+        reviewModel: 'gpt-5.6-terra',
+        reviewReasoningEffort: 'high',
       })
       expect(Object.keys(row).sort()).toEqual(
         [
@@ -3081,6 +3083,8 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
           'phase_id',
           'policy_version',
           'review_kind',
+          'review_model',
+          'review_reasoning_effort',
           'ticket_id',
           'timestamp',
         ].sort(),
@@ -3088,6 +3092,25 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       expect(row.findings_count).toBe(2)
       expect(row.observations_count).toBe(1)
       expect(row.archive_round).toBe(3)
+      expect(row.review_model).toBe('gpt-5.6-terra')
+      expect(row.review_reasoning_effort).toBe('high')
+    })
+
+    it('REQ-2026-043: 미핀(config null)이면 review_model·review_reasoning_effort는 null(감사 신호)', () => {
+      const row = buildReviewCallLogRow({
+        ticketId: 'REQ-2026-025',
+        kind: 'phase',
+        phaseId: 'p1',
+        archiveRound: 1,
+        outcome: 'approved',
+        verdict: verdict(0, 0),
+        timestamp: '2026-07-17T00:00:00.000Z',
+        policyVersion: 'abc123def456',
+        reviewModel: null,
+        reviewReasoningEffort: null,
+      })
+      expect(row.review_model).toBeNull()
+      expect(row.review_reasoning_effort).toBeNull()
     })
 
     it('무효 응답(아카이브 없음) → archive_round=null', () => {
@@ -3100,6 +3123,8 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         verdict: {},
         timestamp: '2026-07-17T00:00:00.000Z',
         policyVersion: 'none',
+        reviewModel: null,
+        reviewReasoningEffort: null,
       })
       expect(row.archive_round).toBeNull()
       expect(row.phase_id).toBeNull()
@@ -3127,6 +3152,8 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       },
       timestamp: '2026-07-17T00:00:00.000Z',
       policyVersion: 'abc123def456',
+      reviewModel: 'gpt-5.6-terra',
+      reviewReasoningEffort: 'high',
     })
     const line = JSON.stringify(row)
     // verdict를 통째로 덤프하거나 detail을 흘리는 구현은 여기서 실패한다.
@@ -3154,6 +3181,8 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
           observations_count: 0,
           timestamp: '2026-07-17T00:00:00.000Z',
           policy_version: 'abc123def456',
+          review_model: null,
+          review_reasoning_effort: null,
         }),
       ).not.toThrow()
     } finally {
@@ -3161,7 +3190,7 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
     }
   })
 
-  it('O2-2: append 후 **파싱한 JSONL 행**에 R6 9개 필드와 전달값이 전부 보존된다', () => {
+  it('O2-2: append 후 **파싱한 JSONL 행**에 11개 필드(REQ-043 model·effort 포함)와 전달값이 전부 보존된다', () => {
     const d = tmp()
     try {
       const row = {
@@ -3174,6 +3203,8 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         observations_count: 1,
         timestamp: '2026-07-17T00:00:00.000Z',
         policy_version: 'abc123def456',
+        review_model: 'gpt-5.6-terra',
+        review_reasoning_effort: 'high',
       }
       appendReviewCallLog(d, row)
       // 빌더 반환값이 아니라 **디스크에 실제로 쓰인 것**을 파싱한다 — append가 필드를 떨구는 회귀를 잡는다.
@@ -3198,6 +3229,8 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         observations_count: 0,
         timestamp: '2026-07-17T00:00:00.000Z',
         policy_version: 'abc123def456',
+        review_model: null,
+        review_reasoning_effort: null,
       }
       appendReviewCallLog(d, base)
       appendReviewCallLog(d, { ...base, archive_round: 2 })
