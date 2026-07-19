@@ -2,6 +2,17 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+- **온보딩 Quick Start — always-loaded 템플릿 자립화** (REQ-2026-039). 신규 설치가 생성하는
+  `CLAUDE.md`(Claude Code가 항상 로드)와 `AGENTS.md`(Codex·Cursor가 항상 읽는 계약) **앞부분**에,
+  첫 요청에서 올바른 첫 행동을 고를 수 있는 자립형 Quick Start 블록(`req:new` → `req:next` 루프 · 5
+  kind · `state.json`/`responses` staging 금지 · `git commit` 직접 사용 예외)을 넣습니다. 이전엔 이
+  앞부분이 "`AGENTS.md`를 읽어라"는 이정표라, 에이전트가 계약 존재는 알아도 **첫 조작에서 멈추곤**
+  했습니다. 두 템플릿의 블록은 **바이트 동일**(단위 테스트로 강제 — 한쪽만 고치는 drift 방지).
+  **신규 설치에만 반영**(seed-once — 기존 `CLAUDE.md`/`AGENTS.md`는 보존). 기존 파일에 Quick Start를
+  주입하는 UX는 후속(REQ-040).
+
 ## 0.9.0
 
 phase 자동 커밋 opt-in(REQ-2026-037)과 업그레이드 자산 skew 감지·복구(REQ-2026-038)가 핵심입니다. 둘 다 0.8.x 위

@@ -293,6 +293,59 @@ describe('[init] 진입점 템플릿 pm-중립 (REQ-2026-011 D1)', () => {
   })
 })
 
+/**
+ * REQ-2026-039 — always-loaded 템플릿의 자립형 Quick Start.
+ *
+ * CLAUDE.md는 Claude Code가, AGENTS.md는 Codex·Cursor가 항상 읽는 채널이다. 첫 요청에서 올바른 첫
+ * 행동을 고르게 하려면 두 채널 **앞부분**에 동일한 Quick Start가 있어야 한다. 두 사본이 갈라지면
+ * (한쪽만 고치면) 한 harness는 낡은 절차를 읽는다 — 바이트 동일로 그 drift를 막는다.
+ */
+describe('[REQ-2026-039] Quick Start 블록', () => {
+  const QS_RE = /<!-- commitgate:quickstart -->[\s\S]*?<!-- \/commitgate:quickstart -->/
+  const claudeTpl = (): string => readFileSync(join(PACKAGE_ROOT_FOR_TEST, KIT_CLAUDE_TEMPLATE_REL), 'utf8')
+  const agentsTpl = (): string => readFileSync(join(PACKAGE_ROOT_FOR_TEST, 'AGENTS.template.md'), 'utf8')
+
+  it('두 템플릿(CLAUDE·AGENTS)에 Quick Start 마커 블록이 있다', () => {
+    expect(claudeTpl(), 'CLAUDE 템플릿').toMatch(QS_RE)
+    expect(agentsTpl(), 'AGENTS 템플릿').toMatch(QS_RE)
+  })
+
+  it('두 템플릿의 Quick Start 블록은 (줄바꿈 정규화 후) 동일하다 (한쪽만 고치는 drift 방지)', () => {
+    // 줄바꿈은 정규화한다. `core.autocrlf`가 켜진 체크아웃에서 두 파일의 CRLF/LF가 갈릴 수 있는데
+    // (플랫폼 아티팩트 — 커밋 tree는 둘 다 LF), 그건 "절차 내용 drift"가 아니다. 내용 동일성만 본다.
+    const lf = (s: string): string => s.replace(/\r\n/g, '\n')
+    const c = claudeTpl().match(QS_RE)?.[0]
+    const a = agentsTpl().match(QS_RE)?.[0]
+    expect(c, 'CLAUDE 템플릿에 블록 없음').toBeTruthy()
+    expect(a, 'AGENTS 템플릿에 블록 없음').toBeTruthy()
+    expect(lf(c as string)).toBe(lf(a as string))
+  })
+
+  it('신규 설치된 CLAUDE.md·AGENTS.md에 Quick Start 블록이 실린다', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8'), 'CLAUDE.md').toMatch(QS_RE)
+      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), 'AGENTS.md').toMatch(QS_RE)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('기존 CLAUDE.md·AGENTS.md가 있으면 Quick Start를 주입하지 않는다 (보존 — 주입 UX는 REQ-040)', () => {
+    const dir = tmpTarget()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), '# 기존 지침\n', 'utf8')
+      writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 기존 계약\n`, 'utf8')
+      runInit(OPTS(dir, { force: true }))
+      expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8'), '기존 CLAUDE.md 보존').not.toMatch(QS_RE)
+      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), '기존 AGENTS.md 보존').not.toMatch(QS_RE)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
 describe('[init] 에이전트 진입점 설치', () => {
   const DESTS = ['.claude/skills/commitgate/SKILL.md', '.claude/commands/req.md', '.cursor/rules/commitgate.mdc']
 
