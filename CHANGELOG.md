@@ -2,7 +2,10 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.9.2
+
+REQ-2026-039(0.9.1)이 **신규 설치**의 온보딩을 고쳤다면, 0.9.2는 **기존 설치까지 백필**합니다(REQ-2026-040).
+`commitgate quickstart` verb + doctor D21 추가 — 순수 additive라 기존 사용자는 무회귀입니다.
 
 - **기존 파일 Quick Start 백필 — `commitgate quickstart` + doctor D21** (REQ-2026-040). REQ-2026-039가 신규
   설치의 `CLAUDE.md`/`AGENTS.md`에 Quick Start를 넣었지만 seed-once라 **기존 파일엔 닿지 않았습니다**. 새 verb
