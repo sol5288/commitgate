@@ -279,6 +279,25 @@ describe('[REQ-2026-019] companion skills 번들(payload 축)', () => {
     expect(t, 'req:next 정본').toMatch(/req:next[^\n]*(정본|계산)/)
   })
 
+  /**
+   * REQ-2026-044 phase-4 (통합 前 리뷰 P1) — `commitgate-quality`는 `req:next`의 **5개 kind를 각각** 올바르게
+   * 안내해야 한다. 초기 문구가 RUN·AWAIT_HUMAN·DONE·BLOCKED를 한 줄로 "즉시 req:next"로 뭉개, RUN의 명령 실행·
+   * AGENT의 작업 수행을 건너뛸 수 있었다(delta-r01: AGENT 누락). 각 kind의 올바른 행동 + 뭉갠 문구 부재를 고정한다.
+   */
+  it('commitgate-quality: req:next 5개 kind를 각각 올바르게 안내한다 (phase-4 — 상태별 계약)', () => {
+    const t = lf(readFileSync(join(PACKAGE_ROOT, 'skills', 'commitgate-quality', 'SKILL.md'), 'utf8'))
+    expect(t, 'RUN=출력 명령 실행 후 재조회').toMatch(/RUN[^\n]*실행[^\n]*req:next/)
+    expect(t, 'AGENT=phase 작업 수행 후 재조회').toMatch(/AGENT[^\n]*(git add|구현)[^\n]*req:next/)
+    expect(t, 'AWAIT_HUMAN=정지·승인 문장 수령').toMatch(/AWAIT_HUMAN[^\n]*(멈추|정지)/)
+    expect(t, 'DONE=완료 보고·통합/릴리즈 비추정').toMatch(/DONE[^\n]*(완료|보고)[^\n]*(추정하지|통합)/)
+    expect(t, 'BLOCKED=재시도 금지·사람 보고').toMatch(/BLOCKED[^\n]*재시도[^\n]*(보고|말)/)
+    // 결함 부재: 여러 kind를 한 줄로 "즉시 req:next"로 뭉개면 각 kind의 상이한 계약을 왜곡한다.
+    const lumped = t
+      .split('\n')
+      .filter((l) => ((l.match(/(RUN|AGENT|AWAIT_HUMAN|DONE|BLOCKED)/g) ?? []).length >= 2) && /즉시[^\n]*req:next/.test(l))
+    expect(lumped, '여러 kind를 한 줄로 "즉시 req:next"로 뭉개지 않는다(각 kind 계약 분리)').toEqual([])
+  })
+
   it('ATTRIBUTION.md 가 upstream repo·SHA·MIT 전문을 담는다', () => {
     const t = lf(readFileSync(join(PACKAGE_ROOT, 'skills', 'ATTRIBUTION.md'), 'utf8'))
     expect(t).toContain('github.com/mattpocock/skills')
@@ -521,7 +540,7 @@ describe('[REQ-2026-020] D12 진단 스킬 안전 경계', () => {
  *  - `staged diff`를 oracle로 쓰지 않는다 — 커밋 뒤·CI는 index가 비어 **환경 의존적이거나 공허**해진다.
  *    `printHelp` 문자열 한정 여부는 **구현 전 staged-diff/리뷰 체크리스트**로만 확인한다.
  *  - `.cursor/skills` 문자열 0건 검사를 하지 않는다 — "설치하지 않는다"는 **설명 자체를 막는다**.
- *    정확한 축은 **설치 destination이 4개뿐**임을 고정하는 것이고, 그건 `init.test.ts`가 이미 한다(D6).
+ *    정확한 축은 **설치 destination이 5개뿐**임을 고정하는 것이고, 그건 `init.test.ts`가 이미 한다(D6).
  *  - CHANGELOG는 **계약 표면이 아니다** — 존재 검사만. 반복하면 **세 번째 정본**이 생겨 drift 부채가 는다.
  */
 describe('[REQ-2026-023] companion 문서 정합', () => {

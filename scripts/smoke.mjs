@@ -222,7 +222,7 @@ function assertCompanionSkills(target) {
   const present = COMPANION_SKILL_RELS.filter((r) => existsSync(join(target, r)))
   assert(
     present.length === COMPANION_SKILL_RELS.length,
-    `companion skills 가 packed 설치본에 깔리지 않았다(${present.length}/4) — 누락: ${COMPANION_SKILL_RELS.filter((r) => !present.includes(r)).join(', ')}`,
+    `companion skills 가 packed 설치본에 깔리지 않았다(${present.length}/${COMPANION_SKILL_RELS.length}) — 누락: ${COMPANION_SKILL_RELS.filter((r) => !present.includes(r)).join(', ')}`,
   )
   for (const rel of COMPANION_SKILL_RELS) {
     // CRLF 체크아웃에서도 성립하도록 정규화(대상 repo 는 사용자 환경이다).

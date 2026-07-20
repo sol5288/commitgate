@@ -1,6 +1,6 @@
 ---
 name: commitgate-quality
-description: CommitGate REQ의 품질 방법 — 정본(SSOT) 경계·설계/계획 품질·Test-First·증거 기반 검증. 세 상황에서만 읽어 적용한다 — (a) 00/01/02 설계·계획을 새로 쓰거나 고칠 때, (b) req:next가 AGENT를 반환한 구현 phase, (c) 버그·회귀·성능 진단(AGENT). RUN·AWAIT_HUMAN·DONE·BLOCKED에서는 다음 행동을 결정하지 않는다 — 다음 행동·승인·커밋은 req:next와 AGENTS.md만 따른다. 강제가 아니라 방법이며, 실제 강제는 CommitGate 게이트다.
+description: CommitGate REQ의 품질 방법 — 정본(SSOT) 경계·설계/계획 품질·Test-First·증거 기반 검증. 세 상황에서만 읽어 적용한다 — (a) 00/01/02 설계·계획을 새로 쓰거나 고칠 때, (b) req:next가 AGENT를 반환한 구현 phase, (c) 버그·회귀·성능 진단(AGENT). 다음 행동은 req:next의 kind가 정한다 — RUN=출력 명령 실행 후 재조회, AGENT=작업 수행·git add 후 재조회, AWAIT_HUMAN=정지, DONE=완료 보고, BLOCKED=보고. 이 스킬은 방법만 제공하고 다음 행동·승인·커밋 권한은 req:next와 AGENTS.md에 있다. 강제가 아니라 방법이며, 실제 강제는 CommitGate 게이트다.
 ---
 
 # CommitGate — 품질 오버레이 (설계·계획·구현 품질)
@@ -17,7 +17,13 @@ CommitGate의 권한·리뷰·승인·커밋 게이트를 **바꾸지 않고**, 
 - **(b)** `req:next`가 `AGENT`를 반환한 구현 phase
 - **(c)** 버그·회귀·성능 문제를 진단하는 `AGENT` 작업
 
-`RUN`·`AWAIT_HUMAN`·`DONE`·`BLOCKED`에서는 이 스킬이 다음 행동을 **결정하지 않는다.** 그럴 땐 즉시 `req:next`로 돌아가라 — 다음 행동의 정본은 `req:next`다.
+**다음 행동은 이 스킬이 아니라 `req:next`의 kind가 정한다** — kind마다 계약이 다르므로 뭉뚱그리지 않는다:
+
+- `RUN`이면 출력된 명령을 그대로 실행한 뒤 다시 `req:next`.
+- `AGENT`이면 그 phase의 작업을 구현·검증하고 명시적으로 `git add` 한 뒤 다시 `req:next` — 필요한 작업을 건너뛰지 않는다(이 스킬의 방법이 적용되는 지점이다).
+- `AWAIT_HUMAN`이면 멈추고 출력된 승인 문장을 그대로 받는다.
+- `DONE`이면 완료를 보고하고 통합·릴리즈를 추정하지 않는다.
+- `BLOCKED`이면 재시도하지 말고 사람에게 차단 사유를 보고한다.
 
 ## 방법
 

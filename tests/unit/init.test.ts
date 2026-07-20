@@ -2343,7 +2343,7 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     }
   }
 
-  it('fresh init에 4종이 정확한 경로에 설치된다 (D1/R3)', () => {
+  it('fresh init에 5종이 정확한 경로에 설치된다 (D1/R3)', () => {
     const dir = tmpTarget()
     try {
       runInit(OPTS(dir))
@@ -2471,7 +2471,7 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     }
   })
 
-  /** 4개 dest **각각** 검사되는가 — 루트만 검사하는 구현이면 이 케이스가 통과해 버린다(회귀 탐지점). */
+  /** 5개 dest **각각** 검사되는가 — 루트만 검사하는 구현이면 이 케이스가 통과해 버린다(회귀 탐지점). */
   it('commitgate-research만 symlink여도 거부한다 (dest별 검사 회귀)', () => {
     const dir = tmpTarget()
     const outside = outsideDir()
@@ -2644,7 +2644,7 @@ describe('[init] companion gitignore 경고 (REQ-2026-021)', () => {
    * at-risk 원인에서 빼면 **`create` 항 하나만** 남는다.
    */
   const createIsolated = (dir: string): void => {
-    runInit(OPTS(dir)) // 4종 생성
+    runInit(OPTS(dir)) // 5종 생성
     rmSync(join(dir, TDD)) // tdd만 제거 → 재실행 시 create 상태
     isolateOnly(dir, TDD) // 나머지 3종 + .claude 포인터 강제 추적
   }
@@ -2678,7 +2678,7 @@ describe('[init] companion gitignore 경고 (REQ-2026-021)', () => {
   it('ownedSkip 격리: byte-identical skill 하나만 남기면 그 경로가 WARN 원인이다 (R3)', () => {
     const dir = ignoredClaude()
     try {
-      runInit(OPTS(dir)) // 4종 생성
+      runInit(OPTS(dir)) // 5종 생성
       isolateOnly(dir, TDD) // tdd만 untracked·ignored로 남긴다 (내용은 원본 그대로 = ownedSkip)
       const warn = captureWarn(() => runInit(OPTS(dir)))
       expect(warn, 'ownedSkip 상태의 tdd가 원인으로 등장해야 한다').toContain(TDD)
@@ -2734,7 +2734,7 @@ describe('[init] companion gitignore 경고 (REQ-2026-021)', () => {
   })
 
   /** 음성 대조군 — 그 skill까지 추적하면 companion WARN이 사라진다(원인 분리 증명). */
-  it('음성 대조군: 4종 전부 추적하면 companion WARN이 없다', () => {
+  it('음성 대조군: 5종 전부 추적하면 companion WARN이 없다', () => {
     const dir = ignoredClaude()
     try {
       runInit(OPTS(dir))
@@ -2836,7 +2836,7 @@ describe('[init] 타사 skill 공존 (REQ-2026-022)', () => {
       const thirdBefore = seedThirdParty(dir) // 그 뒤 타사 추가
       runInit(OPTS(dir)) // 재-init
       expectBytesUnchanged(dir, thirdBefore)
-      // 재-init 전후 companion 4종도 불변이어야 한다(멱등).
+      // 재-init 전후 companion 5종도 불변이어야 한다(멱등).
       for (const [rel, buf] of companionBefore)
         expect(readFileSync(join(dir, rel)).equals(buf), `${rel}: 재-init 전후 불변`).toBe(true)
     } finally {

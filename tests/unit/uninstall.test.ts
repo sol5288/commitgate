@@ -924,7 +924,7 @@ describe('[uninstall] workflow/.gitignore (REQ-2026-012)', () => {
 // ═══════ REQ-2026-021 phase-2: uninstall 계획에 companion 포함 ═══════
 
 /**
- * companion skills 4종이 제거 계획에 등장해야 사용자가 무엇을 정리할지 알 수 있다(R4).
+ * companion skills 5종이 제거 계획에 등장해야 사용자가 무엇을 정리할지 알 수 있다(R4).
  *
  * ⚠️ **읽기 전용 유지**가 핵심 불변식이다 — planner는 아무것도 쓰지 않는다.
  * ⚠️ **`differs`를 "사용자 수정"으로 단정하지 않는다**(R6) — `ToolArtifact.match` 주석대로
@@ -934,7 +934,7 @@ describe('[uninstall] companion skills (REQ-2026-021)', () => {
   const SKILLS = KIT_COMPANION_SKILLS.map((e) => e.dest)
   const TDD = '.claude/skills/commitgate-tdd/SKILL.md'
 
-  it('4종이 planner의 tool에 정확히 한 번씩 등장한다 (R4)', () => {
+  it('5종이 planner의 tool에 정확히 한 번씩 등장한다 (R4)', () => {
     const dir = tmpRepo()
     try {
       install(dir)

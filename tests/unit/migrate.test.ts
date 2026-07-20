@@ -336,7 +336,7 @@ describe('[migrate] companion skills를 생성하지 않는다 (REQ-2026-022)', 
     for (const c of COMPANIONS) expect(existsSync(join(dir, c)), `${when}: ${c} 가 생기면 안 된다`).toBe(false)
   }
 
-  it('dry-run 뒤 companion 4종이 부재한다 (R3)', () => {
+  it('dry-run 뒤 companion 5종이 부재한다 (R3)', () => {
     const dir = tmpStageA()
     try {
       runMigrate({ dir, apply: false })
@@ -347,7 +347,7 @@ describe('[migrate] companion skills를 생성하지 않는다 (REQ-2026-022)', 
   })
 
   /** dry-run은 원래 아무것도 안 쓴다 — **--apply가 진짜 검증점**이다. */
-  it('--apply 뒤에도 companion 4종이 부재한다 (R3)', () => {
+  it('--apply 뒤에도 companion 5종이 부재한다 (R3)', () => {
     const dir = tmpStageA()
     try {
       runMigrate({ dir, apply: true })
