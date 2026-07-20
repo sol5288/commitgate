@@ -88,7 +88,7 @@ The agent then follows whatever `req:next` says — **design → Codex review �
 
 Beyond enforcing quality through gates (review, approval, commit), CommitGate also installs a companion skill (`commitgate-quality`) that **guides** the AI to understand the request and avoid mistakes.
 
-For example, it guides the AI to check existing code and docs first, break large work into smaller steps, and run the needed checks after a change — cooperative guidance that won't always fire; the gates are what actually enforce. ([more](docs/agent-prompt.en.md))
+For example, it guides the AI to check existing code and docs first, break large work into smaller steps, and run the needed checks after a change — cooperative guidance that won't always fire; the gates are what actually enforce. ([more](https://github.com/sol5288/commitgate/blob/main/docs/agent-prompt.en.md))
 
 ## How it works
 
