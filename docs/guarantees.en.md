@@ -45,7 +45,7 @@ So that you do not miscalculate where your real defenses are:
 | **Claude Code** | Reads `.claude/skills/<name>/SKILL.md` natively |
 | **Cursor (editor)** | Reads `.claude/skills` as a compatibility path |
 | **Cursor (CLI)** | ⚠️ **May differ by version and run mode — not guaranteed** |
-| **Codex** | **Out of product scope** — no companion entrypoint is installed. In CommitGate, Codex is the **Reviewer**; these four are **Builder aids** |
+| **Codex** | **Out of product scope** — no companion entrypoint is installed. In CommitGate, Codex is the **Reviewer**; these five are **Builder aids** |
 
 ⚠️ **This is based on vendor primary documentation — the CommitGate team did not verify it empirically.**
 Checked **2026-07-17** on win32 x64 / Node v20.19.5. If a vendor changes behaviour, this table goes stale.

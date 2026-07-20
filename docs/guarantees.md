@@ -45,7 +45,7 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 | **Claude Code** | `.claude/skills/<이름>/SKILL.md`를 native로 읽습니다 |
 | **Cursor (editor)** | `.claude/skills`를 호환 경로로 읽습니다 |
 | **Cursor (CLI)** | ⚠️ **버전·실행 모드별 동작 차이 가능 — 보장하지 않습니다** |
-| **Codex** | **제품 범위 밖** — companion entrypoint를 설치하지 않습니다. CommitGate에서 Codex는 **Reviewer**이고 이 4종은 **Builder 보조**입니다 |
+| **Codex** | **제품 범위 밖** — companion entrypoint를 설치하지 않습니다. CommitGate에서 Codex는 **Reviewer**이고 이 5종은 **Builder 보조**입니다 |
 
 ⚠️ **근거는 벤더 1차 문서입니다 — CommitGate 팀이 실측한 것이 아닙니다.** 확인 시점 **2026-07-17**, 확인 환경 win32 x64 / Node v20.19.5.
 벤더가 동작을 바꾸면 이 표는 낡을 수 있습니다.

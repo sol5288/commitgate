@@ -47,7 +47,7 @@ git commit -m "chore: install commitgate"
 | `.claude/skills/commitgate/SKILL.md` | Claude Code skill (pointer) |
 | `.claude/commands/req.md` | `/req` slash command (pointer) |
 | `.cursor/rules/commitgate.mdc` | Cursor rule (pointer) |
-| `.claude/skills/commitgate-*/SKILL.md` | **Companion Skills** — four of them, see below (existing files preserved) |
+| `.claude/skills/commitgate-*/SKILL.md` | **Companion Skills** — five of them, see below (existing files preserved) |
 | `package.json` scripts | `req:new`·`req:next`·`req:review-codex`·`req:doctor`·`req:commit` = `commitgate <verb>` (missing keys only) |
 
 ### What it does **not** install

@@ -25,3 +25,4 @@
 - 세부 규칙·통제점·승인 문장의 **정본**은 루트 [`AGENTS.md`](./AGENTS.md)이다.
   (`<!-- commitgate:contract -->` 마커가 없으면 CommitGate 계약이 아니다 — init이 함께 설치한 루트의 `AGENTS.commitgate.md`를 계약으로 읽고, 사용자에게 `AGENTS.md`로의 병합을 요청하라.)
 - Claude Code에서는 `/req` 슬래시 커맨드로 시작할 수도 있다. 진입 절차 상세는 `.claude/skills/commitgate/SKILL.md`.
+- 설계·계획(`00/01/02`) 작성·수정 또는 `AGENT` 구현·버그 진단 시 `.claude/skills/commitgate-quality/SKILL.md`를 읽어 방법(정본 참조·조합 검증·Test-First·증거 기반 검증)을 적용한다. 단 **다음 행동·승인·커밋은 `req:next`와 `AGENTS.md`만** 따른다 — 스킬은 방법이지 강제가 아니다.

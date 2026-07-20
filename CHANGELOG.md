@@ -2,6 +2,10 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+**Claude Code용 품질 오버레이 companion skill `commitgate-quality` 추가** (REQ-2026-044). 기존 4종에 이어 5번째 companion skill을 같은 안전한 설치 경로(seed-once·`--force` 미덮음·confinement·`--no-agent-entrypoints` opt-out·uninstall)로 번들·설치합니다. 이 스킬은 Superpowers 방법론의 장점(요구 정제·설계/계획 품질·Test-First·증거 기반 검증)만 **협조적 지침**으로 흡수하며, Superpowers 플러그인·런타임은 설치·실행·의존하지 않습니다. 정본(SSOT) 비복제·설계 품질·계획 품질은 자체 소유하고, Test-First·버그 진단·요구 정제는 형제 스킬(`commitgate-tdd`·`commitgate-diagnosing-bugs`·`commitgate-discovery`)을 가리켜 내부 중복을 피합니다. 새 설치의 `CLAUDE.md`에 발견 포인터 1줄을 추가하되 계약 정본(`AGENTS.md`)은 불변입니다. **강제는 CommitGate 실행 게이트가 담당하며 이 스킬은 방법일 뿐**입니다 — `req:next`의 행동 계산, 리뷰·승인 판정, `state.json`/`responses/`, 커밋 권한을 침범하지 않습니다.
+
 ## 0.9.5
 
 **리뷰 게이트 모델·reasoning effort를 review-call 로그에 기록** (REQ-2026-043). `req:review-codex`가 남기는 측정 로그(`workflow/.review-calls.jsonl`)의 각 행에 `review_model`·`review_reasoning_effort` 두 필드를 추가합니다. 값은 commitgate가 그 리뷰에 해소·전달한 값(`req.config.json`의 `reviewModel`/`reviewReasoningEffort`, 미지정 시 코어 기본 `gpt-5.6-terra`/`high`)이며, 두 값을 `null`로 두어 codex 전역 설정을 상속하는 경우 `null`로 기록해 **미핀 상태를 드러냅니다**. 이로써 "어떤 모델이 각 리뷰를 통과시켰는가"를 로그에서 감사·재현할 수 있습니다. 로그는 `.gitignore` 대상 측정 전용이라 커밋 산출물·승인 원장(`approvals.jsonl`)·게이트 판정에 영향이 없는 **순수 additive**이며, 기존 사용자는 무회귀입니다.

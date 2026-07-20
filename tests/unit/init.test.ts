@@ -332,6 +332,24 @@ describe('[REQ-2026-039] Quick Start 블록', () => {
     }
   })
 
+  /**
+   * REQ-2026-044 DEC-5 — 새 세션이 `commitgate-quality`의 적용 시점을 발견하도록, 항상 로드되는 Claude Code
+   * 진입점(`CLAUDE.md`)에 발견 포인터 1줄을 심는다. quickstart 블록(byte-identical) **밖**이라 그 불변식은 건드리지 않는다.
+   * (`AGENTS.md`(계약)는 불변 — 위 QS_RE 단언이 그걸 보장한다.)
+   */
+  it('신규 설치된 CLAUDE.md에 commitgate-quality 발견 포인터가 실린다 (REQ-2026-044 DEC-5)', () => {
+    const dir = tmpTarget()
+    try {
+      runInit(OPTS(dir))
+      const claudeMd = readFileSync(join(dir, 'CLAUDE.md'), 'utf8')
+      expect(claudeMd, 'CLAUDE.md 발견 포인터').toContain('commitgate-quality')
+      // 계약(AGENTS.md)은 품질 방법론으로 비대해지지 않는다(제약 #8) — 포인터는 CLAUDE 진입점에만.
+      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), 'AGENTS.md는 불변').not.toContain('commitgate-quality')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
   it('기존 CLAUDE.md·AGENTS.md가 있으면 Quick Start를 주입하지 않는다 (보존 — 주입 UX는 REQ-040)', () => {
     const dir = tmpTarget()
     try {

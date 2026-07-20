@@ -47,7 +47,7 @@ git commit -m "chore: install commitgate"
 | `.claude/skills/commitgate/SKILL.md` | Claude Code 스킬 (포인터) |
 | `.claude/commands/req.md` | `/req` 슬래시 커맨드 (포인터) |
 | `.cursor/rules/commitgate.mdc` | Cursor 규칙 (포인터) |
-| `.claude/skills/commitgate-*/SKILL.md` | **Companion Skills** 4종 — 아래 참조 (기존 파일 보존) |
+| `.claude/skills/commitgate-*/SKILL.md` | **Companion Skills** 5종 — 아래 참조 (기존 파일 보존) |
 | `package.json` 스크립트 | `req:new`·`req:next`·`req:review-codex`·`req:doctor`·`req:commit` = `commitgate <verb>` (없는 키만) |
 
 ### 설치하지 **않는** 것
