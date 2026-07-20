@@ -329,6 +329,7 @@ describe('[migrate] companion skills를 생성하지 않는다 (REQ-2026-022)', 
     '.claude/skills/commitgate-tdd/SKILL.md',
     '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
     '.claude/skills/commitgate-research/SKILL.md',
+    '.claude/skills/commitgate-quality/SKILL.md',
   ]
 
   const expectNoCompanions = (dir: string, when: string): void => {

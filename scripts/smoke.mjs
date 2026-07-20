@@ -19,12 +19,13 @@ import { VERB_MODULES } from '../bin/dispatch.mjs'
 
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
-/** companion skills 설치 경로(REQ-2026-020 D1). 정확히 4종. */
+/** companion skills 설치 경로(REQ-2026-020 D1 · REQ-2026-044 +quality). 정확히 5종. */
 const COMPANION_SKILL_RELS = [
   '.claude/skills/commitgate-discovery/SKILL.md',
   '.claude/skills/commitgate-tdd/SKILL.md',
   '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
   '.claude/skills/commitgate-research/SKILL.md',
+  '.claude/skills/commitgate-quality/SKILL.md',
 ]
 
 /** 기준 upstream(REQ-2026-020 D8). 경로는 버전 간 이동하므로 **SHA 가 식별자**다. */
@@ -161,7 +162,7 @@ try {
   )
   assert(!doctor.out.includes('알 수 없는 명령'), 'dispatch 가 req:doctor 를 미지 verb 로 취급했다')
 
-  // (e) **companion skills**(REQ-2026-020/022 R4) — packed 설치본에서 4종이 실제로 깔리는가.
+  // (e) **companion skills**(REQ-2026-020/022 R4) — packed 설치본에서 5종이 실제로 깔리는가.
   //     단위 테스트는 로컬 소스로 돌지만, 여기서는 `files[]` whitelist 를 통과한 **tarball** 이 근거다.
   //     tarball 에서 빠지면 walkFiles 가 ENOENT 로 죽거나 조용히 미설치된다 — 그 축은 여기서만 잡힌다.
   assertCompanionSkills(target)
@@ -180,7 +181,7 @@ try {
   smokeMigrate(tgzAbs)
 
   console.log(
-    '\n[smoke] ✅ pack tarball 설치본 OK — Stage B 인수 기준(무복사·무주입·commitgate <verb>·dispatch 도달) · uninstall 읽기 전용(SHA-256 지문) · migrate 비파괴·companion 무추가 · companion skills 4종 + MIT 고지',
+    '\n[smoke] ✅ pack tarball 설치본 OK — Stage B 인수 기준(무복사·무주입·commitgate <verb>·dispatch 도달) · uninstall 읽기 전용(SHA-256 지문) · migrate 비파괴·companion 무추가 · companion skills 5종 + MIT 고지',
   )
 } finally {
   rmSync(packDir, { recursive: true, force: true })
@@ -212,7 +213,7 @@ function snapshot(dir) {
 }
 
 /**
- * packed 설치본에 companion 4종이 깔리고 **MIT 고지가 동행**하는가 (R4/R9).
+ * packed 설치본에 companion 5종이 깔리고 **MIT 고지가 동행**하는가 (R4/R9).
  *
  * MIT §2 는 저작권 표기와 permission notice 를 "copies or substantial portions" 에 포함할 것을 요구한다.
  * 그 고지가 **설치되는 파일** 안에 있어야 하므로 tarball→설치 경로 끝에서 확인한다.
@@ -234,7 +235,7 @@ function assertCompanionSkills(target) {
     )
     assert(body.includes(UPSTREAM_SHA), `${rel}: 기준 upstream SHA 가 없다`)
   }
-  console.log(`[smoke] companion skills OK — 4종 설치 + MIT 고지·upstream SHA 동행`)
+  console.log(`[smoke] companion skills OK — 5종 설치 + MIT 고지·upstream SHA 동행`)
 }
 
 /** Stage A migrate 대상에 companion 이 생기지 않았는가 (R6). 설치는 명시적 init 에서만이다. */

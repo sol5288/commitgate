@@ -943,7 +943,7 @@ describe('[uninstall] companion skills (REQ-2026-021)', () => {
         expect(paths, `${s}가 계획에 있어야 한다`).toContain(s)
         expect(paths.filter((p) => p === s), `${s}가 중복 등장하면 안 된다`).toHaveLength(1)
       }
-      expect(SKILLS, 'KIT_COMPANION_SKILLS를 직접 매핑 — 4종이다').toHaveLength(4)
+      expect(SKILLS, 'KIT_COMPANION_SKILLS를 직접 매핑 — 5종이다').toHaveLength(5)
     } finally {
       cleanup(dir)
     }

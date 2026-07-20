@@ -2281,6 +2281,7 @@ describe('[init] companion skills (REQ-2026-020)', () => {
     '.claude/skills/commitgate-tdd/SKILL.md',
     '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
     '.claude/skills/commitgate-research/SKILL.md',
+    '.claude/skills/commitgate-quality/SKILL.md',
   ] as const
   const TDD = DESTS[1]
 
@@ -2537,6 +2538,7 @@ describe('[init] companion gitignore 경고 (REQ-2026-021)', () => {
     '.claude/skills/commitgate-tdd/SKILL.md',
     '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
     '.claude/skills/commitgate-research/SKILL.md',
+    '.claude/skills/commitgate-quality/SKILL.md',
   ] as const
   const TDD = SKILLS[1]
   /** `.claude/` 아래의 기존 계약 포인터 — 이들이 at-risk로 남으면 격리가 깨진다. */
@@ -2772,6 +2774,7 @@ describe('[init] 타사 skill 공존 (REQ-2026-022)', () => {
     '.claude/skills/commitgate-tdd/SKILL.md',
     '.claude/skills/commitgate-diagnosing-bugs/SKILL.md',
     '.claude/skills/commitgate-research/SKILL.md',
+    '.claude/skills/commitgate-quality/SKILL.md',
   ] as const
 
   const seedThirdParty = (dir: string): Map<string, Buffer> => {

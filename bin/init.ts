@@ -110,6 +110,7 @@ export const KIT_COMPANION_SKILLS = [
   { src: 'skills/commitgate-tdd/SKILL.md', dest: '.claude/skills/commitgate-tdd/SKILL.md' },
   { src: 'skills/commitgate-diagnosing-bugs/SKILL.md', dest: '.claude/skills/commitgate-diagnosing-bugs/SKILL.md' },
   { src: 'skills/commitgate-research/SKILL.md', dest: '.claude/skills/commitgate-research/SKILL.md' },
+  { src: 'skills/commitgate-quality/SKILL.md', dest: '.claude/skills/commitgate-quality/SKILL.md' },
 ] as const
 
 /** `AGENTS.md`가 CommitGate 계약인지 판별하는 마커. 진입점 포인터들이 이 마커로 SSOT를 확인한다. */
@@ -470,7 +471,7 @@ export interface CompanionSkillsPlan {
  * companion skills seed-once 판정 + confinement preflight (설계 D3·D4).
  * **순수 판정이라 아무것도 쓰지 않는다** — `--dry-run`도 이 검사를 그대로 받는다(쓰기 0건, 그러나 symlink면 실패).
  *
- * `workflow/.gitignore`(D12)와 같은 축이고, 다른 점은 **dest가 4개**라는 것뿐이다:
+ * `workflow/.gitignore`(D12)와 같은 축이고, 다른 점은 **dest가 5개**라는 것뿐이다:
  *
  * 🔴 **각 최종 `SKILL.md` dest를 개별로 넘긴다.** skills 루트(`.claude/skills`)만 넘기면
  *    `assertConfinedDest`의 `i < segs.length - 1` 루프가 **마지막 컴포넌트를 검사하지 않아**

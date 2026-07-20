@@ -56,7 +56,6 @@ quality — **five** in total — are bundled in the package.
 whether to use one — that is probabilistic, so don't expect a skill to always fire. In Claude Code you can also
 invoke an installed skill directly with `/commitgate-<name>`. On other harnesses, use whatever invocation that harness offers,
 or follow the entry flow in `AGENTS.md`.
-(`commitgate-quality` is newly bundled by this change; once its install wiring lands it is discovered and invoked like the rest.)
 
 **Suggested flow**: `commitgate-discovery` to sharpen the request → `/req` (Claude Code) or the `AGENTS.md` entry
 flow → `req:new` → repeat `req:next`.
@@ -73,7 +72,7 @@ flow → `req:new` → repeat `req:next`.
 
 ### Install, preservation, options
 
-- **`--no-agent-entrypoints`**: skips the whole `.claude/` layer (including the four companion skills).
+- **`--no-agent-entrypoints`**: skips the whole `.claude/` layer (including the five companion skills).
 - **Existing files preserved (seed-once)**: skills are **meant to be edited**. A skill you modified is
   **not overwritten, even with `--force`.** `AGENTS.md`, `CLAUDE.md`, and `workflow/.gitignore` follow the same policy.
 - **gitignore warning**: if `.claude/` is gitignored, the skills never reach a teammate's fresh clone.
