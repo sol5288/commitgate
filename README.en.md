@@ -84,6 +84,12 @@ control point: before req:commit --run / [B1] before a main direct push (or [I1]
 
 The agent then follows whatever `req:next` says — **design → Codex review → implement → re-review → commit**. You only step in at a control point (`AWAIT_HUMAN`) to give an approval sentence. (Outside Claude Code, a plain requirement works without `/req` — `AGENTS.md` and `.cursor/rules` load the rules.)
 
+### Helps AI work more carefully
+
+Beyond enforcing quality through gates (review, approval, commit), CommitGate also installs a companion skill (`commitgate-quality`) that **guides** the AI to understand the request and avoid mistakes.
+
+For example, it guides the AI to check existing code and docs first, break large work into smaller steps, and run the needed checks after a change — cooperative guidance that won't always fire; the gates are what actually enforce. ([more](docs/agent-prompt.en.md))
+
 ## How it works
 
 `req:new` creates the ticket, branch, and design docs, and the next action at every step is always **computed** by `req:next` from `state.json` and git state (read-only — the agent does not guess).
