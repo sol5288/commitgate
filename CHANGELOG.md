@@ -2,7 +2,7 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.9.6
 
 **Claude Code용 품질 오버레이 companion skill `commitgate-quality` 추가** (REQ-2026-044). 기존 4종에 이어 5번째 companion skill을 같은 안전한 설치 경로(seed-once·`--force` 미덮음·confinement·`--no-agent-entrypoints` opt-out·uninstall)로 번들·설치합니다. 이 스킬은 Superpowers 방법론의 장점(요구 정제·설계/계획 품질·Test-First·증거 기반 검증)만 **협조적 지침**으로 흡수하며, Superpowers 플러그인·런타임은 설치·실행·의존하지 않습니다. 정본(SSOT) 비복제·설계 품질·계획 품질은 자체 소유하고, Test-First·버그 진단·요구 정제는 형제 스킬(`commitgate-tdd`·`commitgate-diagnosing-bugs`·`commitgate-discovery`)을 가리켜 내부 중복을 피합니다. 새 설치의 `CLAUDE.md`에 발견 포인터 1줄을 추가하되 계약 정본(`AGENTS.md`)은 불변입니다. **강제는 CommitGate 실행 게이트가 담당하며 이 스킬은 방법일 뿐**입니다 — `req:next`의 행동 계산, 리뷰·승인 판정, `state.json`/`responses/`, 커밋 권한을 침범하지 않습니다.
 
