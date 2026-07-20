@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"c21cf937c5080a1e1ec50727b201de7bf033081a","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"Phase 4 계획대로 5개 kind별 문구와 회귀 oracle을 구현한 뒤 phase 리뷰를 요청하세요.","observations":[]}
