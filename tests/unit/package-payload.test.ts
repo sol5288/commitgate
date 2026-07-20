@@ -131,8 +131,14 @@ describe('[payload] 공개 패키지에 사설 프로젝트 참조가 없다', (
 
 // ───────────────────────────────────── REQ-2026-019 phase-1: companion skills 번들 ──
 
-/** 번들 대상 4종. 디렉터리명 == frontmatter `name`(Agent Skills open standard). */
-const COMPANION_SKILLS = ['commitgate-discovery', 'commitgate-tdd', 'commitgate-diagnosing-bugs', 'commitgate-research'] as const
+/** 번들 대상 5종. 디렉터리명 == frontmatter `name`(Agent Skills open standard). REQ-2026-044: `commitgate-quality` 추가. */
+const COMPANION_SKILLS = [
+  'commitgate-discovery',
+  'commitgate-tdd',
+  'commitgate-diagnosing-bugs',
+  'commitgate-research',
+  'commitgate-quality',
+] as const
 
 /** 기준 upstream(설계 D8). 경로는 버전 간 이동하므로 **SHA가 식별자**다. */
 const UPSTREAM_SHA = 'd574778f94cf620fcc8ce741584093bc650a61d3'
@@ -250,6 +256,27 @@ describe('[REQ-2026-019] companion skills 번들(payload 축)', () => {
       if (name === 'commitgate-discovery') expect(v, `${name}: 사용자 호출형이어야 한다`).toBe('true')
       else expect(v, `${name}: 모델 호출을 막으면 안 된다`).toBeNull()
     }
+  })
+
+  /**
+   * REQ-2026-044 DEC-7 — `commitgate-quality`는 협력적 지침이다. 권한 경계 문구가 본문에 **존재**함만 고정한다.
+   * 정적 스캐너·우회 문법 검사가 **아니다**(임의 셸 우회를 텍스트로 완전차단하려던 스캐너는 설계에서 폐기 — 범위 초과).
+   * 실제 강제는 CommitGate 실행 게이트다. 계약 문구를 삭제·약화하면 이 존재 단언이 실패한다.
+   */
+  it('commitgate-quality: 권한 경계 문구를 본문에 담는다 (DEC-7 — 존재 검증)', () => {
+    const t = lf(readFileSync(join(PACKAGE_ROOT, 'skills', 'commitgate-quality', 'SKILL.md'), 'utf8'))
+    // phase-r01 P1: 각 금지 대상을 **독립적으로 + 금지 의미까지** 단언한다.
+    // (`(git commit|git push)` 한 줄이면 둘 중 하나만 남아도, `req:commit`가 `직접 호출`만 있어도 통과 → 약함.)
+    expect(t, 'git commit 직접 호출 금지').toMatch(/git commit[^\n]*(금지|하지 않는다)/)
+    expect(t, 'git push 직접 호출 금지').toMatch(/git push[^\n]*(금지|하지 않는다)/)
+    expect(t, 'req:commit 직접 호출 금지').toMatch(/req:commit[^\n]*(금지|하지 않는다)/)
+    // phase-r03 P1: state.json·responses를 **각각 독립**으로 고정한다.
+    // (`(state\.json|responses)` 한 정규식이면 하나만 남아도 다른 분기로 통과 → 하나가 삭제돼도 못 잡음.)
+    expect(t, 'state.json 직접 수정 금지').toMatch(/state\.json[^\n]*(직접 수정|수정하거나)[^\n]*(않는다|금지)/)
+    expect(t, 'responses 직접 수정 금지').toMatch(/responses[^\n]*(직접 수정|수정하거나)[^\n]*(않는다|금지)/)
+    expect(t, 'state.json 스테이징 금지').toMatch(/state\.json[^\n]*스테이징[^\n]*(않는다|금지)/)
+    expect(t, 'responses 스테이징 금지').toMatch(/responses[^\n]*스테이징[^\n]*(않는다|금지)/)
+    expect(t, 'req:next 정본').toMatch(/req:next[^\n]*(정본|계산)/)
   })
 
   it('ATTRIBUTION.md 가 upstream repo·SHA·MIT 전문을 담는다', () => {

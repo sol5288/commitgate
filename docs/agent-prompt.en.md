@@ -40,7 +40,9 @@ Control points: before req:commit --run / [B1] before a direct push to main (or 
 
 CommitGate is a **governance layer** — `req:next` computes the next action, and review/approval/evidence gate the commit.
 What was missing was **method**: how to sharpen a vague request, how to write the test first, how to corner a bug.
-Four skills, adapted from Matt Pocock's public skills (MIT) to fit CommitGate's authority boundaries, ship with it.
+Four skills adapted from Matt Pocock's public skills (MIT) to fit CommitGate's authority boundaries, plus one
+CommitGate-original umbrella skill (`commitgate-quality`) that ties those methods into REQ design/plan/build
+quality — **five** in total — are bundled in the package.
 
 | Skill | When |
 |---|---|
@@ -48,11 +50,13 @@ Four skills, adapted from Matt Pocock's public skills (MIT) to fit CommitGate's 
 | `commitgate-tdd` | When `req:next` returns `AGENT` — Red → Green → Refactor → stage |
 | `commitgate-diagnosing-bugs` | Bugs, regressions, perf — feedback loop → reproduce/minimise → hypothesise → instrument → fix |
 | `commitgate-research` | External technology choices — primary sources, findings with citations and limits |
+| `commitgate-quality` | Writing/editing design & plan (`00/01/02`) · AGENT build · bug diagnosis — SSOT references, combination coverage, Test-First, evidence-based verification. **Method, not enforcement** |
 
-**Auto-discovered, model-invoked.** The harness **discovers** skills automatically, but **the model decides**
+**Auto-discovered, model-invoked.** The harness **discovers installed** skills automatically, but **the model decides**
 whether to use one — that is probabilistic, so don't expect a skill to always fire. In Claude Code you can also
-invoke one directly with `/commitgate-<name>`. On other harnesses, use whatever invocation that harness offers,
+invoke an installed skill directly with `/commitgate-<name>`. On other harnesses, use whatever invocation that harness offers,
 or follow the entry flow in `AGENTS.md`.
+(`commitgate-quality` is newly bundled by this change; once its install wiring lands it is discovered and invoked like the rest.)
 
 **Suggested flow**: `commitgate-discovery` to sharpen the request → `/req` (Claude Code) or the `AGENTS.md` entry
 flow → `req:new` → repeat `req:next`.

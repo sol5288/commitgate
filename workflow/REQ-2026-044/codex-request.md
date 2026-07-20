@@ -7,6 +7,15 @@ Superpowers 방법론의 장점 중 **요구 정제·설계/계획 품질·Test-
 Superpowers 플러그인·스킬·런타임은 설치·실행·의존성 추가하지 않는다. companion 전달 파이프라인은
 이미 존재·검증됨(REQ-2026-020~024)이라 이번 작업은 **5번째 스킬 추가**(하드코딩 목록 6곳 + 자산 1 + 포인터 1줄 + 문서)다.
 
+## Phase 분해 (phase 리뷰 경계 — 리뷰어 주의)
+
+이 REQ는 3 phase 수직 슬라이스로 분해된다. **각 phase 리뷰는 그 phase의 staged diff만 판정한다.**
+다른 phase가 소유한 산출물이 현재 phase diff에 없는 것은 결함이 아니다 — 그 phase에서 검증된다.
+
+- **phase-1-skill-asset**: `skills/commitgate-quality/SKILL.md`(신규) · `skills/ATTRIBUTION.md` · `docs/agent-prompt.md`/`.en.md` · `tests/unit/package-payload.test.ts`(payload·MIT·frontmatter·경계문구 존재 oracle). 범위 = **스킬을 패키지 payload에 넣고 계약을 고정.** 설치·발견 포인터는 여기 없어야 정상이다.
+- **phase-2-install-wiring**: `bin/init.ts`의 `KIT_COMPANION_SKILLS` +1엔트리 · `init/uninstall/migrate.test.ts` · `scripts/smoke.mjs`. 범위 = **스킬을 실제 설치 경로에 배선**(설치는 phase-1이 아니라 **여기서** 검증). seed-once·confinement·uninstall은 배열 파생으로 자동 전파.
+- **phase-3-discovery-docs**: `templates/CLAUDE.template.md` 발견 포인터 1줄 + 설치 산출물 oracle(`tests/unit/init.test.ts`) · 문서 카운트 · `CHANGELOG.md`. 범위 = **새 세션 발견 포인터**(CLAUDE 포인터는 phase-1이 아니라 **여기서** 검증).
+
 ## 변경 요약 (설계)
 
 - **신규 자산**: `skills/commitgate-quality/SKILL.md` — area 1~3(정본 경계·설계 품질·계획 품질)은 자체 소유, area 4~5(Test-First·버그 진단)와 요구 정제는 원칙 + 형제 스킬(`commitgate-tdd`/`diagnosing-bugs`/`discovery`) 참조(DEC-1).

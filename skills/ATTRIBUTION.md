@@ -28,8 +28,10 @@ CommitGate가 번들하는 companion skills(`skills/commitgate-*/SKILL.md`)는 M
 | `commitgate-tdd` | `skills/engineering/tdd/SKILL.md` |
 | `commitgate-diagnosing-bugs` | `skills/engineering/diagnosing-bugs/SKILL.md` |
 | `commitgate-research` | `skills/engineering/research/SKILL.md` |
+| `commitgate-quality` | **부분 파생** — Test-First·버그 진단·요구 정제의 방법론 표현은 `tdd`+`diagnosing-bugs`+`grilling`/`domain-modeling` 계열을 재사용·참조. **정본(SSOT) 경계·설계/계획 품질·자가점검은 CommitGate(sol5288) 원저작**(Pocock 아님) |
 
 각 SKILL.md 하단의 `## 출처·라이선스` 절에 개별 적응 내용이 기록되어 있다.
+⚠️ `commitgate-quality`는 방법론 표현만 파생이고 상당 부분이 CommitGate 원저작이다 — 그 SKILL.md의 `## 출처·라이선스`가 적응 범위(§4·§5·요구 정제)와 원저작(§1·§2·§3)을 구분한다. 보수적으로 MIT 고지를 동행한다(과소 귀속 회피).
 
 ## 무엇이 누구의 것인가
 
@@ -81,5 +83,5 @@ SOFTWARE.
 
 ## 갱신
 
-기준 upstream을 올리려면 새 SHA를 골라 4종 SKILL.md의 `## 출처·라이선스`와 이 문서를 함께 갱신하고,
+기준 upstream을 올리려면 새 SHA를 골라 5종 SKILL.md(`commitgate-quality` 포함 — 방법론 표현을 재사용하므로 SHA를 동행)의 `## 출처·라이선스`와 이 문서를 함께 갱신하고,
 `tests/unit/package-payload.test.ts`의 `UPSTREAM_SHA`를 바꾼다. **자동 동기화는 없다**(의도된 경계 — REQ-2026-019 §4).
