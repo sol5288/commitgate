@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"e73bbd6048324f187bf7ecca5100b52a62184181","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"phase-3 분석 문서를 커밋하고, 최종 결론·후속 REQ 확정 전에는 명시된 2인 독립 태깅과 사람 adjudication을 수행한다.","observations":[]}
