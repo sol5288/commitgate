@@ -55,6 +55,8 @@ import {
   reviewPolicyVersion,
   buildReviewCallLogRow,
   appendReviewCallLog,
+  assembledPromptBytes,
+  previousFindingsCount,
   REVIEW_CALL_LOG_REL,
   truncateUtf8,
   SNAPSHOT_MAX_FINDINGS,
@@ -3061,7 +3063,7 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       observations: Array.from({ length: observations }, (_, i) => ({ detail: `o${i}`, file: `f${i}` })),
     })
 
-    it('R6+REQ-043: 11개 필드가 전부 존재한다(model·effort 포함, 핀 케이스)', () => {
+    it('R6+REQ-043+REQ-045: 17개 필드가 전부 존재한다(model·effort·관측성6 포함, 핀 케이스)', () => {
       const row = buildReviewCallLogRow({
         ticketId: 'REQ-2026-025',
         kind: 'phase',
@@ -3073,6 +3075,12 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         policyVersion: 'abc123def456',
         reviewModel: 'gpt-5.6-terra',
         reviewReasoningEffort: 'high',
+        promptBytes: 4096,
+        reviewDurationMs: 12345,
+        previousFindingsCount: 2,
+        assembledPromptSha256: 'a'.repeat(64),
+        reviewBaseSha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+        reviewTree: 'cafef00dcafef00dcafef00dcafef00dcafef00d',
       })
       expect(Object.keys(row).sort()).toEqual(
         [
@@ -3087,6 +3095,12 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
           'review_reasoning_effort',
           'ticket_id',
           'timestamp',
+          'prompt_bytes',
+          'review_duration_ms',
+          'previous_findings_count',
+          'assembled_prompt_sha256',
+          'review_base_sha',
+          'review_tree',
         ].sort(),
       )
       expect(row.findings_count).toBe(2)
@@ -3094,6 +3108,12 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       expect(row.archive_round).toBe(3)
       expect(row.review_model).toBe('gpt-5.6-terra')
       expect(row.review_reasoning_effort).toBe('high')
+      expect(row.prompt_bytes).toBe(4096)
+      expect(row.review_duration_ms).toBe(12345)
+      expect(row.previous_findings_count).toBe(2)
+      expect(row.assembled_prompt_sha256).toBe('a'.repeat(64))
+      expect(row.review_base_sha).toBe('deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
+      expect(row.review_tree).toBe('cafef00dcafef00dcafef00dcafef00dcafef00d')
     })
 
     it('REQ-2026-043: 미핀(config null)이면 review_model·review_reasoning_effort는 null(감사 신호)', () => {
@@ -3108,9 +3128,17 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         policyVersion: 'abc123def456',
         reviewModel: null,
         reviewReasoningEffort: null,
+        promptBytes: 100,
+        reviewDurationMs: 200,
+        previousFindingsCount: 0,
+        assembledPromptSha256: 'b'.repeat(64),
+        reviewBaseSha: null,
+        reviewTree: null,
       })
       expect(row.review_model).toBeNull()
       expect(row.review_reasoning_effort).toBeNull()
+      expect(row.review_base_sha).toBeNull()
+      expect(row.review_tree).toBeNull()
     })
 
     it('무효 응답(아카이브 없음) → archive_round=null', () => {
@@ -3125,12 +3153,51 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         policyVersion: 'none',
         reviewModel: null,
         reviewReasoningEffort: null,
+        promptBytes: 0,
+        reviewDurationMs: 0,
+        previousFindingsCount: 0,
+        assembledPromptSha256: 'c'.repeat(64),
+        reviewBaseSha: null,
+        reviewTree: null,
       })
       expect(row.archive_round).toBeNull()
       expect(row.phase_id).toBeNull()
       expect(row.findings_count).toBe(0) // findings 미제공 → 0(undefined 아님)
       expect(row.observations_count).toBe(0)
     })
+  })
+
+  it('REQ-2026-045: assembledPromptBytes는 UTF-8 바이트(비-ASCII에서 .length와 다름)', () => {
+    // JS .length는 UTF-16 code unit — 한국어는 1이지만 UTF-8 3바이트. prompt_bytes 계약(실제 바이트) 회귀 방지.
+    expect(assembledPromptBytes('abc')).toBe(3)
+    expect(assembledPromptBytes('가')).toBe(3)
+    expect('가'.length).toBe(1) // 대조: UTF-16 code unit
+    expect(assembledPromptBytes('가나다')).toBe(9)
+    expect(assembledPromptBytes('a가b')).toBe(5)
+    expect(assembledPromptBytes('')).toBe(0)
+  })
+
+  it('REQ-2026-045: previousFindingsCount는 same-target needs-fix일 때만 총수(shown+elided), 아니면 0', () => {
+    const mk = (over: Record<string, unknown>): WorkflowState =>
+      ({ id: 'REQ-2026-045', phase: 'INTAKE', ...over }) as unknown as WorkflowState
+    expect(previousFindingsCount(mk({}), 'phase', 'p1')).toBe(0) // 직전 없음
+    expect(
+      previousFindingsCount(
+        mk({ last_review: { review_kind: 'phase', phase_id: 'p1', outcome: 'approved', findings: [], elided_count: 0 } }),
+        'phase',
+        'p1',
+      ),
+    ).toBe(0) // 승인 후 리셋
+    const lr = {
+      review_kind: 'phase',
+      phase_id: 'p1',
+      outcome: 'needs-fix',
+      findings: [{ severity: 'P1', file: 'f', detail: 'd' }],
+      elided_count: 2,
+    }
+    expect(previousFindingsCount(mk({ last_review: lr }), 'phase', 'p1')).toBe(3) // shown(1)+elided(2)
+    expect(previousFindingsCount(mk({ last_review: lr }), 'phase', 'p2')).toBe(0) // 교차-대상 차단
+    expect(previousFindingsCount(mk({ last_review: lr }), 'design', null)).toBe(0)
   })
 
   it('O2-3: 🔴 finding·observation 본문이 기록된 행에 새지 않는다(R7)', () => {
@@ -3154,6 +3221,12 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       policyVersion: 'abc123def456',
       reviewModel: 'gpt-5.6-terra',
       reviewReasoningEffort: 'high',
+      promptBytes: 500,
+      reviewDurationMs: 999,
+      previousFindingsCount: 2,
+      assembledPromptSha256: 'd'.repeat(64),
+      reviewBaseSha: 'abc123',
+      reviewTree: 'def456',
     })
     const line = JSON.stringify(row)
     // verdict를 통째로 덤프하거나 detail을 흘리는 구현은 여기서 실패한다.
@@ -3183,6 +3256,12 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
           policy_version: 'abc123def456',
           review_model: null,
           review_reasoning_effort: null,
+          prompt_bytes: 0,
+          review_duration_ms: 0,
+          previous_findings_count: 0,
+          assembled_prompt_sha256: 'e'.repeat(64),
+          review_base_sha: null,
+          review_tree: null,
         }),
       ).not.toThrow()
     } finally {
@@ -3190,7 +3269,7 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
     }
   })
 
-  it('O2-2: append 후 **파싱한 JSONL 행**에 11개 필드(REQ-043 model·effort 포함)와 전달값이 전부 보존된다', () => {
+  it('O2-2: append 후 **파싱한 JSONL 행**에 17개 필드(REQ-043 model·effort + REQ-045 관측성6 포함)와 전달값이 전부 보존된다', () => {
     const d = tmp()
     try {
       const row = {
@@ -3205,6 +3284,12 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         policy_version: 'abc123def456',
         review_model: 'gpt-5.6-terra',
         review_reasoning_effort: 'high',
+        prompt_bytes: 1024,
+        review_duration_ms: 500,
+        previous_findings_count: 2,
+        assembled_prompt_sha256: 'f'.repeat(64),
+        review_base_sha: 'aaa111',
+        review_tree: 'bbb222',
       }
       appendReviewCallLog(d, row)
       // 빌더 반환값이 아니라 **디스크에 실제로 쓰인 것**을 파싱한다 — append가 필드를 떨구는 회귀를 잡는다.
@@ -3231,6 +3316,12 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         policy_version: 'abc123def456',
         review_model: null,
         review_reasoning_effort: null,
+        prompt_bytes: 0,
+        review_duration_ms: 0,
+        previous_findings_count: 0,
+        assembled_prompt_sha256: '0'.repeat(64),
+        review_base_sha: null,
+        review_tree: null,
       }
       appendReviewCallLog(d, base)
       appendReviewCallLog(d, { ...base, archive_round: 2 })

@@ -579,6 +579,16 @@ export interface ReviewCallLogRow {
    */
   review_model: string | null
   review_reasoning_effort: string | null
+  /**
+   * REQ-2026-045(phase-2-observability): 재리뷰 장기화 원인분석용 관측성 지원 필드.
+   * 전부 **개수/해시만**(내용배제 유지). 진단·재구성 보조이며 **승인 증거가 아니다**(로그는 측정 전용·gitignore·fail-closed).
+   */
+  prompt_bytes: number
+  review_duration_ms: number
+  previous_findings_count: number
+  assembled_prompt_sha256: string
+  review_base_sha: string | null
+  review_tree: string | null
 }
 
 /**
@@ -600,6 +610,13 @@ export function buildReviewCallLogRow(args: {
   policyVersion: string
   reviewModel: string | null
   reviewReasoningEffort: string | null
+  // REQ-2026-045: 관측성 지원 필드(개수/해시). 값은 호출부가 계산해 주입(순수성 유지).
+  promptBytes: number
+  reviewDurationMs: number
+  previousFindingsCount: number
+  assembledPromptSha256: string
+  reviewBaseSha: string | null
+  reviewTree: string | null
 }): ReviewCallLogRow {
   return {
     ticket_id: args.ticketId,
@@ -613,7 +630,21 @@ export function buildReviewCallLogRow(args: {
     policy_version: args.policyVersion,
     review_model: args.reviewModel,
     review_reasoning_effort: args.reviewReasoningEffort,
+    prompt_bytes: args.promptBytes,
+    review_duration_ms: args.reviewDurationMs,
+    previous_findings_count: args.previousFindingsCount,
+    assembled_prompt_sha256: args.assembledPromptSha256,
+    review_base_sha: args.reviewBaseSha,
+    review_tree: args.reviewTree,
   }
+}
+
+/**
+ * REQ-2026-045: 조립 프롬프트의 **UTF-8 바이트** 수(내용 아님). JS `.length`(UTF-16 code unit)는 비-ASCII에서
+ * 바이트 수와 다르므로(`'가'.length===1`이지만 3바이트) `Buffer.byteLength(…,'utf8')`로 계산한다.
+ */
+export function assembledPromptBytes(prompt: string): number {
+  return Buffer.byteLength(prompt, 'utf8')
 }
 
 /**
@@ -781,6 +812,19 @@ export function buildPreviousFindingsBlock(state: WorkflowState, kind: ReviewKin
     ...lines,
     '<<<END_PREVIOUS_FINDINGS_TO_CLOSE>>>',
   ].join('\n')
+}
+
+/**
+ * REQ-2026-045: previousFindingsToClose로 전달되는 직전 same-target NEEDS_FIX finding 총수(측정 지원, 개수만).
+ * buildPreviousFindingsBlock과 동일 가드(교차-대상·승인 후 리셋)를 써서 프롬프트 블록과 정합한다. 값 = 스냅샷 shown + elided.
+ */
+export function previousFindingsCount(state: WorkflowState, kind: ReviewKind, phaseId: string | null): number {
+  const lr = state.last_review as LastReviewMarker | undefined
+  if (!lr || lr.outcome !== 'needs-fix') return 0
+  if (lr.review_kind !== kind || lr.phase_id !== phaseId) return 0
+  const snap = validatePersistedSnapshot(lr.findings, lr.elided_count)
+  if (!snap) return 0
+  return snap.findings.length + snap.elided_count
 }
 
 function sameLastReviewTarget(a: LastReviewMarker | undefined, kind: ReviewKind, phaseId: string | null, compareHash: string | null): boolean {
@@ -1876,6 +1920,8 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     // REQ-2026-013 P4: 직전 same-target NEEDS_FIX findings만 주입(교차-대상이면 null). 옛 무조건 previous_codex_result 제거.
     previousFindingsToClose: buildPreviousFindingsBlock(state, opts.kind, phaseId),
   }
+  // REQ-2026-045: 프롬프트 블록과 동일 원천에서 직전 finding 수(측정). state 재할당 전(원본)에서 계산.
+  const previousFindingsCountVal = previousFindingsCount(state, opts.kind, phaseId)
   const prompt = assembleReviewPrompt({
     persona: effectivePersona, // REQ-2026-034 B-2b: delta면 base+계약(null이면 계약 단독), 아니면 base 그대로.
     handoff,
@@ -1940,19 +1986,26 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   // resumeThreadId 있으면 resume(thread 상속), 없으면 exec(--sandbox read-only) → thread.started 파싱.
   // REQ-2026-027 D3: attempt를 **호출 직전**에 기록·writeState(withAttemptRecorded). 반환 state(afterAttempt)가
   // 이후 모든 처리의 base다 — 호출 전 `state`를 다시 쓰면 최종 writeState가 attempt를 되돌린다(R9).
+  let reviewDurationMs = 0 // REQ-2026-045: callReviewer 소요(측정 전용 — 판정/exit/state 무영향).
   const { result: callRes, state: afterAttempt } = withAttemptRecorded(
     { ticketDir, state, kind: opts.kind, phaseId, budget: cfg.reviewBudget },
-    () =>
-      callReviewer(reviewer, {
-        prompt,
-        schemaPath: cfg.schemaPathAbs,
-        resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
-        cwd: cfg.root,
-        respPath,
-        // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
-        model: cfg.reviewModel,
-        reasoningEffort: cfg.reviewReasoningEffort,
-      }),
+    () => {
+      const callStartMs = Date.now()
+      try {
+        return callReviewer(reviewer, {
+          prompt,
+          schemaPath: cfg.schemaPathAbs,
+          resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
+          cwd: cfg.root,
+          respPath,
+          // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
+          model: cfg.reviewModel,
+          reasoningEffort: cfg.reviewReasoningEffort,
+        })
+      } finally {
+        reviewDurationMs = Date.now() - callStartMs
+      }
+    },
   )
   const { threadId } = callRes
   state = afterAttempt // 이후 baseArgs·finalState의 base
@@ -2040,6 +2093,13 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
       // REQ-2026-043: codex에 흘러간 값(1942-1943)과 동일 원천. null=미핀(전역 상속).
       reviewModel: cfg.reviewModel,
       reviewReasoningEffort: cfg.reviewReasoningEffort,
+      // REQ-2026-045: 관측성 지원 필드(개수/해시 — 내용배제 유지, 승인 증거 아님).
+      promptBytes: assembledPromptBytes(prompt),
+      reviewDurationMs,
+      previousFindingsCount: previousFindingsCountVal,
+      assembledPromptSha256: createHash('sha256').update(prompt, 'utf8').digest('hex'),
+      reviewBaseSha,
+      reviewTree,
     }),
   )
 
