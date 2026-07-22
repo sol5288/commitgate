@@ -23,13 +23,15 @@ import {
   type ReviewKind,
   type WorkflowState,
 } from './review-codex'
-import { isArchiveFileName } from './lib/scratch' // 아카이브 파일명 판정의 정본은 scratch(leaf)
+import { isArchiveFileName } from './lib/scratch'
+import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
 // REQ-2026-048 phase-1: 매니페스트 모델·검증과 그 보조 술어는 leaf `lib/evidence.ts`가 정본.
 // 여기서 **재수출**해 기존 import 경로(`from './req-commit'`)를 쓰던 호출부·테스트를 그대로 둔다.
 import {
   archiveBaseName,
   buildArchiveInventory,
   designEvidenceStagePaths,
+  durableDesignEvidence,
   isConfinedArchivePath,
   isValidIsoInstant,
   buildManifestEntry,
@@ -440,44 +442,25 @@ function designFinalize(args: {
   if (!dev) throw new Error('design_approval_evidence 없음 — design 승인 후 실행')
   if (dev.review_kind !== 'design') throw new Error(`design_approval_evidence.review_kind != design: ${String(dev.review_kind)}`)
   runDoctor(args.doctorArgs) // design-finalize도 doctor 우회 금지(정상)
-  const opts = { ticketRel: args.ticketRel, validPhaseIds: args.validPhaseIds }
-  const existing = existsSync(args.manifestPath) ? readFileSync(args.manifestPath, 'utf8') : ''
-  // B3-P2: 기존 매니페스트 단독 무결성 먼저(중복+다른 오염 시 묵인 금지 — 오염이면 여기서 fail-closed).
-  if (existing.trim()) {
-    const existingProblems = validateManifest(existing, opts)
-    if (existingProblems.length) throw new Error(`기존 approvals.jsonl 무결성 실패(fail-closed): ${existingProblems.join('; ')}`)
-  }
-  const headSha = git(['rev-parse', 'HEAD'])
-  // REQ-2026-048 DEC-2: 이 승인에 이르는 design 라운드 아카이브 **전부**(needs-fix 포함, 승인본 자기 자신 포함)를
-  // 경로+sha로 기록하고, 아래에서 **그 목록을 그대로 stage**한다. 기존엔 승인본 1건만 stage해 needs-fix 라운드가
-  // 커밋 이력에 남지 않았다(자동 커밋 경로 자체가 없었다).
-  const archiveNames = existsSync(args.responsesDir) ? readdirSync(args.responsesDir).filter(isArchiveFileName) : []
-  const archiveInventory = buildArchiveInventory(archiveNames, 'design', null, args.ticketRel, repoRelSha256)
-  const entry = buildManifestEntry(dev, {
-    consumedAt: new Date().toISOString(),
-    consumedByCommitSha: headSha,
-    userCommitConfirmed: null,
-    archiveInventory,
+  // REQ-2026-048 phase-3: 실제 내구화는 **공유 구현**에 위임한다. 정상 승인 경로(review-codex)와
+  // 이 복구 경로가 같은 함수를 부르므로 동작이 갈라질 수 없다(DEC-1·DEC-3).
+  const r = durableDesignEvidence({
+    ticketId: String(args.state.id ?? ''),
+    ticketRel: args.ticketRel,
+    evidence: dev,
+    validPhaseIds: args.validPhaseIds,
+    nowIso: new Date().toISOString(),
+    ports: createEvidencePorts(gitRoot, `${args.ticketRel}/responses`),
   })
-  const newContent = existing + serializeManifestLine(entry)
-  const problems = validateManifest(newContent, opts)
-  // 기존이 이미 클린이므로 newContent의 문제는 후보(candidate) 때문. **오직 중복뿐**일 때만 멱등 skip, 하나라도 다른 문제면 fail.
-  if (problems.length) {
-    if (problems.every((p) => p.includes('중복'))) {
-      console.log('[req:commit] design 승인 이미 기록됨(멱등 skip)')
-      return
-    }
-    throw new Error(`design-finalize 매니페스트 검증 실패: ${problems.join('; ')}`)
+  if (r.outcome === 'already-durable') {
+    console.log('[req:commit] design 승인 이미 내구화됨(HEAD 기준 멱등 skip)')
+    return
   }
-  const responsePath = typeof dev.response_path === 'string' ? dev.response_path : ''
-  mkdirSync(args.responsesDir, { recursive: true })
-  writeFileSync(args.manifestPath, newContent, 'utf8')
-  // 인벤토리 전량 + 승인본 + 매니페스트를 stage(순수 계산은 designEvidenceStagePaths — 테스트가 직접 구동한다).
-  git(['add', ...designEvidenceStagePaths(archiveInventory, responsePath, args.ticketRel)])
-  const leak = stagedNames().filter((p) => !p.startsWith(`${args.ticketRel}/responses/`))
-  if (leak.length) throw new Error(`design-finalize 커밋에 responses 외 staged 금지: ${leak.join(', ')}`)
-  git(['commit', '-m', `chore(${args.state.id}): design-finalize — design 승인 approvals.jsonl 기록`])
-  console.log('[req:commit] ✅ design-finalize 완료 — approvals.jsonl 기록')
+  console.log(
+    r.outcome === 'recommitted'
+      ? '[req:commit] ✅ design-finalize 복구 완료 — 매니페스트는 이미 있었고 커밋만 누락돼 재커밋했습니다'
+      : '[req:commit] ✅ design-finalize 완료 — approvals.jsonl 기록',
+  )
 }
 
 export function main(argv: string[] = process.argv.slice(2)): void {

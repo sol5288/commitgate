@@ -34,8 +34,9 @@ import Ajv from 'ajv'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
-import { archiveBaseName, isValidIsoInstant } from './lib/evidence'
+import { archiveBaseName, durableDesignEvidence, isValidIsoInstant } from './lib/evidence'
 export { archiveBaseName, isValidIsoInstant } from './lib/evidence'
+import { createEvidencePorts } from './lib/evidence-ports'
 import {
   createGitAdapter,
   createCodexReviewerAdapter,
@@ -2064,6 +2065,38 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   // (그래야 A-2 상한이 의미를 갖는다). finalState는 afterAttempt 계보라 attempts 증가가 보존돼 있다.
   const persistedState = outcome === 'approved' ? closeSeriesApproved(finalState, opts.kind, phaseId) : finalState
   writeState(ticketDir, persistedState)
+
+  // ── REQ-2026-048 phase-3: design 승인 evidence **자동 내구화**(DEC-3) ──
+  // 정상 승인 경로가 여기서 아카이브·매니페스트를 커밋한다 → 운영자가 `--finalize-design`을 따로 기억할
+  // 필요가 없다. 그 수동 단계가 잊히면 design 감사 증거가 커밋 이력에 **전혀 남지 않던** 것이 이 REQ의 원인이다.
+  //
+  // 🔴 **실패를 삼킨다 — 승인 판정·exit code를 바꾸지 않는다.** 기록 실패가 게이트 결정을 뒤집으면 그것이
+  //    계약 위반이다(측정 로그 R8과 같은 취지). 대신 복구 명령을 안내하고, 그 "승인됨·미커밋" 창은
+  //    `req:next`의 DONE 게이트(phase-4)가 잡는다. 멱등이라 재실행도 안전하다.
+  if (opts.kind === 'design' && outcome === 'approved') {
+    const dev = (persistedState.design_approval_evidence as ApprovalEvidence | undefined) ?? null
+    if (dev) {
+      const ticketRelForEvidence = repoRel(ticketDir)
+      try {
+        const r = durableDesignEvidence({
+          ticketId: String(persistedState.id ?? ''),
+          ticketRel: ticketRelForEvidence,
+          evidence: dev,
+          validPhaseIds: readPhases(persistedState).map((ph) => ph.id),
+          nowIso: approvedAt,
+          ports: createEvidencePorts(cfg.root, `${ticketRelForEvidence}/responses`),
+        })
+        if (r.outcome !== 'already-durable')
+          console.log('[req:review-codex] design 승인 증거를 커밋했습니다(아카이브·approvals.jsonl).')
+      } catch (err) {
+        console.warn(
+          `[req:review-codex] ⚠️ design 승인 증거 커밋 실패(승인 자체는 유효): ${err instanceof Error ? err.message : String(err)}
+` +
+            `   복구: ${buildScriptInvocation(cfg.packageManager, 'req:commit', [String(persistedState.id ?? ''), '--finalize-design', '--run']).join(' ')}`,
+        )
+      }
+    }
+  }
 
   // REQ-2026-025 D4: 완료된 review call 1행 기록(측정 전용). `approvedAt`을 재사용해 같은 call의 다른
   // 기록과 시각이 어긋나지 않게 한다 — 새 시계를 읽지 않는다. 실패는 삼켜진다(R8).

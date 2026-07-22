@@ -2252,8 +2252,10 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     const PERSONA = 'BASE-PERSONA'
     const { git, repo } = setupRepo({ persona: PERSONA, baseline: 'partial' })
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
-    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    // REQ-2026-048 phase-3: design 승인은 이제 evidence를 **커밋**한다 → main() 이후의 HEAD/tree는
+    // 프롬프트가 실제로 쓴 값과 다르다. 기대값은 반드시 **호출 전** 컨텍스트로 만든다.
     const c = ctx(git)
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     const expected = buildExpected({
       persona: `${PERSONA}\n${DESIGN_DELTA_CONTRACT}`, ...c, phase: 'INTAKE', kind: 'design',
       designDocs: readDesignDocsFromIndex(TICKET_REL, git), designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
@@ -2266,8 +2268,10 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
   it('O1-4 🔴 null persona + baseline design --run → 계약 단독 + 로그 hash(계약)', () => {
     const { git, repo } = setupRepo({ persona: null, baseline: 'partial' })
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
-    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    // REQ-2026-048 phase-3: design 승인은 이제 evidence를 **커밋**한다 → main() 이후의 HEAD/tree는
+    // 프롬프트가 실제로 쓴 값과 다르다. 기대값은 반드시 **호출 전** 컨텍스트로 만든다.
     const c = ctx(git)
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     const expected = buildExpected({
       persona: DESIGN_DELTA_CONTRACT, ...c, phase: 'INTAKE', kind: 'design',
       designDocs: readDesignDocsFromIndex(TICKET_REL, git), designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
@@ -2282,9 +2286,11 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     const PERSONA = 'BASE-PERSONA'
     const { git, repo } = setupRepo({ persona: PERSONA }) // baseline 없음
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    // REQ-2026-048 phase-3: design 승인은 이제 evidence를 **커밋**한다 → main() 이후의 HEAD/tree는
+    // 프롬프트가 실제로 쓴 값과 다르다. 기대값은 반드시 **호출 전** 컨텍스트로 만든다.
+    const c = ctx(git)
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
-    const c = ctx(git)
     const expected = buildExpected({ persona: PERSONA, ...c, phase: 'INTAKE', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
     expect(fake.requests[0]!.prompt).toBe(expected)
     expect(logPolicy(repo)).toBe(reviewPolicyVersion(PERSONA))
@@ -2293,12 +2299,39 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
   it('O1-6 🔴 null persona + baseline 없음(full) design --run → 프롬프트 === + policy=none', () => {
     const { git, repo } = setupRepo({ persona: null })
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    // REQ-2026-048 phase-3: design 승인은 이제 evidence를 **커밋**한다 → main() 이후의 HEAD/tree는
+    // 프롬프트가 실제로 쓴 값과 다르다. 기대값은 반드시 **호출 전** 컨텍스트로 만든다.
+    const c = ctx(git)
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
-    const c = ctx(git)
     const expected = buildExpected({ persona: null, ...c, phase: 'INTAKE', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
     expect(fake.requests[0]!.prompt).toBe(expected)
     expect(logPolicy(repo)).toBe('none')
+  })
+
+  /**
+   * 🔴 REQ-2026-048 phase-3 핵심 — 정상 design 승인 경로가 **스스로** evidence를 커밋한다.
+   * 이 배선이 없으면 운영자가 `--finalize-design`을 따로 기억해야 하고, 잊으면 design 감사 증거가
+   * 커밋 이력에 **전혀** 남지 않는다(이 REQ의 원인이 된 실제 사고).
+   */
+  it('O1-10 🔴 design --run 승인 → approvals.jsonl design 행·아카이브가 HEAD에 커밋된다', () => {
+    const { git, repo } = setupRepo({ persona: null })
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
+    const before = git(['rev-parse', 'HEAD'])
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+
+    expect(git(['rev-parse', 'HEAD']), 'evidence 커밋이 생겨야 한다').not.toBe(before)
+    const tracked = git(['ls-tree', '-r', '--name-only', 'HEAD']).split('\n').map((l) => l.trim())
+    expect(tracked).toContain(`${TICKET_REL}/responses/approvals.jsonl`)
+    expect(
+      tracked.some((p) => /design-r\d{2,}-approved\.json$/.test(p)),
+      'design 승인 아카이브가 커밋돼야 한다',
+    ).toBe(true)
+
+    const rows = git(['show', `HEAD:${TICKET_REL}/responses/approvals.jsonl`]).trim().split('\n').filter(Boolean)
+    const row = JSON.parse(rows[rows.length - 1] as string) as { kind: string; archive_inventory?: unknown[] }
+    expect(row.kind).toBe('design')
+    expect(Array.isArray(row.archive_inventory), 'archive_inventory가 기록돼야 한다').toBe(true)
   })
 
   it('O1-7 🔴 kind 격리 — base persona + baseline phase --run → 계약 없음, 프롬프트 === + 로그 base', () => {

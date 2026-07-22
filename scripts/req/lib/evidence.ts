@@ -354,6 +354,138 @@ export function expectedArchivePaths(
     .map((x) => `${dir}/${x.n}`)
 }
 
+/** 매니페스트에서 이 evidence identity(kind/phase_id/response_sha256)의 행을 찾는다(순수). 없으면 null. */
+export function findEvidenceRow(
+  content: string,
+  identity: { kind: ReviewKind; phaseId: string | null; responseSha256: string },
+): ManifestEntry | null {
+  for (const line of content.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    try {
+      const e = JSON.parse(line) as ManifestEntry
+      if (e && typeof e === 'object' && e.kind === identity.kind && (e.phase_id ?? null) === identity.phaseId && e.response_sha256 === identity.responseSha256)
+        return e
+    } catch {
+      // malformed 줄 무시(무결성은 validateManifest 담당)
+    }
+  }
+  return null
+}
+
+// ─────────────────────────── design evidence 내구화 (REQ-2026-048 DEC-3) ──
+
+/**
+ * 이 모듈이 부수효과를 내기 위해 쓰는 **주입 포트**. `lib/evidence`는 fs·git을 직접 모른다
+ * (leaf 불변식 유지 + 실패 주입 테스트 가능).
+ */
+export interface EvidencePorts {
+  /** 온디스크 텍스트(없으면 null). */
+  readText(repoRel: string): string | null
+  writeText(repoRel: string, content: string): void
+  /** 티켓 `responses/` 디렉터리의 아카이브 파일명 목록. */
+  listArchiveNames(): string[]
+  /** 온디스크 파일 바이트의 sha256(hex). */
+  sha256(repoRel: string): string
+  /** `HEAD`의 blob 텍스트(없으면 null). JSONL 파싱 전용 — 바이트 정합 비교엔 쓰지 않는다. */
+  headText(repoRel: string): string | null
+  /**
+   * 🔴 `HEAD` blob **바이트**의 sha256(없으면 null).
+   * 워킹 파일로 계산하면 `core.autocrlf` 환경에서 CRLF↔LF 차이로 **거짓 불일치**가 난다 —
+   * 반드시 blob 바이트로 계산해야 커밋 이력과 기록된 sha가 맞는다.
+   */
+  headBlobSha256(repoRel: string): string | null
+  /** 현재 `HEAD` 커밋 SHA. */
+  headCommitSha(): string
+  /**
+   * 🔴 **지정한 경로만** 커밋한다(pathspec 범위). 나머지 index는 **그대로 보존**된다.
+   *
+   * 전체 index를 커밋하거나 "staged 전체"를 leak으로 판정하면 안 된다 — design 리뷰는 **index의 설계 문서**를
+   * 대상으로 돌 수 있으므로, 설계 문서를 stage한 채 승인하는 것이 정상 경로다. 그 상태에서 index 전체를 보면
+   * 자동 내구화가 **항상 실패**하고(호출부가 삼켜 승인만 남음) `--finalize-design`도 같은 가드로 실패해
+   * 증거가 영원히 커밋되지 않는다(phase-3 리뷰 P1).
+   */
+  commitPaths(paths: string[], message: string): void
+}
+
+/** 내구화 결과. `already-durable`=진짜 no-op, `committed`=신규 기록, `recommitted`=부분 상태 복구. */
+export type DurableOutcome = 'already-durable' | 'committed' | 'recommitted'
+
+/**
+ * 승인된 **design evidence를 내구화한다** — 호출자가 아는 것은 이 한 문장뿐이다(DEC-1).
+ * 매니페스트 형식·stage 목록·멱등 판정은 전부 이 안에 있고, 정상 승인 경로(`review-codex`)와
+ * 복구 경로(`req:commit --finalize-design`)가 **같은 구현**을 부른다 → 동작이 갈라질 수 없다.
+ *
+ * 🔴 **멱등은 온디스크가 아니라 `HEAD` 기준이다**(DEC-3, design r01 P1-2).
+ *
+ * | 온디스크 엔트리 | HEAD에 내구화됨 | 동작 |
+ * |---|---|---|
+ * | 없음 | — | append → stage → commit (`committed`) |
+ * | 있음 | 예 | 진짜 no-op (`already-durable`) |
+ * | 있음 | 아니오 | **append 없이** stage → commit 재시도 (`recommitted`) |
+ *
+ * 온디스크 엔트리 존재만으로 skip하면, 매니페스트 append·stage까지 되고 `git commit`만 실패한
+ * 부분 상태에서 재시도가 **영구히 skip**되어 HEAD 증거를 결코 복구하지 못한다.
+ */
+export function durableDesignEvidence(args: {
+  ticketId: string
+  ticketRel: string
+  evidence: ApprovalEvidence
+  validPhaseIds: string[]
+  nowIso: string
+  ports: EvidencePorts
+}): { outcome: DurableOutcome; stagePaths: string[] } {
+  const { ticketRel, evidence: ev, ports } = args
+  if (ev.review_kind !== 'design') throw new Error(`durableDesignEvidence: review_kind != design (${String(ev.review_kind)})`)
+  const manifestRel = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/approvals.jsonl`
+  const opts = { ticketRel, validPhaseIds: args.validPhaseIds }
+  const identity = { kind: 'design' as ReviewKind, phaseId: null, responseSha256: ev.response_sha256 }
+
+  const existing = ports.readText(manifestRel) ?? ''
+  // 기존 매니페스트 단독 무결성 먼저(오염 위에 덧쓰기 금지 — fail-closed).
+  if (existing.trim()) {
+    const p = validateManifest(existing, opts)
+    if (p.length) throw new Error(`기존 approvals.jsonl 무결성 실패(fail-closed): ${p.join('; ')}`)
+  }
+  const onDiskRow = findEvidenceRow(existing, identity)
+
+  // HEAD 내구화 판정: 매니페스트 행이 커밋돼 있고, 그 행의 인벤토리 아카이브가 전부 HEAD에 있으며 sha가 일치.
+  const headRow = findEvidenceRow(ports.headText(manifestRel) ?? '', identity)
+  const headInventory = headRow?.archive_inventory ?? []
+  const headDurable =
+    headRow !== null &&
+    ports.headBlobSha256(ev.response_path) !== null &&
+    headInventory.every((i) => ports.headBlobSha256(i.response_path) === i.sha256)
+
+  if (onDiskRow && headDurable) return { outcome: 'already-durable', stagePaths: [] }
+
+  let inventory: ArchiveInventoryItem[]
+  if (onDiskRow) {
+    // 부분 상태 복구: **append하지 않는다**(중복 행 금지). 기록된 인벤토리를 그대로 stage·commit 재시도.
+    inventory = onDiskRow.archive_inventory ?? buildArchiveInventory(ports.listArchiveNames(), 'design', null, ticketRel, ports.sha256)
+  } else {
+    inventory = buildArchiveInventory(ports.listArchiveNames(), 'design', null, ticketRel, ports.sha256)
+    const entry = buildManifestEntry(ev, {
+      consumedAt: args.nowIso,
+      consumedByCommitSha: ports.headCommitSha(),
+      userCommitConfirmed: null,
+      archiveInventory: inventory,
+    })
+    const candidate = existing + serializeManifestLine(entry)
+    const problems = validateManifest(candidate, opts)
+    if (problems.length) throw new Error(`design evidence 매니페스트 검증 실패: ${problems.join('; ')}`)
+    ports.writeText(manifestRel, candidate)
+  }
+
+  const stagePaths = designEvidenceStagePaths(inventory, ev.response_path, ticketRel)
+  // 🔴 가드는 **우리가 커밋할 경로**에만 건다 — index 전체가 아니다(phase-3 리뷰 P1).
+  //    index 전체를 보면 설계 문서를 stage한 정상 승인 경로에서 항상 실패한다. pathspec 범위 커밋이라
+  //    무관한 staged 변경은 애초에 이 커밋에 들어갈 수 없고, 커밋 후에도 index에 그대로 남는다.
+  const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
+  const outside = stagePaths.filter((p) => !p.replace(/\\/g, '/').startsWith(prefix))
+  if (outside.length) throw new Error(`design evidence 커밋 대상이 티켓 responses/ 밖: ${outside.join(', ')}`)
+  ports.commitPaths(stagePaths, `chore(${args.ticketId}): design-finalize — design 승인 approvals.jsonl 기록`)
+  return { outcome: onDiskRow ? 'recommitted' : 'committed', stagePaths }
+}
+
 /**
  * approvals.jsonl에 **이 evidence가** 이미 finalize된 엔트리가 있는지(순수, 멱등 finalize용).
  * ⚠️ B3-R2: consumed_by_commit_sha만으로는 부족 — 같은 source SHA를 쓰는 design-finalize row 등에 오인될 수 있음.
