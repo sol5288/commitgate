@@ -16,7 +16,9 @@
 ### DEC-1 — 공유 leaf 모듈 `scripts/req/lib/evidence.ts` 추출
 매니페스트 모델·검증과 **design evidence 내구화**를 이 모듈로 옮긴다. `req-commit.ts`는 **re-export**로 하위호환을 유지한다(기존 테스트·참조 무변경).
 
-- 🔴 **런타임 순환 없음**: 이 모듈은 `review-codex`에서 **`import type`만** 가져온다(`ApprovalEvidence`·`ReviewKind` 등 — 타입 import는 컴파일 시 소거된다). 런타임 간선은 `review-codex → lib/evidence`, `req-commit → lib/evidence` 단방향뿐이다. `lib/scratch.ts`가 leaf로 남은 것과 같은 규율이다(scratch.ts:13-15).
+- 🔴 **`import type`만으로는 부족하다 — 런타임 의존도 함께 옮겨야 한다**(구현 착수 중 확인한 사실). 현재 매니페스트 코드는 **런타임 함수** `archiveBaseName`(`review-codex.ts:1621`)·`isValidIsoInstant`(`review-codex.ts:1104`)와 `isConfinedArchivePath`(`req-doctor.ts:197`)에 의존한다. 이것들을 그대로 두고 `review-codex`가 `lib/evidence`를 import하면 **런타임 순환**(`review-codex → lib/evidence → review-codex`)이 생긴다.
+- 따라서 함께 이동한다: `archiveBaseName` · `isValidIsoInstant` · `isConfinedArchivePath` · 그리고 `req-commit`의 비공개 보조(`SHA256_RE`·`GIT_OID_RE`·`escapeRegExp`·`userConfirmProblem`). 원래 모듈(`review-codex`·`req-doctor`·`req-commit`)은 **re-export**로 기존 시그니처를 그대로 유지한다 → 외부 참조·테스트 무변경.
+- 결과적으로 `lib/evidence.ts`의 **런타임 import는 `lib/scratch.ts`(leaf)뿐**이고, 타입만 `review-codex`에서 `import type`으로 가져온다(컴파일 시 소거 → 간선 없음). 런타임 간선은 `review-codex → lib/evidence`, `req-doctor → lib/evidence`, `req-commit → lib/evidence`로 **전부 단방향**이다. `lib/scratch.ts`가 leaf로 남은 것과 같은 규율이다(scratch.ts:13-15).
 - **호출자 계약은 한 문장**: `durableDesignEvidence(...)` 는 "승인된 design evidence를 내구화한다"만 노출한다. 호출자는 매니페스트 형식·stage 목록·멱등 판정을 알지 못한다.
 
 ### DEC-2 — `archive_inventory`로 needs-fix까지 영속화

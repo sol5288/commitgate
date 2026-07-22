@@ -8,7 +8,9 @@
 
 ## Phase 1 — 공유 evidence 모듈 추출 (`phase-1-evidence-module`)
 
-범위: 매니페스트 모델·헬퍼(`MANIFEST_KEYS`·`ManifestEntry`·`buildManifestEntry`·`serializeManifestLine`·`validateManifest`·`expectedArchivePaths`·`manifestHasConsumed` 및 그 보조 함수)를 신규 **`scripts/req/lib/evidence.ts`** 로 이동하고 `req-commit.ts`는 **re-export**로 하위호환 유지(DEC-1). 신규 모듈은 `review-codex`에서 **`import type`만** 사용해 런타임 순환을 만들지 않는다.
+범위: 매니페스트 모델·헬퍼(`MANIFEST_KEYS`·`ManifestEntry`·`buildManifestEntry`·`serializeManifestLine`·`validateManifest`·`expectedArchivePaths`·`manifestHasConsumed`)와 **그 런타임 의존**(`archiveBaseName`·`isValidIsoInstant`·`isConfinedArchivePath`·`SHA256_RE`·`GIT_OID_RE`·`escapeRegExp`·`userConfirmProblem`)을 신규 **`scripts/req/lib/evidence.ts`** 로 이동하고, 원래 모듈(`req-commit`·`review-codex`·`req-doctor`)은 **re-export**로 하위호환 유지(DEC-1).
+
+신규 모듈의 **런타임 import는 `lib/scratch.ts`(leaf)뿐**이고 타입만 `import type`으로 가져와 순환을 만들지 않는다. 검증: `lib/evidence.ts`에 `from './review-codex'`·`from './req-doctor'`·`from './req-commit'` **런타임 import가 0건**임을 테스트로 고정한다(타입 전용 import는 허용).
 
 🔴 **동작 변경 0** — 이 phase의 성공 기준은 "기존 테스트가 **한 줄도 고치지 않고** 그대로 그린"이다. 테스트를 고쳐야 한다면 그것은 순수 이동이 아니라는 신호다.
 
