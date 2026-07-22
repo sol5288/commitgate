@@ -157,6 +157,9 @@ const git = (dir: string, args: string[]): string =>
 function tmpRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'cg-porcelain-'))
   git(dir, ['init', '-q'])
+  // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+  git(dir, ['config', 'user.email', 't@t.t'])
+  git(dir, ['config', 'user.name', 't'])
   return dir
 }
 

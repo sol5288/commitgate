@@ -308,6 +308,9 @@ describe('req:new — --successor-of lineage(REQ-2026-029)', () => {
   const fixture = (parentReplace: boolean): string => {
     const dir = mkdtempSync(join(tmpdir(), 'req-new-succ-'))
     g(dir, ['init', '-q'])
+    // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+    g(dir, ['config', 'user.email', 't@t.t'])
+    g(dir, ['config', 'user.name', 't'])
     g(dir, ['config', '--local', 'user.email', 't@t.invalid']); g(dir, ['config', '--local', 'user.name', 'T'])
     g(dir, ['config', '--local', 'commit.gpgSign', 'false'])
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }) + '\n')

@@ -380,6 +380,9 @@ describe('[REQ-2026-010 D4] init이 reviewPersonaPath를 req.config.json에 주�
   const tmpTarget = (): string => {
     const dir = mkdtempSync(join(tmpdir(), 'reqcfg-init-'))
     execFileSync('git', ['init', '-q'], { cwd: dir })
+    // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+    execFileSync('git', ['config', 'user.email', 't@t.t'], { cwd: dir })
+    execFileSync('git', ['config', 'user.name', 't'], { cwd: dir })
     // Stage B(REQ-2026-014 D14): runInit은 `devDependencies.commitgate` 선언을 요구한다(선행 `npm i -D commitgate`).
     writeFileSync(
       join(dir, 'package.json'),

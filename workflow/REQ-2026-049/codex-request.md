@@ -8,6 +8,16 @@ REQ-2026-048이 `main`(`cc1e755`)에 통합됐으나 **P1은 해결되지 않았
 
 **결함 B — DONE 게이트 fail-open.** `verifyCommittedDesignEvidence`가 커밋된 매니페스트에 `validateManifest`를 돌리지 않고 마지막 design 행만 느슨히 읽는다. 그래서 `archive_inventory: []`(공허 참), `response_path`를 HEAD의 임의 blob으로 지정, `response_sha256` 불일치가 **전부 통과**한다. "HEAD blob에서 매니페스트·아카이브·SHA를 검증한다"는 완료기준을 충족하지 못한다.
 
+## ⚠️ 리뷰어 필독 — phase 경계
+
+이 REQ는 **phase별로 따로 커밋·리뷰**된다(02-plan). **현재 staged diff에 없다고 해서 REQ가 그것을 안 한다는 뜻이 아니다.**
+
+- **phase-1 — 테스트 환경·fixture 전용.** `vitest.config.ts` setupFiles + `tests/setup/git-hermetic.ts` + 저장소 헬퍼 8종의 repo-local identity. **production 런타임은 한 줄도 바꾸지 않는다.** 결함 A(CI 6/9 실패)만 다룬다.
+- **phase-2 — DONE 게이트 fail-closed(결함 B).** `verifyCommittedDesignEvidence` 8단계 재작성 · `validateManifest` 호출 · top-level SHA 대조 · inventory 비어있지 않음 · HEAD 아카이브 **집합 정확 일치** · `headArchiveNames` 포트 추가 · 음성 대조 11종. **이 코드는 phase-1 diff에 없는 것이 정상이다.**
+- **phase-3 — 문서 보정.**
+
+phase-1을 별도로 둔 이유: 결함 A는 **결함 B의 수정을 검증할 수 없게 만드는 선행 장애**다. 전역 identity에 기대는 테스트 위에서 게이트를 고치면 그 검증이 다시 환경에 좌우된다. 그래서 오라클(전역 차단)을 먼저 세운다.
+
 ## 변경 요약
 
 3 phase.
