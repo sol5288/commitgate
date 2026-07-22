@@ -21,9 +21,12 @@ CommitGate는 `state.json`을 **의도적으로 커밋하지 않는다**(작업 
 4. **아키텍처**: `req-commit`과 `review-codex`가 **서로 import하지 않는다**. 매니페스트 검증·design evidence 커밋은 **공유 깊은 모듈**에 있고, 호출자는 "승인된 design evidence를 내구화한다"만 안다.
 5. **needs-fix 포함**: design manifest 행에 **`archive_inventory: [{response_path, sha256}]`** 를 두고, **그 목록의 모든 아카이브를 함께 stage·commit**한다. 단순 파일명 sweep에 의존하지 않는다.
 6. **DONE 게이트(신규 티켓 전용)**: 모든 phase가 끝나 `req:next`가 DONE을 내기 **직전**, **`HEAD`의 Git blob**에서 매니페스트 design 행·아카이브·SHA를 검증한다. 없으면 `DONE` 대신 **`BLOCKED` + 복구 명령**을 반환한다.
+   - 🔴 **신규/legacy 판별 marker도 `HEAD` blob에서 읽는다** — 워킹 `state.json`(비커밋 캐시)의 marker는 판정에 쓰지 않는다. 캐시 소실로 신규 티켓이 legacy로 오인돼 게이트가 우회되면 안 된다. HEAD blob을 읽을 수 없으면 **보수적으로 엄격(BLOCKED)** 이다.
+   - marker가 켜진 티켓의 design 행에 **`archive_inventory`가 없으면 BLOCKED**다(매니페스트 검증 자체는 필드 부재를 허용하되, 완료 판정은 엄격).
 7. **벽돌 금지**: 이 검사를 `req:doctor`나 일반 `req:commit`의 **FAIL 게이트로 넣지 않는다**. terminal `req:next`의 완료 판정에서만 fail-closed이며, **marker가 없는 legacy 티켓은 기존 DONE과 호환**된다.
-8. **실패 주입 테스트**: 아카이브 작성 후 커밋 실패 · 재시도 · 중복 실행에서 상태가 어긋나지 않고 복구 경로가 동작함을 고정한다.
-9. `tsc --noEmit` 0 · 전체 단위 그린 · `req:doctor` PASS · 각 phase Codex 리뷰 승인. (참고: 로컬 전체 스위트가 환경에 따라 장시간 무출력으로 멎을 수 있다 — 그 경우 **CI 9 job이 정본**이다.)
+8. **부분 상태 복구**: 멱등 판정은 **`HEAD` 기준**이다. 매니페스트 append·stage까지 되고 `git commit`만 실패한 상태에서 재시도하면 **중복 append 없이 stage·commit을 다시 수행**해 HEAD 증거를 복구한다. 온디스크 엔트리 존재만으로 skip하지 않는다.
+9. **실패 주입 테스트**: 아카이브 작성 후 커밋 실패 · 재시도 복구 · 중복 실행 · 부분 상태에서 상태가 어긋나지 않음을 고정한다.
+10. `tsc --noEmit` 0 · 전체 단위 그린 · `req:doctor` PASS · 각 phase Codex 리뷰 승인. (참고: 로컬 전체 스위트가 환경에 따라 장시간 무출력으로 멎을 수 있다 — 그 경우 **CI 9 job이 정본**이다.)
 
 ## 범위 (MVP)
 

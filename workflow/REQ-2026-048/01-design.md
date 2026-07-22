@@ -24,18 +24,43 @@ design 매니페스트 행에 **선택 필드** `archive_inventory: [{ response_
 
 - **왜 파일명 sweep이 아닌가**: 디스크 스캔은 실행 시점 디렉터리 상태에 의존해 **재현 불가**다(나중에 파일이 늘거나 지워지면 결과가 달라진다). 매니페스트에 경로+sha로 박으면 **사후 감사에서 재검증**할 수 있고 DONE 게이트(DEC-4)가 그 목록을 그대로 오라클로 쓴다.
 - **검증**: `MANIFEST_KEYS`에 `archive_inventory` 추가. 각 항목은 `response_path`가 **현재 티켓 `responses/` 직계 아카이브**(`isConfinedArchivePath`)이고 `sha256`이 64hex여야 한다. 🔴 **인벤토리는 needs-fix 이름을 허용**한다 — 행 최상위 `response_path`의 "approved만" 규칙(:156-163)은 **그대로 유지**한다(둘은 의미가 다르다: 최상위=소비된 승인, 인벤토리=그 승인에 이르는 라운드 전체).
-- **하위호환**: 필드 부재 = 유효. 기존 매니페스트·기존 티켓 무회귀.
+- **하위호환**: 필드 부재 = **매니페스트 검증상 유효**(기존 행·기존 티켓 무회귀). 🔴 단 **marker가 켜진 신규 티켓에서는 design 행에 `archive_inventory`가 없으면 DONE 게이트가 무조건 BLOCKED**다(design r01 관찰 1) — 검증의 관대함(legacy 호환)과 완료 판정의 엄격함(신규)을 분리해 둘 다 고정한다.
 - 인벤토리에는 **승인 아카이브도 포함**한다(자기 자신 포함) — DONE 게이트가 목록 하나만 보면 되도록.
+- **수집 범위(결정적 정의, design r01 관찰 2)**: 인벤토리 = **승인 시점**에 현재 티켓 `responses/` **직계**에 존재하는 **design 아카이브 전부**(`archiveBaseName('design', null)` 매처 — `design-rNN-(approved|needs-fix).json`, needs-fix 포함). round(rNN) 오름차순으로 정렬해 **디렉터리 읽기 순서에 비의존**하게 만든다(`expectedArchivePaths`와 동일 기법). sha는 그 시점의 파일 내용으로 계산한다.
+  - **재승인(2번째 design 행)**: 그 시점의 전부를 다시 담으므로 이전 라운드를 **포함**한다. 각 행이 "그 승인 시점의 완전한 상태"라는 의미로 일관되고, DONE 게이트는 **가장 마지막 design 행**을 본다. stale 아카이브를 골라내는 별도 규칙을 두지 않는다 — 그 판단은 재현 불가능한 휴리스틱이 되기 쉽다.
+  - 타 kind(phase) 아카이브는 매처가 걸러 내므로 인벤토리에 들어가지 않는다.
 
 ### DEC-3 — design 승인 경로 흡수(정상 경로에서 수동 단계 제거)
 `review-codex --kind design --run`이 **승인으로 끝나면** 그 자리에서 `durableDesignEvidence(...)`를 호출해 아카이브+매니페스트를 evidence commit한다.
 
-- **멱등**: 이미 동일 design 엔트리가 매니페스트에 있으면 skip(현행 `designFinalize`의 중복 판정 재사용).
+- 🔴 **멱등은 온디스크가 아니라 `HEAD` 기준으로 정의한다**(design r01 P1-2). 온디스크 매니페스트에 엔트리가 있다는 이유로 skip하면, **매니페스트 append·stage까지 되고 `git commit`만 실패한 부분 상태**에서 재시도가 영구히 skip되어 HEAD 증거를 **결코 복구하지 못하고** DONE 게이트가 영영 BLOCKED가 된다. 판정 순서는 다음과 같다:
+
+  | 온디스크 엔트리 | HEAD에 내구화됨(엔트리 + 인벤토리 blob·sha 일치) | 동작 |
+  |---|---|---|
+  | 없음 | — | append → stage(인벤토리 전량 + 매니페스트) → commit |
+  | 있음 | 예 | **진짜 no-op** |
+  | 있음 | 아니오 | **append 없이** stage → commit **재시도**(부분 상태 복구) |
+
+  즉 "이미 기록됨"의 판정 기준은 **커밋된 blob**이다. 온디스크 중복 append만 막고, 커밋 재시도는 막지 않는다.
 - 🔴 **커밋 실패는 승인 판정을 뒤집지 않는다**. 기록 실패가 게이트 결정을 바꾸면 그것이 계약 위반이다(측정 로그 R8과 같은 취지). 실패 시 **경고 + 복구 명령**(`req:commit <id> --finalize-design --run`)을 출력하고 종료 코드는 승인 경로 그대로 둔다. 그 "승인됨·미커밋" 창은 **DEC-4의 DONE 게이트가 잡는다**.
 - **`--finalize-design`은 유지**하되 정상 절차에서 안내하지 않는다 — 중단·실패 복구 전용. 두 경로가 **같은 `durableDesignEvidence`** 를 호출하므로 동작이 갈라질 수 없다.
 
 ### DEC-4 — `req:next` DONE 직전 **커밋된 blob** 검증 (신규 티켓 전용)
-`req:new`가 새 티켓 `state.json`에 내구성 marker(`evidence_durability_required: true`)를 심는다. 모든 phase가 끝나 DONE을 내기 직전:
+
+🔴 **marker도 `HEAD`에서 읽는다 — 워킹트리 `state.json`을 신뢰하지 않는다**(design r01 P1-1). marker를 비커밋 캐시에서 읽으면, 캐시 재생성·브랜치 전환으로 marker가 사라진 신규 티켓이 **legacy로 오인**되어 HEAD에 design 증거가 없어도 DONE이 나온다(완료기준 6 위반).
+
+- `req:new`는 스캐폴드 `state.json`에 `evidence_durability_required: true`를 심고, **그 스캐폴드를 커밋한다**(기존 동작). 따라서 marker는 **`git show HEAD:<ticketRel>/state.json`** 의 blob에 영속한다 — 이후 런타임 변경분이 커밋되지 않아도, 워킹 파일이 지워져도 **HEAD blob은 남는다**.
+- 판별 규칙(보수적):
+
+  | HEAD blob의 `state.json` | 판정 |
+  |---|---|
+  | 읽힘 · marker=true | **신규 → 엄격 검증**(미충족 시 BLOCKED) |
+  | 읽힘 · marker 부재/false | legacy → 기존 DONE 호환 |
+  | **읽기 불가·파손** | 🔴 **엄격(BLOCKED)** — 완료 선언은 검증 가능한 상태에서만 한다. 티켓 스캐폴드가 커밋돼 있지 않다는 뜻이므로 어차피 DONE 대상이 아니다 |
+
+- **워킹 `state.json`의 marker는 판정에 쓰지 않는다**(있어도 무시). 판정 입력은 HEAD blob 하나뿐이라 소실로 우회할 표면이 없다.
+
+모든 phase가 끝나 DONE을 내기 직전:
 
 1. **`HEAD`의 blob**에서 `approvals.jsonl`을 읽는다(`git show HEAD:<ticketRel>/responses/approvals.jsonl` — **온디스크 금지**. D17이 온디스크를 봐서 이 갭이 조용했다).
 2. design 행이 있는지, 그 행의 `response_path`와 `archive_inventory` 항목이 **HEAD에 blob으로 존재**하고 **sha가 일치**하는지 확인한다.
