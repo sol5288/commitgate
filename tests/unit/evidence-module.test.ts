@@ -170,6 +170,7 @@ function fakePorts(opts: { failCommit?: boolean } = {}): EvidencePorts & {
     sha256: (p) => sha(disk.get(p) ?? ''),
     headText: (p) => head.get(p) ?? null,
     headBlobSha256: (p) => (head.has(p) ? sha(head.get(p) as string) : null),
+    headArchivePaths: () => [...head.keys()].filter((p) => /-r\d{2,}-(approved|needs-fix)\.json$/.test(p)),
     headCommitSha: () => OID40,
     commitPaths: (paths, msg) => {
       pending = [...paths]
@@ -474,48 +475,107 @@ describe('[REQ-2026-048] verifyCommittedDesignEvidence — HEAD blob만 본다',
       ],
       ...over,
     })}\n`
-  const ports = (head: Record<string, string | null>): Pick<EvidencePorts, 'headText' | 'headBlobSha256'> => ({
-    headText: (p) => head[p] ?? null,
-    headBlobSha256: (p) => (p === NF ? S_NEEDSFIX : p === AP ? S_APPROVED : null),
+  const STATE = `${T3}/state.json`
+  const OK_STATE = JSON.stringify({ id: 'REQ-2026-001', phases: [] })
+  type VPorts = Pick<EvidencePorts, 'headText' | 'headBlobSha256' | 'headArchivePaths'>
+  /** 기본 HEAD: state OK · 매니페스트 지정 · design 아카이브 2종 존재(sha 일치). */
+  const ports = (over: Partial<{ state: string | null; manifest: string | null; archives: string[]; sha: (p: string) => string | null }> = {}): VPorts => {
+    const state = 'state' in over ? over.state : OK_STATE
+    const manifest = 'manifest' in over ? over.manifest : row()
+    const archives = over.archives ?? [NF, AP]
+    const sha = over.sha ?? ((p: string): string | null => (p === NF ? S_NEEDSFIX : p === AP ? S_APPROVED : null))
+    return {
+      headText: (p) => (p === STATE ? (state ?? null) : p === MAN ? (manifest ?? null) : null),
+      headBlobSha256: sha,
+      headArchivePaths: () => archives,
+    }
+  }
+  const bad = (o: Parameters<typeof ports>[0], match: RegExp): void => {
+    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports(o) })
+    expect(r.durable, `durable이면 안 된다 — reason=${r.reason}`).toBe(false)
+    expect(r.reason).toMatch(match)
+  }
+
+  it('완비 → durable(위양성 없음)', () => {
+    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports() })
+    expect(r.durable, r.reason).toBe(true)
   })
 
-  it('완비 → durable', () => {
-    expect(verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({ [MAN]: row() }) }).durable).toBe(true)
+  // ── HEAD state 해석 ──
+  it('HEAD state 부재·파손·phases 비배열 → 미완', () => {
+    bad({ state: null }, /state\.json 없음/)
+    bad({ state: '{not json' }, /파싱 실패/)
+    bad({ state: JSON.stringify({ phases: 'nope' }) }, /phases가 배열이 아님/)
   })
-  it('커밋된 매니페스트 없음 → 미완', () => {
-    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({}) })
-    expect(r.durable).toBe(false)
-    expect(r.reason).toContain('커밋된')
+
+  it('커밋된 매니페스트 없음 → 미완', () => bad({ manifest: null }, /approvals\.jsonl 없음/))
+  it('design 행 없음 → 미완', () => bad({ manifest: `${JSON.stringify({ kind: 'phase', phase_id: 'p1' })}\n` }, /무결성 실패|design 승인 행이 없음/))
+
+  // ── 🔴 REQ-2026-049가 닫는 fail-open 4종 ──
+  it('빈 archive_inventory → 미완(공허 참 회귀 고정)', () => bad({ manifest: row({ archive_inventory: [] }) }, /비어 있음/))
+
+  it('top-level response_sha256 불일치 → 미완(존재만으로 통과 금지)', () =>
+    bad({ manifest: row({ response_sha256: 'd'.repeat(64) }) }, /무결성 실패|SHA 불일치/))
+
+  it('response_path가 HEAD의 임의 blob(아카이브 아님) → 미완', () =>
+    bad({ manifest: row({ response_path: `${T3}/responses/approvals.jsonl` }) }, /무결성 실패/))
+
+  it('response_path가 needs-fix → 미완(approved 파일명 규칙)', () =>
+    bad({ manifest: row({ response_path: NF }) }, /무결성 실패/))
+
+  // ── 집합 완전성 ──
+  it('inventory에서 needs-fix 누락 → 미완', () =>
+    bad({ manifest: row({ archive_inventory: [{ response_path: AP, sha256: S_APPROVED }] }) }, /빠져 있음/))
+
+  it('inventory에 HEAD에 없는 잉여 항목 → 미완', () =>
+    bad(
+      {
+        manifest: row({
+          archive_inventory: [
+            { response_path: NF, sha256: S_NEEDSFIX },
+            { response_path: AP, sha256: S_APPROVED },
+            { response_path: `${T3}/responses/design-r09-needs-fix.json`, sha256: S_NEEDSFIX },
+          ],
+        }),
+      },
+      /HEAD에 없는 항목/,
+    ))
+
+  it('타 티켓 경로·extra field 주입 → 미완(validateManifest)', () => {
+    bad({ manifest: row({ archive_inventory: [{ response_path: 'workflow/REQ-2026-999/responses/design-r01-approved.json', sha256: S_APPROVED }] }) }, /무결성 실패/)
+    bad({ manifest: row({ evil: 1 }) }, /무결성 실패/)
   })
-  it('design 행 없음 → 미완', () => {
-    const phaseOnly = `${JSON.stringify({ kind: 'phase' })}\n`
-    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({ [MAN]: phaseOnly }) })
-    expect(r.durable).toBe(false)
-    expect(r.reason).toContain('design 승인 행이 없음')
+
+  it('매니페스트 malformed → 미완', () => bad({ manifest: '{not json\n' }, /무결성 실패/))
+
+  /**
+   * 인벤토리 항목의 SHA가 HEAD blob과 어긋나면 미완.
+   * (경로가 HEAD에 아예 없는 경우는 7단계의 집합 일치가 먼저 "잉여"로 잡는다 — 8단계의 null 분기는
+   *  도달 불가한 이중 방어다. 도달 불가 분기를 억지로 만드는 테스트는 두지 않는다.)
+   */
+  it('인벤토리 항목 SHA 불일치 → 미완', () => {
+    bad({ sha: (p) => (p === NF ? 'f'.repeat(64) : p === AP ? S_APPROVED : null) }, /SHA 불일치/)
   })
-  /** marker 켜진 티켓에서는 구버전(인벤토리 없는) 행을 완비로 보지 않는다. */
-  it('archive_inventory 없음 → 미완(재-finalize 유도)', () => {
-    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({ [MAN]: row({ archive_inventory: undefined }) }) })
-    expect(r.durable).toBe(false)
-    expect(r.reason).toContain('archive_inventory 없음')
-  })
-  it('인벤토리 아카이브가 HEAD에 없음 → 미완', () => {
-    const missing = ports({ [MAN]: row() })
-    const r = verifyCommittedDesignEvidence({
-      ticketRel: T3,
-      ports: { headText: missing.headText, headBlobSha256: (p) => (p === AP ? S_APPROVED : null) },
-    })
-    expect(r.durable).toBe(false)
-    expect(r.reason).toContain('HEAD에 없음')
-  })
-  it('인벤토리 SHA 불일치 → 미완', () => {
-    const p0 = ports({ [MAN]: row() })
-    const r = verifyCommittedDesignEvidence({
-      ticketRel: T3,
-      ports: { headText: p0.headText, headBlobSha256: (p) => (p === NF ? 'f'.repeat(64) : S_APPROVED) },
-    })
-    expect(r.durable).toBe(false)
-    expect(r.reason).toContain('SHA 불일치')
+
+  /**
+   * ⚠️ phase_id **멤버십**만 무효화된다는 사실을 명시적으로 고정한다 — `state.json`이 재커밋되지 않아
+   * HEAD의 `phases`가 항상 `[]`이기 때문이다. 나머지 불변식은 위 케이스들이 전부 강제함을 보인다.
+   */
+  it('phase 행의 phase_id 멤버십은 검사하지 않는다(HEAD state가 알 수 없음)', () => {
+    const withPhase = `${JSON.stringify({
+      kind: 'phase',
+      phase_id: 'phase-not-in-head-state',
+      response_path: `${T3}/responses/phase-not-in-head-state-r01-approved.json`,
+      response_sha256: S_NEEDSFIX,
+      review_base_sha: OID40,
+      approved_tree: OID40,
+      approved_at: '2026-07-22T00:00:00.000Z',
+      consumed_at: '2026-07-22T00:00:01.000Z',
+      consumed_by_commit_sha: OID40,
+      user_commit_confirmed: null,
+    })}\n${row()}`
+    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({ manifest: withPhase }) })
+    expect(r.durable, r.reason).toBe(true)
   })
 })
 
@@ -532,7 +592,7 @@ describe('[REQ-2026-048] DONE 게이트 실제 git 통합 — marker·증거 모
       const respDir = join(dir, ...`${tRel}/responses`.split('/'))
       mkdirSync(respDir, { recursive: true })
       const statePath = join(dir, 'workflow', 'REQ-2026-001', 'state.json')
-      writeFileSync(statePath, JSON.stringify({ id: 'REQ-2026-001', evidence_durability_required: true }, null, 2))
+      writeFileSync(statePath, JSON.stringify({ id: 'REQ-2026-001', phases: [], evidence_durability_required: true }, null, 2))
       git(['add', '--', `${tRel}/state.json`])
       git(['commit', '-q', '-m', 'scaffold'])
 
@@ -540,7 +600,7 @@ describe('[REQ-2026-048] DONE 게이트 실제 git 통합 — marker·증거 모
       const stateRel = `${tRel}/state.json`
 
       // 🔴 워킹 캐시에서 marker를 지워도 HEAD blob 기준이므로 여전히 엄격하다(캐시 소실 우회 차단).
-      writeFileSync(statePath, JSON.stringify({ id: 'REQ-2026-001' }, null, 2))
+      writeFileSync(statePath, JSON.stringify({ id: 'REQ-2026-001', phases: [] }, null, 2))
       expect(isDurabilityRequired(ports.headText(stateRel))).toBe(true)
 
       // 증거 커밋 전 → 미완.
@@ -567,6 +627,82 @@ describe('[REQ-2026-048] DONE 게이트 실제 git 통합 — marker·증거 모
       })
       const v = verifyCommittedDesignEvidence({ ticketRel: tRel, ports })
       expect(v.durable, v.reason).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * 🔴 REQ-2026-049 — 게이트가 **온디스크를 보지 않음**을 실제 git으로 증명한다.
+ *
+ * HEAD에는 손상된 증거를 커밋해 두고 워킹 트리만 올바르게 고친다. 게이트가 워킹 파일을 조금이라도
+ * 참조하면 durable로 오판한다. REQ-048 구현이 D17과 같은 사각(온디스크 통과)에 빠지지 않았는지의
+ * 최종 확인이다.
+ */
+describe('[REQ-2026-049] 워킹 트리만 고치고 HEAD는 손상 → 여전히 미완', () => {
+  it('HEAD의 inventory가 비어 있으면 워킹 매니페스트가 완전해도 durable이 아니다', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-headonly-'))
+    try {
+      const git = (args: string[]): string => execFileSync('git', args, { cwd: dir, encoding: 'utf8' })
+      git(['init', '-q'])
+      git(['config', 'user.email', 't@t.t'])
+      git(['config', 'user.name', 't'])
+      const tRel = 'workflow/REQ-2026-001'
+      const ticket = join(dir, 'workflow', 'REQ-2026-001')
+      const respDir = join(ticket, 'responses')
+      mkdirSync(respDir, { recursive: true })
+      writeFileSync(join(ticket, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', phases: [] }, null, 2))
+
+      const nfBody = '{"status":"NEEDS_FIX"}\n'
+      const apBody = '{"status":"COMPLETE"}\n'
+      writeFileSync(join(respDir, 'design-r01-needs-fix.json'), nfBody)
+      writeFileSync(join(respDir, 'design-r02-approved.json'), apBody)
+      const shaOf = (s: string): string => createHash('sha256').update(Buffer.from(s)).digest('hex')
+      const NFP = `${tRel}/responses/design-r01-needs-fix.json`
+      const APP = `${tRel}/responses/design-r02-approved.json`
+
+      const rowFor = (inventory: { response_path: string; sha256: string }[]): string =>
+        `${JSON.stringify({
+          kind: 'design',
+          phase_id: null,
+          response_path: APP,
+          response_sha256: shaOf(apBody),
+          review_base_sha: 'a'.repeat(40),
+          design_hash: 'd'.repeat(64),
+          approved_at: '2026-07-22T00:00:00.000Z',
+          consumed_at: '2026-07-22T00:00:01.000Z',
+          consumed_by_commit_sha: 'a'.repeat(40),
+          user_commit_confirmed: null,
+          archive_inventory: inventory,
+        })}\n`
+
+      // HEAD에는 **손상된**(빈 inventory) 매니페스트를 커밋한다.
+      writeFileSync(join(respDir, 'approvals.jsonl'), rowFor([]))
+      git(['add', '-A'])
+      git(['commit', '-q', '-m', 'corrupt evidence'])
+
+      const ports = createEvidencePorts(dir, `${tRel}/responses`)
+      const before = verifyCommittedDesignEvidence({ ticketRel: tRel, ports })
+      expect(before.durable, before.reason).toBe(false)
+
+      // 워킹 트리만 **완전하게** 고친다(커밋하지 않는다).
+      writeFileSync(
+        join(respDir, 'approvals.jsonl'),
+        rowFor([
+          { response_path: NFP, sha256: shaOf(nfBody) },
+          { response_path: APP, sha256: shaOf(apBody) },
+        ]),
+      )
+      const after = verifyCommittedDesignEvidence({ ticketRel: tRel, ports })
+      expect(after.durable, `워킹 트리를 참조하고 있다 — reason=${after.reason}`).toBe(false)
+      expect(after.reason).toMatch(/비어 있음/)
+
+      // 커밋하면 비로소 durable이 된다(위양성 없음 확인).
+      git(['add', '-A'])
+      git(['commit', '-q', '-m', 'fix evidence'])
+      const fixed = verifyCommittedDesignEvidence({ ticketRel: tRel, ports })
+      expect(fixed.durable, fixed.reason).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

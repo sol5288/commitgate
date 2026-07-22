@@ -393,6 +393,14 @@ export interface EvidencePorts {
    * 반드시 blob 바이트로 계산해야 커밋 이력과 기록된 sha가 맞는다.
    */
   headBlobSha256(repoRel: string): string | null
+  /**
+   * `HEAD`에 존재하는 해당 디렉터리의 아카이브 **repo-상대 경로** 목록(REQ-2026-049 DEC-4).
+   *
+   * 🔴 **basename이 아니라 전체 경로**를 반환한다 — 인벤토리의 `response_path`와 같은 단위여야 집합 비교가
+   *    모호해지지 않는다(하위 디렉터리를 허용하게 되어도 동명 파일 충돌이 생기지 않는다).
+   * 🔴 **워킹 디렉터리를 읽지 않는다.** 워킹 트리만 고치고 HEAD는 손상된 경우를 잡는 것이 이 검사의 목적이다.
+   */
+  headArchivePaths(responsesDirRel: string): string[]
   /** 현재 `HEAD` 커밋 SHA. */
   headCommitSha(): string
   /**
@@ -522,36 +530,100 @@ export function isDurabilityRequired(headStateText: string | null): boolean {
  */
 export function verifyCommittedDesignEvidence(args: {
   ticketRel: string
-  ports: Pick<EvidencePorts, 'headText' | 'headBlobSha256'>
+  ports: Pick<EvidencePorts, 'headText' | 'headBlobSha256' | 'headArchivePaths'>
 }): { durable: boolean; reason: string } {
   const { ticketRel, ports } = args
-  const manifestRel = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/approvals.jsonl`
-  const manifest = ports.headText(manifestRel)
-  if (manifest === null) return { durable: false, reason: `커밋된 ${manifestRel} 없음` }
+  const tRel = ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')
+  const manifestRel = `${tRel}/responses/approvals.jsonl`
+  const responsesRel = `${tRel}/responses`
+  const no = (reason: string): { durable: boolean; reason: string } => ({ durable: false, reason })
 
-  // 가장 마지막 design 행을 본다(재승인이 있으면 그것이 유효 승인이다).
+  // ── 1. HEAD state 해석 가능성 ──
+  // 완료 선언은 **해석 가능한 상태**에서만 한다. 파손·부재·`phases` 비배열이면 판단 근거가 없으므로 BLOCKED.
+  const headState = ports.headText(`${tRel}/state.json`)
+  if (headState === null) return no(`커밋된 ${tRel}/state.json 없음 — 티켓 스캐폴드가 HEAD에 없다`)
+  let statePhases: unknown
+  try {
+    const s = JSON.parse(headState) as Record<string, unknown>
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return no('커밋된 state.json이 객체가 아님')
+    statePhases = s.phases
+  } catch {
+    return no('커밋된 state.json 파싱 실패(파손)')
+  }
+  if (!Array.isArray(statePhases)) return no('커밋된 state.json의 phases가 배열이 아님 — phase 정보를 해석할 수 없다')
+
+  // ── 2. 매니페스트 전체 검증 ──
+  const manifest = ports.headText(manifestRel)
+  if (manifest === null) return no(`커밋된 ${manifestRel} 없음`)
+  /**
+   * ⚠️ `validPhaseIds`는 **매니페스트 자신의 phase 행 id**로 만든다 → phase_id **멤버십 검사만** 무효화된다.
+   *
+   * 이유: `state.json`은 설계상 스캐폴드 이후 **재커밋되지 않으므로**(evidence 커밋은 pathspec으로 `responses/`만
+   * 담는다) HEAD의 `phases`는 항상 `[]`다. 그것으로 검사하면 **정상 증거가 전부 차단**된다(실측 확인).
+   * phase 행의 phase_id 바인딩은 커밋 시점에 `evidencePreflight`가 이미 강제한다.
+   *
+   * 🔴 무효화되는 것은 **이 한 가지뿐**이다. 스키마·경로 confinement·`-approved.json` 파일명·SHA 형식·
+   *    extra field·중복/주입·design 행 제약(phase_id=null·design_hash·approved_tree 금지)은 전부 그대로 강제된다.
+   */
+  const manifestPhaseIds: string[] = []
+  for (const line of manifest.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    try {
+      const e = JSON.parse(line) as { kind?: unknown; phase_id?: unknown }
+      if (e && e.kind === 'phase' && typeof e.phase_id === 'string') manifestPhaseIds.push(e.phase_id)
+    } catch {
+      // malformed는 아래 validateManifest가 잡는다
+    }
+  }
+  const problems = validateManifest(manifest, { ticketRel: tRel, validPhaseIds: manifestPhaseIds })
+  if (problems.length) return no(`커밋된 approvals.jsonl 무결성 실패: ${problems.join('; ')}`)
+
+  // ── 3. design 행 선택(재승인이 있으면 마지막이 유효 승인) ──
   let row: ManifestEntry | null = null
   for (const line of manifest.split('\n').map((l) => l.trim()).filter(Boolean)) {
     try {
       const e = JSON.parse(line) as ManifestEntry
       if (e && typeof e === 'object' && e.kind === 'design') row = e
     } catch {
-      // malformed 줄 무시
+      // 위에서 이미 걸러졌다
     }
   }
-  if (!row) return { durable: false, reason: '커밋된 approvals.jsonl에 design 승인 행이 없음' }
+  if (!row) return no('커밋된 approvals.jsonl에 design 승인 행이 없음')
 
-  // marker가 켜진 신규 티켓에서는 인벤토리 부재를 **엄격히** 막는다(검증의 관대함과 완료 판정의 엄격함 분리).
-  if (!Array.isArray(row.archive_inventory))
-    return { durable: false, reason: 'design 행에 archive_inventory 없음(구버전 형식 — 재-finalize 필요)' }
+  // ── 4. top-level SHA 대조 ── 🔴 "존재"가 아니라 "일치"를 본다.
+  const approvedHeadSha = ports.headBlobSha256(row.response_path)
+  if (approvedHeadSha === null) return no(`승인 아카이브가 HEAD에 없음: ${row.response_path}`)
+  if (approvedHeadSha !== row.response_sha256)
+    return no(`승인 아카이브 SHA 불일치(HEAD ≠ manifest): ${row.response_path}`)
 
-  if (ports.headBlobSha256(row.response_path) === null)
-    return { durable: false, reason: `승인 아카이브가 HEAD에 없음: ${row.response_path}` }
+  // ── 5. inventory 비어있지 않음 ── 🔴 `[]`는 `every()`가 공허 참이라 과거 구현이 통과시켰다.
+  const inv = row.archive_inventory
+  if (!Array.isArray(inv)) return no('design 행에 archive_inventory 없음(구버전 형식 — 재-finalize 필요)')
+  if (inv.length === 0) return no('archive_inventory가 비어 있음 — 라운드 증거가 하나도 기록되지 않았다')
 
-  for (const item of row.archive_inventory) {
+  // ── 6. 승인본이 정확한 SHA로 인벤토리에 포함 ──
+  const self = inv.find((i) => i.response_path === row.response_path)
+  if (!self) return no(`archive_inventory에 승인 아카이브가 없음: ${row.response_path}`)
+  if (self.sha256 !== row.response_sha256)
+    return no(`archive_inventory의 승인 아카이브 SHA가 manifest와 불일치: ${row.response_path}`)
+
+  // ── 7. HEAD의 design 아카이브 **전체 집합**과 정확히 일치(빠짐·잉여 모두 거부) ──
+  // 🔴 부분집합만 보면 needs-fix 라운드를 빼고도 통과한다 — 완전성이 이 게이트의 목적이다.
+  const designBase = archiveBaseName('design', null)
+  const headDesign = ports
+    .headArchivePaths(responsesRel)
+    .filter((p) => new RegExp(`^${escapeRegExp(designBase)}-r\\d{2,}-(approved|needs-fix)\\.json$`).test(p.split('/').pop() ?? ''))
+  const invPaths = new Set(inv.map((i) => i.response_path))
+  const headSet = new Set(headDesign)
+  const missing = [...headSet].filter((p) => !invPaths.has(p)).sort()
+  const extra = [...invPaths].filter((p) => !headSet.has(p)).sort()
+  if (missing.length) return no(`HEAD의 design 아카이브가 archive_inventory에 빠져 있음: ${missing.join(', ')}`)
+  if (extra.length) return no(`archive_inventory에 HEAD에 없는 항목이 있음: ${extra.join(', ')}`)
+
+  // ── 8. 각 인벤토리 항목의 SHA 일치 ──
+  for (const item of inv) {
     const actual = ports.headBlobSha256(item.response_path)
-    if (actual === null) return { durable: false, reason: `인벤토리 아카이브가 HEAD에 없음: ${item.response_path}` }
-    if (actual !== item.sha256) return { durable: false, reason: `인벤토리 아카이브 SHA 불일치: ${item.response_path}` }
+    if (actual === null) return no(`인벤토리 아카이브가 HEAD에 없음: ${item.response_path}`)
+    if (actual !== item.sha256) return no(`인벤토리 아카이브 SHA 불일치: ${item.response_path}`)
   }
   return { durable: true, reason: 'design 승인 증거가 HEAD에 완비됨' }
 }
