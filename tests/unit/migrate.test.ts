@@ -38,6 +38,9 @@ function snapshot(dir: string): Map<string, string> {
 function tmpStageA(opts?: { scripts?: Record<string, string>; noCommitgateDep?: boolean; files?: Record<string, string> }): string {
   const dir = mkdtempSync(join(tmpdir(), 'reqwf-migrate-'))
   execFileSync('git', ['init', '-q'], { cwd: dir })
+  // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+  execFileSync('git', ['config', 'user.email', 't@t.t'], { cwd: dir })
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: dir })
   const pkg: Record<string, unknown> = {
     name: 'x',
     version: '0.0.0',
@@ -265,6 +268,9 @@ describe('[migrate] fail-closed 경계', () => {
     const dir = mkdtempSync(join(tmpdir(), 'reqwf-migrate-nopkg-'))
     try {
       execFileSync('git', ['init', '-q'], { cwd: dir })
+      // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+      execFileSync('git', ['config', 'user.email', 't@t.t'], { cwd: dir })
+      execFileSync('git', ['config', 'user.name', 't'], { cwd: dir })
       expect(() => planMigrate({ dir, apply: false })).toThrow(/package\.json 없음/)
     } finally {
       cleanup(dir)

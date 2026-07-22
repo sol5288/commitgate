@@ -26,6 +26,9 @@ const inWrites = (plan: SyncPlan, rel: string): boolean => plan.writes.some((w) 
 
 function gitInit(dir: string): void {
   execFileSync('git', ['init', '-q'], { cwd: dir })
+  // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+  execFileSync('git', ['config', 'user.email', 't@t.t'], { cwd: dir })
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: dir })
 }
 
 /** KIT_SCHEMA_RELPATHS 2종을 shipped 원본으로(in-sync) 또는 stale 내용으로 씀. */

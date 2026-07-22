@@ -1953,6 +1953,9 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
     repos.push(repo)
     const git = gitOf(repo)
     git(['init', '-q'])
+    // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
     let reviewPersonaPath: string | null = null
     if (o.persona !== null) {
@@ -2167,6 +2170,9 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     repos.push(repo)
     const git = gitOf(repo)
     git(['init', '-q'])
+    // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
     let reviewPersonaPath: string | null = null
     if (o.persona !== null) {
@@ -3397,6 +3403,9 @@ describe('REQ-2026-027 phase-1 — legacy fail-closed(main near-e2e)', () => {
     const repo = mkdtempSync(join(tmpdir(), 'req027-legacy-'))
     const git = gitOf(repo)
     git(['init', '-q'])
+    // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
     // persona 비활성(temp repo엔 persona 파일이 없다) — 어차피 legacy throw가 먼저지만 config는 유효해야 한다.
     writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
@@ -3509,6 +3518,9 @@ describe('REQ-2026-027 phase-2 — attempt 배선(main near-e2e)', () => {
     const repo = mkdtempSync(join(tmpdir(), 'req027-attempt-'))
     const git = gitOf(repo)
     git(['init', '-q'])
+    // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
     // 실제 machine.schema.json을 repo에 복사(응답 구조 검증에 필요). persona 비활성.
     mkdirSync(join(repo, 'workflow'), { recursive: true })
@@ -3752,6 +3764,9 @@ describe('REQ-2026-028 phase-1 — 예산 게이트 강제(main near-e2e)', () =
     const repo = mkdtempSync(join(tmpdir(), 'req028-'))
     const git = gitOf(repo)
     git(['init', '-q'])
+    // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
     mkdirSync(join(repo, 'workflow'), { recursive: true })
     writeFileSync(join(repo, 'workflow', 'machine.schema.json'), readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'))

@@ -146,6 +146,9 @@ describe('[REQ-2026-040] injectQuickstart', () => {
 function tmpRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'cg-qs-'))
   execFileSync('git', ['init', '-q'], { cwd: dir })
+  // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+  execFileSync('git', ['config', 'user.email', 't@t.t'], { cwd: dir })
+  execFileSync('git', ['config', 'user.name', 't'], { cwd: dir })
   return dir
 }
 function cleanup(dir: string): void {

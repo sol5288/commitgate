@@ -147,6 +147,9 @@ function tmpTarget(opts?: {
   const g = opts?.withGit ?? 'real'
   if (g === 'real') {
     execFileSync('git', ['init', '-q'], { cwd: dir })
+    // REQ-2026-049: repo-local identity. 인라인 `-c`는 그 호출에만 적용돼 **피시험 코드의 커밋**을 보호하지 못한다.
+    execFileSync('git', ['config', 'user.email', 't@t.t'], { cwd: dir })
+    execFileSync('git', ['config', 'user.name', 't'], { cwd: dir })
     // hermetic: 전역 core.excludesFile·repo-local exclude가 ignore 경계 테스트에 새지 않게 무력화(phase-2 리뷰 P3).
     // 그러지 않으면 개발자 전역 excludes에 codex-response.json 등이 있으면 kit 규칙이 빠져도 positive 단언이 거짓 통과한다.
     const emptyExcludes = join(dir, '.git', 'info', 'empty-excludes')

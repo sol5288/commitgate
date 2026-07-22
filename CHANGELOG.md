@@ -12,7 +12,13 @@ design 매니페스트 행에 **`archive_inventory`**(각 아카이브의 경로
 
 **`req:next`가 완료를 선언하기 직전** `HEAD`의 Git blob에서 매니페스트 design 행·아카이브·SHA를 검증하고, 미완이면 `DONE` 대신 **`BLOCKED`와 복구 명령**을 반환합니다. 판별 marker(`evidence_durability_required`, `req:new`가 스캐폴드에 심음)도 **커밋된 blob**에서 읽어 캐시 소실로 우회되지 않습니다. 🔴 이 검사는 **`req:next`의 완료 판정에서만** fail-closed입니다 — `req:doctor`·일반 `req:commit`에는 넣지 않았습니다(doctor는 `req:commit`의 하드 게이트라 FAIL이면 기존 소비자의 모든 커밋이 벽돌이 됩니다). **0.9.8 이전에 만들어진 티켓은 검사 대상이 아니며 기존 DONE 동작을 유지합니다.**
 
-내부적으로는 매니페스트 모델·검증을 leaf 모듈 `scripts/req/lib/evidence.ts`로 추출해 `review-codex`↔`req-commit` 런타임 순환 없이 두 경로가 같은 구현을 공유하게 했고(그 순환이 흡수를 막던 구조적 원인입니다), 그 leaf 불변식을 테스트로 고정했습니다. 전체 테스트 1306 → 1348.
+내부적으로는 매니페스트 모델·검증을 leaf 모듈 `scripts/req/lib/evidence.ts`로 추출해 `review-codex`↔`req-commit` 런타임 순환 없이 두 경로가 같은 구현을 공유하게 했고(그 순환이 흡수를 막던 구조적 원인입니다), 그 leaf 불변식을 테스트로 고정했습니다.
+
+**DONE 게이트가 실제로 검증하는 것**(REQ-2026-049에서 fail-closed로 보강): `HEAD`의 Git blob만 보고 ① 커밋된 `state.json`이 해석 가능한지(부재·파손·`phases` 비배열이면 BLOCKED) ② 커밋된 `approvals.jsonl` 전체가 매니페스트 검증(스키마·경로 confinement·`-approved.json` 파일명·SHA 형식·예상 외 필드·중복/주입)을 통과하는지 ③ design 행의 `response_sha256`이 **HEAD blob의 SHA와 일치**하는지(존재 확인이 아니라 대조) ④ `archive_inventory`가 **비어 있지 않고** 승인 아카이브를 정확한 SHA로 포함하는지 ⑤ 인벤토리가 **HEAD에 있는 그 티켓 design 아카이브 전체 집합과 정확히 일치**하는지(빠짐·잉여 모두 거부) ⑥ 각 인벤토리 항목의 SHA가 HEAD blob과 일치하는지를 확인합니다. 초기 구현은 존재만 확인하고 빈 인벤토리를 통과시켜, 손상된 커밋 매니페스트가 완료 판정을 통과할 수 있었습니다.
+
+> 한 가지 예외가 있습니다: **phase 행의 `phase_id` 멤버십은 이 게이트가 검사하지 않습니다.** `state.json`은 설계상 스캐폴드 이후 재커밋되지 않아 `HEAD`의 `phases`가 항상 비어 있기 때문입니다. 그 바인딩은 커밋 시점에 `req:commit`의 evidence preflight가 이미 강제합니다.
+
+테스트 환경은 **global/system git config와 `EMAIL` 등 환경 유래 identity를 차단**합니다. 그러지 않으면 저장소-local identity를 빠뜨린 fixture가 개발자 머신의 전역 설정에 가려 **CI에서만 실패**합니다(실제로 그렇게 됐습니다). 전체 테스트 1306 → 1363.
 
 ## 0.9.7
 

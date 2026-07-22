@@ -74,6 +74,28 @@ export function createEvidencePorts(root: string, responsesDirRel: string): Evid
         return null // HEAD에 없는 경로
       }
     },
+    /**
+     * `HEAD`에 있는 해당 디렉터리의 아카이브 **repo-상대 경로**(REQ-2026-049 DEC-4).
+     *
+     * 🔴 `git ls-tree`는 **커밋 트리**를 읽는다 — 워킹 디렉터리를 전혀 보지 않는다. 그래서 "워킹 트리만
+     *    고치고 HEAD는 손상된" 경우를 잡는다. `-z`로 NUL 구분해 공백·비ASCII 경로에서도 안전하다
+     *    (`--name-only`의 기본 출력은 특수문자를 인용해 경로가 변형된다).
+     */
+    headArchivePaths(responsesDirRel) {
+      try {
+        const out = execFileSync('git', ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', responsesDirRel], {
+          cwd: root,
+          encoding: 'utf8',
+          maxBuffer: 64 * 1024 * 1024,
+        })
+        return out
+          .split('\0')
+          .map((p) => p.trim())
+          .filter((p) => p !== '' && isArchiveFileName(p.split('/').pop() ?? ''))
+      } catch {
+        return [] // HEAD에 그 경로가 없음
+      }
+    },
     headCommitSha() {
       return gitText(['rev-parse', 'HEAD']).trim()
     },
