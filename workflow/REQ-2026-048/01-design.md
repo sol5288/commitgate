@@ -1,13 +1,78 @@
-# REQ-2026-048 설계
+# REQ-2026-048 설계 — design 증거 영속화 (P1)
 
-> 정본 결정은 SSOT(해당 DEC). 본 문서는 그 결정을 현재 코드/구조에 어떻게 반영할지 기록.
+> 정본: 코덱스 판정·지시(확정·P1). 본 문서는 그 지시를 현재 코드/구조에 어떻게 반영할지 기록.
 
 ## 현재 상태(변경 대상)
 
+- **매니페스트 모델·헬퍼가 `scripts/req/req-commit.ts`에 있다** — `MANIFEST_KEYS`(:43), `ManifestEntry`(:72), `buildManifestEntry`(:90), `serializeManifestLine`(:119), `validateManifest`(:128), `expectedArchivePaths`(:203), `manifestHasConsumed`(:340).
+- **import 방향은 `req-commit` → `review-codex`** (loadState·validateVerdict·ApprovalEvidence 등). 따라서 `review-codex`가 `req-commit`을 import하면 **순환**이 된다 — 흡수(완료기준 2)를 그대로 하면 그 순환이 생긴다.
+- **`finalizeEvidenceAndConsume`(phase)** 는 `expectedArchivePaths(...)`로 그 phase의 **needs-fix + approved 전부**를 stage한다(:201 주석). **`designFinalize`** 는 `git add responsePath, approvals.jsonl`(:642) — **승인 아카이브 1건만**.
+- **design 승인 지점**: `review-codex.ts:1398-1404` — `design_approved=true`일 때 `design_approval_evidence`를 부착한다. 여기가 흡수의 자연스러운 지점이다.
+- **`validateManifest`는 extra field를 금지**한다(:150, 주입 차단) → 새 필드는 `MANIFEST_KEYS` 등재와 형식 검증이 함께 필요하다. 행 최상위 `response_path`는 **`-approved.json`만** 허용된다(:156-163).
+- **`req:next`** 의 `NextKind`에 `DONE`·`BLOCKED`가 이미 있다(:86). DONE 판정은 매니페스트를 보지 않는다.
+
 ## 핵심 설계 결정
+
+### DEC-1 — 공유 leaf 모듈 `scripts/req/lib/evidence.ts` 추출
+매니페스트 모델·검증과 **design evidence 내구화**를 이 모듈로 옮긴다. `req-commit.ts`는 **re-export**로 하위호환을 유지한다(기존 테스트·참조 무변경).
+
+- 🔴 **런타임 순환 없음**: 이 모듈은 `review-codex`에서 **`import type`만** 가져온다(`ApprovalEvidence`·`ReviewKind` 등 — 타입 import는 컴파일 시 소거된다). 런타임 간선은 `review-codex → lib/evidence`, `req-commit → lib/evidence` 단방향뿐이다. `lib/scratch.ts`가 leaf로 남은 것과 같은 규율이다(scratch.ts:13-15).
+- **호출자 계약은 한 문장**: `durableDesignEvidence(...)` 는 "승인된 design evidence를 내구화한다"만 노출한다. 호출자는 매니페스트 형식·stage 목록·멱등 판정을 알지 못한다.
+
+### DEC-2 — `archive_inventory`로 needs-fix까지 영속화
+design 매니페스트 행에 **선택 필드** `archive_inventory: [{ response_path, sha256 }]` 를 둔다. 그 라운드의 design 아카이브 **전부(needs-fix 포함)** 를 기록하고, finalize는 **그 목록의 파일을 stage·commit**한다.
+
+- **왜 파일명 sweep이 아닌가**: 디스크 스캔은 실행 시점 디렉터리 상태에 의존해 **재현 불가**다(나중에 파일이 늘거나 지워지면 결과가 달라진다). 매니페스트에 경로+sha로 박으면 **사후 감사에서 재검증**할 수 있고 DONE 게이트(DEC-4)가 그 목록을 그대로 오라클로 쓴다.
+- **검증**: `MANIFEST_KEYS`에 `archive_inventory` 추가. 각 항목은 `response_path`가 **현재 티켓 `responses/` 직계 아카이브**(`isConfinedArchivePath`)이고 `sha256`이 64hex여야 한다. 🔴 **인벤토리는 needs-fix 이름을 허용**한다 — 행 최상위 `response_path`의 "approved만" 규칙(:156-163)은 **그대로 유지**한다(둘은 의미가 다르다: 최상위=소비된 승인, 인벤토리=그 승인에 이르는 라운드 전체).
+- **하위호환**: 필드 부재 = 유효. 기존 매니페스트·기존 티켓 무회귀.
+- 인벤토리에는 **승인 아카이브도 포함**한다(자기 자신 포함) — DONE 게이트가 목록 하나만 보면 되도록.
+
+### DEC-3 — design 승인 경로 흡수(정상 경로에서 수동 단계 제거)
+`review-codex --kind design --run`이 **승인으로 끝나면** 그 자리에서 `durableDesignEvidence(...)`를 호출해 아카이브+매니페스트를 evidence commit한다.
+
+- **멱등**: 이미 동일 design 엔트리가 매니페스트에 있으면 skip(현행 `designFinalize`의 중복 판정 재사용).
+- 🔴 **커밋 실패는 승인 판정을 뒤집지 않는다**. 기록 실패가 게이트 결정을 바꾸면 그것이 계약 위반이다(측정 로그 R8과 같은 취지). 실패 시 **경고 + 복구 명령**(`req:commit <id> --finalize-design --run`)을 출력하고 종료 코드는 승인 경로 그대로 둔다. 그 "승인됨·미커밋" 창은 **DEC-4의 DONE 게이트가 잡는다**.
+- **`--finalize-design`은 유지**하되 정상 절차에서 안내하지 않는다 — 중단·실패 복구 전용. 두 경로가 **같은 `durableDesignEvidence`** 를 호출하므로 동작이 갈라질 수 없다.
+
+### DEC-4 — `req:next` DONE 직전 **커밋된 blob** 검증 (신규 티켓 전용)
+`req:new`가 새 티켓 `state.json`에 내구성 marker(`evidence_durability_required: true`)를 심는다. 모든 phase가 끝나 DONE을 내기 직전:
+
+1. **`HEAD`의 blob**에서 `approvals.jsonl`을 읽는다(`git show HEAD:<ticketRel>/responses/approvals.jsonl` — **온디스크 금지**. D17이 온디스크를 봐서 이 갭이 조용했다).
+2. design 행이 있는지, 그 행의 `response_path`와 `archive_inventory` 항목이 **HEAD에 blob으로 존재**하고 **sha가 일치**하는지 확인한다.
+3. 미충족이면 `DONE` 대신 **`BLOCKED`** + 복구 명령을 반환한다.
+
+- 🔴 **`req:doctor`·일반 `req:commit`에는 넣지 않는다.** doctor는 `req:commit`의 하드 게이트라 FAIL이면 기존 소비자의 모든 커밋이 벽돌이 된다. 이 검사는 **terminal `req:next` 완료 판정에서만** fail-closed다.
+- **legacy 호환**: marker가 없으면 검사하지 않고 **기존 DONE 그대로**. 신규 티켓에만 적용되므로 기존 소비자 무회귀.
+- **BLOCKED를 고른 이유**: `AWAIT_HUMAN`은 "사람 승인을 받으라"인데 여기 필요한 것은 승인이 아니라 **복구 실행**이다. `BLOCKED`가 정확한 의미이고 이미 진단 채널로 쓰인다(:182).
+
+### DEC-5 — 실패 주입 테스트
+`durableDesignEvidence`를 **git 어댑터 주입**으로 테스트 가능하게 두고 고정한다: ①아카이브 기록 후 `git commit` 실패 → 승인 판정 불변·복구 안내 출력 ②실패 후 `--finalize-design` 재시도로 정상 복구 ③중복 실행 시 매니페스트 중복 행 없음 ④부분 상태(매니페스트만 append되고 커밋 실패)에서 재실행이 무결성 오류를 내지 않음.
 
 ## Phase별 구현
 
+- **phase-1-evidence-module** — DEC-1. 순수 이동 + re-export. **동작 변경 0**(기존 테스트가 그대로 그린이어야 한다).
+- **phase-2-archive-inventory** — DEC-2. 필드·검증·인벤토리 빌더 + `designFinalize`가 인벤토리 전량 stage.
+- **phase-3-absorb-approval-path** — DEC-3 + DEC-5. 승인 경로 흡수·멱등·실패 주입 테스트.
+- **phase-4-done-gate** — DEC-4. marker(`req:new`) + `req:next` HEAD-blob 검증 → BLOCKED.
+- **phase-5-docs-release** — 문서(워크플로·문제해결 한/영)·CHANGELOG·버전.
+
 ## 변경 파일
 
+| Phase | 파일 |
+|---|---|
+| 1 | `scripts/req/lib/evidence.ts`(신규) · `scripts/req/req-commit.ts` · 관련 테스트 |
+| 2 | `scripts/req/lib/evidence.ts` · `scripts/req/req-commit.ts` · `tests/unit/req-commit.test.ts` |
+| 3 | `scripts/req/lib/evidence.ts` · `scripts/req/review-codex.ts` · `tests/unit/req-review-codex.test.ts` |
+| 4 | `scripts/req/req-new.ts` · `scripts/req/req-next.ts` · `scripts/req/lib/evidence.ts` · `tests/unit/req-next.test.ts` |
+| 5 | `docs/*`(한/영) · `CHANGELOG.md` · `package.json` |
+
+각 phase 코드 변경 ≤8파일(D18 권고 충족).
+
 ## 하위호환·안전
+
+- **phase 증거 경로 무변경** — `finalizeEvidenceAndConsume`·`expectedArchivePaths`는 건드리지 않는다.
+- **`archive_inventory` 부재 = 유효** — 기존 `approvals.jsonl`이 검증에서 깨지지 않는다.
+- **marker 부재 티켓은 DONE 동작 불변** — 신규 티켓에만 새 게이트가 붙는다.
+- **`req:doctor` 체크 목록 무변경** — 새 FAIL도 새 WARN도 추가하지 않는다.
+- **승인 판정 불변** — 커밋 실패가 리뷰 결과·exit code·`design_approved`를 바꾸지 않는다.
+- `req-commit.ts`의 기존 export는 re-export로 **시그니처 그대로** 유지되어 외부 참조·테스트가 깨지지 않는다.
