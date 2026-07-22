@@ -123,6 +123,35 @@ try {
   const ci = spawn.sync('git', ['check-ignore', '-q', '--', 'workflow/REQ-2026-001/codex-response.json'], { cwd: target })
   if (ci.status !== 0) throw new Error('smoke: workflow/.gitignore가 codex-response.json을 무시하지 못한다')
 
+  // 4b-2) **repo-root 런타임 스크래치**(REQ-2026-047). `appendReviewCallLog`가 소비자 루트의
+  //   `workflow/.review-calls.jsonl`에 리뷰마다 append하는데, 이 경로는 티켓 밖이라 `/REQ-*/…` 앵커에
+  //   걸리지 않고 D10 스크래치 허용목록(`reviewScratchPaths`)에도 없다 → **gitignore가 유일한 방어**다.
+  //   0.9.6은 루트 .gitignore에만 패턴을 넣고 배포 템플릿에 누락해, 소비자가 첫 리뷰를 돌린 뒤
+  //   D10 FAIL로 모든 커밋이 막혔다. 템플릿 **내용을 문자열로 단언하지 않는다** — 그러면 무효 패턴
+  //   (`workflow/.review-calls.jsonl`, 중첩에서 `workflow/workflow/…`)도 통과시킨다. git이 오라클이다.
+  //   ⚠️ `-q`가 아니라 **`-v`로 매칭 출처까지 단언**한다(phase-1 리뷰 P1). `check-ignore`는 global/system
+  //   excludes와 `.git/info/exclude`도 함께 적용하므로, 종료 코드만 보면 "무엇이 무시했는지"를 증명하지 못한다.
+  //   :102-106의 hermetic 설정이 그 원천들을 이미 무력화하지만(모의 global `*.jsonl` ignore를 주입하고
+  //   템플릿 행을 지운 상태에서 이 단언이 실제로 실패함을 확인했다), 그 불변식은 **20줄 위**에 있어
+  //   나중 편집이 조용히 깨뜨릴 수 있다. 출처를 직접 확인하면 오라클이 스스로를 증명한다.
+  writeFileSync(join(target, 'workflow', '.review-calls.jsonl'), '{"smoke":1}\n')
+  const ciLog = spawn.sync('git', ['check-ignore', '-v', '--', 'workflow/.review-calls.jsonl'], {
+    cwd: target,
+    encoding: 'utf8',
+  })
+  if (ciLog.status !== 0)
+    throw new Error(
+      'smoke: workflow/.gitignore가 .review-calls.jsonl을 무시하지 못한다 — templates/workflow.gitignore에 앵커형 `/.review-calls.jsonl` 누락(REQ-2026-047)',
+    )
+  // `-v` 출력: `<source>:<line>:<pattern>\t<pathname>`. source가 절대경로(전역 excludes)면 드라이브 문자의
+  // `:`가 섞이므로 `:<숫자>:` 경계로 잘라낸다.
+  const ignoreSource = (/^(.*?):(\d+):/.exec((ciLog.stdout ?? '').split('\t')[0] ?? '')?.[1] ?? '').replace(/\\/g, '/')
+  if (ignoreSource !== 'workflow/.gitignore')
+    throw new Error(
+      `smoke: .review-calls.jsonl 을 무시한 규칙의 출처가 workflow/.gitignore 가 아니다(출처=${ignoreSource || '불명'}) — ` +
+        '배포 템플릿 규칙이 아니라 다른 ignore 원천이 매칭했다. 이 상태면 clean consumer에서 P0가 재발한다(REQ-2026-047)',
+    )
+
   // ── 4c) **Stage B 인수 기준(REQ-2026-014)** — packed 설치본에서만 드러나는 것들.
   const pkgAfter = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'))
 
