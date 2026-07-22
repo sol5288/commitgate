@@ -15,7 +15,8 @@ REQ-2026-025가 도입한 review-call 측정 로그 `workflow/.review-calls.json
 1. `templates/workflow.gitignore`가 `workflow/.review-calls.jsonl`을 무시한다. 패턴은 **앵커형 `/.review-calls.jsonl`** 이다 — root `.gitignore`의 `workflow/.review-calls.jsonl` 형태를 복사하지 않는다(중첩 gitignore에서 `workflow/workflow/…`를 찾아 무효).
 2. 회귀 가드가 **문자열 비교가 아니라** 실제 소비자 경로로 고정된다: **packed tarball → 실제 `init` → `git check-ignore workflow/.review-calls.jsonl`**. 기존 `scripts/smoke.mjs`의 같은 경로를 확장한다.
 3. `reviewScratchPaths`는 **변경하지 않는다**. 이 로그를 D10 스크래치에 넣으면 배포 ignore 누락 자체를 D10이 숨긴다.
-4. 기존 설치본 백필: **기본 `sync` 동작을 바꾸지 않고**, 명시적 opt-in `commitgate sync --gitignore --apply`가 **누락된 kit 규칙 행만 멱등 append**한다. 사용자 정책 행을 덮거나 재정렬하지 않으며, 이미 존재하면 no-op.
+4. 기존 설치본 백필: **기본 `sync` 동작을 바꾸지 않고**, 명시적 opt-in `commitgate sync --gitignore --apply`가 **누락된 kit 규칙 행만 멱등 append**한다. 사용자 정책 행을 덮거나 재정렬하지 않으며, **정확한 형태로** 이미 존재하면 no-op. 대상 파일 부재 시 kit 템플릿 전체로 생성한다.
+   - 🔴 **존재 판정은 Git ignore 의미론을 보존한다**: 후행 `\r`·후행 공백만 제거하고 **앞 공백은 패턴의 일부로 보존**한다. ` /.review-calls.jsonl`(앞 공백)처럼 Git이 다르게 해석하는 행은 **누락으로 판정해 정확한 규칙을 append**해야 하며, 이 재현 케이스가 실제 `git check-ignore`로 단위 테스트에 고정된다.
 5. doctor가 "해당 경로가 실질적으로 ignore되지 않아 다음 review 뒤 D10을 막는다"를 **WARN**으로 알린다. **절대 FAIL이 아니다.**
 6. 런타임 생성 파일 인벤토리 표(생성 위치 / ignore 정책 / init 배포 자산 / sync 소유자 / Git 영속 여부)가 문서화되고, 실제 packed-consumer 검사로 고정된다.
 7. backfill matrix가 검증된다: 신규 설치 · 기존 설치 업그레이드 · **사용자 수정** `workflow/.gitignore` · global ignore 존재 환경.

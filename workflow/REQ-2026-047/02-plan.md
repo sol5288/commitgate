@@ -14,9 +14,9 @@ Exit: 변경 = 위 2파일 · `npm run smoke` 그린(실제 tarball 경로) · e
 
 ## Phase 2 — `commitgate sync --gitignore` opt-in 백필 (`phase-2-sync-gitignore`)
 
-범위: `bin/sync.ts`에 `--gitignore` 축 추가(DEC-4) — plan/render/apply. **기본 sync 동작 무변경**, additive append 전용(누락된 kit 규칙 행만 말미 추가), 정규화 비교로 **멱등**, 사용자 행 수정·삭제·재정렬 금지, `--apply` 없이는 쓰지 않음.
+범위: `bin/sync.ts`에 `--gitignore` 축 추가(DEC-4) — plan/render/apply. **기본 sync 동작 무변경**, additive append 전용(누락된 kit 규칙 행만 말미 추가), 사용자 행 수정·삭제·재정렬 금지, `--apply` 없이는 쓰지 않음. 존재 판정은 **Git 의미론 보존** — 후행 `\r`·후행 공백만 제거하고 **앞 공백은 보존**한 정확 일치.
 
-단위 테스트로 고정: ①누락 행만 append ②이미 존재 시 no-op(중복 없음) ③사용자 커스텀 행·주석 보존 ④`--gitignore` 미지정 시 기존 동작 바이트 동일 ⑤`workflow/.gitignore` 부재 시 처리 ⑥dry-run 쓰기 0건.
+단위 테스트로 고정: ①누락 행만 append ②**정확한 형태로** 이미 존재 시 no-op(중복 없음) ③사용자 커스텀 행·주석 보존 ④`--gitignore` 미지정 시 기존 동작 바이트 동일 ⑤`workflow/.gitignore` **부재 시 kit 템플릿 전체로 생성**(모든 규칙 누락 취급) ⑥dry-run 쓰기 0건 ⑦🔴 **앞 공백 재현 케이스**: 대상 파일에 ` /.review-calls.jsonl`(앞 공백)만 있을 때 **누락으로 판정해 정확한 규칙을 append**하고, 그 결과 파일이 실제로 `workflow/.review-calls.jsonl`을 ignore함을 **실제 `git check-ignore`로** 확인(design r01 P1 회귀 고정) ⑧후행 공백만 다른 행은 동등으로 판정해 no-op.
 
 Exit: 변경 = `bin/sync.ts` · `tests/unit/sync.test.ts` · eslint 0 · `tsc --noEmit` 0 · 단위 그린 · `req:doctor` PASS · Codex phase 리뷰 승인.
 
