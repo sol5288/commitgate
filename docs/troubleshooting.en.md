@@ -35,6 +35,20 @@ git commit -m "chore: stop tracking review-call measurement log"
 
 The log is measurement-only and is not a commit artifact. The approval ledger (`responses/approvals.jsonl`) and approval archives are unaffected and remain committed.
 
+**`req:next` returns `BLOCKED` saying the committed design approval evidence is incomplete.**
+All phases are done, but the **design approval evidence never reached the commit history**. Integrating in this state leaves a fresh clone with no proof the design was ever reviewed and approved. Run the recovery command it prints:
+
+```
+npm run req:commit -- <REQ-id> --finalize-design --run
+```
+
+It is idempotent — if the evidence is already committed it does nothing, and if only the commit failed right after approval it **re-commits without duplicating the record**. From 0.9.8 the normal path commits design evidence automatically on approval (`req:review-codex --kind design --run`), so you only need this command when that commit failed.
+
+> This check runs **only in `req:next`'s completion decision**. Neither `req:doctor` nor a normal `req:commit` fails because of it — a deliberate boundary so existing repositories are never blocked from committing. Tickets created before 0.9.8 are not subject to the check (existing behavior preserved).
+
+**If a design review went through several needs-fix rounds, are those responses kept?**
+Yes. On approval the manifest row records an `archive_inventory` (path and SHA-256 of each archive), and **every archive in that list is committed together**. Before 0.9.8 only the single approved archive was committed, so needs-fix rounds never reached the commit history.
+
 ## Runtime-generated file inventory
 
 Files CommitGate creates in the consuming repository while it runs, and how each is handled.

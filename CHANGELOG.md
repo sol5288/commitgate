@@ -2,6 +2,18 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## 0.9.8
+
+**design 승인 증거가 커밋 이력에 확실히 남습니다** (REQ-2026-048). CommitGate는 `state.json`을 의도적으로 커밋하지 않으므로 저장소의 감사 정본은 `approvals.jsonl` 매니페스트와 커밋된 응답 아카이브뿐인데, 그 정본을 만드는 경로가 비대칭이었습니다 — **phase 증거는 매 `req:commit`이 자동 커밋**(needs-fix 라운드 포함)하는 반면 **design 증거는 수동 `req:commit --finalize-design`에만 의존**했고, 그마저 승인본 1건만 커밋했습니다. 게다가 그 수동 단계는 어떤 도구 출력·문서에도 안내되지 않았고, 커밋된 매니페스트를 확인하는 게이트도 없었습니다(D13은 미커밋 `state.json` 플래그를, D17은 **온디스크** 아카이브를 봅니다). 그 결과 REQ가 "전 phase 커밋 + 병합"에 도달해도 **설계 승인 증거가 커밋 이력에 전혀 남지 않을 수 있었고 아무 게이트도 불평하지 않았습니다** — 소비자 저장소에서 실측된 사고입니다.
+
+이제 성공한 `req:review-codex --kind design --run`이 **승인 아카이브·needs-fix 라운드·매니페스트를 그 자리에서 커밋**합니다. 운영자가 별도 명령을 기억할 필요가 없습니다. `--finalize-design`은 제거하지 않고 **멱등 복구 경로**로 남아 같은 구현을 호출하므로 두 경로의 동작이 갈라질 수 없습니다. 멱등 판정은 온디스크가 아니라 **`HEAD` 기준**입니다 — 매니페스트 기록·stage까지 되고 커밋만 실패한 부분 상태에서 재시도가 영구히 skip되어 증거를 복구하지 못하던 함정을 없앴습니다. 커밋 실패는 **승인 판정이나 종료 코드를 바꾸지 않고**(기록 실패가 게이트 결정을 뒤집으면 계약 위반입니다) 복구 명령을 안내합니다. 커밋은 **pathspec 범위**라 설계 문서를 stage한 채 승인하는 정상 경로에서도 무관한 staged 변경이 섞이지 않고 index에 그대로 남습니다.
+
+design 매니페스트 행에 **`archive_inventory`**(각 아카이브의 경로·SHA-256)를 추가해 그 승인에 이르는 **모든 라운드**를 함께 영속화합니다. 목록은 승인 시점 티켓 `responses/` 직계의 design 아카이브 전부를 라운드 오름차순으로 담아 디렉터리 읽기 순서에 비의존이며, 파일명 sweep과 달리 사후 감사에서 **재검증 가능**합니다. 선택 필드라 기존 매니페스트는 그대로 유효합니다.
+
+**`req:next`가 완료를 선언하기 직전** `HEAD`의 Git blob에서 매니페스트 design 행·아카이브·SHA를 검증하고, 미완이면 `DONE` 대신 **`BLOCKED`와 복구 명령**을 반환합니다. 판별 marker(`evidence_durability_required`, `req:new`가 스캐폴드에 심음)도 **커밋된 blob**에서 읽어 캐시 소실로 우회되지 않습니다. 🔴 이 검사는 **`req:next`의 완료 판정에서만** fail-closed입니다 — `req:doctor`·일반 `req:commit`에는 넣지 않았습니다(doctor는 `req:commit`의 하드 게이트라 FAIL이면 기존 소비자의 모든 커밋이 벽돌이 됩니다). **0.9.8 이전에 만들어진 티켓은 검사 대상이 아니며 기존 DONE 동작을 유지합니다.**
+
+내부적으로는 매니페스트 모델·검증을 leaf 모듈 `scripts/req/lib/evidence.ts`로 추출해 `review-codex`↔`req-commit` 런타임 순환 없이 두 경로가 같은 구현을 공유하게 했고(그 순환이 흡수를 막던 구조적 원인입니다), 그 leaf 불변식을 테스트로 고정했습니다. 전체 테스트 1306 → 1348.
+
 ## 0.9.7
 
 **소비자 저장소에서 review-call 측정 로그가 커밋을 막던 P0 수정 + 기존 설치본 백필** (REQ-2026-047). `req:review-codex`가 소비 저장소 루트에 남기는 측정 로그(`workflow/.review-calls.jsonl`)의 무시 규칙이 **배포 템플릿 `templates/workflow.gitignore`에 누락**돼 있었습니다(개발 저장소 자신의 루트 `.gitignore`에만 있었고, npm은 `.gitignore` 이름을 tarball에서 제외하므로 소비자에게 전달되지 않습니다). 그 결과 `commitgate init`한 저장소에서 리뷰를 한 번이라도 돌리면 로그가 untracked로 남아 **`req:doctor` D10이 FAIL하고 `req:commit`이 모든 커밋을 차단**했습니다. 템플릿에 앵커형 `/.review-calls.jsonl`을 추가해 **신규 설치는 즉시 해소**되고, 회귀는 문자열 비교가 아니라 **packed tarball → 실제 `init` → `git check-ignore -v`(매칭 출처까지 단언)** 로 `scripts/smoke.mjs`에 고정했습니다.

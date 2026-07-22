@@ -23,6 +23,7 @@ import {
   type NextInput,
   type NextTarget,
 } from '../../scripts/req/req-next'
+import { captureDesignBinding } from '../../scripts/req/review-codex'
 import type { WorkflowState } from '../../scripts/req/review-codex'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
 
@@ -1016,5 +1017,77 @@ describe('[REQ-2026-048] req:next DONE 게이트 — 커밋된 design 증거', (
     // 이 상태는 기존 fallback 으로도 BLOCKED 다 — 중요한 것은 **내 게이트가 원인이 아니라는 것**.
     expect(a.detail).not.toContain('--finalize-design')
     expect(a.detail).not.toContain('설계 승인 감사 증거')
+  })
+})
+
+/**
+ * phase-4 리뷰 관찰 대응 — `req:next` **main() 배선** 통합 검증(HEAD 읽기 → NextInput → BLOCKED).
+ * 순수 `resolveNext` 테스트는 판정을 고정하지만, main()이 HEAD blob에서 marker·증거를 실제로 읽어
+ * 그 판정에 연결하는 부분은 잡지 못한다.
+ */
+describe('[REQ-2026-048] req:next main() 배선 — HEAD 기준 DONE 게이트', () => {
+  const setupTerminal = (marker: boolean): string => {
+    const repo = mkdtempSync(join(tmpdir(), 'reqnext-dur-'))
+    const g = (args: string[]): string => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).replace(/\s+$/, '')
+    g(['init', '-q'])
+    g(['config', 'user.email', 't@t.t'])
+    g(['config', 'user.name', 't'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm' }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticket, { recursive: true })
+    for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), '# doc\n')
+    writeFileSync(join(ticket, 'state.json'), '{}\n')
+    g(['add', '-A'])
+    g(['commit', '-qm', 'baseline'])
+
+    // 종단 분기까지 가려면 **유효 design 승인**이 필요하다 — 해시는 커밋된 인덱스에서 실제로 계산한다.
+    const designHash = captureDesignBinding('workflow/REQ-2026-001', g).designHash
+    const state: Record<string, unknown> = {
+      id: 'REQ-2026-001',
+      phase: 'INTAKE',
+      phases: [{ id: 'p1', approved: true }],
+      approval_evidence_required: true,
+      review_series_model_version: 1,
+      design_approved: true,
+      design_approved_hash: designHash,
+      consumed_approvals: [
+        { approved_tree: 'a'.repeat(40), phase_id: 'p1', consumed_by_commit_sha: 'b'.repeat(40), approval_consumed_at: '2026-07-18T00:00:00Z' },
+      ],
+    }
+    if (marker) state['evidence_durability_required'] = true
+    writeFileSync(join(ticket, 'state.json'), JSON.stringify(state, null, 2) + '\n')
+    g(['add', '-A'])
+    g(['commit', '-qm', 'state'])
+    return repo
+  }
+
+  const runNext = (repo: string): string => {
+    const r = spawn.sync('npx', ['tsx', join(PACKAGE_ROOT, 'scripts', 'req', 'req-next.ts'), '2026-001', '--root', repo], {
+      cwd: PACKAGE_ROOT,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    })
+    return `${r.stdout ?? ''}${r.stderr ?? ''}`
+  }
+
+  it('marker 있는 신규 티켓 + 커밋된 design 증거 없음 → BLOCKED(복구 명령 포함)', () => {
+    const repo = setupTerminal(true)
+    try {
+      const out = runNext(repo)
+      expect(out).toContain('BLOCKED')
+      expect(out).toContain('--finalize-design')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('marker 없는 legacy 티켓은 게이트가 개입하지 않는다(무회귀)', () => {
+    const repo = setupTerminal(false)
+    try {
+      expect(runNext(repo)).not.toContain('--finalize-design')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 })
