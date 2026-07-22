@@ -20,6 +20,7 @@ import {
   findUnstagedOrUntracked,
   captureDesignBinding,
   designDocPaths,
+  REVIEW_CALL_LOG_REL,
   type WorkflowState,
   type Verdict,
   type ApprovalEvidence,
@@ -98,6 +99,13 @@ export interface DoctorInputs {
   //   undefined = 미계산(2-arg/legacy) → OK. [] = 없음/최신/대상없음 → OK. 비어있지 않음 → WARN.
   //   dev/dogfood(packageRootDiffers===false)면 D20처럼 skip. optional이어야 테스트 base 리터럴이 안 깨진다.
   quickstartMissing?: string[]
+  // D22(REQ-2026-047): repo-root 런타임 스크래치 경로 중 **ignore도 tracked도 아닌** 것(= 다음 review가 만들면 D10이 막는 것).
+  //   런타임이 소비 repo 루트에 만드는 스크래치(현재 `workflow/.review-calls.jsonl`)는 티켓 밖이라 `/REQ-*/` 앵커에
+  //   걸리지 않고 `reviewScratchPaths` 허용목록에도 없다 → **gitignore가 유일한 방어**다. 0.9.6 이하 설치본은 배포
+  //   템플릿에 그 규칙이 없어, 첫 리뷰 뒤 D10 FAIL로 커밋이 전부 막혔다.
+  //   undefined = 미계산(2-arg/legacy) → OK. [] = 전부 보호됨 → OK. 비어있지 않음 → WARN.
+  //   dev/dogfood(packageRootDiffers===false)면 D20/D21처럼 skip. optional이어야 테스트 base 리터럴이 안 깨진다.
+  repoRootScratchUnprotected?: string[]
 }
 
 /**
@@ -482,6 +490,32 @@ export function runChecks(inp: DoctorInputs): Check[] {
     })
   }
 
+  // D22(REQ-2026-047): repo-root 런타임 스크래치가 ignore도 tracked도 아님 → 다음 review 뒤 D10이 커밋을 막는다.
+  //
+  // 🔴 **level 상한은 WARN — 절대 FAIL이 아니다**(D19:425-428·D20:443-447·D21과 동일 근거). `req:commit`이 이 doctor를
+  //    exit≠0에 throw하는 하드 게이트로 spawn하므로, FAIL이면 백필 전까지 소비자의 모든 커밋이 벽돌이 된다.
+  //    더구나 이 드리프트는 **이미** D10 FAIL로 발현한다 — 신규 진단이 차단을 만드는 것이 아니라, 불투명한
+  //    `D10: unstaged/untracked workflow/.review-calls.jsonl`을 **행동 가능한 안내로 번역**하는 것이 역할이다.
+  //
+  // tracked인 경우는 여기서 경고하지 않는다(이미 커밋된 상태 = 다른 문제). 그 복구는 `git rm --cached` 절차로
+  //    troubleshooting 문서가 다룬다 — ignore 규칙만 넣어서는 tracked 파일이 빠지지 않기 때문이다.
+  if (inp.packageRootDiffers === false) {
+    c.push({ id: 'D22', level: 'OK', msg: 'repo-root 스크래치 보호 점검 불요(dev repo/dogfood — packageRoot === config root)' })
+  } else if (inp.repoRootScratchUnprotected === undefined) {
+    c.push({ id: 'D22', level: 'OK', msg: 'repo-root 스크래치 보호 점검 불요(2-arg/미계산)' })
+  } else if (inp.repoRootScratchUnprotected.length === 0) {
+    c.push({ id: 'D22', level: 'OK', msg: 'repo-root 런타임 스크래치가 모두 ignore(또는 tracked)됨' })
+  } else {
+    c.push({
+      id: 'D22',
+      level: 'WARN',
+      msg:
+        `${inp.repoRootScratchUnprotected.join(', ')} 이(가) gitignore로 무시되지 않습니다 — ` +
+        '다음 review가 이 파일을 만들면 **D10이 FAIL하여 커밋이 막힙니다**. ' +
+        '`commitgate sync --gitignore --apply` 로 배포 템플릿의 누락 규칙을 보강하세요(기존 행은 변경하지 않습니다, REQ-2026-047).',
+    })
+  }
+
   return c
 }
 
@@ -581,6 +615,38 @@ export function safeSha256(abs: string): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * D22(REQ-2026-047): repo-root 런타임 스크래치 중 **ignore도 tracked도 아닌** 경로.
+ *
+ * 판정은 **로컬 git 상태 그대로**다(전역 excludes 포함) — D10이 보는 `git status`와 같은 기준이어야
+ * "다음 review 뒤 D10이 막는다"는 예측이 맞는다. 파일이 아직 없어도 `check-ignore`는 패턴 매칭이라
+ * 동작한다(그래서 **첫 리뷰 전에 미리** 경고할 수 있다 — 이 검사의 존재 이유).
+ *
+ * 읽기 전용 advisory라 어떤 오류도 삼킨다(조회 실패 = 보호됨으로 간주 → WARN 안 냄. fail-safe: 게이트를 막지 않는다).
+ */
+export function unprotectedRepoRootScratch(paths: readonly string[], gitFn: (a: string[]) => string): string[] {
+  const out: string[] = []
+  for (const p of paths) {
+    let ignored = false
+    let tracked = false
+    try {
+      gitFn(['check-ignore', '-q', '--', p])
+      ignored = true
+    } catch {
+      ignored = false
+    }
+    if (!ignored) {
+      try {
+        tracked = gitFn(['ls-files', '--', p]).trim() !== ''
+      } catch {
+        tracked = true // 조회 불가 → 보호됨으로 간주(경고하지 않음)
+      }
+    }
+    if (!ignored && !tracked) out.push(p)
+  }
+  return out
 }
 
 /** package.json의 version 문자열. 부재·파손 시 null(D20 WARN 메시지용 — 없어도 무해). */
@@ -699,6 +765,9 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     schemaPathIsDefault: cfg.schemaPathAbs === resolve(cfg.root, DEFAULTS.schemaPath), // 정규화 절대경로 비교(동치 상대경로 포함)
     installedVersion: safeReadVersion(join(packageRoot(), 'package.json')),
     quickstartMissing: missingQuickstartFiles(cfg.root),
+    // D22(REQ-2026-047): 현재 repo-root 런타임 스크래치 축은 review-call 측정 로그 1건.
+    // 새 축이 생기면 이 배열에 추가하고 packed-consumer smoke 단언도 함께 늘린다(docs 인벤토리 표의 유지 규칙).
+    repoRootScratchUnprotected: unprotectedRepoRootScratch([REVIEW_CALL_LOG_REL], git),
   }
 
   const checks = runChecks(inp)

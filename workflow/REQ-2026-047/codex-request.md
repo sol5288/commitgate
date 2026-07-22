@@ -11,10 +11,10 @@ REQ-2026-025가 도입한 측정 로그 `workflow/.review-calls.jsonl`의 ignore
 이 REQ는 phase별로 **따로 커밋**된다. 따라서 **현재 staged diff에 없다고 해서 저장소에 없는 것이 아니다.**
 
 - **phase-1(커밋 `2ac0253`, 이미 통합됨)** — `templates/workflow.gitignore`에 앵커형 **`/.review-calls.jsonl` 1행 추가** + `scripts/smoke.mjs` 4b-2 회귀 가드. 검증: `git show HEAD:templates/workflow.gitignore` 12행에 규칙 존재, `kitGitignoreRules()`가 `["/REQ-*/codex-response.json","/REQ-*/.review-preview.txt","/REQ-*/.codex-*.tmp","/.review-calls.jsonl"]` 반환.
-- **phase-2(현재 리뷰 대상)** — `commitgate sync --gitignore` 백필 축. 템플릿 자체는 **phase-1에서 이미 끝났으므로 이 diff에 없다**(중복 변경이 아니다).
-- **phase-3(예정)** — doctor D22 WARN · 런타임 생성 파일 인벤토리 표 · CHANGELOG · 0.9.7.
+- **phase-2(커밋 `8626e29`, 이미 통합됨)** — `commitgate sync --gitignore` 백필 축(`bin/sync.ts`의 `normalizeIgnoreLine`·`missingKitIgnoreRules`·`appendIgnoreRules`, `bin/init.ts`의 `kitGitignoreRules` export, 단위 테스트 11건).
+- **phase-3(현재 리뷰 대상)** — doctor **D22 WARN** · 런타임 생성 파일 인벤토리 표(문서) · tracked 복구(`git rm --cached`) 안내 · CHANGELOG · 0.9.6→**0.9.7**.
 
-phase-2가 의존하는 사실: `kitGitignoreRules()`가 phase-1이 넣은 규칙을 반환하므로, 0.9.6 기존 소비자에서 `sync --apply --gitignore`가 그 규칙을 실제로 append한다. 이 경로는 `tests/unit/sync.test.ts`의 **실제 `git check-ignore` 단언**으로 고정돼 있다.
+phase-3은 **앞 두 phase의 런타임을 문서화·진단**한다. 따라서 이 diff에 템플릿 규칙이나 `sync --gitignore` 구현이 없는 것은 정상이다(각각 `2ac0253`·`8626e29`에 있다). 문서의 표·안내 문구가 가리키는 동작은 그 커밋들에 구현돼 있고, `tests/unit/sync.test.ts`의 **실제 `git check-ignore` 단언**으로 고정돼 있다.
 
 ## 변경 요약
 

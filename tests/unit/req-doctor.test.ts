@@ -8,6 +8,7 @@ import {
   parseArgs,
   classifyInstallMode,
   safeSha256,
+  unprotectedRepoRootScratch,
   type DoctorInputs,
   type Check,
 } from '../../scripts/req/req-doctor'
@@ -95,6 +96,51 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     const warned = runChecks(mk({ packageRootDiffers: true, quickstartMissing: ['CLAUDE.md', 'AGENTS.md'] }))
     expect(lvl(warned, 'D21')).toBe('WARN')
     expect(warned.filter((c) => c.level === 'FAIL')).toEqual([]) // 게이트를 벽돌로 만들지 않는다
+  })
+
+  it('D22(REQ-2026-047): repo-root 스크래치 미보호는 WARN — dev/dogfood·미계산·보호됨은 OK, 절대 FAIL 아님', () => {
+    // dev/dogfood(packageRootDiffers=false) → OK skip
+    expect(
+      lvl(runChecks(mk({ packageRootDiffers: false, repoRootScratchUnprotected: ['workflow/.review-calls.jsonl'] })), 'D22'),
+    ).toBe('OK')
+    // 미계산(undefined) → OK
+    expect(lvl(runChecks(mk({ packageRootDiffers: true })), 'D22')).toBe('OK')
+    // 전부 보호됨([]) → OK
+    expect(lvl(runChecks(mk({ packageRootDiffers: true, repoRootScratchUnprotected: [] })), 'D22')).toBe('OK')
+    // 소비 repo + 미보호 → WARN
+    const warned = runChecks(mk({ packageRootDiffers: true, repoRootScratchUnprotected: ['workflow/.review-calls.jsonl'] }))
+    expect(lvl(warned, 'D22')).toBe('WARN')
+    // 🔴 이 검사가 FAIL로 승격되면 소비자의 모든 커밋이 벽돌이 된다 — 레벨 상한을 테스트로 고정한다.
+    expect(warned.filter((c) => c.level === 'FAIL')).toEqual([])
+    // 안내가 실행 가능한 명령을 담아야 한다(불투명한 D10 메시지의 번역이 존재 이유).
+    expect(warned.find((c) => c.id === 'D22')?.msg).toContain('commitgate sync --gitignore --apply')
+  })
+
+  it('unprotectedRepoRootScratch: ignore되면 제외 · tracked면 제외 · 둘 다 아니면 보고', () => {
+    const p = 'workflow/.review-calls.jsonl'
+    const ok = (args: string[]): string => {
+      if (args[0] === 'check-ignore') return '' // 종료 0 = ignore됨
+      return ''
+    }
+    expect(unprotectedRepoRootScratch([p], ok)).toEqual([]) // ignore됨 → 제외
+
+    const trackedOnly = (args: string[]): string => {
+      if (args[0] === 'check-ignore') throw new Error('exit 1') // ignore 아님
+      return `${p}\n` // ls-files 출력 있음 = tracked
+    }
+    expect(unprotectedRepoRootScratch([p], trackedOnly)).toEqual([]) // tracked → 제외(경고 대상 아님)
+
+    const neither = (args: string[]): string => {
+      if (args[0] === 'check-ignore') throw new Error('exit 1')
+      return '' // ls-files 비어있음 = untracked
+    }
+    expect(unprotectedRepoRootScratch([p], neither)).toEqual([p]) // 둘 다 아님 → 보고
+
+    // ls-files 조회 자체가 실패하면 보호됨으로 간주(fail-safe — 게이트를 막지 않는다).
+    const lsFails = (args: string[]): string => {
+      throw new Error(`fail: ${args[0]}`)
+    }
+    expect(unprotectedRepoRootScratch([p], lsFails)).toEqual([])
   })
 
   it('D2: state.branch != 현재 브랜치 → FAIL', () => {

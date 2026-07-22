@@ -2,6 +2,14 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## 0.9.7
+
+**소비자 저장소에서 review-call 측정 로그가 커밋을 막던 P0 수정 + 기존 설치본 백필** (REQ-2026-047). `req:review-codex`가 소비 저장소 루트에 남기는 측정 로그(`workflow/.review-calls.jsonl`)의 무시 규칙이 **배포 템플릿 `templates/workflow.gitignore`에 누락**돼 있었습니다(개발 저장소 자신의 루트 `.gitignore`에만 있었고, npm은 `.gitignore` 이름을 tarball에서 제외하므로 소비자에게 전달되지 않습니다). 그 결과 `commitgate init`한 저장소에서 리뷰를 한 번이라도 돌리면 로그가 untracked로 남아 **`req:doctor` D10이 FAIL하고 `req:commit`이 모든 커밋을 차단**했습니다. 템플릿에 앵커형 `/.review-calls.jsonl`을 추가해 **신규 설치는 즉시 해소**되고, 회귀는 문자열 비교가 아니라 **packed tarball → 실제 `init` → `git check-ignore -v`(매칭 출처까지 단언)** 로 `scripts/smoke.mjs`에 고정했습니다.
+
+`workflow/.gitignore`는 seed-once(부재 시에만 생성, `--force`로도 미덮음)라 템플릿 수정만으로는 기존 설치본이 구제되지 않으므로, 명시적 opt-in **`commitgate sync --gitignore [--apply]`** 를 추가했습니다 — 누락된 kit 규칙 **행만 말미에 추가**하고 기존 행은 변경·삭제·재정렬하지 않으며, 파일이 없으면 템플릿 전체로 생성합니다. 존재 판정은 **Git ignore 의미론을 보존**해 후행 공백·CR만 무시하고 **앞 공백은 패턴의 일부로 취급**합니다(` /.review-calls.jsonl`처럼 실제로는 무시되지 않는 행을 "이미 있음"으로 오판해 백필을 건너뛰지 않도록). **`sync` 기본 동작은 불변**이라 `--gitignore` 없이는 이 파일을 전혀 건드리지 않습니다.
+
+진단으로 **`req:doctor` D22**를 추가했습니다 — repo-root 런타임 스크래치가 ignore도 tracked도 아니면 "다음 review 뒤 D10이 커밋을 막는다"를 알리고 백필 명령을 안내합니다. **WARN 상한이며 절대 FAIL이 아닙니다**(doctor는 `req:commit`의 하드 게이트라 FAIL이면 소비자 커밋이 벽돌이 됩니다). D10의 스크래치 의미론(`reviewScratchPaths`)은 **의도적으로 무변경**입니다 — 로그를 스크래치 허용목록에 넣으면 배포 ignore 누락 자체를 D10이 숨기게 됩니다. 런타임 생성 파일 인벤토리 표와 이미 커밋해 tracked가 된 경우의 복구(`git rm --cached`) 절차는 [문제 해결](https://github.com/sol5288/commitgate/blob/main/docs/troubleshooting.md)에 정리했습니다.
+
 ## 0.9.6
 
 **Claude Code용 품질 오버레이 companion skill `commitgate-quality` 추가** (REQ-2026-044). 기존 4종에 이어 5번째 companion skill을 같은 안전한 설치 경로(seed-once·`--force` 미덮음·confinement·`--no-agent-entrypoints` opt-out·uninstall)로 번들·설치합니다. 이 스킬은 Superpowers 방법론의 장점(요구 정제·설계/계획 품질·Test-First·증거 기반 검증)만 **협조적 지침**으로 흡수하며, Superpowers 플러그인·런타임은 설치·실행·의존하지 않습니다. 정본(SSOT) 비복제·설계 품질·계획 품질은 자체 소유하고, Test-First·버그 진단·요구 정제는 형제 스킬(`commitgate-tdd`·`commitgate-diagnosing-bugs`·`commitgate-discovery`)을 가리켜 내부 중복을 피합니다. 새 설치의 `CLAUDE.md`에 발견 포인터 1줄을 추가하되 계약 정본(`AGENTS.md`)은 불변입니다. **강제는 CommitGate 실행 게이트가 담당하며 이 스킬은 방법일 뿐**입니다 — `req:next`의 행동 계산, 리뷰·승인 판정, `state.json`/`responses/`, 커밋 권한을 침범하지 않습니다.
