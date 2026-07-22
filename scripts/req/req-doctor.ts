@@ -12,7 +12,10 @@ import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
-import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
+import { isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
+// REQ-2026-048 phase-1: confinement 술어는 leaf `lib/evidence.ts`가 정본 — 여기서 재수출(기존 경로 보존).
+import { isConfinedArchivePath } from './lib/evidence'
+export { isConfinedArchivePath } from './lib/evidence'
 import {
   loadState,
   validateVerdict,
@@ -198,20 +201,9 @@ export interface ArchiveCheck {
   structureOk: boolean
 }
 
-/**
- * evidence `response_path`가 **현재 티켓 `responses/` 직계 아카이브**인지(D-016 confinement).
- * 절대경로·`..`·다른 티켓·중첩경로·`approvals.jsonl` 등 비아카이브는 거부. ticketRel 미지정 시 false(fail-closed).
- */
-export function isConfinedArchivePath(p: string, ticketRel: string | undefined): boolean {
-  if (!ticketRel || typeof p !== 'string' || !p) return false
-  const norm = p.replace(/\\/g, '/')
-  if (norm.includes('..') || norm.startsWith('/') || /^[a-zA-Z]:\//.test(norm)) return false
-  const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
-  if (!norm.startsWith(prefix)) return false
-  const name = norm.slice(prefix.length)
-  if (!name || name.includes('/')) return false
-  return isArchiveFileName(name)
-}
+// `isConfinedArchivePath`는 REQ-2026-048 phase-1에서 `lib/evidence.ts`로 이동했다 — 매니페스트 검증이
+// 같은 술어를 쓰는데 여기 두면 `lib/evidence → req-doctor` 런타임 간선이 생겨 순환이 된다. 아래 re-export로
+// 기존 import 경로(`from './req-doctor'`)를 보존한다.
 
 /**
  * 승인 증거(evidence)와 그 아카이브 파일의 정합 문제 목록(순수, A2/D-016-5).

@@ -32,6 +32,10 @@ import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget } from './lib/config'
+// REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
+// 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
+import { archiveBaseName, isValidIsoInstant } from './lib/evidence'
+export { archiveBaseName, isValidIsoInstant } from './lib/evidence'
 import {
   createGitAdapter,
   createCodexReviewerAdapter,
@@ -1093,22 +1097,8 @@ export function checkReviewBudget(openAttempts: number, budget: ReviewBudget): B
   return { kind: 'hard-blocked', attempt }
 }
 
-/** ISO instant 형식(밀리초 선택). req-commit.ts의 ISO_RE와 같은 패턴(손기록 계약 통일). */
-const REVIEW_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/
-
-/**
- * ISO instant 유효성(REQ-2026-028 D2). **형식 + 달력 유효성 둘 다**(design-r02·r03).
- * `ISO_RE`만으론 `2026-99-99T99:99:99Z`가 통과하므로, 재파싱해 성분(연·월·일·시·분·초)이 보존되는지 확인.
- * 밀리초 표기 차(`08Z` vs `08.000Z`)는 비교에서 무시 — 성분이 맞으면 유효.
- */
-export function isValidIsoInstant(s: unknown): boolean {
-  if (typeof s !== 'string' || !REVIEW_ISO_RE.test(s)) return false
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return false
-  // 재직렬화 후 초까지 성분 비교(밀리초 절단). `2026-99-99...`는 여기서 불일치로 걸린다.
-  const canon = (x: string): string => x.replace(/\.\d+Z$/, 'Z').replace(/Z$/, '')
-  return canon(d.toISOString()) === canon(s)
-}
+// `isValidIsoInstant`는 REQ-2026-048 phase-1에서 `lib/evidence.ts`로 이동했다(매니페스트 검증과 공유하는
+// 술어라 leaf에 있어야 review-codex↔req-commit 순환이 생기지 않는다). 기존 import 경로 보존을 위해 re-export한다.
 
 /** 사람 예외 손기록(REQ-2026-028 D2). `user_commit_confirmed`와 같은 모양. */
 export interface ReviewExceptionConfirmed {
@@ -1617,10 +1607,8 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** 아카이브 base(round namespace): design은 'design'(phaseId 무시), phase는 phaseId(없으면 'phase'=레거시). */
-export function archiveBaseName(kind: ReviewKind, phaseId: string | null): string {
-  return kind === 'design' ? 'design' : phaseId && phaseId.length > 0 ? phaseId : 'phase'
-}
+// `archiveBaseName`도 같은 이유로 `lib/evidence.ts`로 이동(아래 re-export). 아카이브 이름 규칙은
+// 매니페스트 검증(`validateManifest`)과 stage 목록(`expectedArchivePaths`)이 공유하는 계약이다.
 
 /** 아카이브 파일명 — r 2자리 zero-pad. */
 export function archiveFileName(base: string, round: number, status: 'approved' | 'needs-fix'): string {
