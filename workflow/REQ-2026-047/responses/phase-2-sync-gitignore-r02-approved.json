@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"223e6e08b4292cf6ab6f6e57fbe3aba8ebb8dae2","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"이 staged phase를 커밋하고 phase-3(D22 WARN·문서·릴리스)을 진행하세요.","observations":[]}
