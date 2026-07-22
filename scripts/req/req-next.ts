@@ -21,6 +21,8 @@ import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, buildScriptInvocation, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
+import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evidence'
+import { createEvidencePorts } from './lib/evidence-ports'
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { reviewScratchPaths } from './lib/scratch'
 import {
@@ -141,6 +143,14 @@ export interface NextInput {
    * 필수 필드다(선택 아님): 해소는 config 계층에서 끝나므로 resolveNext는 내부 기본값을 두지 않는다.
    */
   phaseCommitAutoApprove: PhaseCommitPolicy
+  /**
+   * REQ-2026-048 DEC-4: **커밋된** design 증거 검증 결과. `main()`이 `HEAD` blob으로 계산해 채운다.
+   *
+   * - `undefined` = 미계산(2-arg/legacy 호출) → 기존 DONE 동작 그대로.
+   * - `{ required:false }` = legacy 티켓(HEAD 스캐폴드에 marker 없음) → 기존 DONE 동작 그대로.
+   * - `{ required:true, durable:false }` = 신규 티켓인데 증거가 커밋되지 않음 → **DONE 대신 BLOCKED**.
+   */
+  designEvidenceDurability?: { required: boolean; durable: boolean; reason: string }
 }
 
 /** `consumed_approvals[]`에서 phase_id를 안전하게 읽는다. */
@@ -600,6 +610,27 @@ export function resolveNext(input: NextInput): NextAction {
     })
   }
 
+  // ── REQ-2026-048 DEC-4: 완료 선언 직전 **커밋된** design 증거 검증(신규 티켓 전용) ──
+  // 🔴 여기서만 fail-closed다. `req:doctor`·일반 `req:commit`에는 넣지 않는다 — doctor는 req:commit의
+  //    하드 게이트라 FAIL이면 기존 소비자의 모든 커밋이 벽돌이 된다. 완료 판정만 막으면 충분하다.
+  // 🔴 온디스크가 아니라 HEAD blob 기준이다(D17이 온디스크로 통과해 이 갭이 조용했다).
+  {
+    const dur = input.designEvidenceDurability
+    if (input.worktreeReviewClean && !input.hasStagedChanges && dur?.required === true && dur.durable !== true) {
+      const cmd = buildScriptInvocation(input.packageManager, 'req:commit', [
+        ...targetArgs(input.target),
+        '--finalize-design',
+        '--run',
+      ]).join(' ')
+      return {
+        kind: 'BLOCKED',
+        detail:
+          `모든 phase가 끝났지만 **커밋된** design 승인 증거가 완비되지 않았다: ${dur.reason}. ` +
+          `이 상태로 통합하면 fresh clone에 설계 승인 감사 증거가 남지 않는다. 복구: \`${cmd}\``,
+      }
+    }
+  }
+
   if (input.worktreeReviewClean && !input.hasStagedChanges) {
     // REQ-2026-037 R5: 자동 커밋(low-only)에선 매 phase 정지가 없으므로, 병합 전 **단일** 사람 확인을
     // 종단에서 실체화한다 — DONE(exit 11)이 아니라 AWAIT_HUMAN(exit 10)으로 루프를 확실히 멈춘다.
@@ -752,6 +783,13 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     currentIndexHash: captureIndexHash(roGit),
     reviewBudget: cfg.reviewBudget,
     phaseCommitAutoApprove: cfg.phaseCommit.autoApprove,
+    // REQ-2026-048 DEC-4: marker와 증거 모두 **HEAD blob**에서 읽는다(워킹 캐시 신뢰 금지).
+    designEvidenceDurability: (() => {
+      const ports = createEvidencePorts(cfg.root, `${ticketRel}/responses`)
+      const required = isDurabilityRequired(ports.headText(`${ticketRel}/state.json`))
+      if (!required) return { required: false, durable: true, reason: 'legacy 티켓(marker 없음) — 점검 불요' }
+      return { required: true, ...verifyCommittedDesignEvidence({ ticketRel, ports }) }
+    })(),
   })
 
   if (opts.json) console.log(JSON.stringify({ req_id: state.id, ...action }, null, 2))

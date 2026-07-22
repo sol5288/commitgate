@@ -486,6 +486,76 @@ export function durableDesignEvidence(args: {
   return { outcome: onDiskRow ? 'recommitted' : 'committed', stagePaths }
 }
 
+// ───────────────────── DONE 게이트: 커밋된 증거 검증 (REQ-2026-048 DEC-4) ──
+
+/** 내구성 marker 필드명. `req:new`가 스캐폴드 `state.json`에 심고 그 스캐폴드가 커밋된다. */
+export const DURABILITY_MARKER = 'evidence_durability_required'
+
+/**
+ * 신규 티켓(엄격 검증 대상)인가 — 🔴 **`HEAD`의 `state.json` blob**으로 판정한다.
+ *
+ * 워킹 `state.json`은 **커밋되지 않는 캐시**다. 거기서 marker를 읽으면 캐시 재생성·브랜치 전환으로
+ * marker가 사라진 신규 티켓이 **legacy로 오인**되어 DONE 게이트가 통째로 우회된다(design r01 P1-1).
+ *
+ * | HEAD blob | 판정 |
+ * |---|---|
+ * | 읽힘 · marker=true | **신규 → 엄격** |
+ * | 읽힘 · marker 부재/false | legacy → 기존 DONE 호환 |
+ * | 읽기 불가·파손 | 🔴 **엄격** — 완료 선언은 검증 가능한 상태에서만 한다(티켓 스캐폴드가 커밋돼 있지 않다는 뜻) |
+ */
+export function isDurabilityRequired(headStateText: string | null): boolean {
+  if (headStateText === null) return true // 스캐폴드가 HEAD에 없다 → 완료 선언 대상 아님(보수적 엄격)
+  try {
+    const s = JSON.parse(headStateText) as Record<string, unknown>
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return true
+    return s[DURABILITY_MARKER] === true
+  } catch {
+    return true // 파손 → 보수적 엄격
+  }
+}
+
+/**
+ * **커밋된** design 증거가 완비됐는지(순수 판정 + 포트 조회). DONE 직전 게이트가 쓴다.
+ *
+ * 🔴 온디스크가 아니라 **`HEAD` blob**만 본다. D17이 온디스크 아카이브로 통과한다는 사실이 이 갭을
+ * 조용하게 만들었다 — 여기서 다시 온디스크를 보면 같은 사각이 재발한다.
+ */
+export function verifyCommittedDesignEvidence(args: {
+  ticketRel: string
+  ports: Pick<EvidencePorts, 'headText' | 'headBlobSha256'>
+}): { durable: boolean; reason: string } {
+  const { ticketRel, ports } = args
+  const manifestRel = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/approvals.jsonl`
+  const manifest = ports.headText(manifestRel)
+  if (manifest === null) return { durable: false, reason: `커밋된 ${manifestRel} 없음` }
+
+  // 가장 마지막 design 행을 본다(재승인이 있으면 그것이 유효 승인이다).
+  let row: ManifestEntry | null = null
+  for (const line of manifest.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    try {
+      const e = JSON.parse(line) as ManifestEntry
+      if (e && typeof e === 'object' && e.kind === 'design') row = e
+    } catch {
+      // malformed 줄 무시
+    }
+  }
+  if (!row) return { durable: false, reason: '커밋된 approvals.jsonl에 design 승인 행이 없음' }
+
+  // marker가 켜진 신규 티켓에서는 인벤토리 부재를 **엄격히** 막는다(검증의 관대함과 완료 판정의 엄격함 분리).
+  if (!Array.isArray(row.archive_inventory))
+    return { durable: false, reason: 'design 행에 archive_inventory 없음(구버전 형식 — 재-finalize 필요)' }
+
+  if (ports.headBlobSha256(row.response_path) === null)
+    return { durable: false, reason: `승인 아카이브가 HEAD에 없음: ${row.response_path}` }
+
+  for (const item of row.archive_inventory) {
+    const actual = ports.headBlobSha256(item.response_path)
+    if (actual === null) return { durable: false, reason: `인벤토리 아카이브가 HEAD에 없음: ${item.response_path}` }
+    if (actual !== item.sha256) return { durable: false, reason: `인벤토리 아카이브 SHA 불일치: ${item.response_path}` }
+  }
+  return { durable: true, reason: 'design 승인 증거가 HEAD에 완비됨' }
+}
+
 /**
  * approvals.jsonl에 **이 evidence가** 이미 finalize된 엔트리가 있는지(순수, 멱등 finalize용).
  * ⚠️ B3-R2: consumed_by_commit_sha만으로는 부족 — 같은 source SHA를 쓰는 design-finalize row 등에 오인될 수 있음.

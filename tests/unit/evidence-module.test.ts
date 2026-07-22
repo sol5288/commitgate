@@ -13,6 +13,8 @@ import {
   validateManifest,
   durableDesignEvidence,
   findEvidenceRow,
+  isDurabilityRequired,
+  verifyCommittedDesignEvidence,
   type EvidencePorts,
 } from '../../scripts/req/lib/evidence'
 import { createEvidencePorts } from '../../scripts/req/lib/evidence-ports'
@@ -425,6 +427,146 @@ describe('[REQ-2026-048] 무관한 staged 변경 보존 — 실제 git', () => {
       // 🔴 기존 staged 변경은 index에 그대로 남아 있다.
       const stagedAfter = git(['diff', '--cached', '--name-only']).trim().split('\n').filter(Boolean).sort()
       expect(stagedAfter).toEqual(['seed.txt', `${tRel}/01-design.md`])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+// ───────────── DONE 게이트 판정 함수 (REQ-2026-048 phase-4) ──
+
+describe('[REQ-2026-048] isDurabilityRequired — HEAD blob 기준 신규/legacy 판별', () => {
+  it('marker=true → 엄격', () => {
+    expect(isDurabilityRequired(JSON.stringify({ evidence_durability_required: true }))).toBe(true)
+  })
+  it('marker 부재/false → legacy(관대)', () => {
+    expect(isDurabilityRequired(JSON.stringify({ id: 'REQ-2026-001' }))).toBe(false)
+    expect(isDurabilityRequired(JSON.stringify({ evidence_durability_required: false }))).toBe(false)
+  })
+  /** 🔴 design r01 P1-1 — 캐시 소실로 게이트를 우회할 수 없어야 한다. HEAD blob 부재/파손은 **엄격**. */
+  it('HEAD blob 부재·파손 → 보수적으로 엄격', () => {
+    expect(isDurabilityRequired(null)).toBe(true)
+    expect(isDurabilityRequired('{not json')).toBe(true)
+    expect(isDurabilityRequired('[]')).toBe(true)
+  })
+})
+
+describe('[REQ-2026-048] verifyCommittedDesignEvidence — HEAD blob만 본다', () => {
+  const T3 = 'workflow/REQ-2026-001'
+  const MAN = `${T3}/responses/approvals.jsonl`
+  const AP = `${T3}/responses/design-r02-approved.json`
+  const NF = `${T3}/responses/design-r01-needs-fix.json`
+  const row = (over: Record<string, unknown> = {}): string =>
+    `${JSON.stringify({
+      kind: 'design',
+      phase_id: null,
+      response_path: AP,
+      response_sha256: S_APPROVED,
+      review_base_sha: OID40,
+      design_hash: '9'.repeat(64),
+      approved_at: '2026-07-22T00:00:00.000Z',
+      consumed_at: '2026-07-22T00:00:01.000Z',
+      consumed_by_commit_sha: OID40,
+      user_commit_confirmed: null,
+      archive_inventory: [
+        { response_path: NF, sha256: S_NEEDSFIX },
+        { response_path: AP, sha256: S_APPROVED },
+      ],
+      ...over,
+    })}\n`
+  const ports = (head: Record<string, string | null>): Pick<EvidencePorts, 'headText' | 'headBlobSha256'> => ({
+    headText: (p) => head[p] ?? null,
+    headBlobSha256: (p) => (p === NF ? S_NEEDSFIX : p === AP ? S_APPROVED : null),
+  })
+
+  it('완비 → durable', () => {
+    expect(verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({ [MAN]: row() }) }).durable).toBe(true)
+  })
+  it('커밋된 매니페스트 없음 → 미완', () => {
+    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({}) })
+    expect(r.durable).toBe(false)
+    expect(r.reason).toContain('커밋된')
+  })
+  it('design 행 없음 → 미완', () => {
+    const phaseOnly = `${JSON.stringify({ kind: 'phase' })}\n`
+    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({ [MAN]: phaseOnly }) })
+    expect(r.durable).toBe(false)
+    expect(r.reason).toContain('design 승인 행이 없음')
+  })
+  /** marker 켜진 티켓에서는 구버전(인벤토리 없는) 행을 완비로 보지 않는다. */
+  it('archive_inventory 없음 → 미완(재-finalize 유도)', () => {
+    const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({ [MAN]: row({ archive_inventory: undefined }) }) })
+    expect(r.durable).toBe(false)
+    expect(r.reason).toContain('archive_inventory 없음')
+  })
+  it('인벤토리 아카이브가 HEAD에 없음 → 미완', () => {
+    const missing = ports({ [MAN]: row() })
+    const r = verifyCommittedDesignEvidence({
+      ticketRel: T3,
+      ports: { headText: missing.headText, headBlobSha256: (p) => (p === AP ? S_APPROVED : null) },
+    })
+    expect(r.durable).toBe(false)
+    expect(r.reason).toContain('HEAD에 없음')
+  })
+  it('인벤토리 SHA 불일치 → 미완', () => {
+    const p0 = ports({ [MAN]: row() })
+    const r = verifyCommittedDesignEvidence({
+      ticketRel: T3,
+      ports: { headText: p0.headText, headBlobSha256: (p) => (p === NF ? 'f'.repeat(64) : S_APPROVED) },
+    })
+    expect(r.durable).toBe(false)
+    expect(r.reason).toContain('SHA 불일치')
+  })
+})
+
+/** phase-4 실제 경로: marker·증거를 모두 **HEAD blob**에서 읽는다(워킹 파일 수정에 흔들리지 않음). */
+describe('[REQ-2026-048] DONE 게이트 실제 git 통합 — marker·증거 모두 HEAD 기준', () => {
+  it('워킹 state.json에서 marker를 지워도 HEAD 기준으로 여전히 엄격하고, 증거 커밋 후 durable이 된다', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-ev3-'))
+    try {
+      const git = (args: string[]): string => execFileSync('git', args, { cwd: dir, encoding: 'utf8' })
+      git(['init', '-q'])
+      git(['config', 'user.email', 't@t.t'])
+      git(['config', 'user.name', 't'])
+      const tRel = 'workflow/REQ-2026-001'
+      const respDir = join(dir, ...`${tRel}/responses`.split('/'))
+      mkdirSync(respDir, { recursive: true })
+      const statePath = join(dir, 'workflow', 'REQ-2026-001', 'state.json')
+      writeFileSync(statePath, JSON.stringify({ id: 'REQ-2026-001', evidence_durability_required: true }, null, 2))
+      git(['add', '--', `${tRel}/state.json`])
+      git(['commit', '-q', '-m', 'scaffold'])
+
+      const ports = createEvidencePorts(dir, `${tRel}/responses`)
+      const stateRel = `${tRel}/state.json`
+
+      // 🔴 워킹 캐시에서 marker를 지워도 HEAD blob 기준이므로 여전히 엄격하다(캐시 소실 우회 차단).
+      writeFileSync(statePath, JSON.stringify({ id: 'REQ-2026-001' }, null, 2))
+      expect(isDurabilityRequired(ports.headText(stateRel))).toBe(true)
+
+      // 증거 커밋 전 → 미완.
+      expect(verifyCommittedDesignEvidence({ ticketRel: tRel, ports }).durable).toBe(false)
+
+      // 증거를 내구화하면 durable이 된다.
+      const approvedBody = '{"status":"COMPLETE"}\n'
+      writeFileSync(join(respDir, 'design-r01-approved.json'), approvedBody)
+      durableDesignEvidence({
+        ticketId: 'REQ-2026-001',
+        ticketRel: tRel,
+        evidence: {
+          review_kind: 'design',
+          phase_id: null,
+          response_path: `${tRel}/responses/design-r01-approved.json`,
+          response_sha256: createHash('sha256').update(Buffer.from(approvedBody)).digest('hex'),
+          review_base_sha: git(['rev-parse', 'HEAD']).trim(),
+          design_hash: 'd'.repeat(64),
+          approved_at: '2026-07-22T00:00:00.000Z',
+        } as unknown as ApprovalEvidence,
+        validPhaseIds: [],
+        nowIso: '2026-07-22T00:00:01.000Z',
+        ports,
+      })
+      const v = verifyCommittedDesignEvidence({ ticketRel: tRel, ports })
+      expect(v.durable, v.reason).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

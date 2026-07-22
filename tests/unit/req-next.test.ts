@@ -958,3 +958,63 @@ describe('REQ-2026-037 — phaseCommit 자동 커밋 분기(commit_allowed=true)
     expect(a.kind).toBe('DONE')
   })
 })
+
+// ───────────── DONE 직전 커밋된 design 증거 게이트 (REQ-2026-048 phase-4) ──
+
+describe('[REQ-2026-048] req:next DONE 게이트 — 커밋된 design 증거', () => {
+  const allConsumed = (over: Partial<WorkflowState> = {}): WorkflowState =>
+    baseState({
+      consumed_approvals: [
+        { approved_tree: HASH_A, phase_id: 'p1', consumed_by_commit_sha: 'aa', approval_consumed_at: '2026-07-18T00:00:00Z' },
+        { approved_tree: HASH_B, phase_id: 'p2', consumed_by_commit_sha: 'bb', approval_consumed_at: '2026-07-18T00:00:00Z' },
+      ],
+      ...over,
+    } as Partial<WorkflowState>)
+  const terminal = (dur?: NextInput['designEvidenceDurability'], policy: 'never' | 'low-only' = 'never'): NextInput =>
+    baseInput({
+      state: allConsumed(),
+      phaseCommitAutoApprove: policy,
+      hasStagedChanges: false,
+      worktreeReviewClean: true,
+      designEvidenceDurability: dur,
+    })
+
+  it('① 미계산(undefined) → 기존 DONE 유지(무회귀)', () => {
+    expect(resolveNext(terminal(undefined)).kind).toBe('DONE')
+  })
+
+  it('② legacy 티켓(required=false) → 기존 DONE 유지', () => {
+    expect(resolveNext(terminal({ required: false, durable: true, reason: 'legacy' })).kind).toBe('DONE')
+  })
+
+  it('③ 신규 티켓 + 증거 완비 → DONE', () => {
+    expect(resolveNext(terminal({ required: true, durable: true, reason: 'ok' })).kind).toBe('DONE')
+  })
+
+  it('④ 신규 티켓 + 증거 미완 → BLOCKED + 복구 명령', () => {
+    const a = resolveNext(terminal({ required: true, durable: false, reason: 'design 승인 행이 없음' }))
+    expect(a.kind).toBe('BLOCKED')
+    expect(a.detail).toContain('design 승인 행이 없음')
+    expect(a.detail).toContain('--finalize-design')
+  })
+
+  /** 🔴 자동 커밋(low-only)의 병합 AWAIT_HUMAN 경로도 막아야 한다 — 둘 다 완료 선언 경로다. */
+  it('⑤ low-only 병합 게이트 경로도 증거 미완이면 BLOCKED', () => {
+    const a = resolveNext(terminal({ required: true, durable: false, reason: 'archive_inventory 없음' }, 'low-only'))
+    expect(a.kind).toBe('BLOCKED')
+  })
+
+  it('⑥ 종단 조건이 아니면(스테이지 남음) 게이트가 개입하지 않는다', () => {
+    const a = resolveNext(
+      baseInput({
+        state: allConsumed(),
+        hasStagedChanges: true,
+        worktreeReviewClean: true,
+        designEvidenceDurability: { required: true, durable: false, reason: 'x' },
+      }),
+    )
+    // 이 상태는 기존 fallback 으로도 BLOCKED 다 — 중요한 것은 **내 게이트가 원인이 아니라는 것**.
+    expect(a.detail).not.toContain('--finalize-design')
+    expect(a.detail).not.toContain('설계 승인 감사 증거')
+  })
+})

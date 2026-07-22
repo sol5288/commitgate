@@ -89,6 +89,9 @@ export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | '
     phases: [],
     // REQ-016 A1(D-016-6): grandfathering 트리거 — 신규 REQ는 승인 증거를 강제(FAIL), legacy(필드 부재)는 WARN.
     approval_evidence_required: true,
+    // REQ-2026-048 DEC-4: design 증거 내구성 marker. **이 스캐폴드가 커밋되므로 HEAD blob에 영속**한다 —
+    // req:next의 DONE 게이트가 워킹 캐시가 아니라 그 커밋본을 읽어 신규/legacy를 판별한다(캐시 소실로 우회 불가).
+    evidence_durability_required: true,
     // REQ-2026-027 D1: review series 모델 버전. 첫 리뷰 전에도 존재해 "새 ticket(레코드 없음)"과
     // "legacy(필드 부재)"를 구분한다. 필드 부재 = legacy → 새 재리뷰 시 AWAIT_HUMAN/throw(자동 초기화 금지).
     review_series_model_version: 1,

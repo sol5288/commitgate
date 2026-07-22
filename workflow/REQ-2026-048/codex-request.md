@@ -14,7 +14,8 @@ phase별로 따로 커밋한다. **현재 staged diff에 없다고 해서 저장
 
 - **phase-1(커밋 `09ad1f8`, 통합됨)** — 매니페스트 모델·검증과 그 런타임 의존(`archiveBaseName`·`isValidIsoInstant`·`isConfinedArchivePath`)을 leaf `scripts/req/lib/evidence.ts`로 이동, `req-commit`·`review-codex`·`req-doctor`가 re-export. 동작 변경 0(기존 테스트 무수정 그린). `tests/unit/evidence-module.test.ts`가 leaf 불변식을 고정.
 - **phase-2(커밋 `384ad94`, 통합됨)** — design 매니페스트 `archive_inventory[{response_path,sha256}]` + 검증 + 순수 `designEvidenceStagePaths`(인벤토리 전량 stage).
-- **phase-3 이후** — 아래 변경 요약의 순서대로. 각 phase는 앞 phase의 산출물을 **전제**로 하며 그 코드는 이 diff에 없다.
+- **phase-3(커밋 `c79f3b7`, 통합됨)** — `durableDesignEvidence`(공유 구현·HEAD 기준 멱등·pathspec 범위 커밋) + `lib/evidence-ports.ts` + 승인 경로 흡수 + 실패 주입/통합 테스트.
+- **phase-4 이후** — 아래 변경 요약의 순서대로. 각 phase는 앞 phase의 산출물을 **전제**로 하며 그 코드는 이 diff에 없다.
 
 > phase-3 주: 내구화 로직이 `lib/evidence.ts`에 있으므로 그 테스트는 `tests/unit/evidence-module.test.ts`에 둔다(02-plan의 파일 표는 흡수 지점을 기준으로 적혀 있었다). 실패 주입은 주입 포트(fake)로, 실제 경로는 임시 git 저장소 통합 테스트로 각각 고정했다.
 
