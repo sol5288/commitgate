@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"e38756885edbad20ad3e0e7a362d12c7739dd232","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계를 승인합니다. phase-1에서 지정된 세 프로즈 절만 수정한 뒤, 단일 파일 staged diff와 명령 검증 결과를 포함해 phase 리뷰를 요청하세요.","observations":[]}
