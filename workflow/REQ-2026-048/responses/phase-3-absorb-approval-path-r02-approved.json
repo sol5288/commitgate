@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"7563166d586da9d6e862d9a6b7fe107167bd6d17","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"HIGH","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"phase-3 스테이징 변경을 커밋하고 phase-4를 진행하세요.","observations":[]}
