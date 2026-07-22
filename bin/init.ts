@@ -564,7 +564,7 @@ export function sha256File(abs: string): string {
 }
 
 /** kit `workflow/.gitignore` 템플릿의 규칙 라인(주석·빈 줄 제외). differs WARN에서 사용자가 병합할 실제 규칙을 보여 준다. */
-function kitGitignoreRules(): string[] {
+export function kitGitignoreRules(): string[] {
   return readFileSync(join(PACKAGE_ROOT, KIT_GITIGNORE.src), 'utf8')
     .split('\n')
     .map((l) => l.trim())

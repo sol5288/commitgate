@@ -6,6 +6,16 @@ REQ-2026-025가 도입한 측정 로그 `workflow/.review-calls.jsonl`의 ignore
 
 결과: `commitgate init` 소비자가 리뷰를 1회라도 돌리면 로그가 `??`로 남아 **D10 FAIL → `req:commit`이 doctor를 하드 게이트로 spawn하므로 모든 커밋 차단**. 개발 저장소는 root ignore가 파일을 숨겨 **도그푸딩이 구조적으로 못 본다**. 소비자 hermes(0.9.6)가 수동 보강으로 우회 중. 본 REQ는 **코덱스 판정(확정·P0·즉시 수정+패치 릴리스)과 그 지시**를 설계로 옮긴 것이다.
 
+## ⚠️ 리뷰어 필독 — phase 경계(선행 phase는 이미 커밋됨)
+
+이 REQ는 phase별로 **따로 커밋**된다. 따라서 **현재 staged diff에 없다고 해서 저장소에 없는 것이 아니다.**
+
+- **phase-1(커밋 `2ac0253`, 이미 통합됨)** — `templates/workflow.gitignore`에 앵커형 **`/.review-calls.jsonl` 1행 추가** + `scripts/smoke.mjs` 4b-2 회귀 가드. 검증: `git show HEAD:templates/workflow.gitignore` 12행에 규칙 존재, `kitGitignoreRules()`가 `["/REQ-*/codex-response.json","/REQ-*/.review-preview.txt","/REQ-*/.codex-*.tmp","/.review-calls.jsonl"]` 반환.
+- **phase-2(현재 리뷰 대상)** — `commitgate sync --gitignore` 백필 축. 템플릿 자체는 **phase-1에서 이미 끝났으므로 이 diff에 없다**(중복 변경이 아니다).
+- **phase-3(예정)** — doctor D22 WARN · 런타임 생성 파일 인벤토리 표 · CHANGELOG · 0.9.7.
+
+phase-2가 의존하는 사실: `kitGitignoreRules()`가 phase-1이 넣은 규칙을 반환하므로, 0.9.6 기존 소비자에서 `sync --apply --gitignore`가 그 규칙을 실제로 append한다. 이 경로는 `tests/unit/sync.test.ts`의 **실제 `git check-ignore` 단언**으로 고정돼 있다.
+
 ## 변경 요약
 
 3 phase. 코드 변경은 phase당 ≤8파일.
