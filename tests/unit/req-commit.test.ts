@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { resolve, isAbsolute } from 'node:path'
 import {
+  buildArchiveInventory,
   buildManifestEntry,
+  designEvidenceStagePaths,
   serializeManifestLine,
   validateManifest,
   expectedArchivePaths,
@@ -525,5 +527,136 @@ describe('REQ-2026-030 — ISO 달력 검증(req-commit)', () => {
     expect(userConfirmProblem(ucc('2026-07-18T00:00:00Z'))).toBeNull()     // 정상 통과
     expect(userConfirmProblem(ucc('2026-07-18T00:00:00.480Z'))).toBeNull() // 밀리초 통과
     expect(userConfirmProblem(ucc('not-a-date'))).not.toBeNull()           // 형식 거부
+  })
+})
+
+// ───────────────────────── archive_inventory (REQ-2026-048 phase-2) ──
+
+describe('[REQ-2026-048] archive_inventory — 라운드 아카이브 전량 영속화', () => {
+  const opts = { ticketRel: T, validPhaseIds: ['phase-A2-doctor-evidence-gates'] }
+  const APPROVED_REL = `${T}/responses/design-r02-approved.json`
+  const NEEDSFIX_REL = `${T}/responses/design-r01-needs-fix.json`
+  const designRow = (over: Record<string, unknown> = {}): string =>
+    `${JSON.stringify({
+      kind: 'design',
+      phase_id: null,
+      response_path: APPROVED_REL,
+      response_sha256: SHA,
+      review_base_sha: BASE,
+      design_hash: DHASH,
+      approved_at: AT,
+      consumed_at: CAT,
+      consumed_by_commit_sha: COMMIT,
+      user_commit_confirmed: null,
+      ...over,
+    })}\n`
+
+  it('필드 부재 = 매니페스트 검증상 유효(기존 행 무회귀)', () => {
+    expect(validateManifest(designRow(), opts)).toEqual([])
+  })
+
+  it('정상 인벤토리(needs-fix 포함) → 문제 없음', () => {
+    const inv = [
+      { response_path: NEEDSFIX_REL, sha256: DHASH },
+      { response_path: APPROVED_REL, sha256: SHA },
+    ]
+    expect(validateManifest(designRow({ archive_inventory: inv }), opts)).toEqual([])
+  })
+
+  /** 🔴 인벤토리는 needs-fix를 허용하지만, **행 최상위 response_path는 여전히 approved만**이다(의미가 다르다). */
+  it('행 최상위 response_path가 needs-fix면 여전히 거부된다', () => {
+    const problems = validateManifest(designRow({ response_path: NEEDSFIX_REL }), opts)
+    expect(problems.join(' ')).toMatch(/design-rNN-approved\.json 아님/)
+  })
+
+  it('비-confined 경로·타 티켓 → 거부', () => {
+    for (const p of [`workflow/REQ-2026-999/responses/design-r01-approved.json`, `${T}/responses/../x-r01-approved.json`, `${T}/responses/approvals.jsonl`]) {
+      const problems = validateManifest(designRow({ archive_inventory: [{ response_path: p, sha256: SHA }] }), opts)
+      expect(problems.join(' '), p).toMatch(/archive_inventory\[0\]: response_path 비confined/)
+    }
+  })
+
+  it('sha256 형식 오류 → 거부', () => {
+    const problems = validateManifest(designRow({ archive_inventory: [{ response_path: APPROVED_REL, sha256: 'nope' }] }), opts)
+    expect(problems.join(' ')).toMatch(/archive_inventory\[0\]: sha256 형식 오류/)
+  })
+
+  it('배열 아님 · 항목 object 아님 · 예상 외 필드 → 거부', () => {
+    expect(validateManifest(designRow({ archive_inventory: 'x' }), opts).join(' ')).toMatch(/배열 아님/)
+    expect(validateManifest(designRow({ archive_inventory: ['x'] }), opts).join(' ')).toMatch(/object 아님/)
+    expect(
+      validateManifest(designRow({ archive_inventory: [{ response_path: APPROVED_REL, sha256: SHA, evil: 1 }] }), opts).join(' '),
+    ).toMatch(/예상 외 필드: evil/)
+  })
+
+  it('인벤토리 내 중복 경로 → 거부(주입 방지)', () => {
+    const inv = [
+      { response_path: APPROVED_REL, sha256: SHA },
+      { response_path: APPROVED_REL, sha256: SHA },
+    ]
+    expect(validateManifest(designRow({ archive_inventory: inv }), opts).join(' ')).toMatch(/중복 response_path/)
+  })
+
+  it('buildManifestEntry: 미지정이면 키 자체가 없다(기존 행과 바이트 동일)', () => {
+    const e = buildManifestEntry(phaseEv, consume)
+    expect('archive_inventory' in e).toBe(false)
+    expect(serializeManifestLine(e)).toBe(serializeManifestLine(buildManifestEntry(phaseEv, consume)))
+  })
+
+  /**
+   * 🔴 수집 범위의 **결정성**: 현재 티켓 responses/ 직계의 해당 kind 아카이브 전부를 rNN **오름차순**으로,
+   * 디렉터리 읽기 순서와 무관하게 담는다. phase 아카이브·비아카이브는 제외된다.
+   */
+  it('buildArchiveInventory: design 아카이브만 rNN 오름차순으로, 읽기 순서 비의존', () => {
+    const names = [
+      'design-r02-approved.json',
+      'approvals.jsonl',
+      'phase-A2-doctor-evidence-gates-r04-approved.json',
+      'design-r01-needs-fix.json',
+      'design-r10-needs-fix.json',
+    ]
+    const shaOf = (p: string): string => (p.includes('r01') ? DHASH : SHA)
+    const inv = buildArchiveInventory(names, 'design', null, T, shaOf)
+    expect(inv.map((i) => i.response_path)).toEqual([
+      `${T}/responses/design-r01-needs-fix.json`,
+      `${T}/responses/design-r02-approved.json`,
+      `${T}/responses/design-r10-needs-fix.json`,
+    ])
+    expect(inv[0]?.sha256).toBe(DHASH)
+    // 입력 순서를 뒤집어도 결과가 같다(결정적).
+    expect(buildArchiveInventory([...names].reverse(), 'design', null, T, shaOf)).toEqual(inv)
+  })
+
+  it('buildArchiveInventory 결과가 validateManifest를 그대로 통과한다(왕복)', () => {
+    const names = ['design-r01-needs-fix.json', 'design-r02-approved.json']
+    const inv = buildArchiveInventory(names, 'design', null, T, () => SHA)
+    expect(validateManifest(designRow({ archive_inventory: inv }), opts)).toEqual([])
+  })
+
+  /** ④ 인벤토리 **전량**이 stage 목록에 들어간다 — 이것이 needs-fix 라운드가 커밋 이력에 남는 유일한 경로다. */
+  it('designEvidenceStagePaths: 인벤토리 전량 + 승인본 + approvals.jsonl, 중복 없음', () => {
+    const inv = [
+      { response_path: NEEDSFIX_REL, sha256: DHASH },
+      { response_path: APPROVED_REL, sha256: SHA },
+    ]
+    expect(designEvidenceStagePaths(inv, APPROVED_REL, T)).toEqual([
+      NEEDSFIX_REL,
+      APPROVED_REL, // 승인본이 인벤토리에 이미 있어도 중복되지 않는다
+      `${T}/responses/approvals.jsonl`,
+    ])
+  })
+
+  it('designEvidenceStagePaths: 인벤토리가 비어도 승인본·매니페스트는 남는다(퇴화 안전)', () => {
+    expect(designEvidenceStagePaths([], APPROVED_REL, T)).toEqual([APPROVED_REL, `${T}/responses/approvals.jsonl`])
+  })
+
+  /** 🔴 무관한 index 변경이 evidence 커밋에 딸려 들어가지 못하게 — 티켓 responses/ 밖 경로는 절대 stage하지 않는다. */
+  it('designEvidenceStagePaths: 티켓 responses/ 밖 경로는 걸러낸다', () => {
+    const evil = [
+      { response_path: 'src/secret.ts', sha256: SHA },
+      { response_path: `workflow/REQ-2026-999/responses/design-r01-approved.json`, sha256: SHA },
+      { response_path: `${T}/responses/../../escape-r01-approved.json`, sha256: SHA },
+    ]
+    expect(designEvidenceStagePaths(evil, APPROVED_REL, T)).toEqual([APPROVED_REL, `${T}/responses/approvals.jsonl`])
   })
 })

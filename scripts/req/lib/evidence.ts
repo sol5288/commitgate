@@ -70,6 +70,18 @@ export interface UserCommitConfirmed {
   note?: string
 }
 
+/**
+ * 이 승인에 이르는 라운드 아카이브 1건(REQ-2026-048 DEC-2).
+ *
+ * **왜 파일명 sweep이 아니라 목록인가**: 디스크 스캔은 실행 시점 디렉터리 상태에 의존해 **재현 불가**다
+ * (나중에 파일이 늘거나 지워지면 결과가 달라진다). 경로+sha로 매니페스트에 박으면 사후 감사에서
+ * **재검증**할 수 있고, DONE 게이트가 이 목록을 그대로 오라클로 쓴다.
+ */
+export interface ArchiveInventoryItem {
+  response_path: string
+  sha256: string
+}
+
 /** approvals.jsonl 한 줄(D-016-3b). kind 격리: phase=approved_tree, design=design_hash. */
 export interface ManifestEntry {
   kind: ReviewKind
@@ -83,6 +95,18 @@ export interface ManifestEntry {
   consumed_at: string
   consumed_by_commit_sha: string
   user_commit_confirmed: UserCommitConfirmed | null
+  /**
+   * REQ-2026-048 DEC-2 — 이 승인 시점의 라운드 아카이브 전부(needs-fix 포함, 승인본 자기 자신 포함).
+   *
+   * **선택 필드**다: 부재해도 매니페스트 검증은 통과한다(기존 행 무회귀). 단 내구성 marker가 켜진 신규
+   * 티켓에서는 DONE 게이트가 design 행의 이 필드 부재를 **BLOCKED**로 본다 — 검증의 관대함(legacy 호환)과
+   * 완료 판정의 엄격함(신규)을 분리한다.
+   *
+   * 현재 **design 행만 채운다**. phase 경로는 `expectedArchivePaths`가 이미 needs-fix까지 stage하므로
+   * 인벤토리가 필요 없다. 다만 phase 행에서 이 필드를 *금지*하지는 않는다 — 새 금지 규칙은 설계 범위 밖이고,
+   * 형식 검증은 kind와 무관하게 동일하게 적용된다.
+   */
+  archive_inventory?: ArchiveInventoryItem[]
 }
 
 /** approvals.jsonl 엔트리 허용 top-level 키(이 외 = 주입/오염 → fail). */
@@ -98,7 +122,80 @@ const MANIFEST_KEYS = new Set([
   'consumed_at',
   'consumed_by_commit_sha',
   'user_commit_confirmed',
+  'archive_inventory', // REQ-2026-048 DEC-2(선택 — 부재해도 유효)
 ])
+
+/**
+ * 이 승인의 아카이브 인벤토리 산출(순수 — sha 계산은 주입).
+ *
+ * **수집 범위(결정적 정의)**: 현재 티켓 `responses/` **직계**의 `kind` 아카이브 **전부**
+ * (`archiveBaseName(kind, phaseId)` 매처 — `-approved`·`-needs-fix` 모두). round(rNN) **오름차순**으로 정렬해
+ * 디렉터리 읽기 순서에 비의존하게 만든다(`expectedArchivePaths`와 동일 기법).
+ *
+ * **재승인 시**: 그 시점의 전부를 다시 담으므로 이전 라운드를 포함한다. 각 행이 "그 승인 시점의 완전한 상태"라는
+ * 의미로 일관되고, DONE 게이트는 **가장 마지막 design 행**을 본다. stale 아카이브를 골라내는 휴리스틱은 두지 않는다
+ * (재현 불가능해진다).
+ *
+ * @param shaOf repo-상대 경로 → sha256(hex). 호출부가 파일을 읽어 주입(이 모듈은 fs를 모른다).
+ */
+export function buildArchiveInventory(
+  archiveNames: string[],
+  kind: ReviewKind,
+  phaseId: string | null,
+  ticketRel: string,
+  shaOf: (repoRelPath: string) => string,
+): ArchiveInventoryItem[] {
+  return expectedArchivePaths(archiveNames, kind, phaseId, ticketRel).map((p) => ({
+    response_path: p,
+    sha256: shaOf(p),
+  }))
+}
+
+/**
+ * design evidence 커밋에 stage할 repo-상대 경로(순수, 결정적).
+ *
+ * = **인벤토리 전량**(needs-fix 포함) + 승인본 + `approvals.jsonl`. 중복은 제거하고 순서는 입력 순서를 따른다.
+ * 승인본은 정상 경로에서 인벤토리에 이미 들어 있지만, 인벤토리가 비는 이례적 상황(디렉터리 조회 실패 등)에서도
+ * **최소한 승인 증거는 남도록** 명시적으로 합류시킨다.
+ *
+ * 🔴 `approvals.jsonl` 외에는 **티켓 `responses/` 밖 경로가 절대 섞이지 않는다** — 호출부의 leak 가드
+ * (`responses/` 외 staged 금지)와 이중으로, 무관한 index 변경이 evidence 커밋에 딸려 들어가지 못하게 한다.
+ */
+export function designEvidenceStagePaths(
+  inventory: readonly ArchiveInventoryItem[],
+  responsePath: string,
+  ticketRel: string,
+): string[] {
+  const dir = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses`
+  const archives = [...inventory.map((i) => i.response_path), responsePath].filter(
+    (p) => typeof p === 'string' && p.length > 0 && isConfinedArchivePath(p, ticketRel),
+  )
+  return [...new Set([...archives, `${dir}/approvals.jsonl`])]
+}
+
+/** 인벤토리 항목의 형식 문제 목록(순수). 빈 배열 = 정상. `line N: ` 접두는 호출부가 붙인다. */
+function archiveInventoryProblems(inv: unknown, ticketRel: string): string[] {
+  const out: string[] = []
+  if (!Array.isArray(inv)) return ['archive_inventory가 배열 아님']
+  const seen = new Set<string>()
+  for (let i = 0; i < inv.length; i++) {
+    const it = inv[i] as { response_path?: unknown; sha256?: unknown } | null
+    const at = `archive_inventory[${i}]`
+    if (!it || typeof it !== 'object' || Array.isArray(it)) {
+      out.push(`${at}: object 아님`)
+      continue
+    }
+    for (const k of Object.keys(it)) if (k !== 'response_path' && k !== 'sha256') out.push(`${at}: 예상 외 필드: ${k}`)
+    const p = typeof it.response_path === 'string' ? it.response_path : ''
+    // ⚠️ 인벤토리는 **needs-fix 이름을 허용**한다(라운드 전체 보존이 목적). 행 최상위 `response_path`의
+    //    "-approved.json만" 규칙과는 의미가 다르다 — 그 규칙은 여기 적용하지 않는다.
+    if (!isConfinedArchivePath(p, ticketRel)) out.push(`${at}: response_path 비confined: ${p}`)
+    else if (seen.has(p)) out.push(`${at}: 중복 response_path: ${p}`)
+    else seen.add(p)
+    if (typeof it.sha256 !== 'string' || !SHA256_RE.test(it.sha256)) out.push(`${at}: sha256 형식 오류(64hex)`)
+  }
+  return out
+}
 
 /**
  * user_commit_confirmed 감사 기록 형식 검증(순수). 유효하면 null, 아니면 사유.
@@ -120,7 +217,13 @@ export function userConfirmProblem(ucc: unknown): string | null {
  */
 export function buildManifestEntry(
   ev: ApprovalEvidence,
-  consume: { consumedAt: string; consumedByCommitSha: string; userCommitConfirmed: UserCommitConfirmed | null },
+  consume: {
+    consumedAt: string
+    consumedByCommitSha: string
+    userCommitConfirmed: UserCommitConfirmed | null
+    /** REQ-2026-048 DEC-2. 지정 시에만 행에 포함(미지정 = 필드 자체 부재 → 기존 행과 바이트 동일). */
+    archiveInventory?: ArchiveInventoryItem[]
+  },
 ): ManifestEntry {
   const base: ManifestEntry = {
     kind: ev.review_kind,
@@ -133,17 +236,19 @@ export function buildManifestEntry(
     consumed_by_commit_sha: consume.consumedByCommitSha,
     user_commit_confirmed: consume.userCommitConfirmed,
   }
+  // 미지정이면 키 자체를 넣지 않는다 — 기존 행과 바이트 동일(하위호환).
+  const inv = consume.archiveInventory ? { archive_inventory: consume.archiveInventory } : {}
   // fail-fast: kind별 필수 바인딩 필드(phase=approved_tree, design=design_hash). 반대 kind 필드는 미포함.
   if (ev.review_kind === 'design') {
     const designHash = ev.design_hash
     if (typeof designHash !== 'string' || !designHash)
       throw new Error('buildManifestEntry: design evidence에 design_hash 누락(fail-fast)')
-    return { ...base, phase_id: null, design_hash: designHash }
+    return { ...base, phase_id: null, design_hash: designHash, ...inv }
   }
   const approvedTree = ev.approved_tree
   if (typeof approvedTree !== 'string' || !approvedTree)
     throw new Error('buildManifestEntry: phase evidence에 approved_tree 누락(fail-fast)')
-  return { ...base, approved_tree: approvedTree }
+  return { ...base, approved_tree: approvedTree, ...inv }
 }
 
 /** 매니페스트 한 줄 직렬화(JSONL): JSON + 끝 개행. 고정 키 순서라 deterministic. */
@@ -204,6 +309,10 @@ export function validateManifest(content: string, opts: { ticketRel: string; val
       if (e.phase_id !== null) problems.push(`line ${ln}: design entry는 phase_id=null이어야`)
       if (typeof e.design_hash !== 'string' || !SHA256_RE.test(e.design_hash)) problems.push(`line ${ln}: design_hash 비-64hex`)
       if ('approved_tree' in e) problems.push(`line ${ln}: design entry에 approved_tree 금지`)
+    }
+    // archive_inventory(REQ-2026-048 DEC-2): **선택** — 부재는 정상(기존 행 무회귀). 있으면 형식 검증.
+    if ('archive_inventory' in e) {
+      for (const p of archiveInventoryProblems(e.archive_inventory, opts.ticketRel)) problems.push(`line ${ln}: ${p}`)
     }
     // user_commit_confirmed: null 또는 유효 감사 기록(confirmed=true·method·ISO confirmed_at)만. (B2-block3)
     const ucc = e.user_commit_confirmed
