@@ -14,7 +14,7 @@
 import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { writeState, loadState, resolveSuccessorLineage, type WorkflowState, type SuccessorOf } from './review-codex'
+import { writeState, loadState, resolveSuccessorLineage, durableParentSeriesTerminal, type WorkflowState, type SuccessorOf } from './review-codex'
 import { loadConfig, packageRoot, buildScriptInvocation, type DesignDocs, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { parseStatusZ, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
@@ -174,6 +174,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   // REQ-2026-029 D3: --successor-of lineage 해소. **branch 생성·mkdir 前**에 검증(design-r01 observation) —
   // 부모 없음·replace 기록 없음·형식 위반이면 여기서 throw해 티켓이 생성되지 않는다(R6 fail-closed).
   let successorOf: SuccessorOf | undefined
+  let parentTerminal: { parentId: string; parentTicketRel: string; parentState: WorkflowState } | undefined
   if (o.successorOf !== null) {
     const parentId = o.successorOf.startsWith('REQ-') ? o.successorOf : `REQ-${o.successorOf}`
     const parentDir = join(cfg.workflowDirAbs, parentId)
@@ -185,6 +186,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     }
     // recorded_at은 자식 생성 시각(부모 값 아님). dry-run에선 검증만 하고 값은 버린다.
     successorOf = resolveSuccessorLineage(parentState, parentId, new Date().toISOString())
+    parentTerminal = { parentId, parentTicketRel: relative(cfg.root, parentDir).replace(/\\/g, '/'), parentState }
   }
 
   if (!o.run) {
@@ -211,6 +213,21 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   }
   const cur = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   if (cur !== 'main') console.warn(`⚠️  현재 브랜치가 main이 아님(${cur}) — REQ는 main에서 시작 권장(DEC-WF-020)`)
+
+  // 🔴 REQ-2026-052 test #3: 부모의 replace/human-resolution 종결을 durable화(ledger + series-terminal
+  //    close proof를 커밋). 브랜치 체크아웃 **전**(현재 브랜치에서) — clean tree는 위에서 확인됐고, 이 커밋이
+  //    부모 종결을 HEAD에 남긴다. 멱등이라 재실행에 중복 없음.
+  if (parentTerminal) {
+    const committed = durableParentSeriesTerminal({
+      root: cfg.root,
+      gitFn: (args) => git(args),
+      parentTicketRel: parentTerminal.parentTicketRel,
+      parentState: parentTerminal.parentState,
+      parentId: parentTerminal.parentId,
+      nowIso: new Date().toISOString(),
+    })
+    if (committed) console.log(`  부모 ${parentTerminal.parentId} series-terminal close proof·ledger 커밋(durable 종결)`)
+  }
 
   git(['checkout', '-b', branch]) // D11/DEC-WF-020: feat/req-* 생성·체크아웃
   mkdirSync(ticketDir, { recursive: true })

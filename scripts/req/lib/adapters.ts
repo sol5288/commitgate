@@ -234,13 +234,37 @@ export function createCodexReviewerAdapter(run: CodexRunner = defaultCodexRunner
 }
 
 /** 테스트 전용 ReviewerAdapter — canned 응답 반환 + 받은 요청 기록(live codex 없이 review-codex 플로 검증, 수용기준 #4). */
-export function createFakeReviewerAdapter(result: ReviewResult): ReviewerAdapter & { requests: ReviewRequest[] } {
+export function createFakeReviewerAdapter(
+  result: ReviewResult,
+  opts: {
+    /**
+     * REQ-2026-052: `true`(기본)면 응답의 `review_base_sha`를 **프롬프트의 `REVIEW_BASE_SHA`로 덮어쓴다**.
+     * pre-call 원장 커밋이 HEAD를 옮겨 실제 approval base가 테스트 setup 시점의 head와 달라지므로, 고정
+     * canned 응답의 base가 stale해진다. 프롬프트 base를 echo하면 near-e2e가 그 커밋을 신경 쓰지 않아도 된다.
+     * base 불일치(invalid)를 **의도적으로** 테스트하려면 `echoPromptBase:false`로 끈다.
+     */
+    echoPromptBase?: boolean
+  } = {},
+): ReviewerAdapter & { requests: ReviewRequest[] } {
   const requests: ReviewRequest[] = []
+  const echo = opts.echoPromptBase !== false
   return {
     requests,
     review(req: ReviewRequest): ReviewResult {
       requests.push(req)
-      return result
+      if (!echo) return result
+      // 프롬프트에서 `REVIEW_BASE_SHA: <sha>` 추출.
+      const m = /^REVIEW_BASE_SHA:\s*([0-9a-f]{7,64})\s*$/m.exec(req.prompt)
+      if (!m) return result
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(result.lastMessage)
+      } catch {
+        return result // JSON이 아니면 손대지 않는다.
+      }
+      if (!parsed || typeof parsed !== 'object' || !('review_base_sha' in parsed)) return result
+      const patched = { ...(parsed as Record<string, unknown>), review_base_sha: m[1] }
+      return { ...result, lastMessage: JSON.stringify(patched) }
     },
   }
 }

@@ -61,6 +61,9 @@ function baseInput(over: Partial<NextInput> = {}): NextInput {
     hasStagedChanges: false,
     worktreeReviewClean: true,
     currentIndexHash: HASH_A,
+    // REQ-2026-052: G2 compare_hash 재계산 정본은 semantic identity. 기존 G2 테스트가 compare_hash: HASH_A를
+    // 쓰므로 기본값도 HASH_A로 맞춘다(무회귀). 특정 G2 시나리오는 이 값을 override한다.
+    currentSemanticIdentity: HASH_A,
     reviewBudget: { autoBudget: 5, hardCap: 8 },
     // REQ-2026-037: 기본은 never(현행 매 phase 정지) — 대부분의 기존 테스트가 이 무회귀 경로를 검증한다.
     phaseCommitAutoApprove: 'never',
@@ -525,7 +528,7 @@ describe('[req:next] G2 — 바인딩 신선도(outcome-aware)', () => {
   })
 
   it('currentIndexHash를 계산하지 못하면(null) G2를 건너뛴다(fail-forward)', () => {
-    const input = { ...withLastReview('needs-fix'), currentIndexHash: null }
+    const input = { ...withLastReview('needs-fix'), currentSemanticIdentity: null }
     expect(resolveNext(input).kind).toBe('RUN')
   })
 
@@ -536,10 +539,10 @@ describe('[req:next] G2 — 바인딩 신선도(outcome-aware)', () => {
    */
   it('blocked_review.count>=2가 있어도 compare_hash가 다르면 RUN', () => {
     const state = baseState({
-      blocked_review: { review_kind: 'phase', phase_id: 'p1', review_base_sha: 'x', review_binding: 'TREE', count: 5, response_sha256: null, blocked_at: 'T' },
+      blocked_review: { review_kind: 'phase', phase_id: 'p1', semantic_identity: 'SEM', count: 5, response_sha256: null, blocked_at: 'T' },
       last_review: { review_kind: 'phase', phase_id: 'p1', outcome: 'blocked', compare_hash: HASH_B, count: 5, errors: [], at: 'T' },
     } as Partial<WorkflowState>)
-    const a = resolveNext(baseInput({ state, hasStagedChanges: true, currentIndexHash: HASH_A }))
+    const a = resolveNext(baseInput({ state, hasStagedChanges: true, currentSemanticIdentity: HASH_A }))
     expect(a.kind).toBe('RUN')
   })
 })
@@ -781,7 +784,7 @@ describe('REQ-2026-028 — G3 예산 소진 안내(resolveNext)', () => {
     const state = withOpenSeries(5, {
       last_review: { review_kind: 'phase', phase_id: 'p1', outcome: 'needs-fix', compare_hash: HASH_A, count: 1, errors: [], at: 'T', findings: [] },
     } as Partial<WorkflowState>)
-    const a = resolveNext(baseInput({ state, hasStagedChanges: true, currentIndexHash: HASH_A }))
+    const a = resolveNext(baseInput({ state, hasStagedChanges: true, currentSemanticIdentity: HASH_A }))
     expect(a.kind).toBe('AWAIT_HUMAN') // G3 승 — G2의 AGENT가 아니다
   })
 
@@ -800,7 +803,7 @@ describe('REQ-2026-028 — G3 예산 소진 안내(resolveNext)', () => {
     const boundary = withOpenSeries(4, {
       last_review: { review_kind: 'phase', phase_id: 'p1', outcome: 'needs-fix', compare_hash: HASH_A, count: 1, errors: [], at: 'T', findings: [] },
     } as Partial<WorkflowState>)
-    const b = resolveNext(baseInput({ state: boundary, hasStagedChanges: true, currentIndexHash: HASH_A }))
+    const b = resolveNext(baseInput({ state: boundary, hasStagedChanges: true, currentSemanticIdentity: HASH_A }))
     expect(b.kind).toBe('AGENT') // G2 — escalated 아니므로 "고치고 다시 add"가 유효한 조언
   })
 

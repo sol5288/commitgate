@@ -29,7 +29,52 @@ r02 P1이 정확했다 — `integrated`는 4종 HEAD blob으로 파생 불가(an
 - **오버레이 2개**: `reconstructed`(close proof blob·순수) · `integrated`(git-ancestry·순수 아님·**상태 보고 전용, req:new 게이트 무관**).
 - observation(7개 나열·reconstructed 게이트 정책 부재)도 반영: 기본/오버레이 분리로 개수 정합, 게이트 표에 오버레이 무관 규칙 명시.
 
-## 리뷰 포인트
+## r03 설계 보정 (phase-2 착수 전 발견 갭 — semantic identity 도입)
+
+phase-2 구현을 확인하던 중, 승인된 DEC-A2가 pre-call 원장 커밋과 세 기존 기계의 상호작용을 놓친 것을 발견했다. 사용자 판정에 따라 보정했다:
+
+- **approval binding 의미 불변**(DEC-A2 개정): `reviewBaseSha`/`reviewTree`는 pre-call 커밋 **이후의 실제 HEAD/전체 index tree**. 응답 검증·D9·req:commit이 그대로 사용. `reviewTree`를 pathspec-only hash로 **바꾸지 않는다**(D9의 전체 staged-tree 승인 바인딩 유지).
+- **semantic identity 신설**(DEC-A5): `scripts/req/lib/review-target.ts` — 작은 인터페이스 하나("현재 리뷰의 semantic identity 계산"). read-only `git ls-files -s`에서 **정확히 `review-ledger.jsonl` 줄만 제외**하고 SHA256. approvals·docs·code·일반 HEAD 변경은 제외 **안 함**(non-ledger 변경은 identity를 바꿔야 함). blocked breaker·compare_hash·req:next G2가 이 identity 사용 → 원장 커밋에 안 흔들림. 구형 marker(semantic_identity 없음)는 안전 재판정.
+- **실행 순서 고정**(DEC-A6): identity 후보 계산 → D10+blocked short-circuit → 예산/예외 → attempt-opened+pre-call ledger-only commit → 실제 binding 캡처 → identity 재계산 assert → 프롬프트·호출 → 사후 검사 → marker·last_review 기록. 🔴 **blocked면 커밋·기록·예산·호출 모두 미발생**.
+
+이 delta review는 위 보정(DEC-A2 개정·A5·A6)에 집중해 검토를 요청한다.
+
+## r03-delta 반영 (P1: evidence-finalize가 identity를 흔들어 G2 회귀)
+
+r03-delta P1이 정확했다 — semantic identity를 "ledger 한 줄만 제외"로 하면 evidence-finalize가 approvals·아카이브를 커밋할 때 identity가 바뀌어, 방금 승인·내구화한 리뷰를 req:next G2가 stale로 오판한다(옛 designHash가 피하던 것, 요구 #4 위반).
+
+수정: exclusion을 **ledger 한 줄 → 티켓 `responses/` audit 디렉터리 전체**로 넓혔다. 근거: `responses/`는 순수 audit(ledger·approvals·아카이브·close-proof·codex-response·preview)이고 **리뷰 대상은 절대 그 안에 없다**(design 문서=티켓루트 0N-*.md, phase 코드=workflow/ 밖). 따라서 responses/ 전체를 제외해도 리뷰 대상은 identity에 남고, pre-call 커밋과 evidence-finalize 양쪽 bookkeeping에 identity가 불변이다. oracle ⑭b(정상 승인→evidence-finalize→G2 통과) 추가.
+
+**⚠️ 사용자 지침 "approvals archive를 광범위하게 제외 말라"에서 의도적 이탈**: 그대로 두면 evidence-finalize가 요구 #4를 어긴다(리뷰어 확증). 사용자의 더 깊은 의도(정상 흐름 무회귀·bookkeeping에 identity 불변)를 지키는 유일한 방법이라 표기하고 진행한다.
+
+## phase-2 구현 노트 (이번 staged diff)
+
+DEC-A6 순서로 review-codex 흐름을 재구성했다. 이 phase-2 리뷰 자체가 pre-call 커밋을 **자기 자신에게 dogfood**한다.
+
+- **`scripts/req/lib/review-target.ts`(신규)**: `computeReviewSemanticIdentity(ticketRel, gitFn)` = read-only `git ls-files -s`에서 `<ticketRel>/responses/` 제외 SHA256. malformed 행 보수적 포함·빈 ticketRel fail-closed.
+- **review-codex 재구성**: `withAttemptRecorded`를 `gateAndRecordAttempt`(게이트+기록) + call로 분리. mainImpl: semantic identity 계산 → D10 → blocked short-circuit(identity) → gate+record → 원장 opened append + `precallCommitLedgerRow`(pathspec·durable만) → `captureGitBinding`(post-commit) → identity 재계산 assert → 프롬프트 → 호출. opened row `prompt_sha256=null`(순환의존 해소), closed row가 prompt_sha256 담음.
+- **blocked marker**: `review_base_sha`+`review_binding` → `semantic_identity`. 구형 marker(필드 없음)는 `sameBlockedReviewTarget`이 불일치로 봐 재판정.
+- **compare_hash = semantic identity**(design·phase 통일). **req:next**: `currentSemanticIdentity` 추가, G2 candidate compareHash가 이 값 재계산(currentDesignHash는 freshness로 유지).
+- **req:new --successor-of**: `durableParentSeriesTerminal`로 부모 series-terminal close proof + ledger를 pathspec 커밋(멱등).
+- **테스트 fake reviewer**: `echoPromptBase`(기본 on)로 프롬프트의 REVIEW_BASE_SHA를 응답에 echo — pre-call 커밋으로 base가 옮겨져도 near-e2e가 신경 안 쓰게. base 불일치 검증은 processResponse 단위 테스트(변경 없음).
+
+**검증**: typecheck 0 · **전체 1510 green**. 신규 테스트: review-target 단위 10 · phase-2 near-e2e 10(⑨~⑲+⑭b, 실 git) · 부모 terminal proof 1. 사용자 필수 테스트 전부 포함 — pre-call 뒤 base=post-commit HEAD·identity 전후 동일·3번째 blocked 0(commit/attempt/ledger/reviewer)·staged 변경 시 해제·non-ledger HEAD 변경 시 해제·evidence-finalize 뒤 G2 불변·구형 marker 1회 재판정·pre-call 실패 시 호출 0·legacy 무접촉·pathspec이 staged 문서 미변조.
+
+## 리뷰 포인트 (보정 관련 우선)
+
+R1. **semantic identity 입력 범위가 옳은가.** `git ls-files -s`에서 `review-ledger.jsonl` **한 줄만** 제외한다. 이게 "audit-only 원장 변화만 제외하고 non-ledger 변경(approvals·docs·code·HEAD)은 identity를 바꾼다"를 정확히 달성하는가. `ls-files -s`가 원장의 3상태(untracked·modified-unstaged·committed)에서 모두 안정적으로 제외되는가.
+
+R2. **binding 캡처 시점.** approval binding을 pre-call 커밋 **후** 캡처하면 D9·응답 검증이 정합하다는 주장이 맞는가. 특히 리뷰 시점 reviewTree(원장 opened 포함)와 req:commit D9 시점 staged tree(원장 opened 커밋됨·closed는 evidence-finalize가 D9 후 커밋)가 일치하는가.
+
+R3. **identity 재계산 assert(6단계)가 의미 있는가.** pre-call 커밋 전후 semantic identity가 동일함을 assert한다. 이 불변식이 깨질 수 있는 정상 경로가 있는가(예: 원장 외 무언가가 커밋에 딸려감).
+
+R4. **compare_hash 통일의 하위호환.** design compare_hash를 designHash(docs subset)→semantic identity(전체−ledger)로 바꾼다. design 재리뷰에서 baseline(non-doc) 변경 시 identity가 바뀌어 G2가 재리뷰를 허용하는 것이 옳은가. 기존 design 흐름(doc만 바뀌는 정상 series)에서 회귀가 없는가.
+
+R5. **구형 marker 재판정이 안전한가.** semantic_identity 필드 없는 기존 blocked marker를 "불일치"로 봐 한 번 신선 리뷰 후 새 marker를 쓴다. 이게 무한 재리뷰를 열지 않는가(한 번만 재판정).
+
+R6. **호출자 범위.** review-target.ts를 review-codex와 req:next(G2 재계산)가 공유한다. 사용자 지침 "호출자는 review-codex와 테스트뿐"과 요구 2(G2가 semantic identity 사용)가 충돌하는데, req:next를 정당한 두 번째 호출자로 두는 것이 맞는가(현재 captureIndexHash도 양쪽 공유).
+
+## 리뷰 포인트 (기존)
 
 1. **1 커밋/호출이 정말 하한인가.** DEC-A는 각 외부 호출이 opened를 호출 전 durable화해야 하므로 매 호출 선커밋이 불가피하다고 논증한다. 더 적은 커밋으로 같은 보장(요구 #1: 외부 호출 직전 durable opened가 process 종료 후 HEAD에서 보임)을 낼 대안이 있는가. off-HEAD 저장은 "HEAD blob 기준" 원칙 위반으로 배제했는데 타당한가.
 

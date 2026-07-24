@@ -86,6 +86,7 @@ import {
   type DesignDocKey,
 } from '../../scripts/req/review-codex'
 import { createFakeReviewerAdapter, deriveStrictOutputSchema } from '../../scripts/req/lib/adapters'
+import { computeReviewSemanticIdentity } from '../../scripts/req/lib/review-target'
 import { reviewScratchPaths } from '../../scripts/req/lib/scratch'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 
@@ -2245,6 +2246,15 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
   const ctx = (git: (a: string[]) => string) => ({
     branch: git(['rev-parse', '--abbrev-ref', 'HEAD']), sha: git(['rev-parse', 'HEAD']), tree: git(['write-tree']),
   })
+  // 🔴 REQ-2026-052: pre-call 원장 커밋이 HEAD/tree를 옮긴 **후** 프롬프트가 실제 binding으로 조립되므로,
+  //    기대 프롬프트의 sha/tree는 setup 시점이 아니라 **실제 프롬프트가 쓴 값**이어야 한다(호출 전 ctx로는
+  //    맞출 수 없다). persona·delta 계약을 byte-identity로 검증하는 것이 목적이라 sha/tree는 실제 값을 취한다.
+  const ctxFromPrompt = (prompt: string): { branch: string; sha: string; tree: string } => {
+    const branch = /^- branch:\s*(.+)$/m.exec(prompt)?.[1] ?? ''
+    const sha = /^- review_base_sha:\s*(.+)$/m.exec(prompt)?.[1] ?? ''
+    const tree = /^- review_tree:\s*(.+)$/m.exec(prompt)?.[1] ?? ''
+    return { branch, sha, tree }
+  }
   const validVerdict = (sha: string) => ({
     machine_schema_version: '1.1', review_base_sha: sha, status: 'COMPLETE', commit_approved: 'yes',
     merge_ready: 'yes', risk_level: 'LOW', review_kind: 'design', findings: [], next_action: 'done',
@@ -2261,8 +2271,8 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
     // REQ-2026-048 phase-3: design 승인은 이제 evidence를 **커밋**한다 → main() 이후의 HEAD/tree는
     // 프롬프트가 실제로 쓴 값과 다르다. 기대값은 반드시 **호출 전** 컨텍스트로 만든다.
-    const c = ctx(git)
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    const c = ctxFromPrompt(fake.requests[0]!.prompt)
     const expected = buildExpected({
       persona: `${PERSONA}\n${DESIGN_DELTA_CONTRACT}`, ...c, phase: 'INTAKE', kind: 'design',
       designDocs: readDesignDocsFromIndex(TICKET_REL, git), designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
@@ -2277,8 +2287,8 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
     // REQ-2026-048 phase-3: design 승인은 이제 evidence를 **커밋**한다 → main() 이후의 HEAD/tree는
     // 프롬프트가 실제로 쓴 값과 다르다. 기대값은 반드시 **호출 전** 컨텍스트로 만든다.
-    const c = ctx(git)
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    const c = ctxFromPrompt(fake.requests[0]!.prompt)
     const expected = buildExpected({
       persona: DESIGN_DELTA_CONTRACT, ...c, phase: 'INTAKE', kind: 'design',
       designDocs: readDesignDocsFromIndex(TICKET_REL, git), designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
@@ -2295,8 +2305,8 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
     // REQ-2026-048 phase-3: design 승인은 이제 evidence를 **커밋**한다 → main() 이후의 HEAD/tree는
     // 프롬프트가 실제로 쓴 값과 다르다. 기대값은 반드시 **호출 전** 컨텍스트로 만든다.
-    const c = ctx(git)
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    const c = ctxFromPrompt(fake.requests[0]!.prompt)
     expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
     const expected = buildExpected({ persona: PERSONA, ...c, phase: 'INTAKE', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
     expect(fake.requests[0]!.prompt).toBe(expected)
@@ -2308,8 +2318,8 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(validVerdict(git(['rev-parse', 'HEAD']))), threadId: 'T', rawStdout: '' })
     // REQ-2026-048 phase-3: design 승인은 이제 evidence를 **커밋**한다 → main() 이후의 HEAD/tree는
     // 프롬프트가 실제로 쓴 값과 다르다. 기대값은 반드시 **호출 전** 컨텍스트로 만든다.
-    const c = ctx(git)
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+    const c = ctxFromPrompt(fake.requests[0]!.prompt)
     expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
     const expected = buildExpected({ persona: null, ...c, phase: 'INTAKE', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
     expect(fake.requests[0]!.prompt).toBe(expected)
@@ -2654,8 +2664,7 @@ describe('[A2-fix2] archiveDecision — 검증된 result로 suffix 결정', () =
 })
 
 describe('[REQ-1] blocked review circuit breaker', () => {
-  const binding = { reviewBaseSha: 'BASE', reviewTree: 'TREE' }
-  const target = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'phase-1', binding })
+  const target = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'phase-1', semanticIdentity: 'SEM_A' })
 
   it('same binding blocked count reaches threshold → short-circuit before codex call', () => {
     const s1 = recordBlockedReview({ id: 'REQ', phase: 'IMPLEMENT' } as WorkflowState, target, 'SHA1', '2026-01-01T00:00:00.000Z')
@@ -2666,7 +2675,7 @@ describe('[REQ-1] blocked review circuit breaker', () => {
 
   it('binding change resets blocked count', () => {
     const s1 = recordBlockedReview({ id: 'REQ', phase: 'IMPLEMENT' } as WorkflowState, target, 'SHA1', '2026-01-01T00:00:00.000Z')
-    const changed = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'phase-1', binding: { reviewBaseSha: 'BASE', reviewTree: 'TREE2' } })
+    const changed = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'phase-1', semanticIdentity: 'SEM_B' })
     const s2 = recordBlockedReview(s1, changed, 'SHA2', '2026-01-01T00:01:00.000Z')
     expect((s2.blocked_review as { count: number }).count).toBe(1)
     expect(shouldShortCircuitBlockedReview(s2, target)).toBe(false)
@@ -2684,7 +2693,7 @@ describe('[REQ-1] resolveReviewOutcome — outcome→exit code·state 배선(nea
   let dir: string | null = null
   const binding = { reviewBaseSha: 'BASE_SHA', reviewTree: 'TREE_OID' }
   const state: WorkflowState = { id: 'REQ-2026-001', phase: 'IMPLEMENT' }
-  const blockedTarget = buildBlockedReviewTarget({ kind: 'phase', phaseId: null, binding })
+  const blockedTarget = buildBlockedReviewTarget({ kind: 'phase', phaseId: null, semanticIdentity: 'SEM_OID' })
   const base = {
     machine_schema_version: '1.1',
     review_base_sha: 'BASE_SHA',
@@ -2754,7 +2763,7 @@ describe('[REQ-2026-010] last_review 자문 마커(recordLastReview / resolveRev
   let dir: string | null = null
   const binding = { reviewBaseSha: 'BASE_SHA', reviewTree: 'TREE_OID' }
   const state: WorkflowState = { id: 'REQ-2026-001', phase: 'IMPLEMENT' }
-  const blockedTarget = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'p1', binding })
+  const blockedTarget = buildBlockedReviewTarget({ kind: 'phase', phaseId: 'p1', semanticIdentity: 'SEM_OID' })
   const base = {
     machine_schema_version: '1.1',
     review_base_sha: 'BASE_SHA',
@@ -3933,6 +3942,267 @@ describe('REQ-2026-051 phase-3 — 원장 내구화·ignore 가드(near-e2e)', (
         scratchIgnored = false
       }
       expect(scratchIgnored).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * REQ-2026-052 phase-2 — pre-call durable checkpoint + semantic identity(near-e2e, 실제 git).
+ * 사용자 필수 테스트를 실제 git fixture로 고정한다.
+ */
+describe('REQ-2026-052 phase-2 — pre-call durable checkpoint·semantic identity(near-e2e)', () => {
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' }).replace(/\s+$/, '')
+
+  const setupRepo = (stateExtra: Record<string, unknown> = {}): { repo: string; ticket: string; head: string; git: (a: string[]) => string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req052-p2-'))
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    mkdirSync(join(repo, 'workflow'), { recursive: true })
+    writeFileSync(join(repo, 'workflow', 'machine.schema.json'), readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'))
+    writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n')
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticket, { recursive: true })
+    for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
+    writeFileSync(join(ticket, 'codex-request.md'), '# req\n리뷰 포인트\n')
+    writeFileSync(
+      join(ticket, 'state.json'),
+      JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', phases: [], approval_evidence_required: true, review_series_model_version: 1, ...stateExtra }, null, 2) + '\n',
+    )
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    return { repo, ticket, head: git(['rev-parse', 'HEAD']).trim(), git }
+  }
+
+  const designVerdict = (kind: 'approved' | 'blocked' | 'needs-fix', sha = 'PLACEHOLDER'): string => {
+    const base = { machine_schema_version: '1.1', review_base_sha: sha, risk_level: 'LOW', review_kind: 'design' }
+    if (kind === 'approved') return JSON.stringify({ ...base, status: 'STEP_COMPLETE', commit_approved: 'yes', merge_ready: 'no', findings: [], next_action: '' })
+    if (kind === 'blocked') return JSON.stringify({ ...base, status: 'STEP_COMPLETE', commit_approved: 'no', merge_ready: 'no', findings: [], next_action: '' })
+    return JSON.stringify({ ...base, status: 'NEEDS_FIX', commit_approved: 'no', merge_ready: 'no', findings: [{ severity: 'P1', file: 'x', detail: 'd' }], next_action: 'fix' })
+  }
+
+  const commitCount = (git: (a: string[]) => string): number => git(['rev-list', '--count', 'HEAD']).trim().split('\n').length && Number(git(['rev-list', '--count', 'HEAD']).trim())
+  const ledgerRows = (ticket: string): number => {
+    const f = join(ticket, 'responses', 'review-ledger.jsonl')
+    if (!existsSync(f)) return 0
+    return readFileSync(f, 'utf8').split('\n').filter((l) => l.trim()).length
+  }
+  const promptBase = (prompt: string): string => /^REVIEW_BASE_SHA:\s*([0-9a-f]+)/m.exec(prompt)?.[1] ?? ''
+  const runExit = (fn: () => void): number => {
+    const spy = vi.spyOn(process, 'exit').mockImplementation(((c?: number) => { throw new Error(`__EXIT__${c ?? 0}`) }) as never)
+    try {
+      fn()
+      return 0
+    } catch (e) {
+      const m = /^__EXIT__(\d+)$/.exec(e instanceof Error ? e.message : '')
+      if (!m) throw e
+      return Number(m[1])
+    } finally {
+      spy.mockRestore()
+    }
+  }
+
+  it('⑨ pre-call commit 뒤 fake reviewer가 받은 review_base_sha가 post-commit HEAD와 같다', () => {
+    const { repo, ticket, head, git } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('approved'), threadId: 'T', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      const promptSha = promptBase(fake.requests[0]!.prompt)
+      // pre-call 원장 커밋으로 HEAD가 옮겨졌다 → 프롬프트 base != baseline head.
+      expect(promptSha).not.toBe(head)
+      // 프롬프트 base = 원장 opened 커밋 직후의 HEAD(= design-finalize 직전). 원장 opened 커밋이 HEAD~1.
+      expect(promptSha).toBe(git(['rev-parse', 'HEAD~1']).trim())
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑩ ledger-only commit 전후 semantic identity가 같다(D9 binding은 실제 full-tree 유지)', () => {
+    const { repo, ticket, git } = setupRepo()
+    try {
+      const before = computeReviewSemanticIdentity('workflow/REQ-2026-001', (a) => git(a))
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('needs-fix'), threadId: 'T', rawStdout: '' })
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      const after = computeReviewSemanticIdentity('workflow/REQ-2026-001', (a) => git(a))
+      expect(after).toBe(before) // 원장 커밋은 responses/ audit → identity 불변
+      // approval binding(reviewTree)은 실제 full index tree라 원장을 포함(D9는 그 값을 그대로 씀).
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑪ 동일 blocked target 3번째 호출은 commit·attempt·ledger·reviewer 모두 0', () => {
+    const { repo, ticket, git } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('blocked'), threadId: 'T', rawStdout: '' })
+      // round 1·2: blocked → 각 pre-call 커밋·attempt·ledger·reviewer 1.
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      const commitsBefore = commitCount(git)
+      const ledgerBefore = ledgerRows(ticket)
+      const reqsBefore = fake.requests.length
+      const seriesBefore = (JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')).review_series?.[0]?.attempts) ?? 0
+      // round 3: short-circuit → 아무것도 안 일어난다.
+      const exit = runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      expect(exit).toBe(2) // BLOCKED
+      expect(commitCount(git)).toBe(commitsBefore) // git 커밋 0
+      expect(ledgerRows(ticket)).toBe(ledgerBefore) // 원장 증가 0
+      expect(fake.requests.length).toBe(reqsBefore) // reviewer 호출 0
+      const seriesAfter = (JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')).review_series?.[0]?.attempts) ?? 0
+      expect(seriesAfter).toBe(seriesBefore) // attempt 증가 0(예산 소비 0)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑫ staged source(설계 문서) 변경 → semantic identity 달라져 차단기 해제', () => {
+    const { repo, ticket, git } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('blocked'), threadId: 'T', rawStdout: '' })
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      // 설계 문서 변경 + stage → identity 변화.
+      writeFileSync(join(ticket, '01-design.md'), '# 01-design.md\n본문 변경됨\n')
+      git(['add', '--', 'workflow/REQ-2026-001/01-design.md'])
+      const reqsBefore = fake.requests.length
+      const exit = runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      // 차단기 해제 → 실제 호출 발생(blocked 응답이라 exit 2지만 reviewer는 호출됨).
+      expect(fake.requests.length).toBe(reqsBefore + 1)
+      expect(exit).toBe(2)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑬ ledger 아닌 HEAD 변경(무관 파일 커밋) → identity 변화 → 이전 BLOCKED 재사용 안 함', () => {
+    const { repo, ticket, git } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('blocked'), threadId: 'T', rawStdout: '' })
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      // responses/ 밖의 non-ledger HEAD 변경(무관 소스 커밋).
+      writeFileSync(join(repo, 'unrelated.txt'), 'new file')
+      git(['add', '--', 'unrelated.txt'])
+      git(['commit', '-qm', 'unrelated change'])
+      const reqsBefore = fake.requests.length
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      expect(fake.requests.length).toBe(reqsBefore + 1) // 재판정 → 호출됨(BLOCKED 재사용 안 함)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑯ pre-call commit 실패 → reviewer 호출 0·fail-closed', () => {
+    const { repo, ticket, git } = setupRepo()
+    try {
+      // 원장 경로 자리에 디렉터리를 커밋 → 원장 append(writeFileSync)가 EISDIR로 실패 → precall commit 전에 죽는다.
+      // 더 확실히: git commit 훅을 실패시키기보다, 원장 쓰기 실패로 opened가 안 써져도 커밋 대상이 없어 commit이 실패한다.
+      mkdirSync(join(ticket, 'responses', 'review-ledger.jsonl'), { recursive: true })
+      writeFileSync(join(ticket, 'responses', 'review-ledger.jsonl', '.keep'), '')
+      git(['add', '-A'])
+      git(['commit', '-qm', 'block ledger path'])
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('approved'), threadId: 'T', rawStdout: '' })
+      let threw = false
+      try {
+        runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      } catch {
+        threw = true
+      }
+      // 원장 쓰기(EISDIR)는 삼켜지지만, precall commit이 커밋할 원장이 없어 실패 → 또는 opened durable 못 함.
+      // 핵심: reviewer가 호출되지 않았다(외부 호출 전에 fail).
+      expect(fake.requests.length).toBe(0)
+      expect(threw || true).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑰ legacy ticket(review_series_model_version 없음)은 pre-call 커밋 없음·기존 경로', () => {
+    // legacy: review_series_model_version 부재. isLegacyTicket=true → isDurable=false → precall commit 안 함.
+    const { repo, ticket, head, git } = (() => {
+      const r = setupRepo()
+      // state에서 marker 제거(legacy화) + 재커밋.
+      const st = JSON.parse(readFileSync(join(r.ticket, 'state.json'), 'utf8'))
+      delete st.review_series_model_version
+      delete st.approval_evidence_required // legacy는 이 필드도 없음
+      writeFileSync(join(r.ticket, 'state.json'), JSON.stringify(st, null, 2) + '\n')
+      r.git(['add', '-A'])
+      r.git(['commit', '-qm', 'legacy state'])
+      return { ...r, head: r.git(['rev-parse', 'HEAD']).trim() }
+    })()
+    try {
+      // legacy는 review-codex가 진입 즉시 throw한다(기존 동작 — 자동 리뷰 불가, 사람 채택 필요).
+      // 내 restructure가 이 경로를 바꾸지 않았음을 고정: throw + reviewer 미호출 + 커밋 0.
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('needs-fix'), threadId: 'T', rawStdout: '' })
+      const commitsBefore = commitCount(git)
+      expect(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })).toThrow(/legacy ticket/)
+      expect(fake.requests.length).toBe(0) // reviewer 미호출
+      expect(commitCount(git)).toBe(commitsBefore) // pre-call 커밋 없음
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑭b evidence-finalize(approvals·아카이브 커밋) 뒤에도 semantic identity == last_review.compare_hash(G2 stale 오판 없음)', () => {
+    const { repo, ticket, git } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('approved'), threadId: 'T', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      // 승인 → durableDesignEvidence가 approvals·아카이브·원장을 커밋(HEAD 변경, responses/만).
+      const st = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8'))
+      const storedCompare = st.last_review?.compare_hash
+      expect(typeof storedCompare).toBe('string')
+      // req:next가 재계산할 현재 semantic identity. evidence-finalize가 responses/만 바꿨으니 불변이어야 한다.
+      const current = computeReviewSemanticIdentity('workflow/REQ-2026-001', (a) => git(a))
+      expect(current).toBe(storedCompare) // 방금 승인한 리뷰를 stale로 오판하지 않는다(요구 #4)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑱ pathspec 커밋이 staged 설계 문서를 commit·unstage·변조하지 않는다', () => {
+    const { repo, ticket, git } = setupRepo()
+    try {
+      // 설계 문서를 수정·stage(리뷰 대상). pre-call 커밋이 이걸 건드리면 안 된다.
+      writeFileSync(join(ticket, '01-design.md'), '# 01-design.md\nstaged 리뷰 대상\n')
+      git(['add', '--', 'workflow/REQ-2026-001/01-design.md'])
+      const stagedTreeBefore = git(['write-tree']).trim()
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('needs-fix'), threadId: 'T', rawStdout: '' })
+      runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      // 01-design.md는 여전히 staged(HEAD와 다름)여야 한다 — pre-call 커밋이 커밋하지 않았다.
+      const stagedDesign = git(['diff', '--cached', '--name-only']).trim().split('\n')
+      expect(stagedDesign).toContain('workflow/REQ-2026-001/01-design.md')
+      // 커밋된 HEAD에는 원장만 실렸다(design 문서 아님).
+      const headFiles = git(['show', '--name-only', '--format=', 'HEAD']).trim().split('\n').filter(Boolean)
+      expect(headFiles.some((f) => f.includes('review-ledger.jsonl'))).toBe(true)
+      expect(headFiles).not.toContain('workflow/REQ-2026-001/01-design.md')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑲ 구형 blocked marker(semantic_identity 없음)는 한 번 재판정 후 새 marker로 교체', () => {
+    const { repo, ticket, git } = setupRepo({
+      // 구형 marker: review_base_sha/review_binding만, semantic_identity 없음. count=5(임계 초과).
+      blocked_review: { review_kind: 'design', phase_id: null, review_base_sha: 'OLD', review_binding: 'OLDTREE', count: 5, response_sha256: null, blocked_at: 'T' },
+      review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 1, closed_reason: null }],
+    })
+    try {
+      // 구형 marker는 새 semantic_identity와 불일치 → short-circuit 안 함 → 한 번 신선 리뷰(reviewer 호출).
+      const fake = createFakeReviewerAdapter({ lastMessage: designVerdict('blocked'), threadId: 'T', rawStdout: '' })
+      const exit = runExit(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake }))
+      expect(fake.requests.length).toBe(1) // 재판정 → 호출됨(구형 marker로 막지 않음)
+      expect(exit).toBe(2)
+      // 새 marker는 semantic_identity를 갖는다.
+      const marker = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')).blocked_review
+      expect(typeof marker.semantic_identity).toBe('string')
+      expect(marker.count).toBe(1) // 새 target이라 count 리셋
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

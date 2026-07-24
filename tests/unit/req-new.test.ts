@@ -382,4 +382,23 @@ describe('req:new — --successor-of lineage(REQ-2026-029)', () => {
       expect(s.successor_of).toBeUndefined()
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
+
+  // 🔴 REQ-2026-052 test #3: replace 종결이 부모에 ledger + series-terminal close proof를 **커밋**한다.
+  it('REQ-2026-052: successor 생성 시 부모 series-terminal close proof가 HEAD에 커밋된다', () => {
+    const dir = fixture(true)
+    try {
+      const r = run(dir, ['succ-child', '--successor-of', 'REQ-2026-020', '--run'])
+      expect(r.status).toBe(0)
+      const cpRel = 'workflow/REQ-2026-020/responses/ticket-close.jsonl'
+      // HEAD(자식 브랜치)에 부모 close proof가 committed blob으로 존재.
+      const t = g(dir, ['cat-file', '-t', `HEAD:${cpRel}`]).trim()
+      expect(t).toBe('blob')
+      const rows = g(dir, ['show', `HEAD:${cpRel}`]).trim().split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l))
+      const term = rows.find((x: Record<string, unknown>) => x.event === 'series-terminal')
+      expect(term).toBeTruthy()
+      expect(term.ticket_id).toBe('REQ-2026-020')
+      expect(term.resolution).toBe('replace')
+      expect(term.reconstructed).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
 })

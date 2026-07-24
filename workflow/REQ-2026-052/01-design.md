@@ -34,21 +34,67 @@
 
 **비용·사용성**: 리뷰 라운드는 예산으로 유계(autoBudget 5·hardCap 8)라 series당 pre-call 커밋 ≤8. pathspec-scoped 저소음 `chore` 커밋이고, 기존 evidence-finalize 커밋과 같은 성격이다. 이 커밋 노이즈가 감수 비용이며, 그 대가로 미승인 라운드의 감사 내구성을 얻는다.
 
-### DEC-A2. 🔴 pre-call 커밋은 `captureGitBinding` **전**이어야 한다
+### DEC-A2. 🔴 approval binding은 pre-call 커밋 **후** 캡처하되 의미는 바꾸지 않는다
 
-원장 커밋이 `captureGitBinding` **후**에 일어나면 HEAD·인덱스가 바뀌어 `afterTree === reviewTree` 검사가 리뷰어 수정으로 **오판**하고 `reviewBaseSha`가 어긋난다. 따라서 흐름을 재구성한다:
+pre-call 원장 커밋이 HEAD·인덱스를 바꾸므로, `afterTree === reviewTree`와 응답 `review_base_sha` 정합은 **커밋 후에 실제 approval binding을 캡처**하면 해결된다. 그래서 흐름에서 `captureGitBinding`을 원장 커밋 **뒤**로 옮긴다(DEC-A6 순서).
+
+🔴 **approval binding의 의미를 바꾸지 않는다**(사용자 판정):
+- `reviewBaseSha` = pre-call 원장 커밋 **이후의 실제 HEAD**.
+- `reviewTree` = pre-call 원장 커밋 **이후의 실제 전체 index tree**(`git write-tree`).
+- 응답 검증·**D9**·`req:commit`은 이 값을 그대로 쓴다. `reviewTree`를 리뷰 대상 pathspec만의 hash로 **바꾸지 않는다** — `reviewTree`·`approved_diff_hash`는 D9의 전체 staged-tree 승인 바인딩으로 유지한다.
+
+즉 approval binding은 원장을 포함한 실제 인덱스를 그대로 반영하며, 원장이 커밋돼도 D9는 정합하다(리뷰 시점과 커밋 시점의 인덱스에 원장 opened가 동일하게 포함되므로 — closed는 evidence-finalize가 D9 이후에 커밋).
+
+pre-call 커밋은 **원장 경로만** stage/commit한다(design 문서·phase 코드 staged를 인덱스에 보존 — evidence-finalize의 leak 가드와 동일 기법). `git commit -- <ledger>`가 다른 staged 항목을 건드리지 않는다.
+
+### DEC-A5. 🔴 semantic identity — 원장 커밋에 흔들리지 않는 별도 정체성
+
+approval binding(DEC-A2)은 원장을 포함하므로 매 라운드 원장 커밋으로 값이 바뀐다. 그런데 다음 두 판정은 **같은 리뷰의 반복**을 감지해야 하므로 원장 audit 변화에 흔들리면 안 된다(발견된 갭):
+- **blocked-review circuit breaker**(무한 재리뷰 차단) — 현재 `review_base_sha`+`review_binding`(reviewTree)로 키잉 → 원장 커밋마다 키가 바뀌어 **차단 붕괴**.
+- **`last_review.compare_hash`** 및 **req:next G2**(바인딩 신선도) — phase는 `captureIndexHash`(전체 ls-files)라 원장 커밋마다 리셋. (design은 `designHash`=docs subset이라 이미 원장-안정.)
+
+**신규 모듈 `scripts/req/lib/review-target.ts`** — 작은 인터페이스 하나: "현재 리뷰의 semantic identity를 계산한다". git 필터링·정렬·hash 규칙을 내부에 숨긴다.
 
 ```
-1. D10 pre-review 가드(clean tree except scratch+staged)
-2. 예산·terminal·예외 게이트 + recordAttempt + writeState(state.json)   ← withAttemptRecorded의 앞부분
-3. 원장 opened append(working tree) + **pre-call 원장 커밋**(pathspec: 원장만)   ← 신규
-4. captureGitBinding()  ← reviewBaseSha=post-commit HEAD, reviewTree=post-commit index
-5. 프롬프트 조립 + 외부 호출
-6. afterTree === reviewTree 검사(원장은 이미 커밋됨 → 인덱스 불변)
-7. 판정 → 승인이면 evidence-finalize(원장 closed 편승), 아니면 closed는 working tree에 남아 다음 커밋 대기
+computeReviewSemanticIdentity(ticketRel, gitFn): string
+  = SHA256( sorted( `git ls-files -s` 각 줄 ) 중 경로가
+            `<ticketRel>/responses/` **아래**인 줄을 전부 제외 )
 ```
 
-pre-call 커밋은 **원장 경로만** stage/commit한다(design 문서 staged·phase 코드 staged를 인덱스에 보존 — evidence-finalize의 leak 가드와 동일 기법). `git commit -- <ledger>`가 다른 staged 항목을 건드리지 않는다.
+- **입력 범위(안전) — 티켓 `responses/` audit 디렉터리 전체를 제외**한다.
+  - 🔴 **design-r03-delta P1 반영(중요)**: 처음엔 "review-ledger.jsonl 한 줄만 제외"로 설계했으나, 리뷰어가 정상 경로 회귀를 찾았다 — evidence-finalize가 `approvals.jsonl`·아카이브를 커밋하면 identity가 바뀌어 **방금 승인·내구화한 리뷰를 req:next G2가 stale로 오판**한다(옛 designHash가 피하던 것, 요구 #4 위반). ledger뿐 아니라 evidence-finalize 산출물(approvals·archive·close-proof)도 **audit bookkeeping**이라 identity를 흔들면 안 된다.
+  - 🔴 **`responses/`는 순수 audit이고 리뷰 대상은 절대 그 안에 없다**: design 문서 = 티켓 루트 `00/01/02-*.md`, phase 코드 = `workflow/` 밖. `responses/`에는 ledger·approvals·아카이브·close-proof·codex-response·preview만 있다. 따라서 `responses/` 전체를 제외해도 **리뷰 대상은 identity에 그대로 남는다**.
+  - **비-audit 변경은 여전히 identity를 바꾼다**: 리뷰 대상 staged 변경(design 문서·phase 코드)과 `responses/` 밖의 non-ledger HEAD 변경(다른 소스·기준선)은 identity를 **바꾼다** — 다른 리뷰 맥락이 잘못 short-circuit되지 않는다.
+  - **⚠️ 사용자 지침에서의 의도적 이탈**: 사용자는 "approvals archive를 광범위하게 제외하지 말라"고 했으나, 그러면 evidence-finalize가 identity를 바꿔 요구 #4를 어긴다(리뷰어 확증). 사용자의 더 깊은 의도(요구 #4 정상 흐름 무회귀 + 요구 2 bookkeeping에 identity 불변)를 지키려면 audit 산출물 전체를 제외해야 한다. `responses/`가 audit 전용이라 리뷰 대상 손실 없이 이 목표를 달성한다.
+- **design vs phase 의미**(계산은 동일=전체 index−ledger, 의미만 명시):
+  - **design**: identity가 design 문서 변경 **또는** 검토에 의미 있는 non-ledger 기준선 변경에 반응한다(둘을 구분).
+  - **phase**: identity가 staged source 변경 **또는** non-ledger 기준선 변경에 반응한다(둘을 구분).
+- **읽기 전용**: `git ls-files -s`만 쓴다(`git write-tree`는 object DB에 쓰므로 금지). `captureIndexHash`와 같은 read-only 기법.
+- **audit 안정성**: 원장(untracked/modified/committed 어느 상태든)·approvals·아카이브·close-proof 전부 `responses/` 아래라 **경로로 제외**되므로, pre-call 원장 커밋과 evidence-finalize 양쪽에 identity가 불변이다.
+- **호출자**: `review-codex`(생성) + **`req:next` main(G2 재계산)** + 테스트. req:next가 두 번째 호출자인 것은 요구 2가 compare_hash·G2를 semantic identity에 할당했기 때문이다(현재 `captureIndexHash`도 양쪽이 공유한다 — 같은 패턴). git 세부는 전부 review-target.ts 안에 있다.
+
+**정체성 사용처 전환**:
+- blocked marker에 `semantic_identity` 필드 신설. `sameBlockedReviewTarget`을 `review_kind`+`phase_id`+`semantic_identity` 비교로 바꾼다(base_sha·reviewTree 키잉 제거).
+- `compare_hash` = semantic identity(design·phase **통일**). 기존 designHash/captureIndexHash 대신. req:next G2도 같은 값 재계산.
+- 🔴 **designHash·reviewTree는 approval binding(freshness·D9)에서 그대로 유지** — 정체성 전환은 breaker·compare_hash에만 적용한다.
+
+**구형 marker 안전 재판정**: 기존 state의 `blocked_review` marker가 `semantic_identity` 필드가 없으면(구형) `sameBlockedReviewTarget`이 **불일치로 본다** → short-circuit 안 함 → 한 번 신선하게 리뷰가 돌고 새 marker(semantic_identity 포함)가 기록된다. 구형 marker를 새 정체성과 같다고 **가정하지 않는다**.
+
+### DEC-A6. 실행 순서(고정)
+
+🔴 **같은 semantic target이 이미 blocked면** pre-call 커밋·attempt 기록·예산 소비·외부 호출이 **모두 일어나지 않는다**(2단계에서 차단).
+
+```
+1. semantic identity 후보 계산(review-target.ts) — 원장 커밋 전
+2. D10 가드 + blocked short-circuit 검사(semantic identity 기준)  ← 여기서 blocked면 즉시 exit 2
+3. 예산/예외 gate
+4. attempt-opened 기록(state.json scratch) + **pre-call ledger-only commit**
+5. 실제 approval binding 캡처(captureGitBinding: reviewBaseSha·reviewTree = post-commit)
+6. semantic identity 재계산 + **pre-commit 값과 동일함 assert**(원장 커밋이 audit-only임을 검증)
+7. 프롬프트 조립 + 외부 호출
+8. 사후 무수정 검사(afterTree === reviewTree, actual binding) + 응답 검증(review_base_sha)
+9. semantic identity 기반 blocked marker·last_review 기록
+```
 
 ### DEC-A3. 재시도 멱등 — 중복 행·중복 proof 없음
 
@@ -153,9 +199,9 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 - 선행: 없음. 독립 검증: `vitest close-proof` · typecheck.
 
 ### phase-2-precall-durable-checkpoint
-- 책임: review-codex 재구성 — recordAttempt+원장 opened 커밋을 `captureGitBinding` 전으로, pre-call 커밋(pathspec·fail-closed), human-resolution/replace terminal proof 커밋.
+- 책임: **semantic identity 모듈(review-target.ts)** + review-codex 흐름을 DEC-A6 순서로 재구성(pre-call ledger-only 커밋 → 실제 binding 캡처 → identity 재계산 assert) + blocked breaker·compare_hash를 semantic identity로 전환(구형 marker 안전 재판정) + req:next G2 재계산 전환 + human-resolution/replace terminal proof 커밋.
 - 입력: phase-1.
-- 산출물: `review-codex.ts`·`req-new.ts`(successor-of terminal proof) 배선 · 테스트(요구 #1·#2·#3).
+- 산출물: `scripts/req/lib/review-target.ts`(신규) · `review-codex.ts`·`req-next.ts`(G2)·`req-new.ts`(successor-of terminal proof)·`scratch.ts` 배선 · 테스트(요구 #1·#2·#3 + semantic identity 안정성).
 - 선행: phase-1.
 
 ### phase-3-devcomplete-and-intake-gate
@@ -175,7 +221,7 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 | phase | 파일 |
 |---|---|
 | 1 | `scripts/req/lib/close-proof.ts`(신규) · `tests/unit/close-proof.test.ts`(신규) |
-| 2 | `scripts/req/review-codex.ts` · `scripts/req/req-new.ts` · `scripts/req/lib/scratch.ts` · 테스트 |
+| 2 | `scripts/req/lib/review-target.ts`(신규) · `scripts/req/review-codex.ts` · `scripts/req/req-next.ts` · `scripts/req/req-new.ts` · `scripts/req/lib/scratch.ts` · 테스트 |
 | 3 | `scripts/req/req-next.ts` · `scripts/req/req-new.ts` · 테스트 · `docs/guarantees.{md,en.md}` |
 | 4 | `bin/reconstruct.ts`(신규) · `bin/dispatch.mjs` · 테스트 |
 

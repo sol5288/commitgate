@@ -22,15 +22,30 @@
 
 | 항목 | 내용 |
 |---|---|
-| 책임 계약 | 원장 opened가 외부 호출 **전** 커밋된다(captureGitBinding 전) · pre-call 커밋 pathspec·fail-closed · human-resolution/replace가 원장+terminal proof를 함께 커밋 |
+| 책임 계약 | semantic identity(review-target.ts)가 원장 커밋에 불변 · 원장 opened가 외부 호출 **전** 커밋(binding은 커밋 후 캡처) · blocked breaker·compare_hash·G2가 semantic identity 사용 · human-resolution/replace가 원장+terminal proof 커밋 |
 | 입력 | phase-1 |
-| 산출물 | `review-codex.ts`(흐름 재구성) · `req-new.ts`(successor-of terminal proof) · `scratch.ts`(원장 커밋 경로 허용) · 테스트 |
+| 산출물 | `review-target.ts`(신규) · `review-codex.ts`(DEC-A6 재구성) · `req-next.ts`(G2) · `req-new.ts`(terminal proof) · `scratch.ts` · 테스트 |
 | 선행 phase | phase-1 |
-| 독립 검증 | `npx vitest run tests/unit/req-review-codex.test.ts tests/unit/req-new.test.ts` · `npm run typecheck` |
+| 독립 검증 | `npx vitest run tests/unit/review-target.test.ts tests/unit/req-review-codex.test.ts tests/unit/req-next.test.ts tests/unit/req-new.test.ts` · `npm run typecheck` |
 
-**Red 먼저**(요구 #1·#2·#3): ⑨ 외부 호출 **전** HEAD에 opened committed(near-e2e — 호출 시점에 이미 durable) ⑩ 호출이 throw해도 opened가 HEAD에 남는다(process 종료 모사) ⑪ pre-call 커밋이 design/phase staged 항목을 인덱스에 보존(afterTree===reviewTree 무회귀) ⑫ replace 종결이 원장+`series-terminal` proof를 커밋 ⑬ pre-call 커밋 실패 → fail-closed(호출 안 함) ⑭ legacy 티켓은 pre-call 커밋 없음(기존 동작).
+**Red 먼저**(요구 #1·#2·#3 + 사용자 필수 테스트):
+| # | oracle |
+|---|---|
+| ⑨ | ledger-only pre-call commit **뒤** actual `reviewBaseSha`/`reviewTree`가 응답 검증·D9에 정상 사용된다 |
+| ⑩ | ledger-only commit **전후 semantic identity 동일**(review-target 순수 + near-e2e assert) |
+| ⑪ | 동일 staged source로 BLOCKED 2회 후 **3번째는 ledger commit·예산 소비·Codex 호출 없이 차단**(near-e2e — 호출 0건·원장 무증가·예산 무증가) |
+| ⑫ | source staged diff가 바뀌면 semantic identity가 달라져 **차단기 해제** |
+| ⑬ | ledger 아닌 HEAD 변경은 semantic identity를 바꿔 이전 BLOCKED 재사용 안 함 |
+| ⑭ | phase last_review/G2 비교가 ledger-only commit으로 **리셋 안 됨** |
+| ⑭b | 🔴 정상 승인→**evidence-finalize(approvals·아카이브 커밋)**→req:next G2가 **여전히 통과**(semantic identity가 responses/ 제외라 불변 — design-r03-delta P1) |
+| ⑮ | design 재리뷰도 동일 원칙(원장·evidence 안정·doc 변경 시 identity 변화) |
+| ⑯ | pre-call commit 실패 → 호출 **전** fail-closed |
+| ⑰ | 외부 호출 **전** HEAD에 opened committed(호출이 throw해도 남는다 — process 종료 모사, 요구 #1) |
+| ⑱ | replace 종결이 원장+`series-terminal` proof를 커밋(요구 #3) |
+| ⑲ | 구형 blocked marker(semantic_identity 없음)는 안전 재판정(한 번 신선 리뷰) |
+| ⑳ | legacy 티켓은 pre-call 커밋 없음·기존 동작(요구 #7) |
 
-**핵심 재구성 주의**: recordAttempt+opened 커밋을 `captureGitBinding` 앞으로 옮기되, 예산·terminal·예외 게이트의 순서·의미를 보존한다(R9 base state 계보 유지).
+**핵심 재구성 주의**: DEC-A6 순서 고정. recordAttempt+opened 커밋을 binding 캡처 앞으로 옮기되 예산·terminal·예외 게이트 순서·R9 계보 보존. blocked short-circuit(2단계)은 커밋·기록·예산·호출 전에 판정.
 
 ## Phase 3 — dev-complete proof + req:new 게이트 (`phase-3-devcomplete-and-intake-gate`)
 

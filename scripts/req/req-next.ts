@@ -25,6 +25,7 @@ import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evide
 import { createEvidencePorts } from './lib/evidence-ports'
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { reviewScratchPaths } from './lib/scratch'
+import { computeReviewSemanticIdentity } from './lib/review-target'
 import {
   loadState,
   readPhases,
@@ -129,13 +130,19 @@ export interface NextInput {
   packageManager: PackageManager
   /** 설계 문서 3종이 git 인덱스에 전부 있는가. */
   designDocsInIndex: boolean
-  /** 현재 설계문서 바인딩 해시. 계산 불가면 null. */
+  /** 현재 설계문서 바인딩 해시(design **freshness** 판정용 — approval binding, compare_hash 아님). 계산 불가면 null. */
   currentDesignHash: string | null
   hasStagedChanges: boolean
   /** G1: `findUnstagedOrUntracked`가 비었는가(리뷰 가능한 워킹트리). */
   worktreeReviewClean: boolean
-  /** 현재 인덱스 전체 해시(`captureIndexHash`). 계산 불가면 null. */
+  /** 현재 인덱스 전체 해시(`captureIndexHash`). 계산 불가면 null. (레거시 경로 호환용 — G2 compare는 아래 semantic identity를 쓴다.) */
   currentIndexHash: string | null
+  /**
+   * 🔴 REQ-2026-052: 현재 **semantic identity**(review-target.ts, `responses/` 제외). G2 compare_hash 재계산 정본.
+   * review-codex가 `last_review.compare_hash`에 semantic identity를 기록하므로, req:next도 같은 값으로 비교한다.
+   * pre-call 원장 커밋·evidence-finalize에 불변이라 방금 승인한 리뷰를 stale로 오판하지 않는다. 계산 불가면 null.
+   */
+  currentSemanticIdentity: string | null
   /** REQ-2026-028 A-2a: review 예산(G3 escalated 판정용). main이 cfg에서 채운다. */
   reviewBudget: ReviewBudget
   /**
@@ -569,7 +576,7 @@ export function resolveNext(input: NextInput): NextAction {
       command: reviewCmd(pm, target, 'design', null),
       kind: 'design',
       phaseId: null,
-      compareHash: input.currentDesignHash,
+      compareHash: input.currentSemanticIdentity,
       detail: state.design_approved === true ? '설계 문서가 승인 이후 변경됐다(stale). 재승인이 필요하다.' : '설계 승인이 필요하다.',
     })
 
@@ -605,7 +612,7 @@ export function resolveNext(input: NextInput): NextAction {
       command: reviewCmd(pm, target, 'phase', pending),
       kind: 'phase',
       phaseId: pending,
-      compareHash: input.currentIndexHash,
+      compareHash: input.currentSemanticIdentity,
       detail: `phase \`${pending}\`의 staged 변경을 리뷰받는다.`,
     })
   }
@@ -678,7 +685,7 @@ function resolveLegacy(input: NextInput, consumed: { phase_id: string | null }[]
       command: reviewCmd(pm, target, 'phase', null),
       kind: 'phase',
       phaseId: null,
-      compareHash: input.currentIndexHash,
+      compareHash: input.currentSemanticIdentity,
       detail: '레거시 티켓(phase 미추적)의 staged 변경을 리뷰받는다.',
     })
 
@@ -781,6 +788,15 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     hasStagedChanges: roGit(['diff', '--cached', '--name-only']).trim().length > 0,
     worktreeReviewClean: findUnstagedOrUntracked(statusEntries, scratch, ticketRel).length === 0,
     currentIndexHash: captureIndexHash(roGit),
+    // 🔴 REQ-2026-052: G2 compare_hash 재계산 정본(read-only ls-files, responses/ 제외). review-codex가
+    //    last_review.compare_hash에 이 값을 기록하므로 같은 값으로 비교한다.
+    currentSemanticIdentity: (() => {
+      try {
+        return computeReviewSemanticIdentity(ticketRel, roGit)
+      } catch {
+        return null // ls-files 실패 등 → null(G2 통과·fail-forward, 게이트 강제는 review-codex에 있다).
+      }
+    })(),
     reviewBudget: cfg.reviewBudget,
     phaseCommitAutoApprove: cfg.phaseCommit.autoApprove,
     // REQ-2026-048 DEC-4: marker와 증거 모두 **HEAD blob**에서 읽는다(워킹 캐시 신뢰 금지).

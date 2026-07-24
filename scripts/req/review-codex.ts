@@ -49,6 +49,8 @@ import {
   serializeLedgerRow,
   type LedgerRow,
 } from './lib/review-ledger'
+import { computeReviewSemanticIdentity } from './lib/review-target'
+import { closeProofPath, appendCloseProofRow, type CloseProofRow } from './lib/close-proof'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
 
@@ -684,8 +686,12 @@ export interface ProcessResponseResult {
 export interface BlockedReviewTarget {
   review_kind: ReviewKind
   phase_id: string | null
-  review_base_sha: string
-  review_binding: string
+  /**
+   * 🔴 REQ-2026-052: **semantic identity**로 키잉한다(review-target.ts). 예전엔 `review_base_sha`+`review_binding`
+   *    (reviewTree/designHash)이었으나, pre-call 원장 커밋이 매 라운드 그 값을 흔들어 무한 재리뷰 차단이 깨졌다.
+   *    semantic identity는 `responses/` audit 변화에 불변이라 "같은 블록 리뷰 반복"을 정확히 감지한다.
+   */
+  semantic_identity: string
 }
 
 export interface BlockedReviewMarker extends BlockedReviewTarget {
@@ -1189,6 +1195,94 @@ export function appendLedgerRowToDisk(root: string, ticketRel: string, row: Ledg
   }
 }
 
+/**
+ * 🔴 **pre-call ledger-only 커밋**(REQ-2026-052 DEC-A4·A6 step 4). `attempt-opened`를 외부 호출 **전에**
+ *    HEAD에 durable하게 만든다 — process가 죽어도 "예산 사용·미확정 호출"이 HEAD에서 관측된다(요구 #1).
+ *
+ * 🔴 **pathspec 커밋 — 원장 경로만**: `git commit -- <ledger>`는 워킹트리의 원장만 커밋하고, 인덱스에
+ *    staged된 design 문서·phase 코드는 **건드리지 않는다**(그대로 staged 유지). 그래서 리뷰 대상 binding
+ *    (reviewTree)이 커밋 후에도 보존된다. `git add -- <ledger>`로 먼저 스테이징(1라운드 untracked 대응).
+ *
+ * 🔴 **fail-closed**: 커밋 실패(훅 등)면 throw — opened가 durable하지 않은 채 외부 호출하면 요구 위반이다.
+ *    실패는 **외부 호출 전**에 전파된다(호출은 아직 안 일어났다).
+ */
+/**
+ * close proof 1행 append(REQ-2026-052). 원장의 `appendLedgerRowToDisk`와 같은 규칙:
+ * 읽기·검증 손상은 **전파**(fail-closed·D5), 쓰기 실패는 **삼킴**(D6). 멱등(duplicate=no-op).
+ */
+export function appendCloseProofRowToDisk(root: string, ticketRel: string, row: CloseProofRow): void {
+  const abs = join(root, closeProofPath(ticketRel))
+  const existing = existsSync(abs) ? readFileSync(abs, 'utf8') : ''
+  const r = appendCloseProofRow(existing, row)
+  if (r.outcome === 'conflict') throw new Error(`close proof 무결성 실패(fail-closed): ${r.problems.join('; ')}`)
+  if (r.outcome === 'duplicate') return
+  try {
+    mkdirSync(dirname(abs), { recursive: true })
+    writeFileSync(abs, r.content, 'utf8')
+  } catch (err) {
+    console.warn(`[req] ⚠️ close proof 쓰기 실패(판정에는 영향 없음): ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/**
+ * 🔴 REQ-2026-052: 부모 티켓의 replace/human-resolution 종결을 **durable화**한다(요구 #3·test #3).
+ *
+ * `req:new --successor-of`가 부모의 replace 종결을 확인한 직후 호출된다. 부모 state(scratch)의
+ * `human-resolution` closed series들에 대해 `series-terminal` close proof를 append하고, close proof·ledger를
+ * **pathspec 커밋**한다(다른 staged 항목 미접촉). 멱등이라 재실행에 중복 없음.
+ *
+ * decision 매핑: `replace`→resolution `replace`, `terminate`→resolution `human-resolution`.
+ * @returns 커밋했으면 true(방출·커밋 발생), 이미 durable/대상 없음이면 false.
+ */
+export function durableParentSeriesTerminal(args: {
+  root: string
+  gitFn: GitFn
+  parentTicketRel: string
+  parentState: WorkflowState
+  parentId: string
+  nowIso: string
+}): boolean {
+  const terminals = readSeries(args.parentState).filter((s) => s.closed_reason === 'human-resolution')
+  if (terminals.length === 0) return false
+  let anyNew = false
+  for (const s of terminals) {
+    const resolution = s.human_resolution?.decision === 'replace' ? 'replace' : 'human-resolution'
+    const abs = join(args.root, closeProofPath(args.parentTicketRel))
+    const before = existsSync(abs) ? readFileSync(abs, 'utf8') : ''
+    appendCloseProofRowToDisk(args.root, args.parentTicketRel, {
+      ticket_id: args.parentId,
+      event: 'series-terminal',
+      series_id: s.series_id,
+      resolution,
+      at: args.nowIso,
+      reconstructed: false,
+      evidence_basis: null,
+    })
+    const after = existsSync(abs) ? readFileSync(abs, 'utf8') : ''
+    if (after !== before) anyNew = true
+  }
+  if (!anyNew) return false // 전부 이미 있음(멱등)
+  // close proof + ledger를 pathspec 커밋(부모 responses/ audit — 다른 staged 미접촉).
+  const cpRel = closeProofPath(args.parentTicketRel)
+  const ledgerRel = ledgerPath(args.parentTicketRel)
+  const paths = existsSync(join(args.root, ledgerRel)) ? [cpRel, ledgerRel] : [cpRel]
+  args.gitFn(['add', '--', ...paths])
+  args.gitFn(['commit', '-m', `chore(${args.parentId}): series-terminal close proof (replace/human-resolution)`, '--', ...paths])
+  return true
+}
+
+export function precallCommitLedgerRow(gitFn: GitFn, ticketRel: string, ticketId: string, attempt: AttemptInfo): void {
+  const ledgerRel = ledgerPath(ticketRel)
+  gitFn(['add', '--', ledgerRel]) // untracked/modified 원장을 스테이징(오직 이 경로).
+  gitFn([
+    'commit',
+    '-m',
+    `chore(${ticketId}): ledger attempt-opened ${attempt.series_id} #${attempt.attempt}`,
+    '--', // 🔴 pathspec 커밋 — 이 경로만. staged design/code는 인덱스에 그대로 남는다.
+    ledgerRel,
+  ])
+}
+
 export interface AttemptInfo {
   /** 열린 series의 id. 원장 자연키의 일부다. */
   series_id: string
@@ -1198,23 +1292,21 @@ export interface AttemptInfo {
   exception_consumed: boolean
 }
 
-export function withAttemptRecorded<T>(
-  ctx: {
-    ticketDir: string
-    state: WorkflowState
-    kind: ReviewKind
-    phaseId: string | null
-    budget: ReviewBudget
-    /**
-     * attempt 확정·영속 **직후, 외부 호출 직전**에 불린다(REQ-2026-051 D2 — `attempt-opened`).
-     * 🔴 **여기서 던진 예외는 전파된다**(외부 호출 전에). `appendLedgerRowToDisk`가 쓰기 실패는 이미
-     *    삼키므로, 여기까지 올라오는 예외는 **원장 무결성 손상**뿐이다 — 손상된 감사 원장 위에서 리뷰를
-     *    시작하지 않는다(D5 fail-closed, D10 pre-review 게이트와 같은 자리).
-     */
-    onAttemptOpened?: (info: AttemptInfo) => void
-  },
-  call: () => T,
-): { result: T; state: WorkflowState; attempt: AttemptInfo } {
+/**
+ * attempt 게이트+기록의 **앞부분만**(REQ-2026-052 phase-2에서 분리): terminal 가드 → 예산 → 예외 소비 →
+ * recordAttempt → writeState. 반환 `{state, attempt}`. **외부 호출도 원장 쓰기도 하지 않는다.**
+ *
+ * 왜 분리했나: B2는 attempt 기록 **후, 외부 호출 전**에 원장 opened를 커밋하고 **그 다음에** approval binding을
+ * 캡처해야 한다(DEC-A6). 그러려면 "기록"과 "호출" 사이에 커밋·캡처 단계가 들어간다. `withAttemptRecorded`는
+ * 이 함수 + onAttemptOpened + call로 그대로 재조립돼 기존 계약·테스트를 보존한다.
+ */
+export function gateAndRecordAttempt(ctx: {
+  ticketDir: string
+  state: WorkflowState
+  kind: ReviewKind
+  phaseId: string | null
+  budget: ReviewBudget
+}): { state: WorkflowState; attempt: AttemptInfo } {
   // REQ-2026-029 D2: terminal 가드 — 예산 게이트보다 **앞**. human-resolution으로 종결된 키는 예산을 볼
   // 필요도 없이 막는다(배분표 ③). 가드 없으면 recordAttempt가 새 series(0회)를 열어 예산이 리셋된다.
   if (isSeriesKeyTerminal(ctx.state, ctx.kind, ctx.phaseId))
@@ -1245,6 +1337,27 @@ export function withAttemptRecorded<T>(
     attempt: opened?.attempts ?? 0,
     exception_consumed: decision.kind === 'needs-exception',
   }
+  return { state, attempt: info }
+}
+
+export function withAttemptRecorded<T>(
+  ctx: {
+    ticketDir: string
+    state: WorkflowState
+    kind: ReviewKind
+    phaseId: string | null
+    budget: ReviewBudget
+    /**
+     * attempt 확정·영속 **직후, 외부 호출 직전**에 불린다(REQ-2026-051 D2 — `attempt-opened`).
+     * 🔴 **여기서 던진 예외는 전파된다**(외부 호출 전에). `appendLedgerRowToDisk`가 쓰기 실패는 이미
+     *    삼키므로, 여기까지 올라오는 예외는 **원장 무결성 손상**뿐이다 — 손상된 감사 원장 위에서 리뷰를
+     *    시작하지 않는다(D5 fail-closed, D10 pre-review 게이트와 같은 자리).
+     */
+    onAttemptOpened?: (info: AttemptInfo) => void
+  },
+  call: () => T,
+): { result: T; state: WorkflowState; attempt: AttemptInfo } {
+  const { state, attempt: info } = gateAndRecordAttempt(ctx)
   // 🔴 원장 `attempt-opened`도 **호출 전**에 남는다 — 그래야 호출이 실패해 완료 기록이 없는 attempt가
   //    "예산은 깎였는데 완료되지 않은 호출"로 관측된다(REQ-2026-051 요구사항 #1).
   //    🔴 **여기서 삼키지 않는다**(phase-2 리뷰 P1). `appendLedgerRowToDisk`가 이미 쓰기 실패는 삼키고
@@ -1590,24 +1703,28 @@ export function resolveReviewOutcome(args: {
 export function buildBlockedReviewTarget(args: {
   kind: ReviewKind
   phaseId: string | null
-  binding: Binding
-  designHash?: string | null
+  /** REQ-2026-052: semantic identity(review-target.ts). 원장 커밋에 불변인 리뷰 대상 정체성. */
+  semanticIdentity: string
 }): BlockedReviewTarget {
   return {
     review_kind: args.kind,
     phase_id: args.kind === 'phase' ? args.phaseId ?? null : null,
-    review_base_sha: args.binding.reviewBaseSha,
-    review_binding: args.kind === 'design' ? args.designHash ?? args.binding.reviewTree : args.binding.reviewTree,
+    semantic_identity: args.semanticIdentity,
   }
 }
 
+/**
+ * 🔴 REQ-2026-052: `semantic_identity`로 비교한다. 구형 marker(이 필드가 없음 — pre-052)는 `a.semantic_identity`가
+ *    `undefined`라 어떤 identity와도 불일치 → **재판정**(short-circuit 안 함 → 한 번 신선 리뷰 → 새 marker 기록).
+ *    구형 marker를 새 identity와 같다고 **추정하지 않는다**(사용자 constraint 3).
+ */
 function sameBlockedReviewTarget(a: BlockedReviewMarker | undefined, b: BlockedReviewTarget): boolean {
   return (
     !!a &&
+    typeof a.semantic_identity === 'string' && // 구형 marker(undefined) → false → 재판정
     a.review_kind === b.review_kind &&
     a.phase_id === b.phase_id &&
-    a.review_base_sha === b.review_base_sha &&
-    a.review_binding === b.review_binding
+    a.semantic_identity === b.semantic_identity
   )
 }
 
@@ -1925,7 +2042,8 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   const handoffPath = opts.handoff ? resolve(opts.handoff) : cfg.handoffPathAbs
   const handoff = handoffPath && existsSync(handoffPath) ? readFileSync(handoffPath, 'utf8') : null
 
-  const { reviewBaseSha, reviewTree } = captureGitBinding()
+  // 🔴 REQ-2026-052 DEC-A6: approval binding(captureGitBinding)은 여기서 캡처하지 않는다 — pre-call 원장
+  //    커밋 **후**에 캡처해야 reviewBaseSha/reviewTree가 실제 post-commit 값이 된다(DRY-RUN·LIVE 각 분기에서).
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'])
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
 
@@ -1970,38 +2088,48 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   // 이 effectivePersona **하나**를 프롬프트와 review-call 로그 policy_version 양쪽에 흘린다(단일 배선, 032 r02·r03).
   // designDelta는 B-2a에서 design 전용이므로 phase·full은 base 그대로(kind 격리 구조적 재사용, 032 r06-2).
   const effectivePersona = applyDeltaPersona(persona, designDelta !== undefined)
-  const blockedTarget = buildBlockedReviewTarget({
-    kind: opts.kind,
-    phaseId,
-    binding: { reviewBaseSha, reviewTree },
-    designHash,
-  })
 
-  const reviewContext: ReviewContext = {
-    branch,
-    reviewBaseSha,
-    reviewTree,
-    phase: state.phase,
-    // REQ-2026-013 P4: 직전 same-target NEEDS_FIX findings만 주입(교차-대상이면 null). 옛 무조건 previous_codex_result 제거.
-    previousFindingsToClose: buildPreviousFindingsBlock(state, opts.kind, phaseId),
-  }
-  // REQ-2026-045: 프롬프트 블록과 동일 원천에서 직전 finding 수(측정). state 재할당 전(원본)에서 계산.
+  // ── REQ-2026-052 DEC-A6 step 1: semantic identity 후보(원장 커밋 **전**, binding 무관) ──
+  const semanticIdentity = computeReviewSemanticIdentity(ticketRel, git)
+  const isDurable = !isLegacyTicket(state) // pre-call 커밋은 durable 티켓만 — legacy는 기존 경로 그대로.
+
+  // blocked target = semantic identity 키잉(DEC-A5). base_sha/reviewTree가 아니라 원장-불변 정체성.
+  const blockedTarget = buildBlockedReviewTarget({ kind: opts.kind, phaseId, semanticIdentity })
+
+  // 프롬프트 블록 원천 — state 재할당(attempt 기록) **전** 원본에서 계산.
+  const previousFindingsBlock = buildPreviousFindingsBlock(state, opts.kind, phaseId)
   const previousFindingsCountVal = previousFindingsCount(state, opts.kind, phaseId)
-  const prompt = assembleReviewPrompt({
-    persona: effectivePersona, // REQ-2026-034 B-2b: delta면 base+계약(null이면 계약 단독), 아니면 base 그대로.
-    handoff,
-    reviewContext,
-    reviewBaseSha,
-    requestBody,
-    reviewKind: opts.kind,
-    stagedDiff,
-    designDocs,
-    designDelta, // REQ-2026-033 B-2a: design 재리뷰(baseline 有)일 때만 값. 없으면 full 플레인 블록(무회귀).
-  })
+  const originalPhase = state.phase
   const previewPath = join(ticketDir, '.review-preview.txt')
-  writeFileSync(previewPath, prompt, 'utf8')
+
+  // 실제 approval binding으로 프롬프트를 짓는 helper(DRY-RUN·LIVE 공유). reviewBaseSha/reviewTree는 호출 시점 실제값.
+  const buildPromptFor = (rbSha: string, rTree: string): string => {
+    const reviewContext: ReviewContext = {
+      branch,
+      reviewBaseSha: rbSha,
+      reviewTree: rTree,
+      phase: originalPhase,
+      // REQ-2026-013 P4: 직전 same-target NEEDS_FIX findings만 주입(교차-대상이면 null).
+      previousFindingsToClose: previousFindingsBlock,
+    }
+    return assembleReviewPrompt({
+      persona: effectivePersona, // REQ-2026-034 B-2b: delta면 base+계약(null이면 계약 단독), 아니면 base 그대로.
+      handoff,
+      reviewContext,
+      reviewBaseSha: rbSha,
+      requestBody,
+      reviewKind: opts.kind,
+      stagedDiff,
+      designDocs,
+      designDelta, // REQ-2026-033 B-2a: design 재리뷰(baseline 有)일 때만 값. 없으면 full 플레인 블록(무회귀).
+    })
+  }
 
   if (!opts.run) {
+    // ── DRY-RUN: binding 캡처(커밋 없음) → 프롬프트 → 출력 → return ──
+    const { reviewBaseSha, reviewTree } = captureGitBinding()
+    const prompt = buildPromptFor(reviewBaseSha, reviewTree)
+    writeFileSync(previewPath, prompt, 'utf8')
     console.log('[req:review-codex] DRY-RUN (--run 지정 시 라이브 호출)')
     console.log(
       `  ticket=${ticketDir}  REQ=${state.id} phase=${state.phase} branch=${branch} kind=${opts.kind} phaseId=${phaseId ?? '(none)'}`,
@@ -2013,91 +2141,95 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     return
   }
 
-  // ── LIVE (단계 3B) ──
+  // ── LIVE (단계 3B) — DEC-A6 순서 고정 ──
   const respPath = join(ticketDir, 'codex-response.json')
   const repoRel = (abs: string) => relative(cfg.root, abs).replace(/\\/g, '/')
-  // 워크플로 도구가 쓰는 메타데이터(응답·프리뷰·state)는 리뷰 대상 아님 → exact 경로로 허용(precondition/무수정검증 제외).
-  // 특히 state.json은 직전 라운드 writeState로 unstaged가 되므로 resume(2회차) precondition 통과에 필수(4C e2e 발견).
   const SCRATCH = reviewScratchPaths(ticketRel)
-  // --fresh-thread면 codex_thread_id가 있어도 resume하지 않고 새 exec으로 시작(고착 스레드 회복).
-  // REQ-2026-013 P4: 재리뷰는 **항상 stateless**(새 스레드). resume 누적이 토큰·goalpost drift의 원인이었다(D5).
-  // `codex_thread_id`는 계속 저장하되(후속 resume opt-in REQ용) resume에 쓰지 않는다. 연속성은 previous_findings_to_close로.
-  // `--fresh-thread`는 여전히 blocked 회로차단기 마커를 초기화한다(위 clearBlockedReview) — 그 회복 의미는 보존된다.
-  const isResume = false
+  const isResume = false // REQ-2026-013 P4: 재리뷰는 항상 stateless. codex_thread_id는 저장만.
 
-  // Phase 4: 추적 phase는 유효 design 승인 전제(D13 동일) — 미충족 시 호출 전 fail-closed(불필요 codex 호출 방지).
+  // DEC-A6 step 2a: phase는 유효 design 승인 전제(D13 동일) — 미충족 시 호출·커밋·기록 전 fail-closed.
   if (phaseId && !designValid)
     throw new Error(
       'phase 리뷰 전 유효 design 승인 필요(design_approved=true + 현재 00/01/02 해시 일치) — 설계 재승인 후 진행하세요.',
     )
 
-  // D10 precondition: 리뷰 전 워킹트리는 staged + 스크래치만 (사후 무수정 검증의 전제 — Codex P1).
-  // A2: ticketRel 전달 → 직전 라운드 untracked 아카이브(responses/)는 스크래치 허용, tracked 변조·approvals.jsonl은 flag.
+  // DEC-A6 step 2b: D10 pre-review 가드(사후 무수정 검증의 전제).
   const preDirty = findUnstagedOrUntracked(gitStatusEntries(), SCRATCH, ticketRel)
   if (preDirty.length)
     throw new Error(
       `리뷰 전 워킹트리에 unstaged/untracked 존재(D10) — 의도 변경은 git add, 그 외 정리 필요:\n  ${preDirty.map(formatStatusEntry).join('\n  ')}`,
     )
 
+  // 🔴 DEC-A6 step 2c: blocked short-circuit — **커밋·attempt 기록·예산 소비·외부 호출보다 먼저**.
+  //    같은 semantic target이 이미 blocked면 그 넷 중 어느 것도 일어나지 않는다(사용자 불변식).
   if (shouldShortCircuitBlockedReview(state, blockedTarget)) {
-    console.error('[req:review-codex] BLOCKED  repeated blocked result for the same review binding')
-    console.error('  Codex will not be called again for this unchanged target. Change the staged binding or escalate.')
+    console.error('[req:review-codex] BLOCKED  repeated blocked result for the same review target (semantic identity)')
+    console.error('  Codex will not be called again for this unchanged target. Change the staged review target or escalate.')
     process.exit(reviewOutcomeExitCode('blocked'))
   }
 
-  console.warn(`⚠️  codex 실제 호출 (${isResume ? 'resume' : 'exec'}) — 호출 1회 발생 (DEC-WF-026: 호출 직전 확인)`)
+  // DEC-A6 step 3: 예산/예외 gate + attempt-opened 기록(state.json scratch). 반환 state가 이후 base(R9).
+  const { state: afterAttempt, attempt: attemptInfo } = gateAndRecordAttempt({
+    ticketDir,
+    state,
+    kind: opts.kind,
+    phaseId,
+    budget: cfg.reviewBudget,
+  })
+  state = afterAttempt
 
-  // ReviewerAdapter 경유(Phase 3). exec/resume 분기·--output-last-message·thread 파싱은 어댑터가 담당.
-  // resumeThreadId 있으면 resume(thread 상속), 없으면 exec(--sandbox read-only) → thread.started 파싱.
-  // REQ-2026-027 D3: attempt를 **호출 직전**에 기록·writeState(withAttemptRecorded). 반환 state(afterAttempt)가
-  // 이후 모든 처리의 base다 — 호출 전 `state`를 다시 쓰면 최종 writeState가 attempt를 되돌린다(R9).
-  let reviewDurationMs = 0 // REQ-2026-045: callReviewer 소요(측정 전용 — 판정/exit/state 무영향).
-  const ledgerBase = {
+  // DEC-A6 step 4: 원장 attempt-opened append + pre-call ledger-only commit(durable 티켓만·fail-closed).
+  //   opened 행의 prompt_sha256은 **null** — 프롬프트는 아직 안 지었다(binding이 이 커밋 뒤라야 확정).
+  //   순환의존을 끊는다: prompt_sha256은 나중에 attempt-closed 행에만 채운다.
+  appendLedgerRowToDisk(cfg.root, ticketRel, {
     ticket_id: String(state.id ?? ''),
     review_kind: opts.kind,
     phase_id: phaseId,
-    prompt_sha256: createHash('sha256').update(prompt, 'utf8').digest('hex'),
+    series_id: attemptInfo.series_id,
+    attempt: attemptInfo.attempt,
+    event: 'attempt-opened',
+    lifecycle: null,
+    outcome: null,
+    exception_consumed: attemptInfo.exception_consumed,
+    prompt_sha256: null,
+    at: new Date().toISOString(),
     reconstructed: false,
-  } as const
-  const { result: callRes, state: afterAttempt, attempt: attemptInfo } = withAttemptRecorded(
-    {
-      ticketDir,
-      state,
-      kind: opts.kind,
-      phaseId,
-      budget: cfg.reviewBudget,
-      onAttemptOpened: (info) =>
-        appendLedgerRowToDisk(cfg.root, ticketRel, {
-          ...ledgerBase,
-          series_id: info.series_id,
-          attempt: info.attempt,
-          event: 'attempt-opened',
-          lifecycle: null,
-          outcome: null,
-          exception_consumed: info.exception_consumed,
-          at: new Date().toISOString(),
-        }),
-    },
-    () => {
-      const callStartMs = Date.now()
-      try {
-        return callReviewer(reviewer, {
-          prompt,
-          schemaPath: cfg.schemaPathAbs,
-          resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
-          cwd: cfg.root,
-          respPath,
-          // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
-          model: cfg.reviewModel,
-          reasoningEffort: cfg.reviewReasoningEffort,
-        })
-      } finally {
-        reviewDurationMs = Date.now() - callStartMs
-      }
-    },
-  )
+  })
+  if (isDurable) precallCommitLedgerRow(git, ticketRel, String(state.id ?? ''), attemptInfo)
+
+  // DEC-A6 step 5: 실제 approval binding 캡처(pre-call 커밋 **후** — 실제 HEAD/전체 index tree).
+  const { reviewBaseSha, reviewTree } = captureGitBinding()
+
+  // DEC-A6 step 6: semantic identity 재계산 + pre-commit 값과 동일 assert(원장 커밋이 audit-only임을 검증).
+  const semanticIdentityAfter = computeReviewSemanticIdentity(ticketRel, git)
+  if (semanticIdentityAfter !== semanticIdentity)
+    throw new Error(
+      `pre-call 원장 커밋이 semantic identity를 바꿨다(audit-only 위반 — responses/ 밖 변경이 커밋에 딸림): ${semanticIdentity} → ${semanticIdentityAfter}`,
+    )
+
+  // DEC-A6 step 7: 프롬프트 조립(실제 binding) + 외부 호출.
+  const prompt = buildPromptFor(reviewBaseSha, reviewTree)
+  writeFileSync(previewPath, prompt, 'utf8')
+  const promptSha256 = createHash('sha256').update(prompt, 'utf8').digest('hex')
+  console.warn(`⚠️  codex 실제 호출 (${isResume ? 'resume' : 'exec'}) — 호출 1회 발생 (DEC-WF-026: 호출 직전 확인)`)
+  let reviewDurationMs = 0 // REQ-2026-045: callReviewer 소요(측정 전용).
+  const callStartMs = Date.now()
+  let callRes: ReturnType<typeof callReviewer>
+  try {
+    callRes = callReviewer(reviewer, {
+      prompt,
+      schemaPath: cfg.schemaPathAbs,
+      resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
+      cwd: cfg.root,
+      respPath,
+      // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
+      model: cfg.reviewModel,
+      reasoningEffort: cfg.reviewReasoningEffort,
+    })
+  } finally {
+    reviewDurationMs = Date.now() - callStartMs
+  }
   const { threadId } = callRes
-  state = afterAttempt // 이후 baseArgs·finalState의 base
 
   // 사후 리뷰어 무수정 검증: worktree 절대검사 + index(staged tree OID) 불변 (content 기반)
   const postDirty = findUnstagedOrUntracked(gitStatusEntries(), SCRATCH, ticketRel)
@@ -2151,8 +2283,10 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   const responseSha256 = existsSync(respPath)
     ? createHash('sha256').update(readFileSync(respPath)).digest('hex')
     : null
-  // D6-2: req:next가 write-tree 없이 재계산할 수 있는 바인딩 해시. design=designHash, phase=인덱스 전체 해시.
-  const compareHash = opts.kind === 'design' ? designHash ?? null : captureIndexHash()
+  // 🔴 REQ-2026-052: compare_hash = **semantic identity**(design·phase 통일). pre-call 원장 커밋·evidence-finalize
+  //    양쪽 audit 변화에 불변이라, 방금 승인·내구화한 리뷰를 req:next G2가 stale로 오판하지 않는다.
+  //    read-only(ls-files) — req:next가 write-tree 없이 재계산 가능. semanticIdentity(step 6 assert 통과값)를 재사용.
+  const compareHash = semanticIdentity
   const { outcome, exitCode, finalState } = resolveReviewOutcome({
     result,
     kind: opts.kind,
@@ -2171,15 +2305,20 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   // 미커밋으로 남는다(phase-3 e2e가 이 순서를 고정). 대응하는 `attempt-opened`가 이미 있고, 이 행이
   // 없으면 그 attempt는 "완료되지 않은 호출"로 남는다(요구사항 #1). `approvedAt` 재사용(새 시계 안 읽음).
   appendLedgerRowToDisk(cfg.root, ticketRel, {
-    ...ledgerBase,
+    ticket_id: String(state.id ?? ''),
+    review_kind: opts.kind,
+    phase_id: phaseId,
     series_id: attemptInfo.series_id,
     attempt: attemptInfo.attempt,
     event: 'attempt-closed',
     lifecycle: 'completed', // 이 REQ는 completed만 쓴다. 실패 분류는 후속 REQ 소관(D3).
     outcome, // ReviewOutcome === LedgerOutcome. 캐스트하지 않는다 — 갈라지면 빌드가 깨져야 한다.
     exception_consumed: attemptInfo.exception_consumed,
+    // 🔴 prompt_sha256은 opened가 아니라 closed에만 담는다(REQ-2026-052: opened는 프롬프트 확정 전에 커밋되므로).
+    prompt_sha256: promptSha256,
     // 🔴 archive path·sha는 담지 않는다 — approvals.jsonl의 archive_inventory가 단일 출처다(phase-2 리뷰 P1).
     at: approvedAt,
+    reconstructed: false,
   })
 
   // ── REQ-2026-048 phase-3: design 승인 evidence **자동 내구화**(DEC-3) ──
