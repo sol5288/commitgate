@@ -1,6 +1,16 @@
 # REQ-2026-052 리뷰 요청
 
-## phase-3b2 보정 (phase 승인 archive 무결성 — DEC-B6) 🔴 이번 delta review 대상
+## phase-3b3 보정 (design 승인 archive 무결성 — DEC-B7) 🔴 이번 delta review 대상
+
+phase-3b2 후속 대칭 결함: phase archive만 검증하고 design archive는 미룸. dev-complete가 design_ref를 근거로 삼으므로 그 design 승인 증거의 HEAD archive 무결성도 완료 필수 조건. 현재 `verifyCommittedDesignEvidence.durable`은 needs-recovery에만 쓰이고 dev-complete/series-terminal 통과엔 미강제 → design archive/inventory 삭제·변조에도 통과.
+
+- **공유 deep `verifyCommittedEvidenceIntegrity`**(`lib/evidence`, 요구 #3): design·phase 무결성을 **한 인터페이스**로. 내부 **재사용** — design=기존 `verifyCommittedDesignEvidence`(design 행 있을 때·최신 archive+inventory 전체 존재·SHA·HEAD집합==inventory 검증), phase=기존 `verifyPhaseArchives`. **중복 규칙 없음**(둘 다 그대로 호출). 호출자는 이 한 함수만(얕은 인터페이스 금지). HEAD blob만·close-proof leaf blob IO 무접촉.
+- intake·`verifyDevCompleteAtHead` 양쪽 **이 모듈 공유**(phase-3b2 verifyPhaseArchives 호출을 교체). 손상 시 intake=corrupt·req:commit=throw.
+- **series-terminal 정책 명시**(요구 #2): series-terminal도 **손상된 committed audit evidence(삭제·변조 design/phase archive)로는 통과 못 함**. 단 **불완전≠손상** — design 행 자체가 없는 티켓(대체된 미완·design 미승인)은 검사 대상 아님(통과), 승인 흔적만 있고 committed 증거 없으면 needs-recovery. "design 행 존재 + 그 archive/inventory 손상"만 corrupt.
+- **dev-complete 5조건**: close proof 유효 + design_ref 매칭 + **design archive+inventory 전체 HEAD 존재·SHA**(신규) + 전 phase archive HEAD 존재·SHA + inventory design-bound.
+- **범위**: 별도 corrective phase **phase-3b3**. **이번 delta 승인 후 phase-3b3만** 진행하고 phase-4는 완료 후 별도.
+
+## phase-3b2 보정 (phase 승인 archive 무결성 — DEC-B6) — 완료·커밋됨
 
 phase-3b 사후 P1: intake·`verifyDevCompleteAtHead`가 phase 산입 시 manifest 행의 `response_path`·`response_sha256` **형식**과 `phase_design_ref`만 봤고, phase 승인 **archive blob의 HEAD 존재·SHA 일치**는 확인 안 했다 → archive 삭제·변조 뒤에도 dev-complete 통과(committed evidence only 위반). (design archive는 `verifyCommittedDesignEvidence`가 이미 검증, phase archive만 대응물 없음.)
 

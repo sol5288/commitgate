@@ -230,6 +230,21 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 
 ⚠️ **design evidence 유효성(요구 #2 ①의 "유효 design")**: dev-complete는 현재 committed `design_ref` 존재·매칭을 요구한다(위 ①). design **archive** 완전성(`verifyCommittedDesignEvidence`)까지 dev-complete 조건에 넣는 대칭 강화는 이 phase-archive P1의 범위를 넘고 광범위한 fixture 변경을 요하므로, **대칭 hole로 명시**하고 별도 후속으로 남긴다(현재 needs-recovery 판정엔 이미 쓰인다). 이 delta는 요구가 명시한 **phase archive**에 집중한다.
 
+### DEC-B7. 🔴 design 승인 archive 무결성 — dev-complete의 대칭 결함 보정 (phase-3b3)
+
+**발견된 결함(phase-3b2 후속)**: DEC-B6은 **phase** archive 무결성만 넣고 design archive는 "별도 후속"으로 미뤘다. 그러나 dev-complete가 `design_ref`를 근거로 삼는 이상, 그 **design 승인 증거의 HEAD archive 무결성도 완료 판정의 필수 조건**이다. 현재 `verifyCommittedDesignEvidence.durable`은 **needs-recovery 판정에만** 쓰이고 dev-complete/series-terminal 통과에는 강제되지 않아, **최신 design 승인 archive나 `archive_inventory` 항목을 삭제·변조해도 dev-complete/series-terminal이 통과**한다. phase archive와 대칭인 hole다.
+
+**보정(요구 불변식 #1·#2·#3)** — 기존 함수 **재사용**(중복 규칙 금지):
+- 🔴 **공유 deep 모듈 `verifyCommittedEvidenceIntegrity(ticketRel, manifestText, ports)`**(`lib/evidence`): design·phase 증거 무결성을 한 인터페이스로 판정한다. 내부는 **재사용**:
+  - **design**: manifest에 design 행이 있으면 **기존 `verifyCommittedDesignEvidence`**(REQ-2026-048 DONE 게이트) 호출 — 그 함수가 이미 최신 design 승인 archive 존재·SHA(4) + `archive_inventory` 비어있지 않음(5) + 승인본 포함(6) + **HEAD design archive 집합 == inventory**(7) + **각 inventory 항목 존재·SHA**(8)를 검증한다. `durable=false`면 무결성 문제.
+  - **phase**: **기존 `verifyPhaseArchives`**(DEC-B6) 재사용 — 모든 phase 행 archive 존재·SHA.
+  - 🔴 호출자는 이 **한 함수만** 부른다(design·phase 검증 순서·세부 조건 은닉 — 얕은 인터페이스 금지, 요구 #3). `verifyPhaseArchives`와 규칙 중복 없음(그대로 호출). `verifyCommittedDesignEvidence`와도 중복 없음(그대로 호출).
+  - 🔴 순수/포트: `ports.headText`·`headBlobSha256`·`headArchivePaths`(HEAD blob만). close-proof leaf는 blob IO 무접촉. state.json·워킹트리·on-disk 미사용.
+- 🔴 **intake·req:commit 발행 후 verifier가 이 모듈을 공유**(요구 #2): `scanTicketIntake`는 `verifyPhaseArchives` 호출을 **`verifyCommittedEvidenceIntegrity`로 교체**(design까지 포괄), `verifyDevCompleteAtHead`도 동일 교체. 두 경로가 같은 leaf 규칙을 쓴다.
+- 🔴 **corrupt 처리·series-terminal 정책 명시**(요구 #2): `verifyCommittedEvidenceIntegrity.problems`가 있으면 **모든 durable 티켓**(dev-complete·series-terminal·developing 포함)에서 intake=`corrupt` block·req:commit=throw. 즉 **series-terminal도 손상된 committed audit evidence(삭제·변조된 design/phase archive)로는 통과하지 못한다**. 단 **불완전(incomplete)과 손상(tampered)은 구분**: design 행 자체가 없는 티켓(예: 대체된 미완 티켓·design 미승인)은 무결성 검사 대상이 아니라 통과 가능하고(series-terminal), 승인 흔적만 있고 committed 증거가 없는 티켓은 여전히 `needs-recovery`다. "design 행 존재 + 그 archive/inventory 손상"만 corrupt다.
+
+**dev-complete 5조건(HEAD-only, 요구 불변식 #1)**: ① close proof 유효 ② 현재 committed `design_ref`와 일치(dev-complete proof) ③ **현재 design 승인 archive + `archive_inventory` 전체가 HEAD에 존재·SHA 일치**(DEC-B7, `verifyCommittedDesignEvidence`) ④ **모든 phase archive가 HEAD에 존재·SHA 일치**(DEC-B6, `verifyPhaseArchives`) ⑤ inventory 전 phase가 현재 `design_ref`에 결속(DEC-B5). ③④는 `verifyCommittedEvidenceIntegrity`가 corrupt로 선차단하므로, dev-complete/series-terminal은 증거가 온전할 때만 도달한다.
+
 ### DEC-C. req:new 게이트 — committed proof만으로 판정
 
 `req:new`가 티켓 생성 전, `workflow/REQ-*` 각 티켓을 **HEAD blob 기준**으로 스캔:
@@ -329,6 +344,7 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 | 3a2 | `scripts/req/lib/evidence.ts`(`phase_design_ref` 스키마·검증·build) · `scripts/req/review-codex.ts`(캡처·배선) · `scripts/req/req-commit.ts`(design-bound 필터) · `scripts/req/lib/close-proof.ts`(계약 doc) · 테스트 |
 | 3b | `scripts/req/req-new.ts`(intake scan·게이트) · `scripts/req/lib/intake.ts`(신규) · 테스트 · `docs/guarantees.{md,en.md}` |
 | 3b2 | `scripts/req/lib/evidence.ts`(`verifyPhaseArchives`) · `scripts/req/lib/intake.ts`(archive corrupt) · `scripts/req/req-commit.ts`(verifyDevCompleteAtHead 공유) · 테스트 |
+| 3b3 | `scripts/req/lib/evidence.ts`(`verifyCommittedEvidenceIntegrity` — design+phase 재사용) · `scripts/req/lib/intake.ts` · `scripts/req/req-commit.ts` · 테스트 |
 | 4 | `bin/reconstruct.ts`(신규) · `bin/dispatch.mjs` · 테스트 |
 
 ## 하위호환·안전
