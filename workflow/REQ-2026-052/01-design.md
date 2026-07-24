@@ -298,7 +298,7 @@ reconstruct는 **HEAD-committed immutable evidence만** 읽고, 그 evidence가 
 🔴 **multi-witness 모호성·HEAD 정합(phase-4 r?-delta P1 — successor 증거 모호성)**: 같은 `parent_series_id`를 가리키는 successor 증거가 **복수** 존재할 수 있다. 자연키(ticket·event·series_id)만으로 두 번째를 조용히 skip하면, `at`(decided_at)가 달라도 **열거 순서상 먼저 온 witness가 임의 채택**되는 fail-open이다(필수 필드가 모호한데 행을 만든다). 정책:
 - **① parent_series_id별 그룹화** 후, 그 그룹의 **모든 material field(`parent_series_id`·`resolution`(replace)·`at`)가 일치할 때만** 후보 1개를 만든다. 복수 witness가 완전 일치하면 `evidence_basis`에 **모든 successor state 경로를 정렬·중복제거**해 기록한다.
 - **② 같은 series_id에 `at` 또는 `resolution`이 다르면** 후보를 만들지 않고 **명시적 ambiguity refusal**을 낸다. `--run --confirm`이어도 **그 series의 close-proof 쓰기·커밋은 0건**(다른 series는 각자 명확하면 진행 — series는 독립).
-- **③ 기존 HEAD close-proof에 같은 자연키 series-terminal 행이 있을 때**: 후보와 **모든 필드(resolution·at) 일치 → 멱등 no-op**(이미 있음). **resolution·at가 모순 → "이미 있음"으로 숨기지 말고 fail-closed conflict**(그 series write 0). 
+- **③ 기존 HEAD close-proof에 같은 자연키 series-terminal 행이 있을 때**: 후보와 **모든 필드(resolution·at) 일치 → 멱등 no-op**(이미 있음). **resolution·at가 모순 → "이미 있음"으로 숨기지 말고 fail-closed conflict**(그 series write 0).
 - **④ 서로 다른 `parent_series_id`는 독립 series** — 각 증거가 명확하면 별도 후보가 된다.
 - ⑤ dev-complete 합성 금지·integrity 검증·dry-run·`--confirm`·close-proof 미커밋 변경 보호는 **그대로 유지**한다.
 
