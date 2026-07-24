@@ -276,6 +276,33 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 - 🔴 **범위 밖(r05-delta P1)**: reconstruct는 **close-proof lifecycle 행**만 복원한다. manifest phase 행의 `phase_design_ref`(DEC-B5) 같은 **아카이브에 기록되지 않은 결속값은 합성하지 않는다** — 결속 없는 완료를 만들 수 없다. 결속 없는 티켓의 완료는 재검토가 유일 경로다.
 - **자동 실행 금지**: 사람 확인(`--run` + 명시적 확인 문장) 후에만.
 
+### DEC-D2. 🔴 복원 가능성 매트릭스 — reconstruct가 실제로 복원할 수 있는 것 (phase-4)
+
+reconstruct는 **HEAD-committed immutable evidence만** 읽고, 그 evidence가 close-proof 행의 **모든 필수 필드를 명확·모호하지 않게 결정할 때만** 복원한다. close-proof lifecycle event는 `dev-complete`·`series-terminal` 둘뿐이다. 각각의 복원 가능성:
+
+| event | 복원 가능? | immutable HEAD evidence 출처 | 근거 |
+|---|---|---|---|
+| **dev-complete** | ❌ **절대 불가** | (없음) | `phase_inventory`(무엇이 완료인가의 정본, DEC-B5)를 approvals.jsonl의 phase_id 집합으로 **합성하면 계획됐으나 미커밋인 phase를 조용히 빼는 DEC-B5 P1이 재발**한다. inventory를 독립 기록하는 immutable 증거가 없다 → self-verifying dev-complete 행이 없으면 그 행을 복원할 **근거가 없다**. 유일한 정상 경로는 **재검토·재내구화**(reconstruct는 완료 migration을 맡지 않는다). |
+| **series-terminal** (replace) | ✅ **조건부** | 커밋된 **successor** 티켓 S의 `state.json`(HEAD blob) `successor_of` | S가 이 티켓을 `req_id`로 지목하고 `parent_replace_resolution.decision='replace'`인 것 = 이 티켓 replace 종결의 immutable 증거. 필드 결정: `ticket_id`=이 티켓 · `series_id`=`successor_of.parent_series_id` · `resolution`='replace' · `at`=`parent_replace_resolution.at`. |
+| **series-terminal** (human-resolution/terminate) | ❌ 불가 | (successor 없음) | `terminate`는 successor를 만들지 않아 attesting 증거가 없다. |
+
+🔴 **필수 evidence 보강(reconstruct 소비 대상)**: 현재 `SuccessorOf`는 replace 종결(`parent_replace_resolution`)과 시점은 담으나 **`series_id`를 안 담아** series-terminal 행을 완전히 결정하지 못한다. phase-4는 `SuccessorOf`에 **`parent_series_id`를 추가**한다(additive·backward-compat — `resolveSuccessorLineage`가 이미 찾은 replace series의 `series_id`를 그대로 기록). 🔴 이것은 **reconstruct가 소비할 verifiable 증거를 완성**하는 것이며 리뷰·게이트 등 reconstruct 외 동작은 무변경이다. 구식 `successor_of`(parent_series_id 없음)는 series_id 미결정 → **복원 불가**(fail-closed).
+
+**series-terminal 복원 조건(모두 충족해야, 요구 불변식 #1·#3)**:
+1. `verifyCommittedEvidenceIntegrity(이 티켓)` 통과 — 손상(close-proof·manifest·design·phase archive) 티켓은 복원하지 않고 fail-closed.
+2. 커밋된 successor S: HEAD `S/state.json`의 `successor_of.req_id`=이 티켓 · `parent_series_id` 존재 · `parent_replace_resolution.decision='replace'` · `isValidHumanResolution`.
+3. 이 티켓 HEAD close-proof에 그 `series_id`의 `series-terminal` 행이 **없다**(있으면 복원 불필요; 자연키 멱등이 중복 방지).
+4. 복원 결과가 기존 HEAD close-proof와 **모순되지 않는다**(자연키 충돌=conflict면 복원 불가).
+5. 하나라도 부족·모호 → 그 행 **복원 불가**(사유 표시). 티켓 전체에 복원 가능한 행이 하나도 없으면 명령은 **정직한 no-op/fail-closed**.
+
+**실행 모델(DEC-D 유지·강화, 요구 불변식 #4)**:
+- `req:reconstruct <REQ> [--run]`. 기본 **dry-run**: 복원 예정 행·`evidence_basis`·불가 사유 표시, **write 0**.
+- **`--run` + 사람 확인(명시적 확인 문장)** 후에만 write. 확인 없으면 write 0.
+- 새 close-proof 행은 **`reconstructed:true` + 비어있지 않은 `evidence_basis`**(경로/식별자만) — close-proof validation이 강제한다.
+- **append-only·자연키 멱등**(`appendCloseProofRow`) → 재시도가 중복 행·추가 커밋을 만들지 않는다. write는 **durable commit**(pathspec, `responses/` 밖 미접촉). 실패·재시도에서 반쪽/중복 없음.
+- 🔴 **state.json을 고치지 않고 DONE으로 바꾸지 않는다.** `dev-complete`·`phase_design_ref`·design/phase archive는 **절대 합성하지 않는다**(요구 #2·#6).
+- reconstructed overlay는 **기본 상태 규칙을 안 바꾼다**: series-terminal 행이 생기면 기본 상태는 `series-terminal`(그 event 때문이지 overlay 때문이 아니다). intake는 `baseStateBlocksIntake`(기본 상태만) — reconstructed 여부 무관(요구 #7).
+
 ### DEC-E. 하위호환·안전
 
 - state.json은 scratch 유지. 이 REQ는 커밋 정본으로 승격하지 않는다.
@@ -329,10 +356,10 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 - 독립 검증: `vitest req-new` · typecheck · 임시 git 저장소로 scratch 삭제 후 판정 불변.
 
 ### phase-4-reconstruct-command
-- 책임: `req:reconstruct` 명령 — 검증가능 사실만·reconstructed 표시·추정 금지·사람 확인.
-- 입력: phase-1.
-- 산출물: `bin/reconstruct.ts` + dispatch 등록 · 테스트(요구 #8).
-- **선행: phase-3b 완료 후**(사용자 지시 — phase-3a/3b 뒤 별도 진행).
+- 책임: `req:reconstruct` 명령 — **복원 가능성 매트릭스(DEC-D2)**대로 HEAD-committed immutable evidence만으로 검증가능 close-proof 행만 복원·reconstructed 표시·추정 금지·사람 확인. dev-complete 절대 합성 안 함·series-terminal(replace)은 successor lineage로만.
+- 입력: phase-1(close-proof) · phase-3b3(verifyCommittedEvidenceIntegrity) · phase-2(SuccessorOf에 parent_series_id 추가).
+- 산출물: `scripts/req/lib/reconstruct.ts`(순수 매트릭스) · `scripts/req/req-reconstruct.ts`(CLI) · `scripts/req/review-codex.ts`(SuccessorOf.parent_series_id) · `bin/dispatch` 등록 · 테스트(DEC-D2 매트릭스).
+- **선행: phase-3b3 완료 후**(사용자 지시 — reconstruct 외 기능 안 섞음).
 
 ## 변경 파일
 
@@ -345,7 +372,7 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 | 3b | `scripts/req/req-new.ts`(intake scan·게이트) · `scripts/req/lib/intake.ts`(신규) · 테스트 · `docs/guarantees.{md,en.md}` |
 | 3b2 | `scripts/req/lib/evidence.ts`(`verifyPhaseArchives`) · `scripts/req/lib/intake.ts`(archive corrupt) · `scripts/req/req-commit.ts`(verifyDevCompleteAtHead 공유) · 테스트 |
 | 3b3 | `scripts/req/lib/evidence.ts`(`verifyCommittedEvidenceIntegrity` — design+phase 재사용) · `scripts/req/lib/intake.ts` · `scripts/req/req-commit.ts` · 테스트 |
-| 4 | `bin/reconstruct.ts`(신규) · `bin/dispatch.mjs` · 테스트 |
+| 4 | `scripts/req/lib/reconstruct.ts`(신규·순수 매트릭스) · `scripts/req/req-reconstruct.ts`(신규 CLI) · `scripts/req/review-codex.ts`(`SuccessorOf.parent_series_id`) · `bin/dispatch` · 테스트 |
 
 ## 하위호환·안전
 

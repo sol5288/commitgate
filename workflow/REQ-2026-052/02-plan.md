@@ -170,15 +170,27 @@ phase-3b2 후속 대칭 보정(DEC-B7). dev-complete가 design_ref를 근거로 
 
 ## Phase 4 — 재구성 명령 (`phase-4-reconstruct-command`)
 
+복원 가능성 매트릭스(DEC-D2): dev-complete=절대 불가(inventory 합성 금지)·series-terminal(replace)=successor의 committed `successor_of`(+parent_series_id)로만·terminate=불가.
+
 | 항목 | 내용 |
 |---|---|
-| 책임 계약 | `req:reconstruct`가 immutable archive+approvals로 검증가능 사실만 복원·`reconstructed:true`·추정 금지·사람 확인 |
-| 입력 | phase-1 |
-| 산출물 | `bin/reconstruct.ts` · `bin/dispatch.mjs` 등록 · 테스트 |
-| 선행 phase | phase-1 · **phase-3b3 완료 후 별도 진행**(사용자 지시) |
-| 독립 검증 | `npx vitest run tests/unit/reconstruct.test.ts` · `npm run typecheck` |
+| 책임 계약 | `req:reconstruct <REQ>`가 **HEAD-committed immutable evidence만**으로 close-proof 행을 복원(모든 필드 명확 결정 시만) · dev-complete 절대 합성 안 함 · series-terminal은 successor lineage로만 · `verifyCommittedEvidenceIntegrity` 실패 티켓 fail-closed · dry-run 기본·`--run`+사람확인 후만 write · `reconstructed:true`+`evidence_basis` 필수 · append-only·자연키 멱등·durable commit · state.json 미변경 |
+| 입력 | phase-1(close-proof) · phase-3b3(verifyCommittedEvidenceIntegrity) · phase-2(SuccessorOf — parent_series_id 추가) |
+| 산출물 | `scripts/req/lib/reconstruct.ts`(순수 매트릭스) · `scripts/req/req-reconstruct.ts`(CLI) · `bin/dispatch` 등록 · `scripts/req/review-codex.ts`(SuccessorOf.parent_series_id) · 테스트 |
+| 선행 phase | phase-3b3 |
+| 독립 검증 | `npx vitest run tests/unit/reconstruct.test.ts` · `npm run typecheck` · 실 git |
 
-**Red 먼저**(요구 #8): ㉑ 아카이브/매니페스트에서 유도한 행에 reconstructed:true+evidence_basis ㉒ 복원 불가 사실은 unknown(추정 안 함) ㉓ dry-run 기본·`--run`+확인 없이 미실행 ㉔ reconstructed 티켓이 원본과 구별된다(파생 상태=`reconstructed`).
+**Red 먼저**(사용자 필수 테스트):
+| # | oracle |
+|---|---|
+| ⒄ | dry-run은 HEAD·index·워킹트리 불변(write 0) |
+| ⒅ | 검증가능 series-terminal 증거(successor lineage+parent_series_id)만 있을 때 reconstructed 행이 durable commit으로 **정확히 한 번** |
+| ⒆ | 동일 실행 재시도 → 중복 행/추가 커밋 없음(자연키 멱등) |
+| ⒇ | close-proof·manifest·design archive·phase archive 중 하나라도 손상 → 복원 거부 |
+| ㉑ | dev-complete close proof 없고 phase manifest만 → **복원 거부**(inventory 합성 안 함) |
+| ㉒ | `phase_design_ref`·design archive 증거 합성 시도 → 거부(애초에 그 경로 없음) |
+| ㉓ | reconstructed overlay는 intake 기본 상태 규칙 불변(series-terminal은 event 때문이지 overlay 때문 아님) |
+| ㉔ | `--run` 전 사람 확인 없으면 write 0 |
 
 ## 검증 fixture 정책
 
@@ -191,8 +203,8 @@ phase-3b2 후속 대칭 보정(DEC-B7). dev-complete가 design_ref를 근거로 
 - **phase-3a2는 phase-3a 선행**(dev-complete 발행·verifier가 있어야 design-bound로 보정). **phase-3b는 phase-3a2 선행**(design-bound 완전성이 있어야 intake gate가 정확히 판정). 이 순서 의존은 실재하므로 정직하게 선언한다.
 - **phase-3b2는 phase-3b 선행**(intake·verifier에 phase archive 무결성을 얹는 보정).
 - **phase-3b3는 phase-3b2 선행**(phase archive 무결성 위에 design archive 무결성을 대칭으로 얹는 보정).
-- phase-4는 phase-1 선행이나, **사용자 지시로 phase-3b3 완료 후 별도 진행**(phase-4 섞지 않음).
-- 🔴 **이번 delta는 phase-3b3(대칭 보정)만 구현·리뷰·커밋**한다. phase-4는 phase-3b3 완료 보고 후 별도 승인.
+- **phase-4는 phase-3b3 선행**(reconstruct가 verifyCommittedEvidenceIntegrity로 손상 티켓을 걸러야 하므로). reconstruct 외 기능은 안 섞는다(SuccessorOf.parent_series_id는 reconstruct가 소비할 verifiable 증거 완성이라 범위 내).
+- 🔴 **이번 phase는 phase-4(reconstruct)만 구현·리뷰·커밋**한다.
 - 🔴 **migration**: REQ-052 자신의 phase-1/2/3a 행은 `phase_design_ref` 부재(보정 전 커밋) → 이 티켓의 durable 완료는 **각 phase 재검토** 전까지 fail-closed(DEC-B5, 요구 #4 의도). reconstruct는 아카이브에 없는 결속값을 합성하지 않으므로 완료 경로가 아니다(r05-delta P1).
 
 ## 완료

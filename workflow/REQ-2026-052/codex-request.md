@@ -1,6 +1,21 @@
 # REQ-2026-052 리뷰 요청
 
-## phase-3b3 보정 (design 승인 archive 무결성 — DEC-B7) 🔴 이번 delta review 대상
+## phase-4 설계 (req:reconstruct — 복원 가능성 매트릭스 DEC-D2) 🔴 이번 delta review 대상
+
+reconstruct는 HEAD-committed immutable evidence만 읽고, 그 evidence가 close-proof 행의 **모든 필드를 명확·모호없이 결정할 때만** 복원한다. 매트릭스:
+- **dev-complete = 절대 불가**: phase_inventory를 approvals.jsonl phase_id 집합으로 합성하면 미커밋 계획 phase를 조용히 빼는 DEC-B5 P1 재발. inventory 독립 기록 없음 → self-verifying 행 없으면 복원 근거 없음 → 재검토가 유일 경로(reconstruct는 완료 migration 아님).
+- **series-terminal(replace) = 조건부**: 커밋된 successor S의 state.json `successor_of`(req_id=이 티켓·parent_series_id·parent_replace_resolution)가 유일한 verifiable 증거. 필드: ticket_id·series_id=parent_series_id·resolution='replace'·at=parent_replace_resolution.at.
+- **series-terminal(terminate) = 불가**: successor 없음.
+
+🔴 **evidence 보강**: 현재 SuccessorOf는 series_id를 안 담아 series-terminal을 완전 결정 못 함 → phase-4가 **SuccessorOf.parent_series_id 추가**(additive·resolveSuccessorLineage가 이미 찾은 replace series의 series_id 기록). **reconstruct가 소비할 증거 완성**이며 리뷰·게이트 등 reconstruct 외 동작 무변경. 구식 successor_of(미보유)=복원 불가.
+
+복원 조건(모두): verifyCommittedEvidenceIntegrity 통과 + successor lineage 유효 + 기존 series-terminal 행 없음 + 모순 없음. 하나라도 부족/모호→복원 불가. 복원 행 0이면 정직한 no-op.
+
+실행: dry-run 기본(write 0)·--run+사람확인 후 write·reconstructed:true+evidence_basis 필수·append-only 자연키 멱등·durable commit·state.json 미변경·dev-complete/phase_design_ref/archive 절대 합성 안 함.
+
+이 delta는 위 매트릭스·evidence 보강·실행 모델(DEC-D2)에 집중해 검토를 요청한다.
+
+## phase-3b3 보정 (design 승인 archive 무결성 — DEC-B7) — 완료·커밋됨
 
 phase-3b2 후속 대칭 결함: phase archive만 검증하고 design archive는 미룸. dev-complete가 design_ref를 근거로 삼으므로 그 design 승인 증거의 HEAD archive 무결성도 완료 필수 조건. 현재 `verifyCommittedDesignEvidence.durable`은 needs-recovery에만 쓰이고 dev-complete/series-terminal 통과엔 미강제 → design archive/inventory 삭제·변조에도 통과.
 
