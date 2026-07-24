@@ -1543,10 +1543,23 @@ describe('[A1] processResponse — 승인 증거 핀(kind 격리 / NEEDS_FIX 분
     expect(r.nextState.approval_evidence).toEqual({
       response_path: 'workflow/REQ-2026-016/responses/phase-r01-approved.json',
       response_sha256: 'SHA', review_kind: 'phase', phase_id: null, review_base_sha: 'BASE',
-      approved_tree: 'TREE9', codex_thread_id: 'TID', machine_schema_version: '1.1',
+      approved_tree: 'TREE9', phase_design_ref: null, codex_thread_id: 'TID', machine_schema_version: '1.1',
       status: 'COMPLETE', commit_approved: 'yes', approved_at: 'AT',
     })
     expect(r.nextState.design_approval_evidence).toBeUndefined()
+  })
+
+  it('🔴 REQ-2026-052 DEC-B5: phase 승인에 phaseDesignRef를 주면 approval_evidence.phase_design_ref로 핀된다', () => {
+    const dir = mkTicket(phaseApproved)
+    const DREF = 'a'.repeat(64)
+    const r = processResponse({
+      ticketDir: dir, state, binding, threadId: 'TID', kind: 'phase', phaseId: null,
+      phaseDesignRef: DREF,
+      archive: { path: 'workflow/REQ-2026-016/responses/phase-r01-approved.json', sha256: 'SHA' },
+      approvedAt: 'AT',
+    } as Parameters<typeof processResponse>[0])
+    expect(r.ok).toBe(true)
+    expect((r.nextState.approval_evidence as { phase_design_ref?: unknown }).phase_design_ref).toBe(DREF)
   })
 
   it('design 승인 → design_approval_evidence(design_hash===designApprovedHash), approval_evidence 미오염', () => {

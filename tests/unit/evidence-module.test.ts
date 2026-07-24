@@ -118,6 +118,46 @@ describe('[REQ-2026-048] 이동한 술어 — 새 경로에서 동작 동일', (
     expect(entry.kind).toBe('design')
     expect(validateManifest(`${JSON.stringify(entry)}\n`, { ticketRel: t, validPhaseIds: [] })).toEqual([])
   })
+
+  // ── REQ-2026-052 DEC-B5(phase-3a2): phase_design_ref 스키마 ──
+  const t = 'workflow/REQ-2026-001'
+  const sha = 'a'.repeat(64)
+  const oid = 'b'.repeat(40)
+  const dref = 'd'.repeat(64)
+  const phaseEv = (extra: Record<string, unknown> = {}) => buildManifestEntry(
+    {
+      review_kind: 'phase', phase_id: 'p1',
+      response_path: `${t}/responses/p1-r01-approved.json`,
+      response_sha256: sha, review_base_sha: oid, approved_tree: oid,
+      approved_at: '2026-07-22T00:00:00.000Z', ...extra,
+    } as Parameters<typeof buildManifestEntry>[0],
+    { consumedAt: '2026-07-22T00:00:01.000Z', consumedByCommitSha: oid, userCommitConfirmed: null },
+  )
+
+  it('㊾ buildManifestEntry: phase_design_ref가 있으면 phase 행에 포함, 없으면 키 부재(바이트 무회귀)', () => {
+    const withRef = phaseEv({ phase_design_ref: dref })
+    expect((withRef as { phase_design_ref?: unknown }).phase_design_ref).toBe(dref)
+    const without = phaseEv({})
+    expect('phase_design_ref' in without).toBe(false) // 레거시 무회귀 — 키 자체가 없다
+  })
+
+  it('㊾ validateManifest: phase 행 phase_design_ref는 선택(부재 OK)·있으면 64hex', () => {
+    const vp = { ticketRel: t, validPhaseIds: ['p1'] }
+    expect(validateManifest(`${JSON.stringify(phaseEv({}))}\n`, vp)).toEqual([]) // 부재 OK
+    expect(validateManifest(`${JSON.stringify(phaseEv({ phase_design_ref: dref }))}\n`, vp)).toEqual([]) // 64hex OK
+    const bad = validateManifest(`${JSON.stringify(phaseEv({ phase_design_ref: 'nothex' }))}\n`, vp)
+    expect(bad.some((p) => /phase_design_ref 비-64hex/.test(p))).toBe(true)
+  })
+
+  it('㊾ validateManifest: design 행에 phase_design_ref 금지(kind 격리)', () => {
+    const designRow = buildManifestEntry(
+      { review_kind: 'design', phase_id: null, response_path: `${t}/responses/design-r01-approved.json`, response_sha256: sha, review_base_sha: oid, design_hash: sha, approved_at: '2026-07-22T00:00:00.000Z' } as Parameters<typeof buildManifestEntry>[0],
+      { consumedAt: '2026-07-22T00:00:01.000Z', consumedByCommitSha: oid, userCommitConfirmed: null },
+    ) as unknown as Record<string, unknown>
+    designRow.phase_design_ref = dref // 주입
+    const problems = validateManifest(`${JSON.stringify(designRow)}\n`, { ticketRel: t, validPhaseIds: [] })
+    expect(problems.some((p) => /design entry에 phase_design_ref 금지/.test(p))).toBe(true)
+  })
 })
 
 // ───────────── durableDesignEvidence — HEAD 기준 멱등 + 실패 주입 (REQ-2026-048 phase-3) ──

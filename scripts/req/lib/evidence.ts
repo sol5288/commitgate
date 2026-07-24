@@ -91,6 +91,16 @@ export interface ManifestEntry {
   review_base_sha: string
   approved_tree?: string
   design_hash?: string
+  /**
+   * 🔴 REQ-2026-052 DEC-B5(phase-3a2): **phase 전용** — 이 phase가 승인 시점에 결속된 committed design 참조
+   *   (= `captureDesignBinding().designHash`, design 행 `design_hash`와 동일 계산·값). dev-complete 완전성이
+   *   이 값 == 현재 committed design_ref인 phase 행만 산입한다(design-blind면 D1 검토분이 D2 완료에 샌다).
+   *
+   * **선택 필드**다: 부재(레거시·이 보정 이전 커밋분)해도 매니페스트 검증은 통과한다(무회귀). 단 durable 완료
+   *   판정에서는 부재를 **불산입(fail-closed)** — 검증의 관대함과 완료의 엄격함을 분리(`archive_inventory`와 동형).
+   *   design 행에는 **금지**(kind 격리). 미지정 시 키 자체를 넣지 않아 기존 phase 행과 바이트 동일.
+   */
+  phase_design_ref?: string
   approved_at: string
   consumed_at: string
   consumed_by_commit_sha: string
@@ -118,6 +128,7 @@ const MANIFEST_KEYS = new Set([
   'review_base_sha',
   'approved_tree',
   'design_hash',
+  'phase_design_ref', // REQ-2026-052 DEC-B5(선택 — phase 전용·부재해도 유효)
   'approved_at',
   'consumed_at',
   'consumed_by_commit_sha',
@@ -256,7 +267,11 @@ export function buildManifestEntry(
   const approvedTree = ev.approved_tree
   if (typeof approvedTree !== 'string' || !approvedTree)
     throw new Error('buildManifestEntry: phase evidence에 approved_tree 누락(fail-fast)')
-  return { ...base, approved_tree: approvedTree, ...inv }
+  // REQ-2026-052 DEC-B5: phase_design_ref(승인 시점 design 결속)가 있으면 phase 행에 포함. 미지정이면
+  // 키 자체를 넣지 않는다 — 레거시 phase 행과 바이트 동일(무회귀). durable 티켓은 designValid 게이트가
+  // 승인 전제라 정상 경로에서 항상 채워지고, 완료 판정이 이 값으로 design-bound 필터한다.
+  const pdr = typeof ev.phase_design_ref === 'string' && ev.phase_design_ref ? { phase_design_ref: ev.phase_design_ref } : {}
+  return { ...base, approved_tree: approvedTree, ...pdr, ...inv }
 }
 
 /** 매니페스트 한 줄 직렬화(JSONL): JSON + 끝 개행. 고정 키 순서라 deterministic. */
@@ -313,10 +328,15 @@ export function validateManifest(content: string, opts: { ticketRel: string; val
         problems.push(`line ${ln}: phase_id 비유효: ${String(e.phase_id)}`)
       if (typeof e.approved_tree !== 'string' || !GIT_OID_RE.test(e.approved_tree)) problems.push(`line ${ln}: approved_tree 비-OID`)
       if ('design_hash' in e) problems.push(`line ${ln}: phase entry에 design_hash 금지`)
+      // REQ-2026-052 DEC-B5: phase_design_ref는 **선택**(부재=레거시 무회귀). 있으면 64hex(design_hash와 동형).
+      if ('phase_design_ref' in e && (typeof e.phase_design_ref !== 'string' || !SHA256_RE.test(e.phase_design_ref)))
+        problems.push(`line ${ln}: phase_design_ref 비-64hex`)
     } else if (kind === 'design') {
       if (e.phase_id !== null) problems.push(`line ${ln}: design entry는 phase_id=null이어야`)
       if (typeof e.design_hash !== 'string' || !SHA256_RE.test(e.design_hash)) problems.push(`line ${ln}: design_hash 비-64hex`)
       if ('approved_tree' in e) problems.push(`line ${ln}: design entry에 approved_tree 금지`)
+      // REQ-2026-052 DEC-B5: kind 격리 — design 행에는 phase_design_ref 금지.
+      if ('phase_design_ref' in e) problems.push(`line ${ln}: design entry에 phase_design_ref 금지`)
     }
     // archive_inventory(REQ-2026-048 DEC-2): **선택** — 부재는 정상(기존 행 무회귀). 있으면 형식 검증.
     if ('archive_inventory' in e) {

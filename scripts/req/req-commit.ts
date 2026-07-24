@@ -390,10 +390,18 @@ export function parseManifestEntries(content: string): Array<Record<string, unkn
   return out
 }
 
-/** 매니페스트에서 커밋된 **phase 증거**가 있는 phase id 집합(consumed phase 엔트리). */
-export function evidencedPhaseIdsFromManifest(content: string): string[] {
+/**
+ * 매니페스트에서 커밋된 **phase 증거**가 있는 phase id 집합(consumed phase 엔트리).
+ *
+ * 🔴 REQ-2026-052 DEC-B5(phase-3a2): `designRef`를 주면 **design-bound** — 그 phase 행의 `phase_design_ref`가
+ *   `designRef`와 **일치**하는 것만 산입한다. dev-complete 완전성이 이 필터를 써야 D1에서 검토된 phase가 D2
+ *   재승인 후 D2 완료 증명에 새어들지 않는다. `phase_design_ref` 부재 행(레거시·보정 이전)은 **불산입**(fail-closed).
+ *   `designRef` 미지정(하위호환)이면 결속 무관 전량(옛 동작) — 신규 완료 경로는 항상 designRef를 준다.
+ */
+export function evidencedPhaseIdsFromManifest(content: string, designRef?: string | null): string[] {
   return parseManifestEntries(content)
     .filter((e) => e.kind === 'phase' && typeof e.phase_id === 'string')
+    .filter((e) => (designRef == null ? true : e.phase_design_ref === designRef))
     .map((e) => e.phase_id as string)
 }
 
@@ -424,10 +432,12 @@ export function computeDevCompleteProof(args: {
   if (args.reviewKind !== 'phase') return null
   const inventory = [...new Set(args.phaseIds)].sort()
   if (inventory.length === 0) return null
-  const evidenced = new Set(evidencedPhaseIdsFromManifest(args.manifestContent))
-  if (!inventory.every((id) => evidenced.has(id))) return null // 아직 마지막 phase 아님(㊱)
   const designRef = designHashFromManifest(args.manifestContent)
   if (!designRef) throw new Error('dev-complete 발행 전 검증 실패: 커밋된 design 승인(design_hash)이 없다')
+  // 🔴 DEC-B5: **design-bound** 완전성 — 각 inventory phase가 **현재 design_ref에 결속된** 증거를 가져야 마지막
+  //    phase다. 단순 phase_id 존재로는 부족(D1 검토분이 D2 완료에 새는 P1). 결속 없는(레거시) 행은 불산입.
+  const evidenced = new Set(evidencedPhaseIdsFromManifest(args.manifestContent, designRef))
+  if (!inventory.every((id) => evidenced.has(id))) return null // 아직 (design-bound) 마지막 phase 아님(㊱·㊺·㊻)
   return {
     ticket_id: args.ticketId,
     event: 'dev-complete',
@@ -476,13 +486,15 @@ function verifyDevCompleteAtHead(ctx: FinalizeCtx): void {
   if (cpText === null || mfText === null) throw new Error('dev-complete HEAD 재검증 실패: close proof·매니페스트가 HEAD에 없다')
   const parsed = parseCloseProof(cpText)
   if (parsed.problems.length) throw new Error(`dev-complete HEAD 재검증 실패: close proof 손상 — ${parsed.problems.join('; ')}`)
+  const committedDesignRef = designHashFromManifest(mfText)
   const state = deriveBaseState({
     durabilityRequired: true,
     closeProofRows: parsed.rows,
     ledgerHasApprovedClose: false,
     committedEvidenceComplete: true,
-    evidencedPhaseIds: evidencedPhaseIdsFromManifest(mfText),
-    committedDesignRef: designHashFromManifest(mfText),
+    // 🔴 DEC-B5: HEAD 재검증도 design-bound — 현재 committed design_ref에 결속된 phase evidence만 산입.
+    evidencedPhaseIds: evidencedPhaseIdsFromManifest(mfText, committedDesignRef),
+    committedDesignRef,
   })
   if (state !== 'dev-complete')
     throw new Error(`dev-complete HEAD 재검증 실패: 발행 후 파생 상태가 dev-complete가 아니다(${state})`)

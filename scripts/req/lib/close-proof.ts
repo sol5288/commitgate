@@ -233,8 +233,13 @@ export interface CloseStateInput {
   /** HEAD 증거(approvals·아카이브)가 그 승인에 대해 완비됐는가(`verifyCommittedDesignEvidence` 계열). */
   committedEvidenceComplete: boolean
   /**
-   * 🔴 HEAD `approvals.jsonl`에 **phase evidence(consumed)가 커밋된 phase ID 집합**. dev-complete self-verify 입력.
-   *    dev-complete proof의 `phase_inventory`의 모든 phase가 이 집합에 있어야 dev-complete다(DEC-B2).
+   * 🔴 HEAD `approvals.jsonl`에서 **현재 committed design_ref에 결속된**(`phase_design_ref === committedDesignRef`)
+   *    phase evidence의 phase ID 집합. dev-complete self-verify 입력(DEC-B2/B5).
+   *
+   * 🔴 **design-bound 필터는 호출부(manifest 읽는 경계)가 이미 적용**한다 — 이 순수 판정기는 manifest를 파싱하지
+   *    않는 leaf라 필터를 여기 넣으면 모듈 경계가 깨진다(`evidencedPhaseIdsFromManifest(content, designRef)`가
+   *    필터 지점). 단순 phase_id 존재가 아니라 **결속된 증거만** 담겨야 D1 검토분이 D2 완료에 새지 않는다(phase-3a P1).
+   *    dev-complete proof의 `phase_inventory`의 모든 phase가 이 집합에 있어야 dev-complete다.
    */
   evidencedPhaseIds: readonly string[]
   /**

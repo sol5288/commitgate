@@ -540,6 +540,12 @@ export interface ApprovalEvidence {
   review_base_sha: string
   approved_tree?: string
   design_hash?: string | null
+  /**
+   * 🔴 REQ-2026-052 DEC-B5(phase-3a2): **phase 전용** — 이 phase 승인 시점의 committed design 결속
+   *   (= `designValid` 통과값 `currentHash`). evidence-finalize가 manifest phase 행 `phase_design_ref`로 기록한다.
+   *   design kind·레거시(phaseId 없음)면 null.
+   */
+  phase_design_ref?: string | null
   codex_thread_id: string
   machine_schema_version: string
   status: string
@@ -1528,6 +1534,8 @@ export function processResponse(args: {
   threadId: string
   kind?: ReviewKind
   designHash?: string | null
+  /** 🔴 REQ-2026-052 DEC-B5: phase 승인 시점의 committed design 결속(designValid 통과값). phase evidence에 핀. */
+  phaseDesignRef?: string | null
   phaseId?: string | null
   designValid?: boolean
   schemaPath?: string
@@ -1622,6 +1630,7 @@ export function processResponse(args: {
       binding,
       phaseId: args.phaseId ?? null,
       designHash: null,
+      phaseDesignRef: args.phaseDesignRef ?? null, // REQ-2026-052 DEC-B5: 승인 시점 design 결속 핀
       threadId,
       archive: args.archive,
       approvedAt: args.approvedAt ?? new Date().toISOString(),
@@ -1835,11 +1844,13 @@ export function buildApprovalEvidence(args: {
   binding: Binding
   phaseId: string | null
   designHash: string | null
+  /** 🔴 REQ-2026-052 DEC-B5: phase 승인의 design 결속(승인 시점 committed design 참조). design kind면 무시. */
+  phaseDesignRef?: string | null
   threadId: string
   archive: { path: string; sha256: string }
   approvedAt: string
 }): ApprovalEvidence {
-  const { kind, verdict, binding, phaseId, designHash, threadId, archive, approvedAt } = args
+  const { kind, verdict, binding, phaseId, designHash, phaseDesignRef, threadId, archive, approvedAt } = args
   const ev: ApprovalEvidence = {
     response_path: archive.path,
     response_sha256: archive.sha256,
@@ -1852,7 +1863,10 @@ export function buildApprovalEvidence(args: {
     commit_approved: verdict.commit_approved ?? '',
     approved_at: approvedAt,
   }
-  return kind === 'design' ? { ...ev, design_hash: designHash ?? null } : { ...ev, approved_tree: binding.reviewTree }
+  // REQ-2026-052 DEC-B5: phase 승인엔 design 결속(phase_design_ref)을 함께 핀한다. design 행엔 넣지 않는다(kind 격리).
+  return kind === 'design'
+    ? { ...ev, design_hash: designHash ?? null }
+    : { ...ev, approved_tree: binding.reviewTree, phase_design_ref: phaseDesignRef ?? null }
 }
 
 /**
@@ -2056,6 +2070,10 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
 
   // 추적 phase(phaseId)는 유효 design 승인(D13 동일: design_approved + freshness) 전제.
   let designValid = false
+  // 🔴 REQ-2026-052 DEC-B5: designValid가 참일 때의 currentHash = 이 phase가 결속된 committed design 참조.
+  //    승인 시 phase evidence(phase_design_ref)에 핀한다. designValid=false면 아래(step 2a)에서 fail-closed라
+  //    finalize에 도달하지 않으므로 null로 남아도 안전.
+  let phaseDesignRef: string | null = null
   if (phaseId) {
     const approvedHash = typeof state.design_approved_hash === 'string' ? state.design_approved_hash : null
     let currentHash: string | null = null
@@ -2065,6 +2083,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
       currentHash = null
     }
     designValid = state.design_approved === true && approvedHash !== null && approvedHash === currentHash
+    if (designValid) phaseDesignRef = currentHash
   }
 
   // kind별 권위 아티팩트: phase=staged diff, design=설계 문서 00/01/02 + design 바인딩 해시(결정#3·#4).
@@ -2251,6 +2270,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     threadId,
     kind: opts.kind,
     designHash,
+    phaseDesignRef, // REQ-2026-052 DEC-B5: phase 승인 시점 design 결속(designValid 통과값)
     phaseId,
     designValid,
     schemaPath: cfg.schemaPathAbs,
