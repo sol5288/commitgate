@@ -97,6 +97,13 @@ phase-3a 리뷰 P1 보정(DEC-B5). dev-complete가 phase evidence의 **design �
 | ⓵ | **legacy manifest(부재) vs durable manifest(결속)** 판정 차이를 실 git fixture로 |
 | ⓶ | 레거시 phase 행(`phase_design_ref` 부재)은 durable 완료 증거로 **불산입**(fail-closed) · 바이트 무회귀(부재 시 기존 행과 동일) |
 
+**검증 addendum**(phase-3b 착수 전 — 동작 코드 무변경, 테스트·문서 정확성만 보강):
+| # | oracle |
+|---|---|
+| ⓷ | 🔴 **실 git near-E2E 전 파이프라인**: `reviewCodexMain`(정상 design·phase 리뷰)로 D1 승인·완료 → D2 재승인 → 정상 phase-review가 `captureDesignBinding().designHash` → `ApprovalEvidence.phase_design_ref` → `approvals.jsonl` → `evidencedPhaseIdsFromManifest(…, D2)` → HEAD verifier 로 **끊김 없이** 전달. D2 미결속 phase가 하나라도 있으면 dev-complete 아님, 전 phase D2 결속 뒤에만 dev-complete. `state.json` 삭제·변조 무관. |
+
+**재승인 커밋-경로 문구 정정**(DEC-B5): 재검토에 **새 staged 코드 변경이 없으면**(승인 tree == HEAD tree) 일반 `req:commit --run`은 불가하고 **`req:commit <REQ> --finalize --run`**(orphan 복구창 — `resolveRecoverySource` `viaOrphan`)이 정규 경로임을 명시. 새 코드 변경이 있는 phase만 일반 `--run`. state 수동조작·가짜커밋·증거합성 아님(→ `resolveRecoverySource`/`recoveryCoreValid` 테스트 + ⓷ addendum이 근거).
+
 ## Phase 3b — req:new intake gate (`phase-3b-intake-gate`)
 
 | 항목 | 내용 |

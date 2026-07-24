@@ -1,5 +1,14 @@
 # REQ-2026-052 리뷰 요청
 
+## r06-delta 검증 addendum (phase-3b 착수 전 — 동작 코드 무변경, 테스트·문서 정확성) 🔴 이번 delta review 대상
+
+phase-3a2 기능 보정은 승인·커밋됐다(`7bccc38`). phase-3b 전에 **동작 코드는 그대로 두고** 검증만 보강한다.
+
+1. **실 git near-E2E ⓷ 추가**(`req-review-codex.test.ts`): `reviewCodexMain`(정상 design·phase 리뷰)로 D1 승인·완료 → D2 재승인 → 정상 phase-review가 `captureDesignBinding().designHash` → `ApprovalEvidence.phase_design_ref` → `approvals.jsonl` → `evidencedPhaseIdsFromManifest(…, D2)` → HEAD verifier 로 **끊김 없이** 전달됨을 실제 git·실제 mainImpl로 검증. D2 미결속 phase가 하나라도 있으면 dev-complete 아님, 전 phase D2 결속 뒤에만 dev-complete, `state.json` 삭제·변조 무관.
+2. **DEC-B5 재승인 커밋-경로 문구 정정**: 재검토에 **새 staged 코드 변경이 없으면**(승인 tree == HEAD tree) 일반 `req:commit --run`은 불가(만들 source diff 없음)하고, **`req:commit <REQ> --finalize --run`**(`resolveRecoverySource` orphan 복구창 — HEAD.tree == approved_diff_hash → viaOrphan)이 재검토 evidence를 새 source 커밋 없이 내구화하는 **정규 경로**임을 명시. 새 코드 변경이 있는 phase만 일반 `--run`. **state 수동조작·가짜커밋·증거합성 아님** — `resolveRecoverySource`/`recoveryCoreValid` 테스트 + ⓷ addendum이 근거.
+
+이 delta는 위 두 가지(01-design DEC-B5 lifecycle 문구·02-plan addendum 표)에 집중해 검토를 요청한다. 동작 코드(evidence.ts·review-codex.ts·req-commit.ts)는 미변경이다.
+
 ## r05-delta 보정 (phase-3a P1 — phase evidence의 design 결속, DEC-B5) 🔴 이번 delta review 대상
 
 phase-3a는 승인·커밋됐으나(`b0fb74e`), 사후 **P1**이 발견됐다. **이 delta review는 아래 보정(DEC-B5·phase-3a2)에 집중한다.**
