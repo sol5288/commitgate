@@ -310,6 +310,27 @@ reconstruct는 **HEAD-committed immutable evidence만** 읽고, 그 evidence가 
 - 🔴 **state.json을 고치지 않고 DONE으로 바꾸지 않는다.** `dev-complete`·`phase_design_ref`·design/phase archive는 **절대 합성하지 않는다**(요구 #2·#6).
 - reconstructed overlay는 **기본 상태 규칙을 안 바꾼다**: series-terminal 행이 생기면 기본 상태는 `series-terminal`(그 event 때문이지 overlay 때문이 아니다). intake는 `baseStateBlocksIntake`(기본 상태만) — reconstructed 여부 무관(요구 #7).
 
+### DEC-D3. 🔴 Stage-A/Stage-B req 명령 표면 분리 — dispatch가 SSOT (phase-4c release-readiness)
+
+**발견된 결함(main 통합 후 CI 9/9 실패)**: phase-4가 `req:reconstruct`를 `bin/dispatch.mjs`의 `VERB_MODULES`에 등록했으나, 설치·마이그레이션·제거·smoke가 쓰는 **명령 표면**은 역사적 5개 서명(`REQ_SCRIPTS`)에서 파생돼 reconstruct를 누락한다. tarball smoke가 `dispatch req:* verb 수 === 5` 하드코딩으로 실패(모든 OS/node). 원인 셋:
+1. `scripts/smoke.mjs`가 dispatch req:* verb 수를 **5로 하드코딩**.
+2. `bin/init.ts`의 `STAGE_B_REQ_SCRIPTS`가 `REQ_SCRIPTS`(Stage-A 5)에서 파생 → reconstruct 누락.
+3. `bin/migrate.ts`·`bin/uninstall.ts`도 `REQ_SCRIPTS` 의존 → init만 고치면 기존 사용자 프로젝트의 migrate/uninstall 정합성 결함이 남는다.
+
+**설계 원칙(요구 확정)**:
+- 🔴 **`REQ_SCRIPTS`는 역사적 Stage-A 서명(5, frozen)으로 유지** — `detectStageA`·호환 전용. **여기에 reconstruct를 추가하지 않는다**(값이 `tsx scripts/req/*.ts`라 "과거에 무엇을 주입했는가"의 기록이다).
+- 🔴 **현재 Stage-B 명령 표면의 SSOT = `dispatch.mjs`의 `VERB_MODULES` req:* verb**. `bin/init.ts`가 dispatch에서 `STAGE_B_REQ_VERBS`(=req:* verb 집합)를 파생하고 `STAGE_B_REQ_SCRIPTS = {verb: 'commitgate <verb>'}`를 그 위에 만든다(REQ_SCRIPTS 아님). → reconstruct + **미래 verb 자동 포함**.
+- init/migrate/uninstall이 **이 dispatch-파생 표면**을 쓴다.
+
+**구현 범위(요구)**:
+- **init**: `STAGE_B_REQ_SCRIPTS`(dispatch-파생) 주입 — `if (!(k in scripts))`로 **사용자 정의 미덮어씀**(기존 규칙). reconstruct 포함 모든 현재 verb 주입.
+- **migrate**: STAGE_B 표면을 순회. `current===stageA`(Stage-A 서명 존재 시)→**convert**·`current===stageB`→already·`current` 부재 & **Stage-A 서명 없음(신규 verb, 예: reconstruct)**→**add**(Stage-B 값 주입)·`current` 부재 & Stage-A 서명 있음→absent(무변경, 기존 동작 보존)·그 외→**custom**(보존). Stage-A→Stage-B migrate가 reconstruct를 추가하고, **사용자 정의 reconstruct는 절대 덮지 않는다**.
+- **uninstall**(읽기 전용 planner): req:* script 분류를 **Stage-A 서명(REQ_SCRIPTS) ∪ Stage-B 값(`commitgate <verb>`)** 양쪽 기준으로 — 주입값(둘 중 하나) 일치=제거 대상 표시·**사용자 정의=보존**. reconstruct(Stage-B) 포함.
+- **smoke**: 🔴 **개수 검사 폐기**(`=== 5`→`=== 6` 금지). dispatch가 노출한 **모든 req:* verb 각각**에 대해, tarball 설치본의 `package.json#scripts.<verb>` === `commitgate <verb>`인지 검증(누락·오값 자동 검출).
+- 🔴 **정합성 테스트**: `dispatch req:* verb 집합` === `STAGE_B_REQ_SCRIPTS 키 집합` **정확 일치**. 미래 verb를 dispatch에만 추가하면 이 테스트+smoke가 자동으로 잡는다.
+
+**안전**: main(`182a750`)을 되돌리지 않는다 — 이 보정을 **fast-forward로 얹어** 재통합한다. reconstruct의 dispatch 등록·순수 매트릭스·CLI(phase-4/4b)는 무변경. 이 phase는 **packaging 정합성만** 고친다(reconstruct 기능 로직 무변경).
+
 ### DEC-E. 하위호환·안전
 
 - state.json은 scratch 유지. 이 REQ는 커밋 정본으로 승격하지 않는다.
@@ -380,6 +401,7 @@ reconstruct는 **HEAD-committed immutable evidence만** 읽고, 그 evidence가 
 | 3b2 | `scripts/req/lib/evidence.ts`(`verifyPhaseArchives`) · `scripts/req/lib/intake.ts`(archive corrupt) · `scripts/req/req-commit.ts`(verifyDevCompleteAtHead 공유) · 테스트 |
 | 3b3 | `scripts/req/lib/evidence.ts`(`verifyCommittedEvidenceIntegrity` — design+phase 재사용) · `scripts/req/lib/intake.ts` · `scripts/req/req-commit.ts` · 테스트 |
 | 4 | `scripts/req/lib/reconstruct.ts`(신규·순수 매트릭스) · `scripts/req/req-reconstruct.ts`(신규 CLI) · `scripts/req/review-codex.ts`(`SuccessorOf.parent_series_id`) · `bin/dispatch` · 테스트 |
+| 4c | `bin/init.ts`(STAGE_B dispatch 파생) · `bin/migrate.ts`(신규 verb add) · `bin/uninstall.ts`(Stage-A∪B 분류) · `scripts/smoke.mjs`(verb별 검증) · 테스트 |
 
 ## 하위호환·안전
 

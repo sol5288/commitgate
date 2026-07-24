@@ -1,6 +1,19 @@
 # REQ-2026-052 리뷰 요청
 
-## phase-4 P1 보정 (successor 증거 모호성 — DEC-D2 multi-witness) 🔴 이번 delta review 대상
+## phase-4c 패키징 정합성 (Stage-A/B 표면 분리 — DEC-D3) 🔴 이번 delta review 대상
+
+main 통합 후 CI 9/9 실패: dispatch에 req:reconstruct 등록했으나 init/migrate/uninstall/smoke 명령 표면이 역사적 5 서명(REQ_SCRIPTS)에서 파생돼 reconstruct 누락 → smoke `dispatch req:* verb 수 === 5` 하드코딩 실패(모든 OS/node).
+
+설계(DEC-D3):
+- **REQ_SCRIPTS는 Stage-A 서명 5(frozen) 유지** — detectStageA·호환 전용. reconstruct 추가 금지.
+- **Stage-B 명령 표면 SSOT = dispatch VERB_MODULES req:* verb**. init이 거기서 STAGE_B_REQ_VERBS·STAGE_B_REQ_SCRIPTS 파생(REQ_SCRIPTS 아님) → reconstruct + 미래 verb 자동 포함.
+- init: dispatch-파생 STAGE_B 주입(사용자 정의 미덮어씀). migrate: STAGE_B 표면 순회·stageA→convert·신규 verb 부재→**add**·custom 보존. uninstall: Stage-A 서명 ∪ Stage-B 값 양쪽 분류·사용자 정의 보존. smoke: **개수 검사 폐기**(=== 5→=== 6 금지)·verb별 script 검증.
+- **정합성 테스트**: dispatch req:* === STAGE_B_REQ_SCRIPTS 키(미래 자동 검출).
+- main(182a750) 되돌리지 않고 fast-forward로 재통합. reconstruct 기능 로직 무변경(packaging만).
+
+이 delta는 Stage-A/B 분리·dispatch SSOT·smoke verb별 검증·자동 검출에 집중해 검토를 요청한다.
+
+## phase-4 P1 보정 (successor 증거 모호성 — DEC-D2 multi-witness) — 완료·커밋됨
 
 phase-4 사후 P1: 같은 parent_series_id를 가리키는 successor 증거가 복수일 수 있는데, 현재 planReconstruction은 같은 자연키의 두 번째를 조용히 skip → `at`(decided_at)가 다르면 열거순 먼저 온 witness가 임의 채택되는 **fail-open**(필수 필드 모호한데 행 생성).
 

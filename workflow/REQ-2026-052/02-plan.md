@@ -201,6 +201,30 @@ phase-3b2 후속 대칭 보정(DEC-B7). dev-complete가 design_ref를 근거로 
 | ㉘ | 기존 HEAD 행과 후보의 at 또는 resolution 충돌 → fail-closed·write 0(멱등으로 숨기지 않음) |
 | ㉙ | 동일한 기존 행 → 재시도 no-op·추가 커밋 0 |
 
+## Phase 4c — 패키징 정합성 (`phase-4c-packaging-surface`)
+
+main 통합 후 CI 9/9 실패 보정(DEC-D3). dispatch에 req:reconstruct 등록했으나 init/migrate/uninstall/smoke의 명령 표면이 역사적 5 서명에서 파생돼 누락 → smoke `=== 5` 하드코딩 실패.
+
+| 항목 | 내용 |
+|---|---|
+| 책임 계약 | REQ_SCRIPTS는 Stage-A 서명 5(frozen)로 유지 · Stage-B 명령 표면 SSOT=dispatch VERB_MODULES req:* · STAGE_B_REQ_SCRIPTS를 거기서 파생 · init/migrate/uninstall/smoke가 이 표면 사용 · smoke는 개수 아닌 verb별 script 검증 · reconstruct 기능 로직 무변경 |
+| 입력 | phase-4/4b(dispatch 등록) |
+| 산출물 | `bin/init.ts`(STAGE_B dispatch 파생) · `bin/migrate.ts`(add 신규 verb) · `bin/uninstall.ts`(Stage-A∪B 분류) · `scripts/smoke.mjs`(verb별 검증) · 테스트 |
+| 선행 phase | phase-4b |
+| 독립 검증 | `pnpm test` · `pnpm run typecheck` · `pnpm run docs:lint` · `pnpm run smoke` · `git diff --check main...HEAD` |
+
+**Red 먼저**(사용자 필수 테스트):
+| # | oracle |
+|---|---|
+| ㉚ | dispatch req:* 집합 === STAGE_B_REQ_SCRIPTS 키 집합 **정확 일치**(미래 verb 자동 검출) |
+| ㉛ | fresh init이 req:reconstruct 주입(`commitgate req:reconstruct`) |
+| ㉜ | 기존 사용자 정의 req:reconstruct는 init이 미덮어씀(보존) |
+| ㉝ | Stage-A → Stage-B migrate가 reconstruct **add** |
+| ㉞ | migrate 시 사용자 정의 reconstruct 보존(custom) |
+| ㉟ | uninstall이 주입된 reconstruct(`commitgate ...`)는 제거 대상 분류·사용자 정의는 보존 |
+| ㊱ | smoke가 tarball 설치에서 **모든** req:* verb의 script 검증(개수 아님) |
+| ㊲ | 기존 Stage-A 탐지·호환 테스트 무회귀(REQ_SCRIPTS 서명 불변) |
+
 ## 검증 fixture 정책
 
 `44_yammy_sales`는 **읽기전용**. 어떤 파일도 생성·수정·stage·commit·설치하지 않는다. git 동작은 `git init` 임시 저장소로 검증하고 실행 후 삭제.
