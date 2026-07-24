@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"fb4a15f7daca76c24051a7e8036612fa4620e90e","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"phase-3a2를 설계된 계약과 필수 oracle에 따라 구현·검증한 뒤 phase 리뷰를 요청하세요.","observations":[]}
