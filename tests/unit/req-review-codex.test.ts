@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, symlinkSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -88,6 +88,8 @@ import {
 import { createFakeReviewerAdapter, deriveStrictOutputSchema } from '../../scripts/req/lib/adapters'
 import { computeReviewSemanticIdentity } from '../../scripts/req/lib/review-target'
 import { reviewScratchPaths } from '../../scripts/req/lib/scratch'
+import { finalizeEvidenceAndConsume, __setGitForTest, evidencedPhaseIdsFromManifest, designHashFromManifest } from '../../scripts/req/req-commit'
+import { deriveBaseState, parseCloseProof } from '../../scripts/req/lib/close-proof'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 
 /**
@@ -4579,5 +4581,143 @@ describe('[review-codex] MACHINE_SCHEMA_VERSION ↔ shipped 스키마 enum 정�
       properties: { machine_schema_version: { enum: string[] } }
     }
     expect(schema.properties.machine_schema_version.enum).toContain(MACHINE_SCHEMA_VERSION)
+  })
+})
+
+// ─────────── REQ-2026-052 addendum: 정상 phase-review 경로의 design 결속 전 파이프라인(실 git near-E2E) ──
+// 🔴 captureDesignBinding().designHash → ApprovalEvidence.phase_design_ref → approvals.jsonl phase_design_ref
+//    → evidencedPhaseIdsFromManifest(..., D2) → HEAD verifier 로 **끊김 없이** 전달됨을 실제 git·실제 mainImpl로 검증.
+//    design 승인·phase 승인은 reviewCodexMain(정상 경로)으로 구동하고, finalize는 finalizeEvidenceAndConsume로
+//    수행한다(= 재검토 evidence 내구화 경로). 재검토(staged 코드 변경 없음)는 approved tree == HEAD tree이므로
+//    실제 CLI에선 `req:commit --finalize --run`(resolveRecoverySource orphan)이 정규 경로다 — 그 orphan 판정은
+//    [P2a] resolveRecoverySource 테스트가 고정한다. 여기선 finalize 함수 자체로 매니페스트 전달을 검증한다.
+describe('[REQ-2026-052 addendum] 정상 phase-review 경로의 phase_design_ref 전 파이프라인(실 git near-E2E)', () => {
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' }).replace(/\s+$/, '')
+  const TICKET_REL = 'workflow/REQ-2026-001'
+  const SCHEMA_SRC = readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')
+  const repos: string[] = []
+  afterEach(() => { while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true }) })
+
+  const designVerdict = () => ({
+    machine_schema_version: '1.1', review_base_sha: 'a'.repeat(40), status: 'COMPLETE',
+    commit_approved: 'yes', merge_ready: 'yes', risk_level: 'LOW', review_kind: 'design', findings: [], observations: [], next_action: 'done',
+  })
+  const phaseVerdict = () => ({
+    machine_schema_version: '1.1', review_base_sha: 'a'.repeat(40), status: 'COMPLETE',
+    commit_approved: 'yes', merge_ready: 'yes', risk_level: 'LOW', review_kind: 'phase', findings: [], observations: [], next_action: 'done',
+  })
+
+  const setup = (): { repo: string; git: (a: string[]) => string; ticketAbs: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req052-addendum-'))
+    repos.push(repo)
+    const git = gitOf(repo)
+    git(['init', '-q']); git(['config', 'user.email', 't@t.t']); git(['config', 'user.name', 't'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    // review-call 측정 로그는 실제 repo에서 gitignore된다(REVIEW_CALL_LOG_REL) — 없으면 untracked로 D10을 막는다.
+    writeFileSync(join(repo, '.gitignore'), 'workflow/.review-calls.jsonl\n')
+    const ticketAbs = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticketAbs, { recursive: true })
+    writeFileSync(join(repo, 'workflow', 'machine.schema.json'), SCHEMA_SRC)
+    writeFileSync(join(ticketAbs, '00-requirement.md'), '# req\nreq body\n')
+    writeFileSync(join(ticketAbs, '01-design.md'), '# design\ndesign body v1\n')
+    writeFileSync(join(ticketAbs, '02-plan.md'), '# plan\nplan body\n')
+    writeFileSync(join(ticketAbs, 'codex-request.md'), '# codex-request\nreview\n')
+    // 🔴 durable 티켓(marker) — pre-call 커밋·design-bound 판정 대상.
+    writeFileSync(join(ticketAbs, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', risk_level: 'LOW', review_series_model_version: 1, phases: [], approval_evidence_required: true, evidence_durability_required: true }))
+    git(['add', '-A']); git(['commit', '-qm', 'base'])
+    return { repo, git, ticketAbs }
+  }
+
+  const loadState = (ticketAbs: string): Record<string, unknown> => JSON.parse(readFileSync(join(ticketAbs, 'state.json'), 'utf8'))
+  const saveState = (ticketAbs: string, s: Record<string, unknown>): void => writeFileSync(join(ticketAbs, 'state.json'), JSON.stringify(s))
+
+  // 정상 phase-review(reviewCodexMain) → 캡처된 approval_evidence로 finalize. 반환=커밋된 phase_design_ref.
+  const reviewAndFinalizePhase = (repo: string, git: (a: string[]) => string, ticketAbs: string, pid: string): string => {
+    const fake = createFakeReviewerAdapter({ lastMessage: JSON.stringify(phaseVerdict()), threadId: 'T', rawStdout: '' })
+    reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', pid, '--run', '--root', repo], { reviewer: fake })
+    const state = loadState(ticketAbs) as { approval_evidence?: Record<string, unknown> }
+    const ev = state.approval_evidence
+    if (!ev) throw new Error('리뷰 후 approval_evidence 없음')
+    // 🔴 캡처 지점 검증: 승인 시점 currentHash == captureDesignBinding == design_approved_hash.
+    const captured = captureDesignBinding(TICKET_REL, git).designHash
+    expect(ev.phase_design_ref).toBe(captured)
+    __setGitForTest(repo)
+    const responsesDir = join(ticketAbs, 'responses')
+    finalizeEvidenceAndConsume({
+      ticketDir: ticketAbs, ticketRel: TICKET_REL, responsesDir,
+      manifestPath: join(responsesDir, 'approvals.jsonl'), rootForClose: repo,
+      state: state as never, ev: ev as never, archiveNames: readdirSync(responsesDir), validPhaseIds: ['p1', 'p2'],
+      sourceSha: git(['rev-parse', 'HEAD']),
+    } as never)
+    return ev.phase_design_ref as string
+  }
+
+  const deriveFromHead = (repo: string, git: (a: string[]) => string): string => {
+    const head = (rel: string): string | null => { try { return git(['show', `HEAD:${rel}`]) } catch { return null } }
+    const cp = head(`${TICKET_REL}/responses/ticket-close.jsonl`)
+    const mf = head(`${TICKET_REL}/responses/approvals.jsonl`)
+    const rows = cp ? parseCloseProof(cp).rows : []
+    const committedDesignRef = mf ? designHashFromManifest(mf) : null
+    const evidencedPhaseIds = mf ? evidencedPhaseIdsFromManifest(mf, committedDesignRef) : []
+    return deriveBaseState({ durabilityRequired: true, closeProofRows: rows, ledgerHasApprovedClose: false, committedEvidenceComplete: true, evidencedPhaseIds, committedDesignRef })
+  }
+  const headManifest = (git: (a: string[]) => string): string => git(['show', `HEAD:${TICKET_REL}/responses/approvals.jsonl`])
+  // 재검토는 새 phase 행을 append(옛 행은 이력으로 공존)하므로 **가장 마지막** 결속을 본다.
+  const phaseRowRef = (mf: string, pid: string): string | undefined => {
+    let last: string | undefined
+    for (const l of mf.split('\n').filter((x) => x.trim())) {
+      const e = JSON.parse(l) as Record<string, unknown>
+      if (e.kind === 'phase' && e.phase_id === pid) last = e.phase_design_ref as string | undefined
+    }
+    return last
+  }
+
+  it('🔴 D1 승인·완료 → D2 재승인 → 정상 phase-review가 D2 결속을 심어 전 phase 재결속 뒤에만 dev-complete · state 무관', () => {
+    const { repo, git, ticketAbs } = setup()
+
+    // ── D1: design 승인(정상 경로 auto-finalize) + phases 정의 ──
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo],
+      { reviewer: createFakeReviewerAdapter({ lastMessage: JSON.stringify(designVerdict()), threadId: 'T', rawStdout: '' }) })
+    const D1 = captureDesignBinding(TICKET_REL, git).designHash
+    expect(designHashFromManifest(headManifest(git))).toBe(D1) // design 증거가 D1로 커밋됨
+    const s1 = loadState(ticketAbs); s1.phases = [{ id: 'p1', approved: false }, { id: 'p2', approved: false }]; saveState(ticketAbs, s1)
+
+    // ── p1·p2 under D1: 정상 phase-review → 캡처 D1 → finalize → 매니페스트 D1 결속 ──
+    expect(reviewAndFinalizePhase(repo, git, ticketAbs, 'p1')).toBe(D1)
+    expect(reviewAndFinalizePhase(repo, git, ticketAbs, 'p2')).toBe(D1) // 마지막 → dev-complete(D1)
+    expect(phaseRowRef(headManifest(git), 'p1')).toBe(D1)
+    expect(phaseRowRef(headManifest(git), 'p2')).toBe(D1)
+    expect(evidencedPhaseIdsFromManifest(headManifest(git), D1).sort()).toEqual(['p1', 'p2'])
+    expect(deriveFromHead(repo, git)).toBe('dev-complete') // (a)·(c) D1 전 파이프라인 성립
+
+    // ── D2 재승인: 설계 문서 변경·커밋 → design 재리뷰(delta) auto-finalize ──
+    writeFileSync(join(ticketAbs, '01-design.md'), '# design\ndesign body v2 (재승인)\n')
+    git(['add', TICKET_REL + '/01-design.md']); git(['commit', '-qm', 'design v2'])
+    reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo],
+      { reviewer: createFakeReviewerAdapter({ lastMessage: JSON.stringify(designVerdict()), threadId: 'T', rawStdout: '' }) })
+    const D2 = captureDesignBinding(TICKET_REL, git).designHash
+    expect(D2).not.toBe(D1)
+    expect(designHashFromManifest(headManifest(git))).toBe(D2)
+    // 🔴 (b): 현재 design=D2인데 phase 증거는 D1 결속 → dev-complete 아님(developing).
+    expect(deriveFromHead(repo, git)).toBe('developing')
+
+    // ── p2만 D2 재검토·재결속 → 여전히 미완료(p1은 아직 D1) ──
+    expect(reviewAndFinalizePhase(repo, git, ticketAbs, 'p2')).toBe(D2)
+    expect(phaseRowRef(headManifest(git), 'p2')).toBe(D2)
+    expect(evidencedPhaseIdsFromManifest(headManifest(git), D2)).toEqual(['p2'])
+    expect(deriveFromHead(repo, git)).toBe('developing') // (b) 부분 재결속은 미완료
+
+    // ── p1도 D2 재검토·재결속 → 전 phase D2 결속 → dev-complete(D2) supersede ──
+    expect(reviewAndFinalizePhase(repo, git, ticketAbs, 'p1')).toBe(D2)
+    expect(evidencedPhaseIdsFromManifest(headManifest(git), D2).sort()).toEqual(['p1', 'p2'])
+    expect(deriveFromHead(repo, git)).toBe('dev-complete') // (c) 전 phase D2 결속 뒤에만
+
+    // ── (d): state.json 삭제·변조해도 HEAD 판정 불변 ──
+    saveState(ticketAbs, { garbage: true } as never)
+    expect(deriveFromHead(repo, git)).toBe('dev-complete')
+    rmSync(join(ticketAbs, 'state.json'))
+    expect(deriveFromHead(repo, git)).toBe('dev-complete')
   })
 })
