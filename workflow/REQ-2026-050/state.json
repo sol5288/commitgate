@@ -3,16 +3,92 @@
   "branch": "feat/req-2026-050-persona-phase-boundary-and-sync-drift",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9245-4b97-7593-87da-92223479dcad",
+  "review_base_sha": "8d0b54b018348ea361d8ba19b6a2fab593d30127",
+  "review_diff_hash": "9f24ba4e3bd943b490287122f5a3eb5b8bce0725",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
+  "design_approved": true,
+  "design_approved_hash": "8b248835eec4930ac3bcb6f65eb3d527b5ebd5afa65c8ea302432bd09f9b2931",
+  "current_phase": "phase-2-sync-managed-drift",
+  "phases": [
+    {
+      "id": "phase-1-persona-criteria",
+      "approved": true
+    },
+    {
+      "id": "phase-2-sync-managed-drift",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-persona-criteria#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-persona-criteria",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-sync-managed-drift#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-sync-managed-drift",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-sync-managed-drift",
+    "outcome": "approved",
+    "compare_hash": "0862681840163c53ed4b3e06121825b1bc3072bca8e28582b5b9d49b0c2c21b4",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-24T03:58:06.073Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "912cf5ec55957d17c16f54cf3d893b40525de88e",
+    "design": "cb1a7cbd1b382b26e2feec711a6a383aef70cada",
+    "plan": "ea286996634571fd5f7fc192c3dc4e6f6f0baa6a"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-050/responses/design-r03-approved.json",
+    "response_sha256": "e0eef614c5a4362a97473333e417f8ae41ceee92b5756efede3144242eaee940",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "bf5c89806798970e5c4034ddeb166cdf59e8e901",
+    "codex_thread_id": "019f922e-7b0a-74f3-8af4-3819f90d5e30",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-24T03:33:13.606Z",
+    "design_hash": "8b248835eec4930ac3bcb6f65eb3d527b5ebd5afa65c8ea302432bd09f9b2931"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "6e30b4397ae53de56552268d03d3c9c625a1ea01",
+      "phase_id": "phase-1-persona-criteria",
+      "consumed_by_commit_sha": "d78e78b18c2e4fb82a365b6b4d19c028195ad423",
+      "approval_consumed_at": "2026-07-24T03:43:09.427Z"
+    },
+    {
+      "approved_tree": "9f24ba4e3bd943b490287122f5a3eb5b8bce0725",
+      "phase_id": "phase-2-sync-managed-drift",
+      "consumed_by_commit_sha": "a995e01a07d2f18048db9abfae742f67dd4eb46c",
+      "approval_consumed_at": "2026-07-24T03:58:38.967Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
