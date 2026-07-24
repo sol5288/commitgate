@@ -828,10 +828,15 @@ describe('[REQ-2026-052] dev-complete HEAD-only 검증(실 git — runtime state
 // ─── REQ-2026-052 phase-3a: finalize 멱등성 = HEAD 기준(㉟ 재시도 안전) ───
 import { __setGitForTest, finalizeEvidenceAndConsume } from '../../scripts/req/req-commit'
 import { serializeManifestLine as _serMf, buildManifestEntry as _bldMf } from '../../scripts/req/lib/evidence'
+import { createHash as _createHash } from 'node:crypto'
 
 describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', () => {
   const g = (repo: string, args: string[]) =>
     _execFileSync('git', ['-c', 'user.email=t@t.t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+  // 🔴 DEC-B6: phase 승인 archive 내용은 결정적(pid·round)이고 manifest.response_sha256 == 그 내용의 sha여야
+  //    발행 후 verifyDevCompleteAtHead(phase archive 무결성)를 통과한다. 아래 phaseEntry·evFor·archive write가 공유.
+  const arContent = (pid: string, round: string): string => JSON.stringify({ phase: pid, round, approved: true })
+  const arSha = (pid: string, round: string): string => _createHash('sha256').update(arContent(pid, round), 'utf8').digest('hex')
   const designEntry = (hash: string): string =>
     _serMf(
       _bldMf(
@@ -857,7 +862,7 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
       _bldMf(
         {
           response_path: 'workflow/REQ-2026-001/responses/' + pid + '-' + round + '-approved.json',
-          response_sha256: 'a'.repeat(64),
+          response_sha256: arSha(pid, round), // 🔴 실제 archive 내용의 sha(DEC-B6 무결성 통과)
           review_kind: 'phase',
           phase_id: pid,
           review_base_sha: 'b'.repeat(40),
@@ -891,9 +896,9 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
     }
     return t.split('\n').filter((l) => l.trim())
   }
-  const evFor = (pid: string, ref: string = 'e'.repeat(64), round = 'r01', sha: string = 'a'.repeat(64)): unknown => ({
+  const evFor = (pid: string, ref: string = 'e'.repeat(64), round = 'r01'): unknown => ({
     response_path: 'workflow/REQ-2026-001/responses/' + pid + '-' + round + '-approved.json',
-    response_sha256: sha,
+    response_sha256: arSha(pid, round), // 🔴 실제 archive 내용의 sha(round별 상이 → r01/r02 dup-key 충돌도 자연 해소)
     review_kind: 'phase',
     phase_id: pid,
     review_base_sha: 'b'.repeat(40),
@@ -918,13 +923,13 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
       _mkdirSync(responsesDir, { recursive: true })
       const headManifest = designEntry('e'.repeat(64)) + phaseEntry('p1')
       _writeFileSync(_join(responsesDir, 'approvals.jsonl'), headManifest)
-      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), '{}')
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), arContent('p1', 'r01'))
       _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
       g(repo, ['add', '-A'])
       g(repo, ['commit', '-qm', 'design+p1 evidence'])
       // 🔴 실패한 커밋 모사: p2 엔트리를 **디스크에만** 써 둔다(HEAD엔 없음).
       _writeFileSync(_join(responsesDir, 'approvals.jsonl'), headManifest + phaseEntry('p2'))
-      _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), '{}')
+      _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), arContent('p2', 'r01'))
 
       __setGitForTest(repo)
       const state = {
@@ -978,8 +983,8 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
         JSON.stringify({ ticket_id: 'REQ-2026-001', event: 'dev-complete', series_id: null, resolution: null, phase_inventory: ['p1', 'p2'], design_ref: D1, at: '2026-07-24T05:00:00.000Z', reconstructed: false, evidence_basis: null }) + '\n'
       _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry(D1) + phaseEntry('p1') + phaseEntry('p2'))
       _writeFileSync(_join(responsesDir, 'ticket-close.jsonl'), dcD1)
-      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), '{}')
-      _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), '{}')
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), arContent('p1', 'r01'))
+      _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), arContent('p2', 'r01'))
       _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
       g(repo, ['add', '-A'])
       g(repo, ['commit', '-qm', 'complete with D1'])
@@ -998,8 +1003,8 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
       }
       // 🔴 DEC-B5: 재승인 lifecycle — 각 phase를 D2에 결속해 재검토·재커밋해야 D2 dev-complete가 성립한다.
       //    재검토는 distinct 아카이브(r02·distinct sha)를 낸다.
-      _writeFileSync(_join(responsesDir, 'p1-r02-approved.json'), '{}')
-      _writeFileSync(_join(responsesDir, 'p2-r02-approved.json'), '{}')
+      _writeFileSync(_join(responsesDir, 'p1-r02-approved.json'), arContent('p1', 'r02'))
+      _writeFileSync(_join(responsesDir, 'p2-r02-approved.json'), arContent('p2', 'r02'))
       const mkCtx = (pid: string, ev: unknown): unknown => ({
         ticketDir, ticketRel, responsesDir,
         manifestPath: _join(responsesDir, 'approvals.jsonl'),
@@ -1010,24 +1015,52 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
         rootForClose: repo,
       })
 
-      const R2SHA = 'd'.repeat(64) // r02 재검토 아카이브의 distinct sha(r01의 'a'*64와 중복 방지)
       // ── ㊺: p1만 D2에 재결속 재커밋 → p2는 아직 D1 결속 → dev-complete(D2) **아직 미발행** ──
-      finalizeEvidenceAndConsume(mkCtx('p1', evFor('p1', D2, 'r02', R2SHA)) as never)
+      // (r02 아카이브는 내용이 달라 r01과 sha가 다르므로 manifest dup-key도 자연 해소.)
+      finalizeEvidenceAndConsume(mkCtx('p1', evFor('p1', D2, 'r02')) as never)
       const afterP1 = cpRows(repo).filter((r) => r.event === 'dev-complete')
       expect(afterP1.length).toBe(1) // 아직 D1 하나뿐(D2 미발행 — 전 phase가 D2 결속이 아니다)
       expect(afterP1[0]!.design_ref).toBe(D1)
 
       // ── ㊻: p2도 D2에 재결속 재커밋 → 전 phase가 D2 결속 → D2 dev-complete supersede append ──
-      finalizeEvidenceAndConsume(mkCtx('p2', evFor('p2', D2, 'r02', R2SHA)) as never)
+      finalizeEvidenceAndConsume(mkCtx('p2', evFor('p2', D2, 'r02')) as never)
       const dcs = cpRows(repo).filter((r) => r.event === 'dev-complete')
       expect(dcs.length).toBe(2) // D1 + D2 공존(append-only supersede)
       expect(dcs.map((r) => r.design_ref).sort()).toEqual([D1, D2].sort())
       // 🔴 재시도(멱등) → 중복 없음.
-      finalizeEvidenceAndConsume(mkCtx('p2', evFor('p2', D2, 'r02', R2SHA)) as never)
+      finalizeEvidenceAndConsume(mkCtx('p2', evFor('p2', D2, 'r02')) as never)
       expect(cpRows(repo).filter((r) => r.event === 'dev-complete').length).toBe(2)
     } finally {
       _rmSync(repo, { recursive: true, force: true })
     }
+  })
+
+  it('⓽ 🔴 발행 후 verifyDevCompleteAtHead도 phase archive 무결성 강제 — 다른 phase archive가 변조돼 있으면 throw(공유 규칙)', () => {
+    const repo = _mkdtempSync(_join(_tmpdir(), 'req052-archverify-'))
+    try {
+      g(repo, ['init', '-q']); g(repo, ['config', 'user.email', 't@t.t']); g(repo, ['config', 'user.name', 't'])
+      const ticketRel = 'workflow/REQ-2026-001'
+      const ticketDir = _join(repo, ticketRel)
+      const responsesDir = _join(ticketDir, 'responses')
+      _mkdirSync(responsesDir, { recursive: true })
+      const D = 'e'.repeat(64)
+      // HEAD: design(D) + p1(D 결속) evidence. 🔴 단 p1 archive는 **변조된 바이트**로 커밋(sha 불일치).
+      _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry(D) + phaseEntry('p1'))
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), 'TAMPERED-BYTES') // sha != arSha('p1','r01')
+      _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
+      g(repo, ['add', '-A']); g(repo, ['commit', '-qm', 'design+p1(변조 archive)'])
+      // p2 evidence 준비(정상 archive). p2 finalize가 마지막 phase → dev-complete 발행 → 발행 후 verify가 p1 변조 포착.
+      _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), arContent('p2', 'r01'))
+      __setGitForTest(repo)
+      const state = { id: 'REQ-2026-001', current_phase: 'p2', phases: [{ id: 'p1', approved: true }, { id: 'p2', approved: true }], review_series_model_version: 1 }
+      const ctx = {
+        ticketDir, ticketRel, responsesDir, manifestPath: _join(responsesDir, 'approvals.jsonl'),
+        state, ev: evFor('p2'), archiveNames: ['p1-r01-approved.json', 'p2-r01-approved.json'],
+        validPhaseIds: ['p1', 'p2'], sourceSha: 'd'.repeat(40), rootForClose: repo,
+      }
+      // 🔴 intake와 동일 규칙(verifyPhaseArchives 공유) — p1 archive 변조로 발행 후 재검증이 fail-closed.
+      expect(() => finalizeEvidenceAndConsume(ctx as never)).toThrow(/phase 승인 archive/)
+    } finally { _rmSync(repo, { recursive: true, force: true }) }
   })
 
   it('㊱ 마지막 phase 아니면 dev-complete 미발행', () => {
@@ -1041,7 +1074,7 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
       const responsesDir = _join(ticketDir, 'responses')
       _mkdirSync(responsesDir, { recursive: true })
       _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry('e'.repeat(64)))
-      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), '{}')
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), arContent('p1', 'r01'))
       _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
       g(repo, ['add', '-A'])
       g(repo, ['commit', '-qm', 'design'])

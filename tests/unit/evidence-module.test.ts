@@ -11,6 +11,8 @@ import {
   isConfinedArchivePath,
   buildManifestEntry,
   validateManifest,
+  verifyPhaseArchives,
+  serializeManifestLine,
   durableDesignEvidence,
   findEvidenceRow,
   isDurabilityRequired,
@@ -157,6 +159,37 @@ describe('[REQ-2026-048] 이동한 술어 — 새 경로에서 동작 동일', (
     designRow.phase_design_ref = dref // 주입
     const problems = validateManifest(`${JSON.stringify(designRow)}\n`, { ticketRel: t, validPhaseIds: [] })
     expect(problems.some((p) => /design entry에 phase_design_ref 금지/.test(p))).toBe(true)
+  })
+
+  // ── REQ-2026-052 DEC-B6(phase-3b2): verifyPhaseArchives 순수 검증(headBlobSha256 포트) ──
+  it('⓸⓹⓺ verifyPhaseArchives: 존재+일치=문제없음 · 부재=missing · 불일치=sha-mismatch', () => {
+    const p1 = `${t}/responses/p1-r01-approved.json`
+    const p2 = `${t}/responses/p2-r01-approved.json`
+    const mf = serializeManifestLine(phaseEv({ phase_design_ref: dref })) // p1, sha=sha('a'*64)
+      + serializeManifestLine(buildManifestEntry(
+        { review_kind: 'phase', phase_id: 'p2', response_path: p2, response_sha256: 'b'.repeat(64), review_base_sha: oid, approved_tree: oid, phase_design_ref: dref, approved_at: '2026-07-22T00:00:00.000Z' } as Parameters<typeof buildManifestEntry>[0],
+        { consumedAt: '2026-07-22T00:00:01.000Z', consumedByCommitSha: oid, userCommitConfirmed: null }))
+    // 둘 다 존재+일치 → 문제 없음.
+    expect(verifyPhaseArchives(mf, (p) => (p === p1 ? sha : p === p2 ? 'b'.repeat(64) : null))).toEqual([])
+    // p1 부재 → missing.
+    expect(verifyPhaseArchives(mf, (p) => (p === p2 ? 'b'.repeat(64) : null)).map((x) => x.reason)).toEqual(['missing'])
+    // p2 변조(sha 불일치) → sha-mismatch.
+    const probs = verifyPhaseArchives(mf, (p) => (p === p1 ? sha : p === p2 ? 'c'.repeat(64) : null))
+    expect(probs).toEqual([{ phaseId: 'p2', responsePath: p2, reason: 'sha-mismatch' }])
+  })
+
+  it('⓸ verifyPhaseArchives: onlyDesignRef 지정 시 그 design 결속 phase만(강한 정책 기본=전량)', () => {
+    const p1 = `${t}/responses/p1-r01-approved.json`
+    const mf = serializeManifestLine(phaseEv({ phase_design_ref: dref })) // p1 결속=dref
+    // onlyDesignRef=다른 값 → p1 제외 → 검증 대상 없음(문제 없음).
+    expect(verifyPhaseArchives(mf, () => null, 'f'.repeat(64))).toEqual([])
+    // onlyDesignRef=dref → p1 포함 → 부재 감지.
+    expect(verifyPhaseArchives(mf, () => null, dref).map((x) => x.phaseId)).toEqual(['p1'])
+    // design 행은 대상 아님(phase만).
+    const withDesign = mf + serializeManifestLine(buildManifestEntry(
+      { review_kind: 'design', phase_id: null, response_path: `${t}/responses/design-r01-approved.json`, response_sha256: sha, review_base_sha: oid, design_hash: sha, approved_at: '2026-07-22T00:00:00.000Z' } as Parameters<typeof buildManifestEntry>[0],
+      { consumedAt: '2026-07-22T00:00:01.000Z', consumedByCommitSha: oid, userCommitConfirmed: null }))
+    expect(verifyPhaseArchives(withDesign, (p) => (p === p1 ? sha : null))).toEqual([]) // p1 일치·design 무시
   })
 })
 

@@ -439,6 +439,49 @@ export function designHashFromManifest(content: string): string | null {
   return designs.length ? (designs[designs.length - 1]!.design_hash as string) : null
 }
 
+// ───────── phase 승인 archive 무결성 (REQ-2026-052 DEC-B6·phase-3b2) — 공유 leaf 모듈 ──
+
+export interface PhaseArchiveProblem {
+  phaseId: string
+  responsePath: string
+  reason: 'missing' | 'sha-mismatch'
+}
+
+/**
+ * 🔴 phase 승인 **archive blob 무결성** 검증(순수 + `headBlobSha256` 포트, DEC-B6). intake(`scanTicketIntake`)와
+ *    req:commit 발행 후 verifier(`verifyDevCompleteAtHead`)가 **이 한 모듈을 공유**한다 → 두 경로의 phase archive
+ *    규칙이 갈라질 수 없다(요구 #3).
+ *
+ * 각 phase manifest 행에 대해: `response_path` blob이 **HEAD에 존재**하고(`headBlobSha256` non-null) 그
+ * sha256이 `response_sha256`과 **일치**하는지 확인한다. archive를 삭제하면 `missing`, 바이트를 바꾸면
+ * `sha-mismatch` — 둘 다 archive 손상(corrupt)이다. manifest 행 형식(`response_path`/`response_sha256`)은 여기서
+ * 재검증하지 않는다(그건 `validateManifest` 몫) — 형식이 이미 통과한 행의 **blob 정합**만 본다.
+ *
+ * 🔴 **강한 정책(요구 #1 우선안)**: `onlyDesignRef`를 주지 않으면 **모든** phase 행을 검증한다(inventory 한정 아님).
+ *    감사 내구성상 재승인 이전 라운드 행의 archive까지 온전해야 한다. `onlyDesignRef` 지정 시 그 design_ref에
+ *    결속된 phase 행만(부분 검증 — 필요 시).
+ *
+ * 🔴 on-disk·워킹트리를 절대 읽지 않는다 — `headBlobSha256`(HEAD blob 바이트 sha)만. leaf라 git을 직접 모른다.
+ */
+export function verifyPhaseArchives(
+  content: string,
+  headBlobSha256: (repoRel: string) => string | null,
+  onlyDesignRef?: string | null,
+): PhaseArchiveProblem[] {
+  const problems: PhaseArchiveProblem[] = []
+  for (const e of parseManifestEntries(content)) {
+    if (e.kind !== 'phase' || typeof e.phase_id !== 'string' || e.phase_id === '') continue
+    if (onlyDesignRef != null && e.phase_design_ref !== onlyDesignRef) continue
+    const responsePath = typeof e.response_path === 'string' ? e.response_path : ''
+    const expectedSha = typeof e.response_sha256 === 'string' ? e.response_sha256 : ''
+    if (!responsePath || !expectedSha) continue // 형식 문제는 validateManifest가 corrupt로 잡는다(중복 판정 안 함).
+    const actual = headBlobSha256(responsePath)
+    if (actual === null) problems.push({ phaseId: e.phase_id, responsePath, reason: 'missing' })
+    else if (actual !== expectedSha) problems.push({ phaseId: e.phase_id, responsePath, reason: 'sha-mismatch' })
+  }
+  return problems
+}
+
 // ─────────────────────────── design evidence 내구화 (REQ-2026-048 DEC-3) ──
 
 /**
