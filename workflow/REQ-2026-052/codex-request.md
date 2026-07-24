@@ -15,6 +15,8 @@ reconstruct는 HEAD-committed immutable evidence만 읽고, 그 evidence가 clos
 
 이 delta는 위 매트릭스·evidence 보강·실행 모델(DEC-D2)에 집중해 검토를 요청한다.
 
+**phase-4 r01 반영**(P1: HEAD 기반 쓰기가 미커밋 close-proof 행 손실): r01이 정확했다 — reconstruct가 HEAD close-proof(cpText)에 후보를 append해 디스크에 쓰면, 사용자가 close-proof에 써 둔 **미커밋 행**을 덮어써 데이터 손실이 난다. **수정**: 쓰기 전 `git status --porcelain -- <close-proof>`로 대상이 HEAD와 동일(미커밋 변경 없음)한지 확인하고, 불일치면 **fail-closed**(미커밋 증거 미손실). 실 git 테스트 추가(미커밋 사용자 행 존재 시 throw·write 0·행 보존). 비차단 obs(planReconstruction 모순 기준)는 append-layer(자연키 conflict throw)+동일키 refusal로 계약 보장 — 유지.
+
 ## phase-3b3 보정 (design 승인 archive 무결성 — DEC-B7) — 완료·커밋됨
 
 phase-3b2 후속 대칭 결함: phase archive만 검증하고 design archive는 미룸. dev-complete가 design_ref를 근거로 삼으므로 그 design 승인 증거의 HEAD archive 무결성도 완료 필수 조건. 현재 `verifyCommittedDesignEvidence.durable`은 needs-recovery에만 쓰이고 dev-complete/series-terminal 통과엔 미강제 → design archive/inventory 삭제·변조에도 통과.

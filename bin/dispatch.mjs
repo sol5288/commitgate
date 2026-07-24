@@ -18,6 +18,7 @@ export const VERB_MODULES = {
   'req:review-codex': '../scripts/req/review-codex.ts',
   'req:doctor': '../scripts/req/req-doctor.ts',
   'req:commit': '../scripts/req/req-commit.ts',
+  'req:reconstruct': '../scripts/req/req-reconstruct.ts',
   uninstall: 'uninstall.ts',
   migrate: 'migrate.ts',
   sync: 'sync.ts',

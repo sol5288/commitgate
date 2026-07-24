@@ -1062,6 +1062,13 @@ export interface SuccessorOf {
   parent_attempts_total: number               // 부모 **모든** series attempts 합
   parent_replace_resolution: HumanResolution  // 부모의 replace 종결 손기록 그대로
   recorded_at: string                          // 자식 생성 시각(부모 값 아님)
+  /**
+   * 🔴 REQ-2026-052 phase-4(DEC-D2): 부모의 **replace 종결된 series_id**. 이 committed 값이 부모 티켓의
+   *    `series-terminal` close-proof 행을 **완전히 결정**하게 해 `req:reconstruct`가 소비할 수 있게 한다
+   *    (없으면 series_id 미결정 → 복원 불가). 구식 successor_of(이 필드 없음)는 backward-compat로 허용하되
+   *    reconstruct 대상이 아니다. **선택 필드**(기존 successor 티켓 무회귀).
+   */
+  parent_series_id?: string
 }
 
 /**
@@ -1083,6 +1090,8 @@ export function resolveSuccessorLineage(parentState: WorkflowState, parentReqId:
     parent_attempts_total: parentAttemptsTotal,
     parent_replace_resolution: replace.human_resolution,
     recorded_at: recordedAt,
+    // 🔴 phase-4(DEC-D2): replace 종결된 series_id를 lineage에 박아, 부모 series-terminal 행을 reconstruct가 완전 결정하게 한다.
+    parent_series_id: replace.series_id,
   }
 }
 
