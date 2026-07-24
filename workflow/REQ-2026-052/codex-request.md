@@ -1,6 +1,15 @@
 # REQ-2026-052 리뷰 요청
 
-## phase-3b 구현 (req:new intake gate — DEC-C) 🔴 이번 phase review 대상
+## phase-3b2 보정 (phase 승인 archive 무결성 — DEC-B6) 🔴 이번 delta review 대상
+
+phase-3b 사후 P1: intake·`verifyDevCompleteAtHead`가 phase 산입 시 manifest 행의 `response_path`·`response_sha256` **형식**과 `phase_design_ref`만 봤고, phase 승인 **archive blob의 HEAD 존재·SHA 일치**는 확인 안 했다 → archive 삭제·변조 뒤에도 dev-complete 통과(committed evidence only 위반). (design archive는 `verifyCommittedDesignEvidence`가 이미 검증, phase archive만 대응물 없음.)
+
+- **공유 leaf `verifyPhaseArchives`**(`lib/evidence`): phase 행마다 `response_path` blob이 HEAD에 존재+sha256==`response_sha256` 검증(순수+`headBlobSha256` 포트). **강한 정책=모든 phase 행**(요구 #1 우선안). intake·`verifyDevCompleteAtHead` **양쪽 공유**(요구 #3) — 규칙 divergence 불가. close-proof leaf는 blob IO 무접촉·HEAD blob만.
+- **corrupt 처리**: phase archive 부재/불일치 → intake=corrupt block·req:commit 발행 후=throw. "archive 온전하나 D2-bound 없음"은 developing(구분).
+- **dev-complete 4조건**(HEAD-only): design_ref 존재·매칭 + close proof 유효 + inventory design-bound + **전 phase archive HEAD 존재·SHA 일치**(신규 ④). 발행은 lenient 유지(archive는 같은 finalize 커밋에 담김); 무결성은 발행 후 verifier·이후 intake가 강제(사후 삭제·변조 포착).
+- **범위**: 요구가 명시한 **phase archive**에 집중. design archive 완전성을 dev-complete 조건에 넣는 대칭 강화는 광범위 fixture 변경을 요해 별도 후속으로 명시(현재 needs-recovery엔 이미 쓰임). 별도 corrective phase **phase-3b2**로 구현·리뷰·커밋. **이번 delta 승인 후 phase-3b2만** 진행하고 phase-4는 완료 후 별도.
+
+## phase-3b 구현 (req:new intake gate — DEC-C) — 완료·커밋됨
 
 DEC-C를 구현한다. 설계 문서(00/01/02)는 무변경(DEC-C가 이미 이 게이트를 규정) — 이 리뷰는 **staged 코드 diff**가 대상이다.
 

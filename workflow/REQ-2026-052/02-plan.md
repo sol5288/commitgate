@@ -123,6 +123,28 @@ phase-3a 리뷰 P1 보정(DEC-B5). dev-complete가 phase evidence의 **design �
 | ㊷ | 기본 상태별 req:new: `developing`·`needs-recovery` 차단 / `dev-complete`·`series-terminal` 허용 |
 | ㊸ | AWAIT_HUMAN·통합 대기·DONE 각각 HEAD proof만으로 허용/차단 판정 |
 
+## Phase 3b2 — phase 승인 archive 무결성 (`phase-3b2-phase-archive-integrity`)
+
+phase-3b 리뷰 P1 보정(DEC-B6). phase 승인 archive blob 존재·SHA를 검증하지 않아, archive 삭제·변조 뒤에도 dev-complete가 통과하던 결함을 닫는다.
+
+| 항목 | 내용 |
+|---|---|
+| 책임 계약 | **공유 leaf `verifyPhaseArchives`**(`lib/evidence`)로 phase manifest 행의 승인 archive HEAD 존재·SHA 일치 검증(강한 정책=모든 phase 행) · intake·`verifyDevCompleteAtHead` **양쪽이 공유**(요구 #3) · 손상 시 intake=corrupt block·req:commit=throw · close-proof leaf는 blob IO 미접촉 · HEAD blob만(state·워킹트리·on-disk 미사용) |
+| 입력 | phase-1(close-proof) · phase-3a2(design-bound) · phase-3b(intake) |
+| 산출물 | `scripts/req/lib/evidence.ts`(verifyPhaseArchives) · `scripts/req/lib/intake.ts` · `scripts/req/req-commit.ts`(verifyDevCompleteAtHead 공유) · 테스트 |
+| 선행 phase | phase-3b |
+| 독립 검증 | `npx vitest run tests/unit/evidence-module.test.ts tests/unit/req-new-intake.test.ts tests/unit/req-commit.test.ts` · `npm run typecheck` · 실 git |
+
+**Red 먼저**(사용자 필수 테스트):
+| # | oracle |
+|---|---|
+| ⓸ | 유효 design + D2-bound phase manifest + valid dev-complete에서, 현재 inventory phase 승인 archive를 HEAD에서 **삭제**하면 corrupt/block |
+| ⓹ | 같은 조건에서 archive 바이트를 바꿔 **SHA 불일치**로 만들면 corrupt/block |
+| ⓺ | archive 정상·SHA 일치면 dev-complete/pass |
+| ⓻ | D1 archive는 있어도 D2-bound phase evidence가 없으면 developing/block(archive 손상 아님 — corrupt와 구분) |
+| ⓼ | req:new --run 차단 시 HEAD·index·branch·새 티켓 디렉터리 모두 불변 |
+| ⓽ | req:commit 발행 후 `verifyDevCompleteAtHead`도 **동일** phase archive 무결성 규칙을 통과해야 dev-complete(공유 규칙 — 삭제/변조면 throw) |
+
 ## Phase 4 — 재구성 명령 (`phase-4-reconstruct-command`)
 
 | 항목 | 내용 |
@@ -130,7 +152,7 @@ phase-3a 리뷰 P1 보정(DEC-B5). dev-complete가 phase evidence의 **design �
 | 책임 계약 | `req:reconstruct`가 immutable archive+approvals로 검증가능 사실만 복원·`reconstructed:true`·추정 금지·사람 확인 |
 | 입력 | phase-1 |
 | 산출물 | `bin/reconstruct.ts` · `bin/dispatch.mjs` 등록 · 테스트 |
-| 선행 phase | phase-1 · **phase-3b 완료 후 별도 진행**(사용자 지시) |
+| 선행 phase | phase-1 · **phase-3b2 완료 후 별도 진행**(사용자 지시) |
 | 독립 검증 | `npx vitest run tests/unit/reconstruct.test.ts` · `npm run typecheck` |
 
 **Red 먼저**(요구 #8): ㉑ 아카이브/매니페스트에서 유도한 행에 reconstructed:true+evidence_basis ㉒ 복원 불가 사실은 unknown(추정 안 함) ㉓ dry-run 기본·`--run`+확인 없이 미실행 ㉔ reconstructed 티켓이 원본과 구별된다(파생 상태=`reconstructed`).
@@ -144,8 +166,9 @@ phase-3a 리뷰 P1 보정(DEC-B5). dev-complete가 phase evidence의 **design �
 - **phase-2는 phase-1 선행**. ✅ 완료.
 - **phase-3a는 phase-1+phase-2 선행**. ✅ 완료.
 - **phase-3a2는 phase-3a 선행**(dev-complete 발행·verifier가 있어야 design-bound로 보정). **phase-3b는 phase-3a2 선행**(design-bound 완전성이 있어야 intake gate가 정확히 판정). 이 순서 의존은 실재하므로 정직하게 선언한다.
-- phase-4는 phase-1 선행이나, **사용자 지시로 phase-3b 완료 후 별도 진행**.
-- 🔴 **이번 delta는 phase-3a2(P1 보정)만 구현·리뷰·커밋**한다. phase-3b·phase-4는 phase-3a2 완료 보고 후 별도 승인.
+- **phase-3b2는 phase-3b 선행**(intake·verifier에 phase archive 무결성을 얹는 보정).
+- phase-4는 phase-1 선행이나, **사용자 지시로 phase-3b2 완료 후 별도 진행**(phase-4 섞지 않음).
+- 🔴 **이번 delta는 phase-3b2(P1 보정)만 구현·리뷰·커밋**한다. phase-4는 phase-3b2 완료 보고 후 별도 승인.
 - 🔴 **migration**: REQ-052 자신의 phase-1/2/3a 행은 `phase_design_ref` 부재(보정 전 커밋) → 이 티켓의 durable 완료는 **각 phase 재검토** 전까지 fail-closed(DEC-B5, 요구 #4 의도). reconstruct는 아카이브에 없는 결속값을 합성하지 않으므로 완료 경로가 아니다(r05-delta P1).
 
 ## 완료

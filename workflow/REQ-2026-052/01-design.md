@@ -215,6 +215,21 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 - 🔴 **reconstruct는 결속 back-fill 경로가 아니다**(r05-delta P1): `req:reconstruct`(DEC-D)는 immutable archive·approvals로 **검증 가능한 close-proof lifecycle 행**(series-terminal·dev-complete)만 복원한다. `phase_design_ref`는 리뷰 시점에 commitgate가 **git에서 파생해 핀**하는 값이라 **아카이브(codex 응답)에 기록되지 않는다** → reconstruct가 검증 가능하게 유도할 근거가 없다. 설령 dev-complete 행을 복원해도 HEAD verifier는 여전히 design-bound phase evidence를 요구하므로 결속 없는 기존 행으로는 성립하지 않는다. 따라서 **결속 없는 티켓의 완료 경로는 재검토(위 정상 경로)뿐**이며, reconstruct는 완료-migration으로 주장하지 않는다.
 - **이 REQ(2026-052) 자체**의 이미 커밋된 phase-1/2/3a 행은 `phase_design_ref`가 없다(보정 전 커밋). 따라서 이들을 포함한 REQ-052의 durable 완료는 **각 phase 재검토(위 정상 경로)** 전까지 성립하지 않는다 — 요구 #4의 **의도된 fail-closed**(결함 아님). 완료 시점에 재검토로 처리한다.
 
+### DEC-B6. 🔴 phase 승인 archive 무결성 — dev-complete는 archive blob 존재·SHA 일치까지 (phase-3b P1 보정)
+
+**발견된 결함(phase-3b P1)**: intake·`verifyDevCompleteAtHead`가 phase를 산입할 때 manifest 행의 `response_path`·`response_sha256` **형식**과 `phase_design_ref`만 봤다. 그러나 그 phase 승인 **archive blob이 HEAD에 실제 존재하는지, 그 SHA가 `response_sha256`과 일치하는지**는 확인하지 않았다. ∴ phase 승인 archive를 **삭제·변조한 뒤에도 dev-complete가 통과**한다 — "committed proof/evidence only" + corrupt/partial fail-closed 계약 위반. (design archive는 `verifyCommittedDesignEvidence`가 이미 존재·SHA·완전성을 검증하지만, phase archive는 대응물이 없었다.)
+
+**보정(요구 불변식 #1·#2·#3)**:
+- 🔴 **공유 leaf 모듈 `verifyPhaseArchives`**(`lib/evidence`): manifest의 phase evidence 행마다 `response_path` blob이 HEAD에 존재하고 그 sha256이 `response_sha256`과 일치하는지 검증한다(순수 + `headBlobSha256` 포트 주입 — leaf 유지, on-disk·워킹트리 미접촉). **강한 정책(요구 #1 우선안): 모든 phase manifest 행을 검증**(inventory 한정이 아니라). 감사 내구성상 재승인 이전 라운드 행까지 archive가 온전해야 한다.
+- 🔴 **intake·req:commit 발행 후 verifier가 이 모듈을 공유**(요구 #3): `verifyPhaseArchives`를 `scanTicketIntake`와 `verifyDevCompleteAtHead` **양쪽이 호출**한다 → 두 경로의 phase archive 규칙이 갈라질 수 없다. `close-proof` leaf는 manifest/blob IO를 여전히 모른다(archive 검증은 `evidence` leaf에 산다). state.json·워킹트리·온디스크 파일은 판정 근거가 아니다(HEAD blob만).
+- 🔴 **corrupt 처리**: phase archive가 하나라도 부재/불일치면 → intake는 `corrupt`로 **block**, req:commit 발행 후 verifier는 **throw**(fail-closed). 손상 신호로 완료를 위장할 수 없다. (**부재/불일치**는 archive 손상이므로 `corrupt` — 반면 "archive는 온전하나 현재 design_ref에 결속된 phase evidence가 없음"은 `developing`이다. 둘을 구분한다.)
+
+**dev-complete 4조건(HEAD-only, 요구 불변식 #2)**: ① 현재 committed design 참조가 존재하고 dev-complete proof의 `design_ref`와 일치(기존 `isDevCompleteVerified`) ② close proof가 유효(파싱·자연키 정상 — 손상 시 corrupt) ③ inventory 전 phase가 현재 `design_ref`에 결속(DEC-B5, design-bound `evidencedPhaseIds`) ④ 🔴 **모든 phase 승인 archive가 HEAD에 존재하며 `response_sha256`과 일치**(DEC-B6, `verifyPhaseArchives`). ④가 이 P1의 핵심 추가다.
+
+⚠️ **발행(emission)은 그대로 lenient**: `computeDevCompleteProof`는 마지막 phase 판정(design-bound inventory)만 한다 — archive는 방금 같은 finalize 커밋에 담겼으므로 발행 시점엔 온전하다. 무결성은 **발행 후 verifier**(`verifyDevCompleteAtHead`)와 **이후 intake**가 강제한다(사후 삭제·변조를 잡는 것이 목적).
+
+⚠️ **design evidence 유효성(요구 #2 ①의 "유효 design")**: dev-complete는 현재 committed `design_ref` 존재·매칭을 요구한다(위 ①). design **archive** 완전성(`verifyCommittedDesignEvidence`)까지 dev-complete 조건에 넣는 대칭 강화는 이 phase-archive P1의 범위를 넘고 광범위한 fixture 변경을 요하므로, **대칭 hole로 명시**하고 별도 후속으로 남긴다(현재 needs-recovery 판정엔 이미 쓰인다). 이 delta는 요구가 명시한 **phase archive**에 집중한다.
+
 ### DEC-C. req:new 게이트 — committed proof만으로 판정
 
 `req:new`가 티켓 생성 전, `workflow/REQ-*` 각 티켓을 **HEAD blob 기준**으로 스캔:
@@ -312,7 +327,8 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 | 2 | `scripts/req/lib/review-target.ts`(신규) · `scripts/req/review-codex.ts` · `scripts/req/req-next.ts` · `scripts/req/req-new.ts` · `scripts/req/lib/scratch.ts` · 테스트 |
 | 3a | `scripts/req/lib/close-proof.ts`(dev-complete row·self-verify) · `scripts/req/req-commit.ts`(발행·HEAD 재검증·멱등) · 테스트 |
 | 3a2 | `scripts/req/lib/evidence.ts`(`phase_design_ref` 스키마·검증·build) · `scripts/req/review-codex.ts`(캡처·배선) · `scripts/req/req-commit.ts`(design-bound 필터) · `scripts/req/lib/close-proof.ts`(계약 doc) · 테스트 |
-| 3b | `scripts/req/req-new.ts`(intake scan·게이트) · 테스트 · `docs/guarantees.{md,en.md}` |
+| 3b | `scripts/req/req-new.ts`(intake scan·게이트) · `scripts/req/lib/intake.ts`(신규) · 테스트 · `docs/guarantees.{md,en.md}` |
+| 3b2 | `scripts/req/lib/evidence.ts`(`verifyPhaseArchives`) · `scripts/req/lib/intake.ts`(archive corrupt) · `scripts/req/req-commit.ts`(verifyDevCompleteAtHead 공유) · 테스트 |
 | 4 | `bin/reconstruct.ts`(신규) · `bin/dispatch.mjs` · 테스트 |
 
 ## 하위호환·안전
