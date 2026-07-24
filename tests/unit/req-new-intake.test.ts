@@ -23,13 +23,26 @@ const g = (repo: string, args: string[]): string =>
 const OID = 'b'.repeat(40)
 const ISO = '2026-07-24T00:00:00.000Z'
 
-const designRow = (ticketRel: string, designHash: string): string =>
-  serializeManifestLine(buildManifestEntry(
-    { review_kind: 'design', phase_id: null, response_path: `${ticketRel}/responses/design-r01-approved.json`, response_sha256: 'a'.repeat(64), review_base_sha: OID, design_hash: designHash, approved_at: ISO } as never,
-    { consumedAt: ISO, consumedByCommitSha: OID, userCommitConfirmed: null },
-  ))
-
 const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
+
+// 🔴 DEC-B7: **완전한** design 승인 evidence — design 행 + archive_inventory 전체 + 실제 archive blob(sha 일치).
+//    rounds 마지막이 approved(design 행 response_path). 앞 라운드(needs-fix 등)는 inventory에 포함(과거 라운드 감사).
+interface DesignRound { round: string; kind: 'approved' | 'needs-fix' }
+const designArchiveName = (r: DesignRound): string => `design-${r.round}-${r.kind}.json`
+const designArchiveContent = (r: DesignRound): string => JSON.stringify({ design: r.round, kind: r.kind })
+const defaultDesignRounds: DesignRound[] = [{ round: 'r01', kind: 'approved' }]
+
+/** design evidence 산출물: manifest 행 + 써야 할 archive blob 목록(sha 일치). */
+const designEvidence = (ticketRel: string, designHash: string, rounds: DesignRound[] = defaultDesignRounds): { row: string; archives: Array<{ name: string; content: string }> } => {
+  const archives = rounds.map((r) => ({ name: designArchiveName(r), content: designArchiveContent(r) }))
+  const approved = rounds[rounds.length - 1]! // 마지막 = 승인본
+  const inventory = archives.map((a) => ({ response_path: `${ticketRel}/responses/${a.name}`, sha256: sha256(a.content) }))
+  const row = serializeManifestLine(buildManifestEntry(
+    { review_kind: 'design', phase_id: null, response_path: `${ticketRel}/responses/${designArchiveName(approved)}`, response_sha256: sha256(designArchiveContent(approved)), review_base_sha: OID, design_hash: designHash, approved_at: ISO } as never,
+    { consumedAt: ISO, consumedByCommitSha: OID, userCommitConfirmed: null, archiveInventory: inventory },
+  ))
+  return { row, archives }
+}
 // phase 승인 archive의 결정적 내용(pid·round로 고유). DEC-B6: manifest.response_sha256 == 이 내용의 sha256이어야 통과.
 const phaseArchiveContent = (pid: string, round: string): string => JSON.stringify({ phase: pid, round, approved: true })
 const phaseArchiveName = (pid: string, round: string): string => `${pid}-${round}-approved.json`
@@ -53,14 +66,15 @@ const ledgerApprovedClose = (ticketId: string): string =>
 interface PhaseSpec { pid: string; ref: string | null; round?: string }
 interface TicketSpec {
   durable?: boolean // 기본 true(marker 심음). false면 legacy.
-  designHash?: string // 지정 시 design manifest 행 추가.
+  designHash?: string // 지정 시 **완전한 design 승인 evidence**(design 행 + inventory + archive blob) 기록.
+  designRounds?: DesignRound[] // design archive 라운드(기본 [r01-approved]). 과거 needs-fix 포함 inventory 구성용.
   phases?: PhaseSpec[] // 지정 시 phase manifest 행 추가 + **실제 archive blob**(sha 일치) 기록.
   manifest?: string // raw approvals.jsonl 본문(주입/손상 테스트용 — designHash/phases와 조합 가능).
   close?: string // ticket-close.jsonl 본문
   ledger?: string // review-ledger.jsonl 본문
 }
 
-/** repo에 티켓 하나를 커밋(HEAD에 남긴다). phases가 있으면 승인 archive blob을 실제로 써서 SHA가 manifest와 일치한다. */
+/** repo에 티켓 하나를 커밋(HEAD에 남긴다). design/phase가 있으면 승인 archive blob을 실제로 써서 SHA가 manifest와 일치한다. */
 const commitTicket = (repo: string, id: string, spec: TicketSpec): string => {
   const ticketRel = `workflow/${id}`
   const dir = join(repo, 'workflow', id)
@@ -69,7 +83,11 @@ const commitTicket = (repo: string, id: string, spec: TicketSpec): string => {
   if (spec.durable !== false) state.evidence_durability_required = true
   writeFileSync(join(dir, 'state.json'), JSON.stringify(state))
   let manifest = ''
-  if (spec.designHash) manifest += designRow(ticketRel, spec.designHash)
+  if (spec.designHash) {
+    const de = designEvidence(ticketRel, spec.designHash, spec.designRounds) // 🔴 완전한 design evidence
+    for (const a of de.archives) writeFileSync(join(dir, 'responses', a.name), a.content) // design archive blob(들)
+    manifest += de.row
+  }
   for (const ph of spec.phases ?? []) {
     const round = ph.round ?? 'r01'
     writeFileSync(join(dir, 'responses', phaseArchiveName(ph.pid, round)), phaseArchiveContent(ph.pid, round)) // 🔴 실제 archive blob
@@ -84,16 +102,18 @@ const commitTicket = (repo: string, id: string, spec: TicketSpec): string => {
   return ticketRel
 }
 
-/** HEAD에서 archive를 삭제(rm+commit) — HEAD blob 부재 모사. */
-const deleteArchiveAtHead = (repo: string, id: string, pid: string, round = 'r01'): void => {
-  g(repo, ['rm', '-q', `workflow/${id}/responses/${phaseArchiveName(pid, round)}`])
-  g(repo, ['commit', '-qm', `rm archive ${pid}`])
+/** HEAD에서 임의 archive 파일을 삭제(rm+commit) — HEAD blob 부재 모사. */
+const rmArchiveAtHead = (repo: string, id: string, name: string): void => {
+  g(repo, ['rm', '-q', `workflow/${id}/responses/${name}`])
+  g(repo, ['commit', '-qm', `rm ${name}`])
 }
-/** HEAD에서 archive 바이트를 변조(sha 불일치) — 내용 교체+commit. */
-const tamperArchiveAtHead = (repo: string, id: string, pid: string, round = 'r01'): void => {
-  writeFileSync(join(repo, 'workflow', id, 'responses', phaseArchiveName(pid, round)), 'TAMPERED')
-  g(repo, ['add', '-A']); g(repo, ['commit', '-qm', `tamper archive ${pid}`])
+/** HEAD에서 임의 archive 바이트를 변조(sha 불일치) — 내용 교체+commit. */
+const tamperFileAtHead = (repo: string, id: string, name: string): void => {
+  writeFileSync(join(repo, 'workflow', id, 'responses', name), 'TAMPERED')
+  g(repo, ['add', '-A']); g(repo, ['commit', '-qm', `tamper ${name}`])
 }
+const deleteArchiveAtHead = (repo: string, id: string, pid: string, round = 'r01'): void => rmArchiveAtHead(repo, id, phaseArchiveName(pid, round))
+const tamperArchiveAtHead = (repo: string, id: string, pid: string, round = 'r01'): void => tamperFileAtHead(repo, id, phaseArchiveName(pid, round))
 
 const mkRepo = (): string => {
   const repo = mkdtempSync(join(tmpdir(), 'req052-intake-'))
@@ -175,6 +195,68 @@ describe('[REQ-2026-052 phase-3b] req:new intake gate — HEAD durable 증거만
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  // ── DEC-B7: design 승인 archive 무결성 ──
+  const devCompleteTicket = (repo: string, designRounds?: DesignRound[]): string =>
+    commitTicket(repo, 'REQ-2026-001', { designHash: D2, designRounds, phases: [{ pid: 'p1', ref: D2 }, { pid: 'p2', ref: D2 }], close: dcRow('REQ-2026-001', ['p1', 'p2'], D2) })
+
+  it('⒀ design·phase archive 모두 정상 → dev-complete/pass', () => {
+    const repo = mkRepo()
+    try {
+      const t = devCompleteTicket(repo)
+      const r = scanTicketIntake(repo, t, 'REQ-2026-001')
+      expect(r.baseState).toBe('dev-complete')
+      expect(r.verdict).toBe('pass')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('🔴 ⑽ 최신 design 승인 archive 삭제 → corrupt/block', () => {
+    const repo = mkRepo()
+    try {
+      const t = devCompleteTicket(repo)
+      expect(scanTicketIntake(repo, t, 'REQ-2026-001').baseState).toBe('dev-complete') // 삭제 전
+      rmArchiveAtHead(repo, 'REQ-2026-001', 'design-r01-approved.json') // 🔴 최신 design 승인 archive 삭제
+      const r = scanTicketIntake(repo, t, 'REQ-2026-001')
+      expect(r.baseState).toBe('corrupt')
+      expect(r.verdict).toBe('block')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('🔴 ⑾ 최신 design 승인 archive SHA 변조 → corrupt/block', () => {
+    const repo = mkRepo()
+    try {
+      const t = devCompleteTicket(repo)
+      tamperFileAtHead(repo, 'REQ-2026-001', 'design-r01-approved.json') // 🔴 design archive 변조
+      const r = scanTicketIntake(repo, t, 'REQ-2026-001')
+      expect(r.baseState).toBe('corrupt')
+      expect(r.verdict).toBe('block')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('🔴 ⑿ archive_inventory 안의 과거 needs-fix archive 삭제/변조 → corrupt/block', () => {
+    const repo = mkRepo()
+    try {
+      // inventory = [design-r01-needs-fix, design-r02-approved]. 승인본은 r02, 과거 needs-fix r01도 inventory에.
+      const rounds: DesignRound[] = [{ round: 'r01', kind: 'needs-fix' }, { round: 'r02', kind: 'approved' }]
+      const t = devCompleteTicket(repo, rounds)
+      expect(scanTicketIntake(repo, t, 'REQ-2026-001').baseState).toBe('dev-complete') // 손상 전
+      tamperFileAtHead(repo, 'REQ-2026-001', 'design-r01-needs-fix.json') // 🔴 과거 needs-fix archive 변조
+      expect(scanTicketIntake(repo, t, 'REQ-2026-001').baseState).toBe('corrupt')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('🔴 ⒃ series-terminal도 손상된 committed audit evidence면 corrupt(통과 금지)', () => {
+    const repo = mkRepo()
+    try {
+      // series-terminal 티켓이 design 증거를 갖고 있고 그 archive가 변조됨 → 손상 → corrupt(통과 금지).
+      const t = commitTicket(repo, 'REQ-2026-001', { designHash: D1, close: stRow('REQ-2026-001', 'design:-#1') })
+      expect(scanTicketIntake(repo, t, 'REQ-2026-001').baseState).toBe('series-terminal') // 손상 전엔 통과
+      tamperFileAtHead(repo, 'REQ-2026-001', 'design-r01-approved.json') // 🔴 design archive 변조
+      const r = scanTicketIntake(repo, t, 'REQ-2026-001')
+      expect(r.baseState).toBe('corrupt')
+      expect(r.verdict).toBe('block')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   it('legacy(marker 없음) → 차단 안 함(표시만)', () => {
     const repo = mkRepo()
     try {
@@ -195,13 +277,13 @@ describe('[REQ-2026-052 phase-3b] req:new intake gate — HEAD durable 증거만
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  it('🔴 ledger 승인 흔적만 있고 committed evidence 불완전 → needs-recovery 차단', () => {
+  it('🔴 ledger 승인 흔적만 있고 committed evidence 불완전(design 미커밋) → needs-recovery 차단', () => {
     const repo = mkRepo()
     try {
-      // design 행은 있으나 archive_inventory 없음 → verifyCommittedDesignEvidence.durable=false(불완전).
+      // 🔴 불완전≠손상: design 행 자체가 없다(design evidence 미커밋 — 중단된 durabilize). ledger엔 승인 흔적.
+      //    → committedEvidenceComplete=false + ledger approved → needs-recovery(손상 아님이라 corrupt 아님).
       const t = commitTicket(repo, 'REQ-2026-001', {
-        designHash: D1,
-        ledger: ledgerApprovedClose('REQ-2026-001'), // attempt-closed(approved) 흔적
+        ledger: ledgerApprovedClose('REQ-2026-001'), // attempt-closed(approved) 흔적, design 증거 없음
       })
       const r = scanTicketIntake(repo, t, 'REQ-2026-001')
       expect(r.baseState).toBe('needs-recovery')
@@ -305,11 +387,11 @@ describe('[REQ-2026-052 phase-3b] req:new intake gate — HEAD durable 증거만
     // reconstructed:true인 dev-complete → 여전히 pass. reconstructed:true인 developing → 여전히 block.
     const recon = (rows: CloseProofRow[]) => rows.map((r) => ({ ...r, reconstructed: true, evidence_basis: ['x'] }))
     const dc: CloseProofRow = { ticket_id: 'R', event: 'dev-complete', series_id: null, resolution: null, phase_inventory: ['p1'], design_ref: D2, at: ISO, reconstructed: false, evidence_basis: null }
-    const passRec = classifyIntake({ ticketId: 'R', ticketRel: 'workflow/R', durabilityRequired: true, manifestText: '{}', manifestProblems: [], closeParsed: { rows: recon([dc]), problems: [] }, phaseArchiveProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: true, committedDesignRef: D2, evidencedPhaseIds: ['p1'] })
+    const passRec = classifyIntake({ ticketId: 'R', ticketRel: 'workflow/R', durabilityRequired: true, manifestText: '{}', manifestProblems: [], closeParsed: { rows: recon([dc]), problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: true, committedDesignRef: D2, evidencedPhaseIds: ['p1'] })
     expect(passRec.baseState).toBe('dev-complete')
     expect(passRec.verdict).toBe('pass')
     expect(passRec.reconstructed).toBe(true)
-    const blockRec = classifyIntake({ ticketId: 'R', ticketRel: 'workflow/R', durabilityRequired: true, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, phaseArchiveProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [] })
+    const blockRec = classifyIntake({ ticketId: 'R', ticketRel: 'workflow/R', durabilityRequired: true, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [] })
     expect(blockRec.baseState).toBe('developing')
     expect(blockRec.verdict).toBe('block')
   })

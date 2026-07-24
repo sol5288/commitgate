@@ -837,25 +837,22 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
   //    발행 후 verifyDevCompleteAtHead(phase archive 무결성)를 통과한다. 아래 phaseEntry·evFor·archive write가 공유.
   const arContent = (pid: string, round: string): string => JSON.stringify({ phase: pid, round, approved: true })
   const arSha = (pid: string, round: string): string => _createHash('sha256').update(arContent(pid, round), 'utf8').digest('hex')
-  const designEntry = (hash: string): string =>
-    _serMf(
-      _bldMf(
-        {
-          response_path: 'workflow/REQ-2026-001/responses/design-r01-approved.json',
-          response_sha256: 'a'.repeat(64),
-          review_kind: 'design',
-          phase_id: null,
-          review_base_sha: 'b'.repeat(40),
-          design_hash: hash,
-          codex_thread_id: 'T',
-          machine_schema_version: '1.1',
-          status: 'COMPLETE',
-          commit_approved: 'yes',
-          approved_at: '2026-07-24T00:00:00.000Z',
-        } as never,
-        { consumedAt: '2026-07-24T01:00:00.000Z', consumedByCommitSha: 'c'.repeat(40), userCommitConfirmed: null },
-      ),
-    )
+  // 🔴 DEC-B7: design 승인 archive도 verifyDevCompleteAtHead가 무결성 검증 → 결정적 내용 + inventory + 실제 blob.
+  //    inventory는 그 시점의 **HEAD design archive 전체**여야 한다(verifyCommittedDesignEvidence step7: HEAD 집합 정합).
+  const designArContentOf = (name: string): string => JSON.stringify({ archive: name })
+  const designArShaOf = (name: string): string => _createHash('sha256').update(designArContentOf(name), 'utf8').digest('hex')
+  const designRel = (name: string): string => `workflow/REQ-2026-001/responses/${name}`
+  const writeDesignArchiveNamed = (responsesDir: string, name: string): void => _writeFileSync(_join(responsesDir, name), designArContentOf(name))
+  /** design manifest 행 — approvedName=승인본, invNames=archive_inventory 전체(HEAD 집합과 일치해야). */
+  const designEntryFull = (hash: string, approvedName: string, invNames: string[]): string =>
+    _serMf(_bldMf(
+      { response_path: designRel(approvedName), response_sha256: designArShaOf(approvedName), review_kind: 'design', phase_id: null, review_base_sha: 'b'.repeat(40), design_hash: hash, codex_thread_id: 'T', machine_schema_version: '1.1', status: 'COMPLETE', commit_approved: 'yes', approved_at: '2026-07-24T00:00:00.000Z' } as never,
+      { consumedAt: '2026-07-24T01:00:00.000Z', consumedByCommitSha: 'c'.repeat(40), userCommitConfirmed: null, archiveInventory: invNames.map((n) => ({ response_path: designRel(n), sha256: designArShaOf(n) })) },
+    ))
+  const designEntry = (hash: string): string => designEntryFull(hash, 'design-r01-approved.json', ['design-r01-approved.json'])
+  // 🔴 committed state.json은 phases 배열 + durability marker 필요(verifyCommittedDesignEvidence step1·isDurabilityRequired).
+  const committedState = JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', phases: [], review_series_model_version: 1, evidence_durability_required: true })
+  const writeDesignArchive = (responsesDir: string): void => writeDesignArchiveNamed(responsesDir, 'design-r01-approved.json')
   // 🔴 DEC-B5: phase 행에 design 결속(phase_design_ref). 기본 'e'*64(이 블록의 기본 design). round로 r01/r02 구분.
   const phaseEntry = (pid: string, ref: string = 'e'.repeat(64), round = 'r01'): string =>
     _serMf(
@@ -923,8 +920,9 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
       _mkdirSync(responsesDir, { recursive: true })
       const headManifest = designEntry('e'.repeat(64)) + phaseEntry('p1')
       _writeFileSync(_join(responsesDir, 'approvals.jsonl'), headManifest)
+      writeDesignArchive(responsesDir) // 🔴 design 승인 archive blob(DEC-B7 무결성)
       _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), arContent('p1', 'r01'))
-      _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
+      _writeFileSync(_join(ticketDir, 'state.json'), committedState)
       g(repo, ['add', '-A'])
       g(repo, ['commit', '-qm', 'design+p1 evidence'])
       // 🔴 실패한 커밋 모사: p2 엔트리를 **디스크에만** 써 둔다(HEAD엔 없음).
@@ -983,13 +981,15 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
         JSON.stringify({ ticket_id: 'REQ-2026-001', event: 'dev-complete', series_id: null, resolution: null, phase_inventory: ['p1', 'p2'], design_ref: D1, at: '2026-07-24T05:00:00.000Z', reconstructed: false, evidence_basis: null }) + '\n'
       _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry(D1) + phaseEntry('p1') + phaseEntry('p2'))
       _writeFileSync(_join(responsesDir, 'ticket-close.jsonl'), dcD1)
+      writeDesignArchive(responsesDir) // design-r01-approved
       _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), arContent('p1', 'r01'))
       _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), arContent('p2', 'r01'))
-      _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
+      _writeFileSync(_join(ticketDir, 'state.json'), committedState)
       g(repo, ['add', '-A'])
       g(repo, ['commit', '-qm', 'complete with D1'])
-      // 🔴 design 재승인: 매니페스트에 design(D2) 추가 커밋(HEAD). 재승인은 distinct 아카이브(r02·distinct sha).
-      const designEntryV2 = _serMf(_bldMf({ response_path: 'workflow/REQ-2026-001/responses/design-r02-approved.json', response_sha256: 'b'.repeat(64), review_kind: 'design', phase_id: null, review_base_sha: 'b'.repeat(40), design_hash: D2, codex_thread_id: 'T', machine_schema_version: '1.1', status: 'COMPLETE', commit_approved: 'yes', approved_at: '2026-07-24T00:00:00.000Z' } as never, { consumedAt: '2026-07-24T02:00:00.000Z', consumedByCommitSha: 'c'.repeat(40), userCommitConfirmed: null }))
+      // 🔴 design 재승인: 매니페스트에 design(D2) 추가 커밋(HEAD). D2 inventory는 HEAD design archive 전체(r01·r02).
+      const designEntryV2 = designEntryFull(D2, 'design-r02-approved.json', ['design-r01-approved.json', 'design-r02-approved.json'])
+      writeDesignArchiveNamed(responsesDir, 'design-r02-approved.json')
       _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry(D1) + phaseEntry('p1') + phaseEntry('p2') + designEntryV2)
       g(repo, ['add', '-A'])
       g(repo, ['commit', '-qm', 're-approve design D2'])
@@ -1046,8 +1046,9 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
       const D = 'e'.repeat(64)
       // HEAD: design(D) + p1(D 결속) evidence. 🔴 단 p1 archive는 **변조된 바이트**로 커밋(sha 불일치).
       _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry(D) + phaseEntry('p1'))
-      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), 'TAMPERED-BYTES') // sha != arSha('p1','r01')
-      _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
+      writeDesignArchive(responsesDir) // design은 정상
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), 'TAMPERED-BYTES') // 🔴 p1 archive sha != arSha('p1','r01')
+      _writeFileSync(_join(ticketDir, 'state.json'), committedState)
       g(repo, ['add', '-A']); g(repo, ['commit', '-qm', 'design+p1(변조 archive)'])
       // p2 evidence 준비(정상 archive). p2 finalize가 마지막 phase → dev-complete 발행 → 발행 후 verify가 p1 변조 포착.
       _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), arContent('p2', 'r01'))
@@ -1058,8 +1059,35 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
         state, ev: evFor('p2'), archiveNames: ['p1-r01-approved.json', 'p2-r01-approved.json'],
         validPhaseIds: ['p1', 'p2'], sourceSha: 'd'.repeat(40), rootForClose: repo,
       }
-      // 🔴 intake와 동일 규칙(verifyPhaseArchives 공유) — p1 archive 변조로 발행 후 재검증이 fail-closed.
-      expect(() => finalizeEvidenceAndConsume(ctx as never)).toThrow(/phase 승인 archive/)
+      // 🔴 intake와 동일 규칙(verifyCommittedEvidenceIntegrity 공유) — p1 archive 변조로 발행 후 재검증이 fail-closed.
+      expect(() => finalizeEvidenceAndConsume(ctx as never)).toThrow(/phase archive|committed 증거 손상/)
+    } finally { _rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('⒁ 🔴 DEC-B7: 발행 후 verifyDevCompleteAtHead가 **design** archive 손상에서도 throw(공유 규칙)', () => {
+    const repo = _mkdtempSync(_join(_tmpdir(), 'req052-designverify-'))
+    try {
+      g(repo, ['init', '-q']); g(repo, ['config', 'user.email', 't@t.t']); g(repo, ['config', 'user.name', 't'])
+      const ticketRel = 'workflow/REQ-2026-001'
+      const ticketDir = _join(repo, ticketRel)
+      const responsesDir = _join(ticketDir, 'responses')
+      _mkdirSync(responsesDir, { recursive: true })
+      const D = 'e'.repeat(64)
+      // HEAD: design(D)+p1(D 결속). 🔴 design archive는 **변조된 바이트**로 커밋(sha 불일치), phase는 정상.
+      _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry(D) + phaseEntry('p1'))
+      _writeFileSync(_join(responsesDir, 'design-r01-approved.json'), 'TAMPERED-DESIGN') // 🔴 design archive 변조
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), arContent('p1', 'r01'))
+      _writeFileSync(_join(ticketDir, 'state.json'), committedState)
+      g(repo, ['add', '-A']); g(repo, ['commit', '-qm', 'design(변조)+p1'])
+      _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), arContent('p2', 'r01'))
+      __setGitForTest(repo)
+      const state = { id: 'REQ-2026-001', current_phase: 'p2', phases: [{ id: 'p1', approved: true }, { id: 'p2', approved: true }], review_series_model_version: 1 }
+      const ctx = {
+        ticketDir, ticketRel, responsesDir, manifestPath: _join(responsesDir, 'approvals.jsonl'),
+        state, ev: evFor('p2'), archiveNames: ['p1-r01-approved.json', 'p2-r01-approved.json'],
+        validPhaseIds: ['p1', 'p2'], sourceSha: 'd'.repeat(40), rootForClose: repo,
+      }
+      expect(() => finalizeEvidenceAndConsume(ctx as never)).toThrow(/design 증거 무결성|committed 증거 손상/)
     } finally { _rmSync(repo, { recursive: true, force: true }) }
   })
 

@@ -17,6 +17,7 @@ import {
   findEvidenceRow,
   isDurabilityRequired,
   verifyCommittedDesignEvidence,
+  verifyCommittedEvidenceIntegrity,
   type EvidencePorts,
 } from '../../scripts/req/lib/evidence'
 import { createEvidencePorts } from '../../scripts/req/lib/evidence-ports'
@@ -649,6 +650,45 @@ describe('[REQ-2026-048] verifyCommittedDesignEvidence — HEAD blob만 본다',
     })}\n${row()}`
     const r = verifyCommittedDesignEvidence({ ticketRel: T3, ports: ports({ manifest: withPhase }) })
     expect(r.durable, r.reason).toBe(true)
+  })
+
+  // ── REQ-2026-052 DEC-B7: verifyCommittedEvidenceIntegrity(design+phase 종합, 재사용) ──
+  const P1 = `${T3}/responses/p1-r01-approved.json`
+  const S_P1 = '7'.repeat(64)
+  const phaseLine = (over: Record<string, unknown> = {}): string =>
+    `${JSON.stringify({ kind: 'phase', phase_id: 'p1', response_path: P1, response_sha256: S_P1, review_base_sha: OID40, approved_tree: OID40, phase_design_ref: '9'.repeat(64), approved_at: '2026-07-22T00:00:00.000Z', consumed_at: '2026-07-22T00:00:01.000Z', consumed_by_commit_sha: OID40, user_commit_confirmed: null, ...over })}\n`
+  // design(row) + phase(phaseLine) 둘 다 온전한 기본 ports.
+  const intPorts = (over: Partial<{ manifest: string | null; sha: (p: string) => string | null; archives: string[] }> = {}): VPorts => {
+    const sha = over.sha ?? ((p: string): string | null => (p === NF ? S_NEEDSFIX : p === AP ? S_APPROVED : p === P1 ? S_P1 : null))
+    return {
+      headText: (p) => (p === STATE ? OK_STATE : p === MAN ? ('manifest' in over ? (over.manifest ?? null) : row() + phaseLine()) : null),
+      headBlobSha256: sha,
+      headArchivePaths: () => over.archives ?? [NF, AP],
+    }
+  }
+
+  it('DEC-B7: design·phase 온전 → problems 없음·designEvidenceComplete=true', () => {
+    const r = verifyCommittedEvidenceIntegrity({ ticketRel: T3, manifestText: row() + phaseLine(), ports: intPorts() })
+    expect(r.problems).toEqual([])
+    expect(r.designEvidenceComplete).toBe(true)
+  })
+  it('DEC-B7: design archive SHA 불일치 → design 무결성 problem', () => {
+    const r = verifyCommittedEvidenceIntegrity({ ticketRel: T3, manifestText: row() + phaseLine(), ports: intPorts({ sha: (p) => (p === NF ? S_NEEDSFIX : p === P1 ? S_P1 : p === AP ? 'f'.repeat(64) : null) }) })
+    expect(r.problems.some((x) => /design 증거 무결성/.test(x))).toBe(true)
+    expect(r.designEvidenceComplete).toBe(false)
+  })
+  it('DEC-B7: phase archive 부재 → phase archive problem', () => {
+    const r = verifyCommittedEvidenceIntegrity({ ticketRel: T3, manifestText: row() + phaseLine(), ports: intPorts({ sha: (p) => (p === NF ? S_NEEDSFIX : p === AP ? S_APPROVED : null) }) })
+    expect(r.problems.some((x) => /phase archive missing/.test(x))).toBe(true)
+  })
+  it('🔴 DEC-B7: design 행 없음(불완전≠손상) → 검사 대상 아님·problems 없음·designEvidenceComplete=false', () => {
+    const r = verifyCommittedEvidenceIntegrity({ ticketRel: T3, manifestText: phaseLine(), ports: intPorts({ manifest: phaseLine() }) })
+    expect(r.problems).toEqual([]) // design 행 없으면 손상 아님(미완)
+    expect(r.designEvidenceComplete).toBe(false)
+  })
+  it('DEC-B7: manifest 없음 → problems 없음·designEvidenceComplete=false', () => {
+    const r = verifyCommittedEvidenceIntegrity({ ticketRel: T3, manifestText: null, ports: intPorts({ manifest: null }) })
+    expect(r).toEqual({ problems: [], designEvidenceComplete: false })
   })
 })
 

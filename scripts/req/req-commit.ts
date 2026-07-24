@@ -45,7 +45,7 @@ import {
   validateManifest,
   designHashFromManifest,
   evidencedPhaseIdsFromManifest,
-  verifyPhaseArchives,
+  verifyCommittedEvidenceIntegrity,
   type ManifestEntry,
   type UserCommitConfirmed,
 } from './lib/evidence'
@@ -459,11 +459,12 @@ function verifyDevCompleteAtHead(ctx: FinalizeCtx): void {
   if (cpText === null || mfText === null) throw new Error('dev-complete HEAD 재검증 실패: close proof·매니페스트가 HEAD에 없다')
   const parsed = parseCloseProof(cpText)
   if (parsed.problems.length) throw new Error(`dev-complete HEAD 재검증 실패: close proof 손상 — ${parsed.problems.join('; ')}`)
-  // 🔴 DEC-B6(phase-3b2): intake와 **동일한** phase archive 무결성 규칙(공유 verifyPhaseArchives, 강한 정책=모든 행).
-  //    발행 후에도 승인 archive blob이 HEAD에 존재하고 SHA가 일치해야 한다 — 아니면 fail-closed(intake의 corrupt와 대칭).
-  const archiveProblems = verifyPhaseArchives(mfText, createEvidencePorts(gitRoot, `${ctx.ticketRel}/responses`).headBlobSha256)
-  if (archiveProblems.length)
-    throw new Error(`dev-complete HEAD 재검증 실패: phase 승인 archive 손상 — ${archiveProblems.map((p) => `${p.phaseId}:${p.reason}`).join('; ')}`)
+  // 🔴 DEC-B6·B7(phase-3b2·3b3): intake와 **동일한** committed 증거(design+phase) 무결성 규칙(공유
+  //    verifyCommittedEvidenceIntegrity). 발행 후에도 design 승인 archive+inventory·모든 phase archive가 HEAD에
+  //    존재하고 SHA가 일치해야 한다 — 아니면 fail-closed(intake의 corrupt와 대칭).
+  const integrity = verifyCommittedEvidenceIntegrity({ ticketRel: ctx.ticketRel, manifestText: mfText, ports: createEvidencePorts(gitRoot, `${ctx.ticketRel}/responses`) })
+  if (integrity.problems.length)
+    throw new Error(`dev-complete HEAD 재검증 실패: committed 증거 손상 — ${integrity.problems.join('; ')}`)
   const committedDesignRef = designHashFromManifest(mfText)
   const state = deriveBaseState({
     durabilityRequired: true,

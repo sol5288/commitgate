@@ -22,12 +22,10 @@ import {
 } from './close-proof'
 import {
   isDurabilityRequired,
-  verifyCommittedDesignEvidence,
+  verifyCommittedEvidenceIntegrity,
   validateManifest,
   evidencedPhaseIdsFromManifest,
   designHashFromManifest,
-  verifyPhaseArchives,
-  type PhaseArchiveProblem,
 } from './evidence'
 import { parseLedger } from './review-ledger'
 import { createEvidencePorts } from './evidence-ports'
@@ -56,8 +54,8 @@ export interface IntakeFacts {
   manifestProblems: string[]
   /** HEAD ticket-close.jsonl 파싱 결과. problems 비어있지 않으면 corrupt block. */
   closeParsed: { rows: CloseProofRow[]; problems: string[] }
-  /** 🔴 phase 승인 archive 무결성 문제(DEC-B6). 비어있지 않으면 corrupt block(삭제/변조). */
-  phaseArchiveProblems: PhaseArchiveProblem[]
+  /** 🔴 committed 증거(design+phase) 무결성 문제(DEC-B6·B7). 비어있지 않으면 corrupt block(삭제/변조). */
+  evidenceIntegrityProblems: string[]
   ledgerHasApprovedClose: boolean
   committedEvidenceComplete: boolean
   committedDesignRef: string | null
@@ -78,11 +76,10 @@ export function classifyIntake(facts: IntakeFacts): IntakeTicketResult {
     return { ...head, baseState: 'corrupt', verdict: 'block', reason: `HEAD approvals.jsonl 손상 — 통과 불가(fail-closed): ${facts.manifestProblems.slice(0, 3).join('; ')}`, reconstructed: false }
   if (facts.closeParsed.problems.length)
     return { ...head, baseState: 'corrupt', verdict: 'block', reason: `HEAD ticket-close.jsonl 손상 — 통과 불가(fail-closed): ${facts.closeParsed.problems.slice(0, 3).join('; ')}`, reconstructed: false }
-  // 🔴 DEC-B6: phase 승인 archive blob 부재/변조도 통과 조건이 읽는 증거의 손상 → corrupt block(dev-complete 위장 차단).
-  if (facts.phaseArchiveProblems.length) {
-    const p = facts.phaseArchiveProblems.slice(0, 3).map((x) => `${x.phaseId}:${x.reason}`).join('; ')
-    return { ...head, baseState: 'corrupt', verdict: 'block', reason: `phase 승인 archive 손상 — 통과 불가(fail-closed): ${p}`, reconstructed: false }
-  }
+  // 🔴 DEC-B6·B7: committed 증거(design·phase archive) blob 부재/변조도 통과 조건이 읽는 증거의 손상 →
+  //    corrupt block(dev-complete·series-terminal 위장 차단). design 행이 없는 미완 티켓은 손상 대상 아님(불완전≠손상).
+  if (facts.evidenceIntegrityProblems.length)
+    return { ...head, baseState: 'corrupt', verdict: 'block', reason: `committed 증거 손상 — 통과 불가(fail-closed): ${facts.evidenceIntegrityProblems.slice(0, 3).join('; ')}`, reconstructed: false }
   const state = deriveBaseState({
     durabilityRequired: true,
     closeProofRows: facts.closeParsed.rows,
@@ -111,7 +108,7 @@ export function scanTicketIntake(root: string, ticketRel: string, ticketId: stri
   const ports = createEvidencePorts(root, `${ticketRel}/responses`)
   const durabilityRequired = isDurabilityRequired(ports.headText(`${ticketRel}/state.json`))
   if (!durabilityRequired)
-    return classifyIntake({ ticketId, ticketRel, durabilityRequired: false, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, phaseArchiveProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [] })
+    return classifyIntake({ ticketId, ticketRel, durabilityRequired: false, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [] })
   const manifestText = ports.headText(`${ticketRel}/responses/approvals.jsonl`)
   const closeText = ports.headText(`${ticketRel}/responses/ticket-close.jsonl`)
   const ledgerText = ports.headText(`${ticketRel}/responses/review-ledger.jsonl`)
@@ -122,12 +119,12 @@ export function scanTicketIntake(root: string, ticketRel: string, ticketId: stri
   const closeParsed = closeText ? parseCloseProof(closeText) : { rows: [], problems: [] }
   const ledgerParsed = ledgerText ? parseLedger(ledgerText) : { rows: [], problems: [] }
   const ledgerHasApprovedClose = ledgerParsed.rows.some((r) => r.event === 'attempt-closed' && r.outcome === 'approved')
-  const committedEvidenceComplete = verifyCommittedDesignEvidence({ ticketRel, ports }).durable
   const committedDesignRef = manifestText ? designHashFromManifest(manifestText) : null
   const evidencedPhaseIds = manifestText ? evidencedPhaseIdsFromManifest(manifestText, committedDesignRef) : []
-  // 🔴 DEC-B6: phase 승인 archive 무결성(모든 phase 행 — 강한 정책). intake·req:commit 공유 모듈.
-  const phaseArchiveProblems = manifestText ? verifyPhaseArchives(manifestText, ports.headBlobSha256) : []
-  return classifyIntake({ ticketId, ticketRel, durabilityRequired: true, manifestText, manifestProblems, closeParsed, phaseArchiveProblems, ledgerHasApprovedClose, committedEvidenceComplete, committedDesignRef, evidencedPhaseIds })
+  // 🔴 DEC-B7: committed 증거(design+phase) 무결성 종합 — intake·req:commit 공유 모듈. designEvidenceComplete로
+  //    needs-recovery 판정 입력(committedEvidenceComplete)을 같은 조회에서 얻는다(중복 조회 없음).
+  const integrity = verifyCommittedEvidenceIntegrity({ ticketRel, manifestText, ports })
+  return classifyIntake({ ticketId, ticketRel, durabilityRequired: true, manifestText, manifestProblems, closeParsed, evidenceIntegrityProblems: integrity.problems, ledgerHasApprovedClose, committedEvidenceComplete: integrity.designEvidenceComplete, committedDesignRef, evidencedPhaseIds })
 }
 
 /**

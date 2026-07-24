@@ -743,6 +743,46 @@ export function verifyCommittedDesignEvidence(args: {
   return { durable: true, reason: 'design 승인 증거가 HEAD에 완비됨' }
 }
 
+// ───────── committed 증거 무결성 종합(design+phase) (REQ-2026-052 DEC-B7·phase-3b3) — 공유 deep 모듈 ──
+
+/**
+ * 🔴 durable 티켓의 **committed 증거 무결성 종합 판정**(design + phase, DEC-B7). intake(`scanTicketIntake`)와
+ *    req:commit 발행 후 verifier(`verifyDevCompleteAtHead`)가 **이 한 함수를 공유**한다(요구 #3) — 두 경로의
+ *    증거 무결성 규칙이 갈라질 수 없다. 호출자는 design·phase 검증 순서·세부 조건을 몰라도 된다(얕은 인터페이스 금지).
+ *
+ * 내부는 **기존 함수 재사용**(중복 규칙 없음):
+ *   - **design**: manifest에 design 행이 있으면 **`verifyCommittedDesignEvidence`**(REQ-2026-048 DONE 게이트)로
+ *     최신 design 승인 archive 존재·SHA + `archive_inventory` 전체(과거 needs-fix 포함) 존재·SHA + HEAD 집합 정합을
+ *     검증. `durable=false`면 무결성/완전성 실패.
+ *   - **phase**: **`verifyPhaseArchives`**(DEC-B6)로 모든 phase 행 archive 존재·SHA.
+ *
+ * 🔴 **불완전(incomplete) ≠ 손상(tampered)**: manifest에 **design 행이 없으면** design 무결성 검사 대상이 아니다
+ *    (대체된 미완 티켓·design 미승인은 손상이 아니라 미완 — 통과 가능, series-terminal). `designEvidenceComplete`은
+ *    needs-recovery 판정 입력(design 행 없으면 false = 미완).
+ *
+ * 🔴 **HEAD blob만** — on-disk·워킹트리·state.json을 판정 근거로 쓰지 않는다(포트 경유).
+ */
+export function verifyCommittedEvidenceIntegrity(args: {
+  ticketRel: string
+  manifestText: string | null
+  ports: Pick<EvidencePorts, 'headText' | 'headBlobSha256' | 'headArchivePaths'>
+}): { problems: string[]; designEvidenceComplete: boolean } {
+  const { ticketRel, manifestText, ports } = args
+  const problems: string[] = []
+  let designEvidenceComplete = false
+  if (manifestText === null) return { problems, designEvidenceComplete }
+  // design: design 행이 있을 때만 검사(없으면 손상 아님 — 불완전≠손상).
+  if (designHashFromManifest(manifestText) !== null) {
+    const d = verifyCommittedDesignEvidence({ ticketRel, ports })
+    designEvidenceComplete = d.durable
+    if (!d.durable) problems.push(`design 증거 무결성/완전성 실패: ${d.reason}`)
+  }
+  // phase: 모든 phase 행 archive 무결성.
+  for (const p of verifyPhaseArchives(manifestText, ports.headBlobSha256))
+    problems.push(`phase archive ${p.reason}: ${p.phaseId} (${p.responsePath})`)
+  return { problems, designEvidenceComplete }
+}
+
 /**
  * approvals.jsonl에 **이 evidence가** 이미 finalize된 엔트리가 있는지(순수, 멱등 finalize용).
  * ⚠️ B3-R2: consumed_by_commit_sha만으로는 부족 — 같은 source SHA를 쓰는 design-finalize row 등에 오인될 수 있음.
