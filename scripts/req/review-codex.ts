@@ -2166,6 +2166,22 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   const persistedState = outcome === 'approved' ? closeSeriesApproved(finalState, opts.kind, phaseId) : finalState
   writeState(ticketDir, persistedState)
 
+  // REQ-2026-051 D2: 원장 `attempt-closed`. 🔴 **durableDesignEvidence 커밋보다 먼저** 써야 한다 —
+  // 아니면 design 승인 리뷰의 closed 행(outcome=approved, 가장 중요한 행)이 그 커밋에 실리지 못하고
+  // 미커밋으로 남는다(phase-3 e2e가 이 순서를 고정). 대응하는 `attempt-opened`가 이미 있고, 이 행이
+  // 없으면 그 attempt는 "완료되지 않은 호출"로 남는다(요구사항 #1). `approvedAt` 재사용(새 시계 안 읽음).
+  appendLedgerRowToDisk(cfg.root, ticketRel, {
+    ...ledgerBase,
+    series_id: attemptInfo.series_id,
+    attempt: attemptInfo.attempt,
+    event: 'attempt-closed',
+    lifecycle: 'completed', // 이 REQ는 completed만 쓴다. 실패 분류는 후속 REQ 소관(D3).
+    outcome, // ReviewOutcome === LedgerOutcome. 캐스트하지 않는다 — 갈라지면 빌드가 깨져야 한다.
+    exception_consumed: attemptInfo.exception_consumed,
+    // 🔴 archive path·sha는 담지 않는다 — approvals.jsonl의 archive_inventory가 단일 출처다(phase-2 리뷰 P1).
+    at: approvedAt,
+  })
+
   // ── REQ-2026-048 phase-3: design 승인 evidence **자동 내구화**(DEC-3) ──
   // 정상 승인 경로가 여기서 아카이브·매니페스트를 커밋한다 → 운영자가 `--finalize-design`을 따로 기억할
   // 필요가 없다. 그 수동 단계가 잊히면 design 감사 증거가 커밋 이력에 **전혀 남지 않던** 것이 이 REQ의 원인이다.
@@ -2197,21 +2213,6 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
       }
     }
   }
-
-  // REQ-2026-051 D2: 원장 `attempt-closed`. 대응하는 `attempt-opened`가 이미 있고, 이 행이 없으면
-  // 그 attempt는 "예산은 깎였는데 완료되지 않은 호출"로 남는다 — 그것이 요구사항 #1의 관측 방식이다.
-  // `approvedAt`을 재사용해 같은 call의 다른 기록과 시각이 어긋나지 않게 한다(새 시계를 읽지 않는다).
-  appendLedgerRowToDisk(cfg.root, ticketRel, {
-    ...ledgerBase,
-    series_id: attemptInfo.series_id,
-    attempt: attemptInfo.attempt,
-    event: 'attempt-closed',
-    lifecycle: 'completed', // 이 REQ는 completed만 쓴다. 실패 분류는 후속 REQ 소관(D3).
-    outcome, // ReviewOutcome === LedgerOutcome. 캐스트하지 않는다 — 갈라지면 빌드가 깨져야 한다.
-    exception_consumed: attemptInfo.exception_consumed,
-    // 🔴 archive path·sha는 담지 않는다 — approvals.jsonl의 archive_inventory가 단일 출처다(phase-2 리뷰 P1).
-    at: approvedAt,
-  })
 
   // REQ-2026-025 D4: 완료된 review call 1행 기록(측정 전용). `approvedAt`을 재사용해 같은 call의 다른
   // 기록과 시각이 어긋나지 않게 한다 — 새 시계를 읽지 않는다. 실패는 삼켜진다(R8).

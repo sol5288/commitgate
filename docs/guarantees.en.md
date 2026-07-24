@@ -14,6 +14,7 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - The reviewer returns every P1 it finds in a single call together in `findings[]` (batching). This avoids the serial one-finding-per-round flow that inflated review rounds — it does not lower the P1 bar; it just stops deferring already-known P1s to a later round.
 - During install, existing `cross-spawn` versions below the verified floor warn by default and fail with `--strict`.
 - Approval responses and evidence are kept under `workflow/REQ-.../responses/`.
+- Review attempts are recorded in a **committed append-only ledger** (`workflow/REQ-.../responses/review-ledger.jsonl`). Each attempt becomes two rows — `attempt-opened` **before** the external call and `attempt-closed` after the verdict — so an attempt with an `attempt-opened` but no `attempt-closed` is exactly a "budget was spent but the call never completed." Whether a human exception was consumed is recorded here too. The ledger is committed automatically on design approval and phase evidence finalization, and it **never stores prompt/response bodies** (hashes only — bodies live in the archives). If the ledger content is corrupt (e.g. a truncated JSONL line), the next review stops fail-closed before it starts.
 
 In short: **approved changes pass, ambiguous changes stop.**
 

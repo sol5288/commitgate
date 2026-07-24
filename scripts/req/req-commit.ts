@@ -24,6 +24,7 @@ import {
   type WorkflowState,
 } from './review-codex'
 import { isArchiveFileName } from './lib/scratch'
+import { LEDGER_BASENAME } from './lib/review-ledger'
 import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
 // REQ-2026-048 phase-1: 매니페스트 모델·검증과 그 보조 술어는 leaf `lib/evidence.ts`가 정본.
 // 여기서 **재수출**해 기존 import 경로(`from './req-commit'`)를 쓰던 호출부·테스트를 그대로 둔다.
@@ -414,7 +415,11 @@ function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     mkdirSync(ctx.responsesDir, { recursive: true })
     writeFileSync(ctx.manifestPath, newContent, 'utf8')
     const archivePaths = expectedArchivePaths(ctx.archiveNames, ctx.ev.review_kind, ctx.ev.phase_id ?? null, ctx.ticketRel)
-    git(['add', ...archivePaths, `${ctx.ticketRel}/responses/approvals.jsonl`])
+    // REQ-2026-051 D7: 리뷰 원장이 있으면 phase 증거 커밋에 함께 싣는다. 없으면 넣지 않는다 —
+    // 없는 pathspec으로 `git add`가 실패해 증거 커밋 전체가 무산되면 본말전도다(design 경로의 ledgerExists와 대칭).
+    const ledgerRel = `${ctx.ticketRel}/responses/${LEDGER_BASENAME}`
+    const ledgerAdd = existsSync(join(ctx.ticketDir, 'responses', LEDGER_BASENAME)) ? [ledgerRel] : []
+    git(['add', ...archivePaths, `${ctx.ticketRel}/responses/approvals.jsonl`, ...ledgerAdd])
     const choreLeak = stagedNames().filter((p) => !p.startsWith(`${ctx.ticketRel}/responses/`))
     if (choreLeak.length) throw new Error(`evidence 커밋에 responses 외 staged 금지(코드/state 누수): ${choreLeak.join(', ')}`)
     git(['commit', '-m', `chore(${ctx.state.id}): evidence-finalize — ${ctx.ev.review_kind} ${ctx.ev.phase_id ?? ''} 아카이브·approvals.jsonl`])

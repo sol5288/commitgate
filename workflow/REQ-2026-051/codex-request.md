@@ -59,6 +59,14 @@ r02 지적이 정확했다 — `attempt-closed`에 `archive_path`·`archive_sha2
 
 **⭐ dogfood가 스키마 진화 통찰을 드러냈다**: r03에서 키를 제거하자 이 티켓의 **미커밋** 원장(이전 라운드에 옛 스키마로 쌓임)이 D5 fail-closed에 걸려 리뷰가 멈췄다 — 게이트가 설계대로 작동한 것이다. 미커밋 scratch라 삭제·재생성으로 해결했다. 이로부터 원칙을 코드에 못박았다: **릴리스 후 스키마 변경은 additive-only**(키 제거 금지). 이 REQ는 릴리스 전이라 제거가 안전하다(야생에 옛 원장 없음). `LEDGER_KEYS` 주석에 근거를 남겼다.
 
+## phase-3 구현 노트(이번 staged diff)
+
+- `req-commit.ts`의 phase evidence-finalize `git add` pathspec에 원장을 합류(존재 시). design 경로의 `ledgerExists`와 대칭 — 없는 pathspec으로 `git add`가 실패해 증거 커밋이 무산되지 않게 `existsSync` 가드.
+- **phase-2 순서 버그 발견·수정**(phase-3 e2e가 드러냄): `attempt-closed` append가 `durableDesignEvidence` 커밋 **뒤**에 있어, design 승인 리뷰의 closed 행(outcome=approved — 가장 중요한 행)이 그 커밋에 실리지 못하고 미커밋으로 남았다. closed append를 durable 커밋 **앞**으로 옮겼다. ⑱ e2e(HEAD에 opened+closed 둘 다 committed)가 이 순서를 고정한다.
+- `docs/guarantees.{md,en.md}`에 원장 보장을 추가.
+
+near-e2e 3건: ⑱ design 승인 → 원장이 HEAD에 committed · ⑲ 실 `git check-ignore`로 kit gitignore 아래에서 원장 미무시(codex-response는 무시되는 양성 대조) · ⑳ 커밋된 원장 무결성(자연키 중복 0). 전체 1456 green · docs:lint 통과.
+
 ## 리뷰 포인트
 
 1. **원장이 정말 필요한가 — `approvals.jsonl`과 중복 아닌가.** 설계는 "아카이브가 보여줄 수 없는 5가지"로 한계효용을 정당화한다. 그 5가지가 실제로 `archive_inventory`·아카이브 파일명·`consumed_at`으로 복원 불가한 것이 맞는가. 하나라도 복원 가능하다면 그만큼 스키마를 줄여야 한다.

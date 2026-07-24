@@ -3841,6 +3841,104 @@ describe('REQ-2026-051 phase-2 — 원장 배선(main near-e2e)', () => {
   })
 })
 
+/**
+ * REQ-2026-051 phase-3 — 원장 내구화(design 승인 커밋 합류) + gitignore 가드(near-e2e).
+ *
+ * phase-2는 원장을 *쓴다*. phase-3은 그것이 승인 시 **커밋된다**는 것과, 그 파일이 gitignore로 조용히
+ * 사라지지 않는다는 것을 실제 git으로 고정한다(원장이 무시되면 감사 기록이 통째로 증발한다 — REQ-025/047 계열).
+ */
+describe('REQ-2026-051 phase-3 — 원장 내구화·ignore 가드(near-e2e)', () => {
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+
+  const setupRepo = (): { repo: string; ticket: string; head: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req051-p3-'))
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    mkdirSync(join(repo, 'workflow'), { recursive: true })
+    writeFileSync(join(repo, 'workflow', 'machine.schema.json'), readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'))
+    // 실제 kit gitignore 템플릿을 설치한다 — ⑲가 이 규칙 아래에서 원장이 무시되지 않음을 검증한다.
+    writeFileSync(join(repo, 'workflow', '.gitignore'), readFileSync(join(packageRoot(), 'templates', 'workflow.gitignore'), 'utf8'))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticket, { recursive: true })
+    for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
+    writeFileSync(join(ticket, 'codex-request.md'), '# req\n리뷰 포인트\n')
+    writeFileSync(
+      join(ticket, 'state.json'),
+      JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', phases: [], approval_evidence_required: true, evidence_durability_required: true, review_series_model_version: 1 }, null, 2) + '\n',
+    )
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    return { repo, ticket, head: git(['rev-parse', 'HEAD']).trim() }
+  }
+
+  const cannedApproved = (head: string): string =>
+    JSON.stringify({ machine_schema_version: '1.1', review_base_sha: head, risk_level: 'LOW', review_kind: 'design', status: 'STEP_COMPLETE', commit_approved: 'yes', merge_ready: 'no', findings: [], next_action: '' })
+
+  it('⑱ design 승인 → 리뷰 원장이 evidence 커밋에 실린다(HEAD에 committed)', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedApproved(head), threadId: 'TID', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      // durableDesignEvidence가 승인 시 아카이브·approvals.jsonl·원장을 커밋한다.
+      const tracked = gitOf(repo)(['ls-files', 'workflow/REQ-2026-001/responses/']).split('\n').map((s) => s.trim())
+      expect(tracked).toContain('workflow/REQ-2026-001/responses/review-ledger.jsonl')
+      // 커밋된 원장 = HEAD blob에 존재.
+      const atHead = gitOf(repo)(['cat-file', '-t', 'HEAD:workflow/REQ-2026-001/responses/review-ledger.jsonl']).trim()
+      expect(atHead).toBe('blob')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑳ 커밋된 원장에 중복 자연키가 없다(멱등·무결성) — evidence 커밋은 append하지 않고 add만 하므로 중복 불가', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedApproved(head), threadId: 'TID', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      // HEAD에 커밋된 원장을 읽어 parseLedger로 무결성 검증 — 자연키 중복이 있으면 problems에 잡힌다.
+      const committed = gitOf(repo)(['show', 'HEAD:workflow/REQ-2026-001/responses/review-ledger.jsonl'])
+      const rows = committed.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l) as Record<string, unknown>)
+      const keys = rows.map((r) => `${r.series_id}|${r.attempt}|${r.event}`)
+      expect(new Set(keys).size).toBe(keys.length) // 중복 없음
+      expect(rows.map((r) => r.event)).toEqual(['attempt-opened', 'attempt-closed'])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑲ 🔴 kit gitignore 아래에서 원장은 무시되지 않는다(실제 git check-ignore)', () => {
+    const { repo } = setupRepo()
+    try {
+      const git = gitOf(repo)
+      // check-ignore는 무시되는 경로에 exit 0, 아니면 exit 1. 원장은 exit 1이어야 한다(무시 안 됨).
+      let ledgerIgnored = false
+      try {
+        git(['check-ignore', '-q', 'workflow/REQ-2026-001/responses/review-ledger.jsonl'])
+        ledgerIgnored = true
+      } catch {
+        ledgerIgnored = false
+      }
+      expect(ledgerIgnored).toBe(false)
+      // 양성 대조: codex-response.json 은 무시된다(규칙이 실제로 발동함을 확인 — 위 결과가 vacuous가 아님).
+      let scratchIgnored = false
+      try {
+        git(['check-ignore', '-q', 'workflow/REQ-2026-001/codex-response.json'])
+        scratchIgnored = true
+      } catch {
+        scratchIgnored = false
+      }
+      expect(scratchIgnored).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})
+
 /** REQ-2026-027 phase-2 — 나머지 순수 오라클(O2-8 SCRATCH·O2-9 fresh-thread). */
 describe('REQ-2026-027 phase-2 — SCRATCH·fresh-thread(순수)', () => {
   it('O2-8: 수정된 state.json은 D10에 안 걸린다(SCRATCH) — 그 외 tracked 파일은 걸린다', () => {
