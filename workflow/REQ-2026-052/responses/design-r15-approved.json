@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"283f170ff582a6b1637dd59daedd1a80a7f372dd","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"phase-4의 multi-witness 정책과 명시된 oracle에 따라 구현을 진행하고 phase 리뷰를 요청하세요.","observations":[]}
