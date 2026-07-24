@@ -19,6 +19,7 @@ import { loadConfig, packageRoot, buildScriptInvocation, type DesignDocs, type P
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { parseStatusZ, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isToolOutputScratch } from './lib/scratch'
+import { scanIntake, type IntakeTicketResult } from './lib/intake'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -69,6 +70,24 @@ export function branchName(reqId: string, slug: string, branchPrefix: string): s
 export function nextStepHint(pm: PackageManager, reqId: string): string {
   const id = reqId.replace(/^REQ-/, '')
   return `코드 변경 → git add → ${buildScriptInvocation(pm, 'req:review-codex', [id, '--run']).join(' ')}`
+}
+
+/**
+ * intake 게이트 결과 요약(순수). 차단 티켓 목록·복구 안내 + legacy 표시 문구.
+ * 🔴 `blocked`가 비어있지 않으면 호출부가 fail-closed(throw)한다 — 이 함수는 문구만 만든다.
+ */
+export function renderIntakeSummary(tickets: readonly IntakeTicketResult[]): string {
+  const blocked = tickets.filter((t) => t.verdict === 'block')
+  const legacy = tickets.filter((t) => t.verdict === 'legacy')
+  const lines: string[] = []
+  if (blocked.length) {
+    lines.push('🔴 미종결 durable 티켓이 있어 새 REQ를 만들 수 없습니다(HEAD 커밋 증거 기준):')
+    for (const t of blocked) lines.push(`  - ${t.ticketId}: ${t.baseState} — ${t.reason}`)
+    lines.push('  → 위 티켓을 완료(모든 phase 커밋)·종결하거나 복구한 뒤 다시 시도하세요.')
+    lines.push('    복구가 필요하면 `req:commit <REQ> --finalize --run`(승인 tree==HEAD tree인 미완 evidence 내구화) 등을 사용합니다.')
+  }
+  if (legacy.length) lines.push(`ℹ️  legacy 티켓(표시만, 차단 안 함): ${legacy.map((t) => t.ticketId).join(', ')}`)
+  return lines.join('\n')
 }
 
 export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | 'HIGH', successorOf?: SuccessorOf): WorkflowState {
@@ -189,6 +208,12 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     parentTerminal = { parentId, parentTicketRel: relative(cfg.root, parentDir).replace(/\\/g, '/'), parentState }
   }
 
+  // 🔴 REQ-2026-052 phase-3b: intake 게이트 — HEAD-committed durable 증거만으로 기존 티켓을 스캔(read-only).
+  //    대체될 부모(successor)는 정규 replace 흐름으로 종결되므로 제외한다(부모 replace 검증은 위에서 끝났다).
+  //    미종결(developing/needs-recovery)·손상 티켓이 있으면 아래에서 fail-closed. 스캔 자체는 write 없음.
+  const intake = scanIntake(cfg.root, ticketRootRel, (args) => git(args), parentTerminal?.parentId ?? null)
+  const intakeSummary = renderIntakeSummary(intake.tickets)
+
   if (!o.run) {
     console.log('[req:new] DRY-RUN (--run 시 실제 생성)')
     console.log(`  REQ    : ${reqId}`)
@@ -196,8 +221,15 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     console.log(`  ticket : ${ticketRel}/ (state.json·${dd.requirement}·${dd.design}·${dd.plan}·codex-request.md)`)
     console.log(`  risk   : ${o.risk}`)
     if (successorOf) console.log(`  successor_of : ${successorOf.req_id} (부모 ${successorOf.parent_attempts_total}회 · replace 승인 확인)`)
+    if (intakeSummary) console.log(intakeSummary)
+    if (intake.blocked.length) console.log('  ⚠️  위 차단 사유로 --run은 실패합니다.')
     return
   }
+
+  // 🔴 intake 게이트 강제(write 전) — 미종결 durable 티켓이 있으면 티켓 생성 없이 즉시 fail-closed.
+  //    durableParentSeriesTerminal·checkout·티켓 커밋보다 **먼저** 검사해, 차단 시 어떤 write도 하지 않는다.
+  if (intake.blocked.length) throw new Error(renderIntakeSummary(intake.tickets))
+  if (intakeSummary) console.log(intakeSummary) // legacy 표시(차단 없음).
 
   // 클린 트리 요구(새 브랜치 깨끗이 시작 — 의도 변경 섞임 방지).
   // 단, gitignore 규칙이 없는 레거시 설치본도 기존 티켓의 순수 untracked 도구 산출물만 좁게 허용한다(D6·D7).

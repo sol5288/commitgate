@@ -1,6 +1,19 @@
 # REQ-2026-052 리뷰 요청
 
-## r06-delta 검증 addendum (phase-3b 착수 전 — 동작 코드 무변경, 테스트·문서 정확성) 🔴 이번 delta review 대상
+## phase-3b 구현 (req:new intake gate — DEC-C) 🔴 이번 phase review 대상
+
+DEC-C를 구현한다. 설계 문서(00/01/02)는 무변경(DEC-C가 이미 이 게이트를 규정) — 이 리뷰는 **staged 코드 diff**가 대상이다.
+
+- **신규 `scripts/req/lib/intake.ts`**(leaf): `classifyIntake`(순수) + `scanTicketIntake`·`scanIntake`(read-only IO). 판정 입력은 **HEAD blob만**(`createEvidencePorts`·`isDurabilityRequired`·`verifyCommittedDesignEvidence`·design-bound `evidencedPhaseIdsFromManifest`·`parseCloseProof`·`parseLedger`). `deriveBaseState`(DEC-B) 재사용 + `baseStateBlocksIntake`(기본 상태만 — 오버레이 무관).
+- **corrupt 처리**(요구 "corrupt/partial 통과 금지"): pass 조건(dev-complete/series-terminal)이 읽는 매니페스트·close-proof가 `validateManifest`/`parseCloseProof`에서 손상으로 판정되면 5-상태 밖의 `corrupt`로 **block**(손상 신호로 완료 위장 차단). 원장 손상은 pass 조건 입력이 아니라 별도 block하지 않는다(needs-recovery/developing 둘 다 어차피 block).
+- **read-only**: 스캔은 git 조회만(`ls-tree`·`show`·`cat-file`) — write-tree·commit·state 수정 없음. `req:new --run`은 게이트 통과 후에만 checkout/커밋한다. 차단 시 **어떤 write도 전에** throw.
+- **successor 제외**: `--successor-of`의 부모는 정규 replace 흐름으로 지금 종결되므로 스캔에서 제외(부모 replace 검증은 이미 통과). 그 외 미종결 durable 티켓은 그대로 차단.
+- **매니페스트 파서 이동**: `parseManifestEntries`·`evidencedPhaseIdsFromManifest`·`designHashFromManifest`를 `req-commit`(command)에서 **`lib/evidence`(leaf)로 이동**해 intake(leaf)가 command에 의존하지 않게 함. `req-commit`이 기존 경로로 re-export(호출부·테스트 무변경).
+- **테스트**(`tests/unit/req-new-intake.test.ts`, 실 git): D2-결속 dev-complete 통과 · D2인데 D1 phase만 차단 · series-terminal 통과 · legacy 표시만 · developing 차단 · ledger 승인+증거불완전 needs-recovery 차단 · manifest/close-proof 손상 corrupt 차단 · runtime state DONE위조·삭제 무관(HEAD developing 차단) · **스캔 read-only(HEAD·index·워킹트리 불변)** · scanIntake 전체·exclude 부모 · classifyIntake 오버레이 무관. 전체 green.
+
+**phase-3b r01 반영**(P1: `listHeadTicketIds` HEAD 열거 우회 우려): 지적된 우회 시나리오는 **열거가 비면** 실재하므로 정면 검증했다. 코드는 `git ls-tree -d --name-only HEAD ${dir}/`로 **후행 슬래시**를 붙인다 — 이 형태는 실측상 `workflow/`의 **직계 자식**(`workflow/REQ-*`)을 정확히 열거한다(슬래시가 **없을 때만** `workflow` 자신 한 줄이 나온다; r01은 슬래시 없는 형태로 읽은 것으로 보인다). 그럼에도 이 경로의 미묘함을 없애기 위해: ⑴ 후행 슬래시가 load-bearing임을 코드 주석에 명시(제거 시 우회됨을 경고), ⑵ **생성 전 차단 e2e 추가** — HEAD에 durable `developing` 티켓이 있을 때 `req:new --run`이 throw하고 **새 커밋·브랜치·티켓 디렉터리가 하나도 안 생기는지** 실 git으로 검증한다. 열거가 비면(회귀) 이 티켓이 차단되지 않아 이 테스트가 실패하므로, 회귀를 직접 잡는다.
+
+## r06-delta 검증 addendum (완료·커밋됨 — phase-3a2 테스트·문서 정확성)
 
 phase-3a2 기능 보정은 승인·커밋됐다(`7bccc38`). phase-3b 전에 **동작 코드는 그대로 두고** 검증만 보강한다.
 

@@ -399,6 +399,46 @@ export function findEvidenceRow(
   return null
 }
 
+// ─────────────────── 매니페스트 순수 파서 (REQ-2026-052 phase-3b: req-commit에서 이동) ──
+// req-commit(command)과 intake 스캔(leaf)이 같은 파서를 공유하도록 매니페스트 모델의 정본인 여기로 옮겼다.
+// req-commit이 기존 경로로 re-export한다(호출부 호환).
+
+/** 매니페스트(JSONL) 본문에서 안전하게 엔트리 배열을 뽑는다(파싱 불가 행은 건너뛴다 — 검증은 별도). */
+export function parseManifestEntries(content: string): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = []
+  for (const line of content.split('\n')) {
+    if (line.trim() === '') continue
+    try {
+      const o = JSON.parse(line)
+      if (o && typeof o === 'object' && !Array.isArray(o)) out.push(o as Record<string, unknown>)
+    } catch {
+      /* skip */
+    }
+  }
+  return out
+}
+
+/**
+ * 매니페스트에서 커밋된 **phase 증거**가 있는 phase id 집합(consumed phase 엔트리).
+ *
+ * 🔴 REQ-2026-052 DEC-B5(phase-3a2): `designRef`를 주면 **design-bound** — 그 phase 행의 `phase_design_ref`가
+ *   `designRef`와 **일치**하는 것만 산입한다. dev-complete 완전성이 이 필터를 써야 D1에서 검토된 phase가 D2
+ *   재승인 후 D2 완료 증명에 새어들지 않는다. `phase_design_ref` 부재 행(레거시·보정 이전)은 **불산입**(fail-closed).
+ *   `designRef` 미지정(하위호환)이면 결속 무관 전량(옛 동작) — 신규 완료 경로는 항상 designRef를 준다.
+ */
+export function evidencedPhaseIdsFromManifest(content: string, designRef?: string | null): string[] {
+  return parseManifestEntries(content)
+    .filter((e) => e.kind === 'phase' && typeof e.phase_id === 'string')
+    .filter((e) => (designRef == null ? true : e.phase_design_ref === designRef))
+    .map((e) => e.phase_id as string)
+}
+
+/** 매니페스트에서 커밋된 design 승인의 design_hash(가장 마지막 design 엔트리). 없으면 null. */
+export function designHashFromManifest(content: string): string | null {
+  const designs = parseManifestEntries(content).filter((e) => e.kind === 'design' && typeof e.design_hash === 'string')
+  return designs.length ? (designs[designs.length - 1]!.design_hash as string) : null
+}
+
 // ─────────────────────────── design evidence 내구화 (REQ-2026-048 DEC-3) ──
 
 /**
