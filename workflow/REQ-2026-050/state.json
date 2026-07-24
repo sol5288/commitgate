@@ -1,0 +1,18 @@
+{
+  "id": "REQ-2026-050",
+  "branch": "feat/req-2026-050-persona-phase-boundary-and-sync-drift",
+  "phase": "INTAKE",
+  "risk_level": "LOW",
+  "codex_thread_id": null,
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": false,
+  "design_approved_hash": null,
+  "current_phase": null,
+  "phases": [],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1
+}
