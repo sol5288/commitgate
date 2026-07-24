@@ -3,16 +3,109 @@
   "branch": "feat/req-2026-051-durable-review-ledger",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f92a9-58cf-7640-bce5-01b0762d9993",
+  "review_base_sha": "075a3b32f926ceb40b8016f40de27a02aaf8117a",
+  "review_diff_hash": "166f61b72a42e49f76fe8ba1a49bf18541e987bb",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
+  "design_approved": true,
+  "design_approved_hash": "651783ef6384f620ec2a603d797a4e0e8f1ea021e2fd8083831cbe63a38898e1",
+  "current_phase": "phase-3-evidence-finalize-and-ignore-guard",
+  "phases": [
+    {
+      "id": "phase-1-ledger-core",
+      "approved": true
+    },
+    {
+      "id": "phase-2-review-codex-wiring",
+      "approved": true
+    },
+    {
+      "id": "phase-3-evidence-finalize-and-ignore-guard",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-ledger-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-ledger-core",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-review-codex-wiring#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-review-codex-wiring",
+      "attempts": 4,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-evidence-finalize-and-ignore-guard#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-evidence-finalize-and-ignore-guard",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "58940a0a836949d7fbb67095761e724874a96ee8",
+    "design": "aaf1f2a075002d6584f1fe37e5b810dd06e19dab",
+    "plan": "6196bfa3e706860b6cbade94b734bf964b040e59"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-051/responses/design-r01-approved.json",
+    "response_sha256": "d45cbc4e8d99e520beaa2a841cec1fcfb1d6f4c75d04006bb85c51c26435bce5",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "a40932e3fc2dd9839be1e3175e3a9d5c60c23adc",
+    "codex_thread_id": "019f9263-d9fd-7f02-9e32-a0a4389aab68",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-24T04:31:44.913Z",
+    "design_hash": "651783ef6384f620ec2a603d797a4e0e8f1ea021e2fd8083831cbe63a38898e1"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-evidence-finalize-and-ignore-guard",
+    "outcome": "approved",
+    "compare_hash": "80f7bc86e1a9e14a21e2205994095790874ce8676e6c150d40045925c9b8a484",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-24T05:47:37.950Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "f4ba0c6e10d32a2f4ba7c38aa403b163df34e324",
+      "phase_id": "phase-1-ledger-core",
+      "consumed_by_commit_sha": "002765f3ac13ce3e587dcad5bb432996f21c80b4",
+      "approval_consumed_at": "2026-07-24T04:42:22.736Z"
+    },
+    {
+      "approved_tree": "b79c1f8d4598b4083c98051cfd1acb301a6e6c00",
+      "phase_id": "phase-2-review-codex-wiring",
+      "consumed_by_commit_sha": "b67bcd290ce68a52bc35b580ce7b7b6ebdfb8bf4",
+      "approval_consumed_at": "2026-07-24T05:33:54.584Z"
+    },
+    {
+      "approved_tree": "166f61b72a42e49f76fe8ba1a49bf18541e987bb",
+      "phase_id": "phase-3-evidence-finalize-and-ignore-guard",
+      "consumed_by_commit_sha": "54a0e3338e678bb8dcab0ebef7b9e844986c8cb4",
+      "approval_consumed_at": "2026-07-24T05:48:05.690Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
