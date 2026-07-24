@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"9c8bcd962b101b82cddc6028ef23aa04c525c49c","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"phase-3b3를 구현하고 명시된 design/phase archive 삭제·SHA 변조·series-terminal 손상 검증을 실행하세요.","observations":[]}
