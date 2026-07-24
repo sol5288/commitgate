@@ -1,5 +1,18 @@
 # REQ-2026-052 리뷰 요청
 
+## r05-delta 보정 (phase-3a P1 — phase evidence의 design 결속, DEC-B5) 🔴 이번 delta review 대상
+
+phase-3a는 승인·커밋됐으나(`b0fb74e`), 사후 **P1**이 발견됐다. **이 delta review는 아래 보정(DEC-B5·phase-3a2)에 집중한다.**
+
+- **결함**: dev-complete 완전성 검증이 `evidencedPhaseIdsFromManifest`로 "inventory phase_id가 manifest에 phase evidence로 **존재**"만 봤다. phase 행에는 `approved_tree`만 있고 **그 phase가 어느 design 승인에 대해 검토됐는지 durable 기록이 없다**(`design_hash`는 design 행 전용). ∴ design D1에서 검토·커밋된 p1이 D2 재승인 후에도 D2 dev-complete를 만족 → **D1 검토분이 D2 완료 증명에 재사용**. close-proof 행의 `design_ref`(phase-3a에서 추가)만으로는 각 phase 결속이 검증되지 않아 못 막는다.
+- **스키마 결정**(대안 비교): design 행 `design_hash` 재사용(대안 A)은 kind 격리 불변식(phase↔design 필드 상호 금지)을 깨고 의미를 뒤섞어 **기각**. **phase 전용 신규 필드 `phase_design_ref`**(대안 B) 채택 — 값 = 승인 시점 committed design 참조(`captureDesignBinding().designHash`, design 행 `design_hash`와 동일 계산·값). kind 격리 유지, 레거시엔 선택(형식 관대)·완료 판정엔 fail-closed(`archive_inventory`와 동형 분리).
+- **결속 캡처 = phase 승인 시점**: phase 리뷰는 이미 `designValid`(design_approved_hash === captureDesignBinding().designHash)를 강제(불충족 fail-closed)하므로, 승인 순간의 `currentHash`가 곧 결속 design이다. ApprovalEvidence에 핀 → evidence-finalize가 manifest 행에 기록. finalize 시점 재조회 안 함(review/commit 사이 재승인 오결속 방지). `approved_tree`로 역산 금지(별도 명시 필드가 정본).
+- **완전성 재정의**: `evidencedPhaseIdsFromManifest(content, designRef)`가 **`phase_design_ref === designRef`** 행만 산입. 발행(`computeDevCompleteProof`)·HEAD 재검증(`verifyDevCompleteAtHead`) 모두 design-bound. close-proof 순수 판정기는 무변경(입력이 design-bound라는 계약 doc만 강화 — leaf 경계 유지).
+- **재승인 lifecycle**(기존 명령만): `resolvePhaseTarget` 멱등 재리뷰 허용 + `designValid` freshness 재확인 → design 재승인 후 각 phase 재리뷰·재커밋(D2-결속) → 마지막 finalize가 D2 dev-complete supersede. state 조작·가짜 커밋·숨은 예외 없음.
+- **범위**: 별도 corrective phase **phase-3a2**로 구현·리뷰·커밋. **이번 delta 승인 후 phase-3a2만** 진행하고 phase-3b·4는 완료 보고 후 별도 승인.
+
+**r05-delta r01 반영**(P1: reconstruct를 완료-migration으로 오주장): r01이 정확했다 — `phase_design_ref`는 리뷰 시점에 commitgate가 git에서 파생하는 값이라 **아카이브(codex 응답)에 없다**. 따라서 reconstruct(DEC-D)는 그 결속을 검증 가능하게 유도할 수 없고, dev-complete 행을 복원해도 HEAD verifier가 design-bound evidence를 요구하므로 결속 없는 기존 행으론 성립하지 않는다. DEC-B5 migration·DEC-D 범위·02-plan을 고쳐 **결속 없는 완료 경로는 재검토뿐**임을 명시하고, reconstruct의 결속-back-fill 주장을 제거했다.
+
 ## r04-delta 보정 (phase-3 착수 전 — self-verifying dev-complete + phase 재분할)
 
 phase-2 완료 후, 승인 설계의 phase-3에서 두 문제를 사용자와 함께 확정해 보정했다. **이 delta review는 아래 보정에 집중한다.**

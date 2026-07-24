@@ -72,14 +72,39 @@ design-r04-delta: phase-3을 3a(발행+HEAD 검증)/3b(intake gate)로 재분할
 | ㊲ | legacy 티켓은 기존 동작(발행 없음) |
 | ㊳ | phase_inventory는 정렬·중복 없음(runtime state.phases를 입력으로만) |
 
+## Phase 3a2 — phase evidence의 design 결속 (`phase-3a2-phase-design-binding`)
+
+phase-3a 리뷰 P1 보정(DEC-B5). dev-complete가 phase evidence의 **design 결속**을 검증하지 않아, D1에서 검토된 phase가 D2 재승인 후에도 D2 완료 증명에 새어들 수 있던 결함을 닫는다.
+
+| 항목 | 내용 |
+|---|---|
+| 책임 계약 | phase evidence에 `phase_design_ref`(phase 전용·승인 시점 committed design 결속) 신설 → **kind별 strict validation·ApprovalEvidence·manifest build/parse·evidence-finalize·close-proof verifier 일관 반영**(요구 #1) · dev-complete 완전성을 **design-bound**로 재정의(요구 #2) · 재승인 lifecycle은 기존 명령만으로 성립(요구 #3) · 부재 행 fail-closed·legacy 표시만(요구 #4) |
+| 입력 | phase-1 · phase-2 · phase-3a |
+| 산출물 | `scripts/req/lib/evidence.ts` · `scripts/req/review-codex.ts` · `scripts/req/req-commit.ts` · `scripts/req/lib/close-proof.ts`(계약 doc) · 테스트 |
+| 선행 phase | phase-3a |
+| 독립 검증 | `npx vitest run tests/unit/close-proof.test.ts tests/unit/evidence-module.test.ts tests/unit/req-commit.test.ts tests/unit/req-review-codex.test.ts` · `npm run typecheck` · 실 git fixture |
+
+**Red 먼저**(사용자 필수 테스트):
+| # | oracle |
+|---|---|
+| ㊹ | D1의 p1·p2 evidence+dev-complete(D1) 상태에서 **D2 design 승인만 추가**하면 파생 상태 `developing`(dev-complete 아님) |
+| ㊺ | D2에서 **p2만 D2-결속 재검증**해도 p1이 D1-결속이면 여전히 미완료 |
+| ㊻ | D2에서 **inventory 전 phase가 D2-결속 evidence**를 얻은 뒤에만 dev-complete(supersede row) |
+| ㊼ | 동일 design 참조 **retry는 중복 proof/evidence 없음**(natural-key·`manifestHasConsumed` 멱등) |
+| ㊽ | HEAD `state.json` 삭제·변조해도 판정 불변(design-bound 필터도 HEAD manifest만) |
+| ㊾ | `evidencedPhaseIdsFromManifest(content, designRef)`가 `phase_design_ref` 불일치 행을 제외 · design 행엔 `phase_design_ref` 금지 · phase 행 형식 검증 |
+| ㊿ | pre-call ledger/evidence-finalize가 semantic identity·approval binding 무회귀 + **phase 승인이 `phase_design_ref` 캡처**(near-e2e) |
+| ⓵ | **legacy manifest(부재) vs durable manifest(결속)** 판정 차이를 실 git fixture로 |
+| ⓶ | 레거시 phase 행(`phase_design_ref` 부재)은 durable 완료 증거로 **불산입**(fail-closed) · 바이트 무회귀(부재 시 기존 행과 동일) |
+
 ## Phase 3b — req:new intake gate (`phase-3b-intake-gate`)
 
 | 항목 | 내용 |
 |---|---|
-| 책임 계약 | req:new가 HEAD-committed proof/evidence만으로 티켓 스캔·기본 상태 파생 · `developing`/`needs-recovery`면 fail-closed(이유+복구) · legacy 표시만 · runtime state 미사용 |
-| 입력 | phase-3a(self-verifying dev-complete) |
+| 책임 계약 | req:new가 HEAD-committed proof/evidence만으로 티켓 스캔·기본 상태 파생 · `developing`/`needs-recovery`면 fail-closed(이유+복구) · legacy 표시만 · runtime state 미사용 · dev-complete 판정은 design-bound(DEC-B5) 재사용 |
+| 입력 | phase-3a2(design-bound 완전성) |
 | 산출물 | `scripts/req/req-new.ts`(intake scan·게이트) · 테스트 · `docs/guarantees.{md,en.md}` |
-| 선행 phase | phase-3a |
+| 선행 phase | phase-3a2 |
 | 독립 검증 | `npx vitest run tests/unit/req-new.test.ts` · `npm run typecheck` · 임시 git 저장소 |
 
 **Red 먼저**(요구 #4·#6·#7·#9):
@@ -110,9 +135,11 @@ design-r04-delta: phase-3을 3a(발행+HEAD 검증)/3b(intake gate)로 재분할
 ## 숨은 결합 점검
 - phase-1은 순수 — 이후 어느 phase도 요구하지 않는다.
 - **phase-2는 phase-1 선행**. ✅ 완료.
-- **phase-3a는 phase-1+phase-2 선행**(발행이 durable ledger·evidence 경로 위에 얹힌다). **phase-3b는 phase-3a 선행**(self-verifying dev-complete proof가 있어야 intake gate가 판정 가능). 이 순서 의존은 실재하므로 정직하게 선언한다.
+- **phase-3a는 phase-1+phase-2 선행**. ✅ 완료.
+- **phase-3a2는 phase-3a 선행**(dev-complete 발행·verifier가 있어야 design-bound로 보정). **phase-3b는 phase-3a2 선행**(design-bound 완전성이 있어야 intake gate가 정확히 판정). 이 순서 의존은 실재하므로 정직하게 선언한다.
 - phase-4는 phase-1 선행이나, **사용자 지시로 phase-3b 완료 후 별도 진행**.
-- 🔴 **이번 delta는 phase-3a만 구현·리뷰·커밋**한다. phase-3b·phase-4는 phase-3a 완료 보고 후.
+- 🔴 **이번 delta는 phase-3a2(P1 보정)만 구현·리뷰·커밋**한다. phase-3b·phase-4는 phase-3a2 완료 보고 후 별도 승인.
+- 🔴 **migration**: REQ-052 자신의 phase-1/2/3a 행은 `phase_design_ref` 부재(보정 전 커밋) → 이 티켓의 durable 완료는 **각 phase 재검토** 전까지 fail-closed(DEC-B5, 요구 #4 의도). reconstruct는 아카이브에 없는 결속값을 합성하지 않으므로 완료 경로가 아니다(r05-delta P1).
 
 ## 완료
 - 게이트 해당분(unit·typecheck·lint) · 사용자 main 머지(별도 승인).

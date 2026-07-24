@@ -135,7 +135,7 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 
 **HEAD-only 검증(미래 `req:new`가 쓴다)**: dev-complete는 다음이 **전부 HEAD-committed로** 성립할 때만이다:
 1. HEAD close proof에 `dev-complete` row가 있다.
-2. 그 row의 `phase_inventory`의 **모든 phase**가 HEAD `approvals.jsonl`에 대응하는 phase evidence(consumed 엔트리·아카이브)를 갖는다.
+2. 🔴 그 row의 `phase_inventory`의 **모든 phase**가 HEAD `approvals.jsonl`에 **현재 committed design_ref에 결속된**(phase 행 `phase_design_ref === design_ref`) phase evidence(consumed 엔트리)를 갖는다(DEC-B5). **단순 phase_id 존재는 불충분** — design-blind면 D1에서 검토된 phase가 D2 재승인 후에도 D2 완료 증명에 새어든다(phase-3a P1).
 3. row의 `design_ref`가 HEAD의 committed design 승인(`verifyCommittedDesignEvidence`의 design_hash)과 **일치**한다.
 
 하나라도 어긋나면 dev-complete가 **아니며**, `req:new`는 차단한다(요구). **runtime state는 검증에 절대 안 쓴다** — 오직 proof inventory + committed evidence만.
@@ -148,7 +148,7 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 |---|---|
 | `legacy` | HEAD scaffold state.json에 durability marker 부재/파손 → 이하 판정 안 함 |
 | `series-terminal` | HEAD close proof에 `series-terminal` 행 존재(replace·human-resolution) |
-| `dev-complete` | durable · HEAD close proof에 `dev-complete` 행 존재 · 그 행의 **`phase_inventory` 모든 phase가 HEAD 증거 완비** · 행의 **`design_ref` = 현재 committed design 승인**(DEC-B2 self-verify) |
+| `dev-complete` | durable · HEAD close proof에 `dev-complete` 행 존재 · 그 행의 **`phase_inventory` 모든 phase가 현재 design_ref에 결속된 HEAD phase evidence를 가짐**(design-bound, DEC-B5) · 행의 **`design_ref` = 현재 committed design 승인**(DEC-B2 self-verify) |
 | `needs-recovery` | durable · **HEAD 증거 내부 불일치**: durable 원장에 `attempt-closed(approved)`가 있으나 그 승인의 HEAD 증거(approvals 엔트리·아카이브)가 불완전 |
 | `developing` | durable · 위 어디에도 안 걸림(HEAD에 완결 승인 흔적 없음 — "예산 사용·미확정" 포함) |
 
@@ -185,7 +185,32 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 - runtime `state.phases`는 **proof를 만들 때의 입력**으로만 쓴다(inventory 산출).
 - **생성된 proof의 유효성 판정과 `req:new` 차단 판단은 runtime state를 절대 읽지 않는다** — 오직 proof의 phase inventory + committed evidence(HEAD blob).
 - future HEAD verifier(DEC-B2)는 proof inventory와 committed evidence만 쓴다. scratch state를 삭제·변조해도 HEAD 판정이 안 변한다.
-- design 재승인으로 inventory가 달라지면, 이전 design 참조와 섞인 dev-complete proof를 허용하지 않는다(design_ref 불일치 → dev-complete 아님).
+- design 재승인으로 inventory가 달라지면, 이전 design 참조와 섞인 dev-complete proof를 허용하지 않는다(design_ref 불일치 → dev-complete 아님). 🔴 나아가 **각 phase evidence 자체가 현재 design_ref에 결속돼 있어야** 완료다(DEC-B5) — proof 행의 design_ref만으로는 부족하다.
+
+### DEC-B5. 🔴 phase evidence의 design 결속 — dev-complete의 design-bound 완전성 (phase-3a P1 보정)
+
+**발견된 결함(phase-3a P1)**: DEC-B2는 dev-complete를 "phase_inventory의 모든 phase가 HEAD approvals.jsonl에 phase evidence를 **갖는다** + 행의 design_ref = 현재 committed design"으로 판정했다. 그러나 **phase evidence 행 자체에는 그 phase가 어느 design 승인에 대해 검토됐는지 durable하게 기록되지 않았다**(phase 행은 `approved_tree`만, `design_hash`는 design 행 전용). 결과: design D1에서 검토·커밋된 phase p1이, D2 design 재승인 후에도 D2 dev-complete의 "p1 증거 있음"을 만족시켜 **D1 검토분을 D2 완료 증명에 재사용**할 수 있다. `design_ref`를 **close-proof 행에만** 넣은 것으로는 못 막는다 — inventory의 각 phase 결속이 검증되지 않기 때문이다.
+
+**스키마 결정(대안 비교, 요구 불변식 #1)**:
+- **대안 A(기각) — design 행의 `design_hash`를 phase 행에 재사용**: phase 행이 `design_hash`를 갖게 하면 `validateManifest`의 kind 격리("phase 행에 design_hash 금지", "design 행에 approved_tree 금지")가 무너진다. 그 격리는 주입·혼동 방어의 load-bearing 불변식이다. 또 `design_hash`의 의미("이 design 승인 문서들의 해시")와 "이 phase가 결속된 design"의 의미가 뒤섞인다.
+- **대안 B(채택) — phase 행에 의미가 분명한 신규 필드 `phase_design_ref`**: 값 = 그 phase 승인 시점의 **committed design 참조**(= `captureDesignBinding().designHash`, design 행의 `design_hash`와 **동일 계산·동일 값**). kind 격리를 유지한다(phase 전용, design 행엔 금지). 레거시 phase 행엔 부재 → **선택 필드**(형식 검증은 관대·무회귀)이되 durable 완료 판정에서는 부재를 **fail-closed**(아래 migration). 검증의 관대함(legacy 호환)과 완료의 엄격함을 분리하는 기존 패턴(`archive_inventory`)과 동형.
+
+**결속 캡처 지점 = phase 승인 시점**(finalize 아님): phase 리뷰는 이미 `designValid`(= `state.design_approved === true && design_approved_hash === captureDesignBinding().designHash`)를 **강제**하고, 불충족이면 호출·커밋·기록 전 fail-closed다(review-codex DEC-A6 step 2a, line 2153). 즉 phase가 승인되는 순간의 `currentHash`가 바로 "그 phase가 검토된 committed design"이다. 이 값을 `ApprovalEvidence.phase_design_ref`에 핀하고, evidence-finalize가 manifest phase 행에 그대로 쓴다. 🔴 **finalize 시점의 committed design을 다시 읽지 않는다** — 재승인이 review와 commit 사이에 끼면 잘못된 design으로 오결속될 수 있기 때문(승인 당시 값이 정본). `review_base_sha`·`approved_tree`가 승인 시점에 핀되는 것과 같은 태도.
+
+⚠️ **`approved_tree`와 혼동 금지**(요구 불변식 #1): `approved_tree`는 phase 승인 시점의 full-index write-tree(응답 무수정 검증용)다. 그 안에 design 문서 blob이 들어 있어도 그것을 design 참조로 역산하지 않는다 — 별도의 명시 필드가 정본이다.
+
+**dev-complete 완전성 재정의**(DEC-B2 point 2를 대체, 요구 불변식 #2): "inventory의 각 phase가 **현재 committed design_ref에 결속된**(`phase_design_ref === committedDesignRef`) committed phase evidence를 갖는다." 이 design-bound 필터는 **manifest를 읽는 경계**(`evidencedPhaseIdsFromManifest(content, designRef)`)에서 적용하고, close-proof 순수 판정기(`isDevCompleteVerified`)는 그 결과 집합만 소비한다 — close-proof는 manifest를 파싱하지 않는 leaf라, 필터를 그 안으로 넣으면 모듈 경계가 깨진다. 판정기 계약(입력 `evidencedPhaseIds`가 이미 design-bound)만 doc로 강화한다.
+
+**design 재승인 lifecycle**(요구 불변식 #3 — end-to-end):
+- design_hash가 D1→D2로 바뀌면 D1-결속 phase 행은 D2 dev-complete에 **못 쓴다**(design-bound 필터가 제외). 재승인만으로는 dev-complete가 성립하지 않고 상태는 `developing`으로 되돌아간다.
+- **정상 재검토 경로는 기존 명령만으로 성립한다**(최소 인터페이스 — 신규 명령 불필요): `resolvePhaseTarget`는 **이미 승인된 phase의 재리뷰를 허용**(멱등, line 1395)하고, `designValid`는 재승인된 D2에 대해 freshness를 재확인한다. 그러므로 ⑴ design 문서 수정 → `req:review-codex --kind design --run` 승인 → `req:commit`(D2 커밋), ⑵ 각 phase `req:review-codex --kind phase --phase pN --run` 승인 → `req:commit`(phase 행이 D2-결속으로 **재커밋**), ⑶ 마지막 phase finalize가 D2 dev-complete를 append(design_ref 키잉 supersede)한다. 🔴 **state.json 수동 조작·가짜 source commit·숨은 예외 없음** — 전부 정규 게이트다. 재검토된 phase는 새 sha·새 아카이브라 manifest 중복키(`kind:phase:sha`) 충돌도 없다(D1 행은 이력으로 공존, D2 행이 완료를 만족).
+- **동일 design 참조의 단순 재시도/재내구화**는 불필요한 재리뷰를 강제하지 않는다: `manifestHasConsumed`(source sha + evidence identity) 멱등이 중복 행을 막고, `phase_design_ref`가 그대로라 design-bound 집합도 안 변한다.
+
+**migration·legacy**(요구 불변식 #4):
+- `phase_design_ref` **부재** phase 행(레거시·이 보정 이전 커밋분)은 durable 완료의 증거로 **조용히 추론하지 않는다** — design-bound 필터에서 제외되어 "현재 design에 결속된 증거 없음"으로 fail-closed.
+- **legacy 티켓**(durability marker 없음)은 애초에 dev-complete 판정 대상이 아니다(`legacy` 기본 상태 우선). 표시만 하며 판정에 영향 없다.
+- 🔴 **reconstruct는 결속 back-fill 경로가 아니다**(r05-delta P1): `req:reconstruct`(DEC-D)는 immutable archive·approvals로 **검증 가능한 close-proof lifecycle 행**(series-terminal·dev-complete)만 복원한다. `phase_design_ref`는 리뷰 시점에 commitgate가 **git에서 파생해 핀**하는 값이라 **아카이브(codex 응답)에 기록되지 않는다** → reconstruct가 검증 가능하게 유도할 근거가 없다. 설령 dev-complete 행을 복원해도 HEAD verifier는 여전히 design-bound phase evidence를 요구하므로 결속 없는 기존 행으로는 성립하지 않는다. 따라서 **결속 없는 티켓의 완료 경로는 재검토(위 정상 경로)뿐**이며, reconstruct는 완료-migration으로 주장하지 않는다.
+- **이 REQ(2026-052) 자체**의 이미 커밋된 phase-1/2/3a 행은 `phase_design_ref`가 없다(보정 전 커밋). 따라서 이들을 포함한 REQ-052의 durable 완료는 **각 phase 재검토(위 정상 경로)** 전까지 성립하지 않는다 — 요구 #4의 **의도된 fail-closed**(결함 아님). 완료 시점에 재검토로 처리한다.
 
 ### DEC-C. req:new 게이트 — committed proof만으로 판정
 
@@ -215,6 +240,7 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 - 새 명령 `req:reconstruct <REQ> [--run]`(dry-run 기본). **immutable archive + approvals evidence로 검증 가능한 사실만** 복원한다.
 - 복원 행에 `reconstructed:true` + `evidence_basis`(어떤 아카이브/매니페스트에서 유도했는지) 기록.
 - **복원 불가한 attempt·예외 소비·실패 원인은 `unknown`으로 남기고 추정하지 않는다.** 예: approvals의 `archive_inventory`로 "이 라운드가 아카이브됐다"는 유도 가능하지만, 아카이브 없이 소실된 opened는 복원 불가 → 만들지 않는다.
+- 🔴 **범위 밖(r05-delta P1)**: reconstruct는 **close-proof lifecycle 행**만 복원한다. manifest phase 행의 `phase_design_ref`(DEC-B5) 같은 **아카이브에 기록되지 않은 결속값은 합성하지 않는다** — 결속 없는 완료를 만들 수 없다. 결속 없는 티켓의 완료는 재검토가 유일 경로다.
 - **자동 실행 금지**: 사람 확인(`--run` + 명시적 확인 문장) 후에만.
 
 ### DEC-E. 하위호환·안전
@@ -244,11 +270,29 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 - **선행: phase-1 + phase-2**.
 - 독립 검증: `vitest close-proof req-commit` · typecheck · 임시 git 저장소로 발행·복구·HEAD 검증.
 
-### phase-3b-intake-gate (design-r04-delta: phase-3 재분할)
-- 책임: `req:new`가 `workflow/REQ-*`를 **HEAD-committed proof/evidence만으로** 스캔해 각 티켓 기본 상태를 파생, `developing`/`needs-recovery`가 있으면 fail-closed(이유+복구 명령), legacy는 표시만. runtime state 미사용.
-- 입력: phase-3a(self-verifying dev-complete proof).
-- 산출물: `scripts/req/req-new.ts`(intake scan·게이트) · 테스트(요구 #4·#5·#6·#7·#9).
+### phase-3a2-phase-design-binding (phase-3a P1 보정 — DEC-B5)
+- 책임: phase evidence에 `phase_design_ref` 신설(DEC-B5). **kind별 strict validation·ApprovalEvidence·manifest build/parse·evidence-finalize·close-proof verifier 전부 일관 반영**(요구 불변식 #1):
+  - `evidence.ts`: `ManifestEntry.phase_design_ref?`(phase 전용·선택) + `MANIFEST_KEYS` + `validateManifest`(phase면 형식 검증·design 행엔 금지) + `buildManifestEntry`(phase 승인 evidence의 값을 조건부 기록 — 부재 시 바이트 무회귀).
+  - `review-codex.ts`: `ApprovalEvidence.phase_design_ref?` + `buildApprovalEvidence`·`processResponse`가 phase 승인에 값 부착 + mainImpl이 **승인 시점 `currentHash`**(designValid 통과값)를 캡처해 배선.
+  - `req-commit.ts`: `evidencedPhaseIdsFromManifest(content, designRef)` **design-bound** 전환 + `computeDevCompleteProof`·`verifyDevCompleteAtHead`가 그 필터 사용(발행·HEAD 재검증 모두 design-bound).
+  - `close-proof.ts`: 판정기 무변경 — 입력 `evidencedPhaseIds`가 design-bound라는 **계약 doc만 강화**(모듈 경계 유지).
+- 입력: phase-1·phase-2·phase-3a.
+- 산출물: `scripts/req/lib/evidence.ts` · `scripts/req/review-codex.ts` · `scripts/req/req-commit.ts` · `scripts/req/lib/close-proof.ts`(doc) · 테스트.
 - **선행: phase-3a**.
+- 독립 검증: `vitest close-proof evidence req-commit req-review-codex` · typecheck · 실 git fixture. 필수 테스트:
+  ⑴ D1의 p1·p2 evidence+dev-complete 상태에서 **D2 design 승인만 추가**하면 `developing`(dev-complete 아님).
+  ⑵ D2에서 **p2만 재검증**해도 p1이 D1-결속이면 여전히 미완료.
+  ⑶ D2에서 **inventory 전 phase가 D2-결속 evidence**를 얻은 뒤에만 dev-complete.
+  ⑷ 동일 design 참조 **retry는 중복 proof/evidence 없음**.
+  ⑸ HEAD `state.json` 삭제·변조해도 결과 불변.
+  ⑹ pre-call ledger/evidence-finalize가 **semantic identity·approval binding 무회귀**(+ phase_design_ref 캡처).
+  ⑺ **legacy manifest(부재) vs durable manifest(결속)** 판정 차이를 실 git fixture로.
+
+### phase-3b-intake-gate (design-r04-delta: phase-3 재분할)
+- 책임: `req:new`가 `workflow/REQ-*`를 **HEAD-committed proof/evidence만으로** 스캔해 각 티켓 기본 상태를 파생, `developing`/`needs-recovery`가 있으면 fail-closed(이유+복구 명령), legacy는 표시만. runtime state 미사용. dev-complete 판정은 **design-bound**(DEC-B5) `evidencedPhaseIdsFromManifest(content, designRef)`를 그대로 재사용한다.
+- 입력: phase-3a(self-verifying dev-complete proof) · phase-3a2(design-bound 완전성).
+- 산출물: `scripts/req/req-new.ts`(intake scan·게이트) · 테스트(요구 #4·#5·#6·#7·#9).
+- **선행: phase-3a2**.
 - 독립 검증: `vitest req-new` · typecheck · 임시 git 저장소로 scratch 삭제 후 판정 불변.
 
 ### phase-4-reconstruct-command
@@ -263,7 +307,9 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 |---|---|
 | 1 | `scripts/req/lib/close-proof.ts`(신규) · `tests/unit/close-proof.test.ts`(신규) |
 | 2 | `scripts/req/lib/review-target.ts`(신규) · `scripts/req/review-codex.ts` · `scripts/req/req-next.ts` · `scripts/req/req-new.ts` · `scripts/req/lib/scratch.ts` · 테스트 |
-| 3 | `scripts/req/req-next.ts` · `scripts/req/req-new.ts` · 테스트 · `docs/guarantees.{md,en.md}` |
+| 3a | `scripts/req/lib/close-proof.ts`(dev-complete row·self-verify) · `scripts/req/req-commit.ts`(발행·HEAD 재검증·멱등) · 테스트 |
+| 3a2 | `scripts/req/lib/evidence.ts`(`phase_design_ref` 스키마·검증·build) · `scripts/req/review-codex.ts`(캡처·배선) · `scripts/req/req-commit.ts`(design-bound 필터) · `scripts/req/lib/close-proof.ts`(계약 doc) · 테스트 |
+| 3b | `scripts/req/req-new.ts`(intake scan·게이트) · 테스트 · `docs/guarantees.{md,en.md}` |
 | 4 | `bin/reconstruct.ts`(신규) · `bin/dispatch.mjs` · 테스트 |
 
 ## 하위호환·안전
