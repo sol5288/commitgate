@@ -20,6 +20,9 @@ import {
   resolveCommitTarget,
   buildCommitArgs,
   resolveMessageSource,
+  computeDevCompleteProof,
+  evidencedPhaseIdsFromManifest,
+  designHashFromManifest,
 } from '../../scripts/req/req-commit'
 import { finalizeD9Check } from '../../scripts/req/req-doctor'
 import { buildScriptInvocation, type ResolvedConfig } from '../../scripts/req/lib/config'
@@ -672,5 +675,354 @@ describe('[REQ-2026-048] archive_inventory — 라운드 아카이브 전량 영
       { response_path: `${T}/responses/../../escape-r01-approved.json`, sha256: SHA },
     ]
     expect(designEvidenceStagePaths(evil, APPROVED_REL, T)).toEqual([APPROVED_REL, `${T}/responses/approvals.jsonl`])
+  })
+})
+
+// ─────────────────── REQ-2026-052 phase-3a: self-verifying dev-complete 발행 결정(순수) ───────────────────
+describe('[REQ-2026-052] computeDevCompleteProof — 마지막 phase 발행 결정(순수)', () => {
+  const T = 'REQ-2026-052'
+  const phaseEntry = (pid: string): string =>
+    JSON.stringify({ kind: 'phase', phase_id: pid, response_path: `x`, response_sha256: 's', review_base_sha: 'b', approved_tree: 't', approved_at: 'A', consumed_at: 'C', consumed_by_commit_sha: 'X', user_commit_confirmed: null }) + '\n'
+  const designEntry = (hash: string): string =>
+    JSON.stringify({ kind: 'design', phase_id: null, response_path: 'd', response_sha256: 's', review_base_sha: 'b', design_hash: hash, approved_at: 'A', consumed_at: 'C', consumed_by_commit_sha: 'X', user_commit_confirmed: null }) + '\n'
+
+  it('㊱ 아직 마지막 phase 아님(inventory 중 미증거) → null', () => {
+    const manifest = designEntry('DREF') + phaseEntry('p1') // p2 아직 없음
+    expect(computeDevCompleteProof({ ticketId: T, phaseIds: ['p1', 'p2'], reviewKind: 'phase', manifestContent: manifest, nowIso: 'N' })).toBeNull()
+  })
+
+  it('마지막 phase(inventory 전 phase 증거) → dev-complete proof(정렬·중복없는 inventory + design_ref)', () => {
+    const manifest = designEntry('DREF') + phaseEntry('p2') + phaseEntry('p1')
+    const proof = computeDevCompleteProof({ ticketId: T, phaseIds: ['p2', 'p1', 'p1'], reviewKind: 'phase', manifestContent: manifest, nowIso: 'N' })
+    expect(proof).not.toBeNull()
+    expect(proof!.event).toBe('dev-complete')
+    expect(proof!.phase_inventory).toEqual(['p1', 'p2']) // 정렬·중복 제거
+    expect(proof!.design_ref).toBe('DREF')
+    expect(proof!.ticket_id).toBe(T)
+  })
+
+  it('design finalize(kind=design)는 dev-complete 아님 → null', () => {
+    const manifest = designEntry('DREF') + phaseEntry('p1')
+    expect(computeDevCompleteProof({ ticketId: T, phaseIds: ['p1'], reviewKind: 'design', manifestContent: manifest, nowIso: 'N' })).toBeNull()
+  })
+
+  it('미분해(phaseIds 비어 있음) → null', () => {
+    expect(computeDevCompleteProof({ ticketId: T, phaseIds: [], reviewKind: 'phase', manifestContent: '', nowIso: 'N' })).toBeNull()
+  })
+
+  it('🔴 마지막 phase인데 committed design 승인 없음 → throw(fail-closed)', () => {
+    const manifest = phaseEntry('p1') // design 엔트리 없음
+    expect(() => computeDevCompleteProof({ ticketId: T, phaseIds: ['p1'], reviewKind: 'phase', manifestContent: manifest, nowIso: 'N' })).toThrow(/design 승인/)
+  })
+
+  it('evidencedPhaseIdsFromManifest / designHashFromManifest 파서', () => {
+    const manifest = designEntry('DREF') + phaseEntry('p1') + phaseEntry('p2')
+    expect(evidencedPhaseIdsFromManifest(manifest).sort()).toEqual(['p1', 'p2'])
+    expect(designHashFromManifest(manifest)).toBe('DREF')
+    expect(designHashFromManifest(phaseEntry('p1'))).toBeNull()
+  })
+})
+
+// ─── REQ-2026-052 phase-3a: HEAD-only self-verification (실 git, 커밋된 blob만) ───
+import { execFileSync as _execFileSync } from 'node:child_process'
+import { mkdtempSync as _mkdtempSync, mkdirSync as _mkdirSync, writeFileSync as _writeFileSync, rmSync as _rmSync } from 'node:fs'
+import { tmpdir as _tmpdir } from 'node:os'
+import { join as _join } from 'node:path'
+import { deriveBaseState, parseCloseProof, serializeCloseProofRow, type CloseProofRow } from '../../scripts/req/lib/close-proof'
+
+describe('[REQ-2026-052] dev-complete HEAD-only 검증(실 git — runtime state 미사용)', () => {
+  const g = (repo: string, args: string[]) => _execFileSync('git', ['-c', 'user.email=t@t.t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+  const headBlob = (repo: string, rel: string): string | null => {
+    try { return g(repo, ['show', `HEAD:${rel}`]) } catch { return null }
+  }
+  // 티켓의 커밋된 close proof + 매니페스트에서 HEAD-only로 dev-complete를 판정하는 조립(req:new/req:commit이 쓸 방식).
+  const deriveFromHead = (repo: string, ticketRel: string): string => {
+    const cp = headBlob(repo, `${ticketRel}/responses/ticket-close.jsonl`)
+    const mf = headBlob(repo, `${ticketRel}/responses/approvals.jsonl`)
+    const rows = cp ? parseCloseProof(cp).rows : []
+    const evidencedPhaseIds = mf ? evidencedPhaseIdsFromManifest(mf) : []
+    const committedDesignRef = mf ? designHashFromManifest(mf) : null
+    return deriveBaseState({ durabilityRequired: true, closeProofRows: rows, ledgerHasApprovedClose: false, committedEvidenceComplete: true, evidencedPhaseIds, committedDesignRef })
+  }
+  const phaseEntry = (pid: string): string =>
+    JSON.stringify({ kind: 'phase', phase_id: pid, response_path: 'x', response_sha256: 's', review_base_sha: 'b', approved_tree: 't', approved_at: 'A', consumed_at: 'C', consumed_by_commit_sha: 'X', user_commit_confirmed: null }) + '\n'
+  const designEntry = (hash: string): string =>
+    JSON.stringify({ kind: 'design', phase_id: null, response_path: 'd', response_sha256: 's', review_base_sha: 'b', design_hash: hash, approved_at: 'A', consumed_at: 'C', consumed_by_commit_sha: 'X', user_commit_confirmed: null }) + '\n'
+  const dcRow = (inv: string[], ref: string): CloseProofRow =>
+    ({ ticket_id: 'REQ-2026-001', event: 'dev-complete', series_id: null, resolution: null, phase_inventory: [...inv].sort(), design_ref: ref, at: '2026-07-24T05:00:00.000Z', reconstructed: false, evidence_basis: null })
+
+  const setup = (o: { inventory: string[]; evidencedPhases: string[]; designRef: string; proofRef: string }): { repo: string; ticketRel: string } => {
+    const repo = _mkdtempSync(_join(_tmpdir(), 'req052-dc-'))
+    g(repo, ['init', '-q']); g(repo, ['config', 'user.email', 't@t.t']); g(repo, ['config', 'user.name', 't'])
+    const ticketRel = 'workflow/REQ-2026-001'
+    _mkdirSync(_join(repo, ticketRel, 'responses'), { recursive: true })
+    _writeFileSync(_join(repo, ticketRel, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
+    _writeFileSync(_join(repo, ticketRel, 'responses', 'approvals.jsonl'), designEntry(o.designRef) + o.evidencedPhases.map(phaseEntry).join(''))
+    _writeFileSync(_join(repo, ticketRel, 'responses', 'ticket-close.jsonl'), serializeCloseProofRow(dcRow(o.inventory, o.proofRef)))
+    g(repo, ['add', '-A']); g(repo, ['commit', '-qm', 'evidence'])
+    return { repo, ticketRel }
+  }
+
+  it('㉛ inventory 전 phase가 committed evidence에 있고 design_ref 일치 → dev-complete', () => {
+    const { repo, ticketRel } = setup({ inventory: ['p1', 'p2'], evidencedPhases: ['p1', 'p2'], designRef: 'DREF', proofRef: 'DREF' })
+    try { expect(deriveFromHead(repo, ticketRel)).toBe('dev-complete') } finally { _rmSync(repo, { recursive: true, force: true }) }
+  })
+  it('㉜ inventory 중 하나라도 evidence 없음 → dev-complete 아님(developing)', () => {
+    const { repo, ticketRel } = setup({ inventory: ['p1', 'p2'], evidencedPhases: ['p1'], designRef: 'DREF', proofRef: 'DREF' })
+    try { expect(deriveFromHead(repo, ticketRel)).toBe('developing') } finally { _rmSync(repo, { recursive: true, force: true }) }
+  })
+  it('㉝ design_ref 불일치(재승인 모사) → dev-complete 아님', () => {
+    const { repo, ticketRel } = setup({ inventory: ['p1'], evidencedPhases: ['p1'], designRef: 'NEW', proofRef: 'OLD' })
+    try { expect(deriveFromHead(repo, ticketRel)).toBe('developing') } finally { _rmSync(repo, { recursive: true, force: true }) }
+  })
+  it('㉞ scratch state.json 삭제·변조해도 HEAD 판정 불변(runtime 미사용)', () => {
+    const { repo, ticketRel } = setup({ inventory: ['p1'], evidencedPhases: ['p1'], designRef: 'DREF', proofRef: 'DREF' })
+    try {
+      expect(deriveFromHead(repo, ticketRel)).toBe('dev-complete')
+      // 워킹 state.json을 지우거나 엉뚱하게 바꿔도(HEAD blob만 보므로) 판정 불변.
+      _writeFileSync(_join(repo, ticketRel, 'state.json'), '{"garbage":true}')
+      expect(deriveFromHead(repo, ticketRel)).toBe('dev-complete')
+      _rmSync(_join(repo, ticketRel, 'state.json'))
+      expect(deriveFromHead(repo, ticketRel)).toBe('dev-complete')
+    } finally { _rmSync(repo, { recursive: true, force: true }) }
+  })
+})
+
+// ─── REQ-2026-052 phase-3a: finalize 멱등성 = HEAD 기준(㉟ 재시도 안전) ───
+import { __setGitForTest, finalizeEvidenceAndConsume } from '../../scripts/req/req-commit'
+import { serializeManifestLine as _serMf, buildManifestEntry as _bldMf } from '../../scripts/req/lib/evidence'
+
+describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', () => {
+  const g = (repo: string, args: string[]) =>
+    _execFileSync('git', ['-c', 'user.email=t@t.t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+  const designEntry = (hash: string): string =>
+    _serMf(
+      _bldMf(
+        {
+          response_path: 'workflow/REQ-2026-001/responses/design-r01-approved.json',
+          response_sha256: 'a'.repeat(64),
+          review_kind: 'design',
+          phase_id: null,
+          review_base_sha: 'b'.repeat(40),
+          design_hash: hash,
+          codex_thread_id: 'T',
+          machine_schema_version: '1.1',
+          status: 'COMPLETE',
+          commit_approved: 'yes',
+          approved_at: '2026-07-24T00:00:00.000Z',
+        } as never,
+        { consumedAt: '2026-07-24T01:00:00.000Z', consumedByCommitSha: 'c'.repeat(40), userCommitConfirmed: null },
+      ),
+    )
+  const phaseEntry = (pid: string): string =>
+    _serMf(
+      _bldMf(
+        {
+          response_path: 'workflow/REQ-2026-001/responses/' + pid + '-r01-approved.json',
+          response_sha256: 'a'.repeat(64),
+          review_kind: 'phase',
+          phase_id: pid,
+          review_base_sha: 'b'.repeat(40),
+          approved_tree: 'c'.repeat(40),
+          codex_thread_id: 'T',
+          machine_schema_version: '1.1',
+          status: 'COMPLETE',
+          commit_approved: 'yes',
+          approved_at: '2026-07-24T00:00:00.000Z',
+        } as never,
+        { consumedAt: '2026-07-24T01:00:00.000Z', consumedByCommitSha: 'c'.repeat(40), userCommitConfirmed: null },
+      ),
+    )
+
+  const cpRows = (repo: string): Array<Record<string, unknown>> => {
+    let t: string
+    try {
+      t = g(repo, ['show', 'HEAD:workflow/REQ-2026-001/responses/ticket-close.jsonl'])
+    } catch {
+      return []
+    }
+    return t.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l) as Record<string, unknown>)
+  }
+  const mfLines = (repo: string): string[] => {
+    let t: string
+    try {
+      t = g(repo, ['show', 'HEAD:workflow/REQ-2026-001/responses/approvals.jsonl'])
+    } catch {
+      return []
+    }
+    return t.split('\n').filter((l) => l.trim())
+  }
+  const evFor = (pid: string): unknown => ({
+    response_path: 'workflow/REQ-2026-001/responses/' + pid + '-r01-approved.json',
+    response_sha256: 'a'.repeat(64),
+    review_kind: 'phase',
+    phase_id: pid,
+    review_base_sha: 'b'.repeat(40),
+    approved_tree: 'c'.repeat(40),
+    codex_thread_id: 'T',
+    machine_schema_version: '1.1',
+    status: 'COMPLETE',
+    commit_approved: 'yes',
+    approved_at: '2026-07-24T00:00:00.000Z',
+  })
+
+  it('디스크 매니페스트에 마지막 phase 엔트리가 있으나 HEAD엔 없음(커밋 실패 모사) → 재시도가 재커밋·dev-complete 발행·중복 없음', () => {
+    const repo = _mkdtempSync(_join(_tmpdir(), 'req052-retry-'))
+    try {
+      g(repo, ['init', '-q'])
+      g(repo, ['config', 'user.email', 't@t.t'])
+      g(repo, ['config', 'user.name', 't'])
+      const ticketRel = 'workflow/REQ-2026-001'
+      const ticketDir = _join(repo, ticketRel)
+      const responsesDir = _join(ticketDir, 'responses')
+      _mkdirSync(responsesDir, { recursive: true })
+      const headManifest = designEntry('e'.repeat(64)) + phaseEntry('p1')
+      _writeFileSync(_join(responsesDir, 'approvals.jsonl'), headManifest)
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), '{}')
+      _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
+      g(repo, ['add', '-A'])
+      g(repo, ['commit', '-qm', 'design+p1 evidence'])
+      // 🔴 실패한 커밋 모사: p2 엔트리를 **디스크에만** 써 둔다(HEAD엔 없음).
+      _writeFileSync(_join(responsesDir, 'approvals.jsonl'), headManifest + phaseEntry('p2'))
+      _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), '{}')
+
+      __setGitForTest(repo)
+      const state = {
+        id: 'REQ-2026-001',
+        current_phase: 'p2',
+        phases: [{ id: 'p1', approved: true }, { id: 'p2', approved: true }],
+        review_series_model_version: 1,
+      }
+      const ctx = {
+        ticketDir,
+        ticketRel,
+        responsesDir,
+        manifestPath: _join(responsesDir, 'approvals.jsonl'),
+        state,
+        ev: evFor('p2'),
+        archiveNames: ['p1-r01-approved.json', 'p2-r01-approved.json'],
+        validPhaseIds: ['p1', 'p2'],
+        sourceSha: 'd'.repeat(40),
+        rootForClose: repo,
+      }
+
+      finalizeEvidenceAndConsume(ctx as never)
+      const dc1 = cpRows(repo).filter((r) => r.event === 'dev-complete')
+      expect(dc1.length).toBe(1)
+      expect(dc1[0]!.phase_inventory).toEqual(['p1', 'p2'])
+      expect(mfLines(repo).length).toBe(3) // design + p1 + p2, 중복 없음
+
+      // 재시도 → HEAD에 이미 있음 → skip. 중복 없음.
+      finalizeEvidenceAndConsume(ctx as never)
+      expect(cpRows(repo).filter((r) => r.event === 'dev-complete').length).toBe(1)
+      expect(mfLines(repo).length).toBe(3)
+    } finally {
+      _rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 재승인(design_ref 변경) 후 재완료 → 새 dev-complete가 supersede로 append·HEAD-verify 통과(중복/충돌 없음)', () => {
+    const repo = _mkdtempSync(_join(_tmpdir(), 'req052-reissue-'))
+    try {
+      g(repo, ['init', '-q'])
+      g(repo, ['config', 'user.email', 't@t.t'])
+      g(repo, ['config', 'user.name', 't'])
+      const ticketRel = 'workflow/REQ-2026-001'
+      const ticketDir = _join(repo, ticketRel)
+      const responsesDir = _join(ticketDir, 'responses')
+      _mkdirSync(responsesDir, { recursive: true })
+      const D1 = 'e'.repeat(64)
+      const D2 = 'f'.repeat(64)
+      // HEAD: design(D1) + p1 + p2 evidence + dev-complete(D1) 커밋(완료된 티켓).
+      const dcD1 =
+        JSON.stringify({ ticket_id: 'REQ-2026-001', event: 'dev-complete', series_id: null, resolution: null, phase_inventory: ['p1', 'p2'], design_ref: D1, at: '2026-07-24T05:00:00.000Z', reconstructed: false, evidence_basis: null }) + '\n'
+      _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry(D1) + phaseEntry('p1') + phaseEntry('p2'))
+      _writeFileSync(_join(responsesDir, 'ticket-close.jsonl'), dcD1)
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), '{}')
+      _writeFileSync(_join(responsesDir, 'p2-r01-approved.json'), '{}')
+      _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
+      g(repo, ['add', '-A'])
+      g(repo, ['commit', '-qm', 'complete with D1'])
+      // 🔴 design 재승인: 매니페스트에 design(D2) 추가 커밋(HEAD). 재승인은 distinct 아카이브(r02·distinct sha).
+      const designEntryV2 = _serMf(_bldMf({ response_path: 'workflow/REQ-2026-001/responses/design-r02-approved.json', response_sha256: 'b'.repeat(64), review_kind: 'design', phase_id: null, review_base_sha: 'b'.repeat(40), design_hash: D2, codex_thread_id: 'T', machine_schema_version: '1.1', status: 'COMPLETE', commit_approved: 'yes', approved_at: '2026-07-24T00:00:00.000Z' } as never, { consumedAt: '2026-07-24T02:00:00.000Z', consumedByCommitSha: 'c'.repeat(40), userCommitConfirmed: null }))
+      _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry(D1) + phaseEntry('p1') + phaseEntry('p2') + designEntryV2)
+      g(repo, ['add', '-A'])
+      g(repo, ['commit', '-qm', 're-approve design D2'])
+
+      __setGitForTest(repo)
+      // 재완료: p2를 새 source로 다시 finalize(다른 sourceSha → 멱등 skip 아님).
+      const state = {
+        id: 'REQ-2026-001',
+        current_phase: 'p2',
+        phases: [{ id: 'p1', approved: true }, { id: 'p2', approved: true }],
+        review_series_model_version: 1,
+      }
+      // 재완료의 p2는 distinct 아카이브(r02·distinct sha) — 재리뷰가 새 아카이브를 낸다.
+      _writeFileSync(_join(responsesDir, 'p2-r02-approved.json'), '{}')
+      const evP2v2 = { response_path: ticketRel + '/responses/p2-r02-approved.json', response_sha256: 'b'.repeat(64), review_kind: 'phase', phase_id: 'p2', review_base_sha: 'b'.repeat(40), approved_tree: 'c'.repeat(40), codex_thread_id: 'T', machine_schema_version: '1.1', status: 'COMPLETE', commit_approved: 'yes', approved_at: '2026-07-24T00:00:00.000Z' }
+      const ctx = {
+        ticketDir,
+        ticketRel,
+        responsesDir,
+        manifestPath: _join(responsesDir, 'approvals.jsonl'),
+        state,
+        ev: evP2v2,
+        archiveNames: ['p1-r01-approved.json', 'p2-r01-approved.json', 'p2-r02-approved.json'],
+        validPhaseIds: ['p1', 'p2'],
+        sourceSha: 'b'.repeat(40), // 새 source(D1 완료 때와 다름)
+        rootForClose: repo,
+      }
+      // 🔴 이전엔 자연키 충돌로 throw했다(P1). 이제 design_ref 키잉으로 supersede append + HEAD-verify 통과.
+      finalizeEvidenceAndConsume(ctx as never)
+      const dcs = cpRows(repo).filter((r) => r.event === 'dev-complete')
+      expect(dcs.length).toBe(2) // D1 + D2 공존(append-only supersede)
+      expect(dcs.map((r) => r.design_ref).sort()).toEqual([D1, D2].sort())
+      // 재시도(멱등) → 중복 없음.
+      finalizeEvidenceAndConsume(ctx as never)
+      expect(cpRows(repo).filter((r) => r.event === 'dev-complete').length).toBe(2)
+    } finally {
+      _rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('㊱ 마지막 phase 아니면 dev-complete 미발행', () => {
+    const repo = _mkdtempSync(_join(_tmpdir(), 'req052-notlast-'))
+    try {
+      g(repo, ['init', '-q'])
+      g(repo, ['config', 'user.email', 't@t.t'])
+      g(repo, ['config', 'user.name', 't'])
+      const ticketRel = 'workflow/REQ-2026-001'
+      const ticketDir = _join(repo, ticketRel)
+      const responsesDir = _join(ticketDir, 'responses')
+      _mkdirSync(responsesDir, { recursive: true })
+      _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry('e'.repeat(64)))
+      _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), '{}')
+      _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', review_series_model_version: 1 }))
+      g(repo, ['add', '-A'])
+      g(repo, ['commit', '-qm', 'design'])
+      __setGitForTest(repo)
+      const state = {
+        id: 'REQ-2026-001',
+        current_phase: 'p1',
+        phases: [{ id: 'p1', approved: true }, { id: 'p2', approved: false }],
+        review_series_model_version: 1,
+      }
+      const ctx = {
+        ticketDir,
+        ticketRel,
+        responsesDir,
+        manifestPath: _join(responsesDir, 'approvals.jsonl'),
+        state,
+        ev: evFor('p1'),
+        archiveNames: ['p1-r01-approved.json'],
+        validPhaseIds: ['p1', 'p2'],
+        sourceSha: 'd'.repeat(40),
+        rootForClose: repo,
+      }
+      finalizeEvidenceAndConsume(ctx as never)
+      expect(cpRows(repo).filter((r) => r.event === 'dev-complete').length).toBe(0) // p2 미완 → 미발행
+    } finally {
+      _rmSync(repo, { recursive: true, force: true })
+    }
   })
 })

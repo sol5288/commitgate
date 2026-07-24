@@ -19,12 +19,14 @@ import {
   loadState,
   writeState,
   readPhases,
+  appendCloseProofRowToDisk,
   type ApprovalEvidence,
   type ReviewKind,
   type WorkflowState,
 } from './review-codex'
 import { isArchiveFileName } from './lib/scratch'
 import { LEDGER_BASENAME } from './lib/review-ledger'
+import { CLOSE_PROOF_BASENAME, parseCloseProof, deriveBaseState } from './lib/close-proof'
 import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
 // REQ-2026-048 phase-1: 매니페스트 모델·검증과 그 보조 술어는 leaf `lib/evidence.ts`가 정본.
 // 여기서 **재수출**해 기존 import 경로(`from './req-commit'`)를 쓰던 호출부·테스트를 그대로 둔다.
@@ -373,14 +375,137 @@ function stagedNames(): string[] {
     .filter(Boolean)
 }
 
+/** 매니페스트(JSONL) 본문에서 안전하게 엔트리 배열을 뽑는다(파싱 불가 행은 건너뛴다 — 검증은 별도). */
+export function parseManifestEntries(content: string): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = []
+  for (const line of content.split('\n')) {
+    if (line.trim() === '') continue
+    try {
+      const o = JSON.parse(line)
+      if (o && typeof o === 'object' && !Array.isArray(o)) out.push(o as Record<string, unknown>)
+    } catch {
+      /* skip */
+    }
+  }
+  return out
+}
+
+/** 매니페스트에서 커밋된 **phase 증거**가 있는 phase id 집합(consumed phase 엔트리). */
+export function evidencedPhaseIdsFromManifest(content: string): string[] {
+  return parseManifestEntries(content)
+    .filter((e) => e.kind === 'phase' && typeof e.phase_id === 'string')
+    .map((e) => e.phase_id as string)
+}
+
+/** 매니페스트에서 커밋된 design 승인의 design_hash(가장 마지막 design 엔트리). 없으면 null. */
+export function designHashFromManifest(content: string): string | null {
+  const designs = parseManifestEntries(content).filter((e) => e.kind === 'design' && typeof e.design_hash === 'string')
+  return designs.length ? (designs[designs.length - 1]!.design_hash as string) : null
+}
+
+/**
+ * 🔴 **dev-complete 발행 결정(순수, DEC-B3)** — 이 phase 커밋이 마지막 phase를 완료시키면 발행할 proof row를,
+ *    아니면 null을 낸다. runtime `state.phases`는 **inventory 산출 입력으로만** 쓴다(DEC-B4).
+ *
+ * @param phaseIds  `state.phases`의 phase id들(inventory 원천 — 정렬·중복 제거는 여기서).
+ * @param reviewKind 이 finalize의 kind(design이면 null — dev-complete 아님).
+ * @param manifestContent 이 phase 엔트리를 **포함한** 매니페스트(발행 전 prospective 검증 대상).
+ * @param nowIso 발행 시각.
+ * @returns 발행할 dev-complete `CloseProofRow` 또는 null(마지막 phase 아님/미분해/design).
+ * @throws design_ref(커밋된 design 승인)가 없으면 — 마지막 phase인데 design 증거가 없다(fail-closed).
+ */
+export function computeDevCompleteProof(args: {
+  ticketId: string
+  phaseIds: readonly string[]
+  reviewKind: ReviewKind
+  manifestContent: string
+  nowIso: string
+}): import('./lib/close-proof').CloseProofRow | null {
+  if (args.reviewKind !== 'phase') return null
+  const inventory = [...new Set(args.phaseIds)].sort()
+  if (inventory.length === 0) return null
+  const evidenced = new Set(evidencedPhaseIdsFromManifest(args.manifestContent))
+  if (!inventory.every((id) => evidenced.has(id))) return null // 아직 마지막 phase 아님(㊱)
+  const designRef = designHashFromManifest(args.manifestContent)
+  if (!designRef) throw new Error('dev-complete 발행 전 검증 실패: 커밋된 design 승인(design_hash)이 없다')
+  return {
+    ticket_id: args.ticketId,
+    event: 'dev-complete',
+    series_id: null,
+    resolution: null,
+    phase_inventory: inventory,
+    design_ref: designRef,
+    at: args.nowIso,
+    reconstructed: false,
+    evidence_basis: null,
+  }
+}
+
+/**
+ * 🔴 REQ-2026-052 phase-3a(DEC-B3): 이 phase 커밋이 **마지막 phase**를 완료시키면 self-verifying dev-complete
+ *    proof를 발행하고, 같은 커밋에 실을 close-proof 경로를 반환한다. 아니면 `[]`.
+ *
+ * - **입력**: `state.phases`(inventory 산출 — DEC-B4: **입력으로만**) + `newContent`(이 phase 엔트리 포함 매니페스트).
+ * - **prospective 검증(발행 전)**: inventory의 모든 phase가 newContent에 phase 증거로 있고, design_ref가 커밋된
+ *   design 승인과 일치하는지 확인. 하나라도 어긋나면 발행하지 않는다(마지막 phase가 아니거나 증거 불완전).
+ * - **멱등**: close proof가 이미 dev-complete row를 갖고 있으면 append가 duplicate → `[]` 반환(중복 방지)이 아니라
+ *   **경로는 반환**하되 파일 내용이 그대로라 커밋에 diff가 없다(재시도 안전). 실제 중복 행은 자연키 멱등이 막는다.
+ */
+function emitDevCompleteIfLastPhase(ctx: FinalizeCtx, newContent: string): string[] {
+  const proof = computeDevCompleteProof({
+    ticketId: String(ctx.state.id ?? ''),
+    phaseIds: readPhases(ctx.state).map((p) => p.id),
+    reviewKind: ctx.ev.review_kind,
+    manifestContent: newContent,
+    nowIso: new Date().toISOString(),
+  })
+  if (!proof) return []
+  appendCloseProofRowToDisk(ctx.rootForClose, ctx.ticketRel, proof) // 멱등: 이미 있으면 duplicate(no-op)
+  return [`${ctx.ticketRel}/responses/${CLOSE_PROOF_BASENAME}`]
+}
+
+/**
+ * 🔴 발행 후 HEAD-only 재검증(DEC-B3 step 4). HEAD blob만 읽어 dev-complete가 성립하는지 확인 —
+ *    close proof inventory의 모든 phase evidence + design_ref 일치. 어긋나면 fail-closed.
+ */
+function verifyDevCompleteAtHead(ctx: FinalizeCtx): void {
+  const cpRel = `${ctx.ticketRel}/responses/${CLOSE_PROOF_BASENAME}`
+  const mfRel = `${ctx.ticketRel}/responses/approvals.jsonl`
+  const cpText = headBlobText(cpRel)
+  const mfText = headBlobText(mfRel)
+  if (cpText === null || mfText === null) throw new Error('dev-complete HEAD 재검증 실패: close proof·매니페스트가 HEAD에 없다')
+  const parsed = parseCloseProof(cpText)
+  if (parsed.problems.length) throw new Error(`dev-complete HEAD 재검증 실패: close proof 손상 — ${parsed.problems.join('; ')}`)
+  const state = deriveBaseState({
+    durabilityRequired: true,
+    closeProofRows: parsed.rows,
+    ledgerHasApprovedClose: false,
+    committedEvidenceComplete: true,
+    evidencedPhaseIds: evidencedPhaseIdsFromManifest(mfText),
+    committedDesignRef: designHashFromManifest(mfText),
+  })
+  if (state !== 'dev-complete')
+    throw new Error(`dev-complete HEAD 재검증 실패: 발행 후 파생 상태가 dev-complete가 아니다(${state})`)
+}
+
+/** `HEAD:<repoRel>` blob 텍스트(없으면 null). */
+function headBlobText(repoRel: string): string | null {
+  try {
+    return git(['show', `HEAD:${repoRel}`])
+  } catch {
+    return null
+  }
+}
+
 interface FinalizeCtx {
   ticketDir: string
   ticketRel: string
   responsesDir: string
   manifestPath: string
+  /** REQ-2026-052: close proof append용 repo root(디스크 경로 해소). */
+  rootForClose: string
   state: WorkflowState
   ev: ApprovalEvidence
-  existing: string
   archiveNames: string[]
   validPhaseIds: string[]
   sourceSha: string
@@ -391,13 +516,28 @@ interface FinalizeCtx {
  * 이미 sourceSha가 매니페스트에 있으면(=evidence 커밋은 됐고 consume만 못 함) append/chore를 skip하고 소비만 수행.
  * 소비는 항상 마지막. state.json은 scratch 유지(커밋 안 함).
  */
-function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
-  // B3-R2: skip(소비-only) 경로 포함 — 변조된 매니페스트 위에서 consume 금지. 기존 무결성 먼저(복구 모드엔 preflight가 없으므로 필수).
-  if (ctx.existing.trim()) {
-    const ep = validateManifest(ctx.existing, { ticketRel: ctx.ticketRel, validPhaseIds: ctx.validPhaseIds })
-    if (ep.length) throw new Error(`기존 approvals.jsonl 무결성 실패(fail-closed): ${ep.join('; ')}`)
+/** 🔴 테스트 전용: git 경계·gitRoot를 실제 저장소로 주입한다(finalizeEvidenceAndConsume 격리 테스트용). */
+export function __setGitForTest(root: string): void {
+  gitRoot = root
+  gitAdapter = createGitAdapter(root)
+}
+
+export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
+  // 🔴 REQ-2026-052 phase-3a P1(리뷰 반영): finalize 멱등성을 **HEAD 기준**으로 판정한다 — 워킹 매니페스트가
+  //    아니라. 이전엔 `ctx.existing`(워킹트리 파일)을 base·멱등 판정에 썼는데, evidence commit이 실패하면
+  //    디스크엔 이미 매니페스트가 쓰였으므로 재시도가 그걸 "이미 finalize됨"으로 오판해 **HEAD에 증거가 없는데
+  //    완료로 진행**했다(dev-complete proof·archive·ledger 미커밋). HEAD blob만 base로 삼아 "커밋 성공 여부"가
+  //    아니라 "HEAD에 실제 존재하는지"로 판정한다.
+  const manifestRel = `${ctx.ticketRel}/responses/approvals.jsonl`
+  // 🔴 `git show`(gitAdapter)가 후행 개행을 제거하므로 복원한다 — 없으면 append 시 두 JSON이 한 줄로 붙어 손상된다.
+  const headManifestRaw = headBlobText(manifestRel) ?? ''
+  const headManifest = headManifestRaw && !headManifestRaw.endsWith('\n') ? `${headManifestRaw}\n` : headManifestRaw
+  // 기존 무결성 먼저(변조된 매니페스트 위에서 consume 금지). HEAD blob 검증.
+  if (headManifest.trim()) {
+    const ep = validateManifest(headManifest, { ticketRel: ctx.ticketRel, validPhaseIds: ctx.validPhaseIds })
+    if (ep.length) throw new Error(`HEAD approvals.jsonl 무결성 실패(fail-closed): ${ep.join('; ')}`)
   }
-  const already = manifestHasConsumed(ctx.existing, ctx.sourceSha, {
+  const already = manifestHasConsumed(headManifest, ctx.sourceSha, {
     reviewKind: ctx.ev.review_kind,
     phaseId: ctx.ev.phase_id ?? null,
     responseSha256: ctx.ev.response_sha256,
@@ -408,7 +548,8 @@ function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
       consumedByCommitSha: ctx.sourceSha,
       userCommitConfirmed: (ctx.state.user_commit_confirmed as UserCommitConfirmed | null) ?? null,
     })
-    const newContent = ctx.existing + serializeManifestLine(entry)
+    // 🔴 base는 **HEAD 매니페스트** — 실패한 이전 쓰기가 남긴 디스크 엔트리를 이어붙여 중복시키지 않는다.
+    const newContent = headManifest + serializeManifestLine(entry)
     const reproblems = validateManifest(newContent, { ticketRel: ctx.ticketRel, validPhaseIds: ctx.validPhaseIds })
     if (reproblems.length)
       throw new Error(`(예상외) 매니페스트 검증 실패: ${reproblems.join('; ')} — source=${ctx.sourceSha} 커밋됨, --finalize로 복구`)
@@ -419,10 +560,15 @@ function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     // 없는 pathspec으로 `git add`가 실패해 증거 커밋 전체가 무산되면 본말전도다(design 경로의 ledgerExists와 대칭).
     const ledgerRel = `${ctx.ticketRel}/responses/${LEDGER_BASENAME}`
     const ledgerAdd = existsSync(join(ctx.ticketDir, 'responses', LEDGER_BASENAME)) ? [ledgerRel] : []
-    git(['add', ...archivePaths, `${ctx.ticketRel}/responses/approvals.jsonl`, ...ledgerAdd])
+    // 🔴 REQ-2026-052 phase-3a: 이 커밋이 **마지막 phase**를 완료시키면 self-verifying dev-complete proof를
+    //    **같은 durable 커밋**에 발행한다(DEC-B3). 아니면 발행 안 함. newContent(이 phase 엔트리 포함)로 판정.
+    const devCompleteAdd = emitDevCompleteIfLastPhase(ctx, newContent)
+    git(['add', ...archivePaths, `${ctx.ticketRel}/responses/approvals.jsonl`, ...ledgerAdd, ...devCompleteAdd])
     const choreLeak = stagedNames().filter((p) => !p.startsWith(`${ctx.ticketRel}/responses/`))
     if (choreLeak.length) throw new Error(`evidence 커밋에 responses 외 staged 금지(코드/state 누수): ${choreLeak.join(', ')}`)
-    git(['commit', '-m', `chore(${ctx.state.id}): evidence-finalize — ${ctx.ev.review_kind} ${ctx.ev.phase_id ?? ''} 아카이브·approvals.jsonl`])
+    git(['commit', '-m', `chore(${ctx.state.id}): evidence-finalize — ${ctx.ev.review_kind} ${ctx.ev.phase_id ?? ''} 아카이브·approvals.jsonl${devCompleteAdd.length ? '·dev-complete' : ''}`])
+    // 🔴 발행 후 HEAD-only 재검증(DEC-B3 step 4): 발행했으면 HEAD blob만으로 dev-complete가 성립해야 한다.
+    if (devCompleteAdd.length) verifyDevCompleteAtHead(ctx)
   } else {
     console.log('[req:commit] evidence 이미 finalize됨(멱등 skip) — 소비만 수행')
   }
@@ -564,7 +710,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     runDoctor([...doctorArgs, '--finalize'])
     const gate = userConfirmGate(fstate)
     if (gate.blocked) throw new Error(gate.reason)
-    finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state: fstate, ev, existing, archiveNames, validPhaseIds, sourceSha })
+    finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state: fstate, ev, archiveNames, validPhaseIds, sourceSha, rootForClose: cfg.root })
     console.log(`[req:commit] ✅ finalize 복구 완료 — source=${sourceSha.slice(0, 8)} · evidence/consume 복구`)
     return
   }
@@ -610,7 +756,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   // 4b) B3 복구 마커 — source 커밋됨, evidence 미완. 이후 중단 시 `req:commit <id> --finalize --run`으로 복구.
   writeState(ticketDir, markPendingEvidence(state, sourceSha))
   // 5) evidence-finalize(멱등) + 소비(마지막).
-  finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state, ev, existing, archiveNames, validPhaseIds, sourceSha })
+  finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state, ev, archiveNames, validPhaseIds, sourceSha, rootForClose: cfg.root })
   console.log(`[req:commit] ✅ 완료 — source=${sourceSha.slice(0, 8)} · evidence-finalize · commit_allowed 소비됨`)
 }
 

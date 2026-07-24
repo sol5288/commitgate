@@ -41,6 +41,16 @@ export interface CloseProofRow {
   series_id: string | null
   /** `series-terminal`일 때 종결 사유. `dev-complete`이면 null. */
   resolution: TerminalResolution | null
+  /**
+   * 🔴 `dev-complete`일 때 **완료 대상으로 확정된 phase ID 목록**(정렬·중복 없음, DEC-B2). `series-terminal`이면 null.
+   *    이것이 "무엇이 완료인가"의 정본이다 — 미래 HEAD verifier는 runtime `state.phases`가 아니라 이 목록을 본다.
+   */
+  phase_inventory: string[] | null
+  /**
+   * 🔴 `dev-complete`일 때 이 inventory가 묶인 **design 승인 참조**(= 발행 시점 committed design 승인의 design_hash).
+   *    `series-terminal`이면 null. design 재승인으로 inventory가 달라지면 옛 design_ref와 섞인 proof는 무효(DEC-B2).
+   */
+  design_ref: string | null
   at: string
   /** 사후 복원 행인지(DEC-D). 복원본을 원본으로 위장하지 않는다. */
   reconstructed: boolean
@@ -57,6 +67,8 @@ export const CLOSE_PROOF_KEYS = [
   'event',
   'series_id',
   'resolution',
+  'phase_inventory',
+  'design_ref',
   'at',
   'reconstructed',
   'evidence_basis',
@@ -77,8 +89,17 @@ export function serializeCloseProofRow(row: CloseProofRow): string {
  * 구분자는 US(0x1F) — 식별자에 나타날 수 없는 제어문자(원장과 동일 기법, 소스에 리터럴 금지).
  */
 const KEY_SEP = String.fromCharCode(31)
-export function closeProofRowKey(row: Pick<CloseProofRow, 'ticket_id' | 'event' | 'series_id'>): string {
-  return [row.ticket_id, row.event, row.series_id ?? ''].join(KEY_SEP)
+/**
+ * 자연키(멱등·supersede 단위).
+ * - `series-terminal`: `(ticket, event, series_id)` — series별 1행.
+ * - `dev-complete`: `(ticket, event, design_ref)` 🔴 **design_ref로 키잉한다**(phase-3a r02 P1). design 재승인으로
+ *   design_ref가 바뀌면 **다른 자연키**가 되어 새 dev-complete 행이 append-only로 추가된다(옛 행은 supersede —
+ *   삭제하지 않고, verifier가 현재 design_ref에 맞는 행만 고른다). design_ref로 키잉하지 않으면 재완료가
+ *   자연키 충돌(conflict)로 영구 실패한다.
+ */
+export function closeProofRowKey(row: Pick<CloseProofRow, 'ticket_id' | 'event' | 'series_id' | 'design_ref'>): string {
+  const discriminator = row.event === 'dev-complete' ? (row.design_ref ?? '') : (row.series_id ?? '')
+  return [row.ticket_id, row.event, discriminator].join(KEY_SEP)
 }
 
 /**
@@ -104,9 +125,21 @@ export function closeProofRowProblems(raw: unknown): string[] {
     if (typeof r.series_id !== 'string' || r.series_id === '') p.push('series-terminal인데 series_id가 비어 있음')
     if (typeof r.resolution !== 'string' || !RESOLUTIONS.includes(r.resolution))
       p.push(`series-terminal인데 resolution 부적합: ${String(r.resolution)}`)
+    if (r.phase_inventory !== null) p.push('series-terminal인데 phase_inventory가 null이 아님')
+    if (r.design_ref !== null) p.push('series-terminal인데 design_ref가 null이 아님')
   } else if (r.event === 'dev-complete') {
     if (r.series_id !== null) p.push('dev-complete인데 series_id가 null이 아님')
     if (r.resolution !== null) p.push('dev-complete인데 resolution이 null이 아님')
+    // 🔴 dev-complete는 self-verifying — phase_inventory(정렬·중복 없음)와 design_ref가 필수(DEC-B2).
+    if (!Array.isArray(r.phase_inventory)) p.push('dev-complete인데 phase_inventory가 배열이 아님')
+    else {
+      if (r.phase_inventory.length === 0) p.push('dev-complete인데 phase_inventory가 비어 있음')
+      if (!r.phase_inventory.every((x) => typeof x === 'string' && x !== '')) p.push('phase_inventory 항목은 비지 않은 문자열')
+      const sorted = [...r.phase_inventory].sort()
+      if (JSON.stringify(sorted) !== JSON.stringify(r.phase_inventory)) p.push('phase_inventory가 정렬돼 있지 않음')
+      if (new Set(r.phase_inventory).size !== r.phase_inventory.length) p.push('phase_inventory에 중복 있음')
+    }
+    if (typeof r.design_ref !== 'string' || r.design_ref === '') p.push('dev-complete인데 design_ref가 비어 있음')
   }
 
   if (r.evidence_basis !== null) {
@@ -186,7 +219,7 @@ export function appendCloseProofRow(existingContent: string, row: CloseProofRow)
 
 // ───────────────────────────────── 상태 파생(DEC-B) — 순수 ──
 
-/** 순수 파생기의 입력. 🔴 전부 **HEAD-committed 사실**만. 호출부가 포트로 채운다. */
+/** 순수 파생기의 입력. 🔴 전부 **HEAD-committed 사실**만. 호출부가 포트로 채운다. runtime state 절대 미사용(DEC-B4). */
 export interface CloseStateInput {
   /** HEAD scaffold state.json에 durability marker가 있는가(`isDurabilityRequired`). false면 legacy. */
   durabilityRequired: boolean
@@ -199,25 +232,49 @@ export interface CloseStateInput {
   ledgerHasApprovedClose: boolean
   /** HEAD 증거(approvals·아카이브)가 그 승인에 대해 완비됐는가(`verifyCommittedDesignEvidence` 계열). */
   committedEvidenceComplete: boolean
-  /** 모든 phase 증거가 HEAD에 완비됐는가(dev-complete의 필요조건). */
-  allPhasesEvidenced: boolean
+  /**
+   * 🔴 HEAD `approvals.jsonl`에 **phase evidence(consumed)가 커밋된 phase ID 집합**. dev-complete self-verify 입력.
+   *    dev-complete proof의 `phase_inventory`의 모든 phase가 이 집합에 있어야 dev-complete다(DEC-B2).
+   */
+  evidencedPhaseIds: readonly string[]
+  /**
+   * 🔴 현재 HEAD의 committed design 승인 참조(design_hash). dev-complete proof의 `design_ref`와 일치해야 dev-complete다.
+   *    design 재승인으로 값이 바뀌면 옛 design_ref proof는 무효(DEC-B2). 계산 불가면 null(→ dev-complete 아님).
+   */
+  committedDesignRef: string | null
 }
 
 /** 5개 기본 상태(배타·완결). */
 export type CloseBaseState = 'legacy' | 'series-terminal' | 'dev-complete' | 'needs-recovery' | 'developing'
 
 /**
+ * 🔴 dev-complete self-verify(순수, DEC-B2). HEAD close proof의 dev-complete row가 **자기 완결적으로** 증명되는가:
+ *   ① dev-complete row 존재 ② 그 row의 phase_inventory **모든 phase**가 HEAD 증거(evidencedPhaseIds)에 있음
+ *   ③ row의 design_ref = 현재 committed design 참조. runtime state는 절대 안 본다.
+ */
+export function isDevCompleteVerified(input: CloseStateInput): boolean {
+  if (input.committedDesignRef === null) return false
+  // 🔴 **현재 design_ref에 맞는** dev-complete 행을 고른다(phase-3a r02 P1). design 재승인 후 옛 design_ref
+  //    행은 무시(supersede)되고, 새 design_ref의 행이 있으면 그것으로 검증한다.
+  const dc = input.closeProofRows.find((r) => r.event === 'dev-complete' && r.design_ref === input.committedDesignRef)
+  if (!dc || !Array.isArray(dc.phase_inventory) || dc.phase_inventory.length === 0) return false
+  const evidenced = new Set(input.evidencedPhaseIds)
+  return dc.phase_inventory.every((p) => evidenced.has(p))
+}
+
+/**
  * 기본 상태 파생(순수·배타·완결 — 항상 정확히 하나). 우선순위:
  * `legacy` > `series-terminal` > `dev-complete` > `needs-recovery` > `developing`(기본값).
  *
- * 🔴 워킹 state·워킹 승인을 절대 입력으로 받지 않는다(design-r01 P1). `integrated`는 여기서 내지 않는다
+ * 🔴 워킹 state·워킹 승인을 절대 입력으로 받지 않는다(design-r01 P1·B4). `integrated`는 여기서 내지 않는다
  *    — git ancestry 오버레이라 순수 파생 밖이다(design-r02 P1).
  */
 export function deriveBaseState(input: CloseStateInput): CloseBaseState {
   if (!input.durabilityRequired) return 'legacy'
   const hasEvent = (e: CloseProofEvent): boolean => input.closeProofRows.some((r) => r.event === e)
   if (hasEvent('series-terminal')) return 'series-terminal'
-  if (input.allPhasesEvidenced && input.committedEvidenceComplete && hasEvent('dev-complete')) return 'dev-complete'
+  // 🔴 dev-complete는 self-verifying(DEC-B2): proof + committed evidence + design_ref로만 판정.
+  if (isDevCompleteVerified(input)) return 'dev-complete'
   // 승인 흔적(원장)은 있으나 HEAD 증거가 불완전 = 복구 필요.
   if (input.ledgerHasApprovedClose && !input.committedEvidenceComplete) return 'needs-recovery'
   return 'developing'

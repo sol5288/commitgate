@@ -28,6 +28,8 @@ const terminal = (over: Partial<CloseProofRow> = {}): CloseProofRow => ({
   event: 'series-terminal',
   series_id: 'design:-#1',
   resolution: 'replace',
+  phase_inventory: null,
+  design_ref: null,
   at: '2026-07-24T05:00:00.000Z',
   reconstructed: false,
   evidence_basis: null,
@@ -39,6 +41,8 @@ const devComplete = (over: Partial<CloseProofRow> = {}): CloseProofRow => ({
   event: 'dev-complete',
   series_id: null,
   resolution: null,
+  phase_inventory: ['phase-1-a', 'phase-2-b'],
+  design_ref: 'd'.repeat(64),
   at: '2026-07-24T05:00:00.000Z',
   reconstructed: false,
   evidence_basis: null,
@@ -50,7 +54,8 @@ const baseInput = (over: Partial<CloseStateInput> = {}): CloseStateInput => ({
   closeProofRows: [],
   ledgerHasApprovedClose: false,
   committedEvidenceComplete: false,
-  allPhasesEvidenced: false,
+  evidencedPhaseIds: [],
+  committedDesignRef: null,
   ...over,
 })
 
@@ -70,6 +75,8 @@ describe('[close-proof] ① 직렬화 — 고정 키 순서 + 끝 개행', () =>
       'event',
       'series_id',
       'resolution',
+      'phase_inventory',
+      'design_ref',
       'at',
       'reconstructed',
       'evidence_basis',
@@ -159,10 +166,23 @@ describe('[close-proof] ⑥ 기본 상태 파생 — 배타·완결', () => {
   it('series-terminal 행 있음 → series-terminal', () => {
     expect(deriveBaseState(baseInput({ closeProofRows: [terminal()] }))).toBe('series-terminal')
   })
-  it('모든 phase 증거 완비 + dev-complete 행 → dev-complete', () => {
+  it('🔴 self-verify: dev-complete 행 + inventory 전 phase 증거 + design_ref 일치 → dev-complete', () => {
+    const dc = devComplete({ phase_inventory: ['p1', 'p2'], design_ref: 'DREF' })
     expect(
-      deriveBaseState(baseInput({ allPhasesEvidenced: true, committedEvidenceComplete: true, closeProofRows: [devComplete()] })),
+      deriveBaseState(baseInput({ closeProofRows: [dc], evidencedPhaseIds: ['p1', 'p2', 'other'], committedDesignRef: 'DREF' })),
     ).toBe('dev-complete')
+  })
+  it('🔴 self-verify: inventory 중 하나라도 증거 없으면 dev-complete 아님(→developing)', () => {
+    const dc = devComplete({ phase_inventory: ['p1', 'p2'], design_ref: 'DREF' })
+    expect(deriveBaseState(baseInput({ closeProofRows: [dc], evidencedPhaseIds: ['p1'], committedDesignRef: 'DREF' }))).toBe('developing')
+  })
+  it('🔴 self-verify: design_ref 불일치(재승인 모사)면 dev-complete 아님(→developing)', () => {
+    const dc = devComplete({ phase_inventory: ['p1'], design_ref: 'OLD' })
+    expect(deriveBaseState(baseInput({ closeProofRows: [dc], evidencedPhaseIds: ['p1'], committedDesignRef: 'NEW' }))).toBe('developing')
+  })
+  it('🔴 self-verify: committedDesignRef가 null이면 dev-complete 아님', () => {
+    const dc = devComplete({ phase_inventory: ['p1'], design_ref: 'DREF' })
+    expect(deriveBaseState(baseInput({ closeProofRows: [dc], evidencedPhaseIds: ['p1'], committedDesignRef: null }))).toBe('developing')
   })
   it('원장 approved closed 있으나 HEAD 증거 불완전 → needs-recovery', () => {
     expect(deriveBaseState(baseInput({ ledgerHasApprovedClose: true, committedEvidenceComplete: false }))).toBe('needs-recovery')
@@ -171,17 +191,39 @@ describe('[close-proof] ⑥ 기본 상태 파생 — 배타·완결', () => {
     expect(deriveBaseState(baseInput())).toBe('developing')
   })
   it('opened만 durable(예산 사용·미확정)도 developing으로 떨어진다', () => {
-    // ledgerHasApprovedClose=false = closed가 유실됐거나 아직 없음 → developing(차단 대상)
     expect(deriveBaseState(baseInput({ ledgerHasApprovedClose: false }))).toBe('developing')
   })
   it('우선순위: legacy가 다른 신호를 이긴다', () => {
-    expect(deriveBaseState(baseInput({ durabilityRequired: false, closeProofRows: [devComplete()], allPhasesEvidenced: true, committedEvidenceComplete: true }))).toBe('legacy')
+    const dc = devComplete({ phase_inventory: ['p1'], design_ref: 'DREF' })
+    expect(deriveBaseState(baseInput({ durabilityRequired: false, closeProofRows: [dc], evidencedPhaseIds: ['p1'], committedDesignRef: 'DREF' }))).toBe('legacy')
   })
   it('우선순위: series-terminal이 dev-complete를 이긴다', () => {
-    expect(deriveBaseState(baseInput({ closeProofRows: [terminal(), devComplete()], allPhasesEvidenced: true, committedEvidenceComplete: true }))).toBe('series-terminal')
+    const dc = devComplete({ phase_inventory: ['p1'], design_ref: 'DREF' })
+    expect(deriveBaseState(baseInput({ closeProofRows: [terminal(), dc], evidencedPhaseIds: ['p1'], committedDesignRef: 'DREF' }))).toBe('series-terminal')
   })
   it('dev-complete 행이 없으면 증거 완비여도 dev-complete 아님(developing)', () => {
-    expect(deriveBaseState(baseInput({ allPhasesEvidenced: true, committedEvidenceComplete: true, closeProofRows: [] }))).toBe('developing')
+    expect(deriveBaseState(baseInput({ evidencedPhaseIds: ['p1', 'p2'], committedDesignRef: 'DREF', closeProofRows: [] }))).toBe('developing')
+  })
+})
+
+describe('[close-proof] dev-complete 스키마 검증(self-verifying 필수 필드)', () => {
+  it('dev-complete인데 phase_inventory 없으면 거부', () => {
+    expect(closeProofRowProblems({ ...devComplete(), phase_inventory: null }).join(' ')).toContain('phase_inventory가 배열이 아님')
+  })
+  it('dev-complete인데 design_ref 없으면 거부', () => {
+    expect(closeProofRowProblems({ ...devComplete(), design_ref: null }).join(' ')).toContain('design_ref가 비어 있음')
+  })
+  it('phase_inventory 정렬 안 됨 → 거부', () => {
+    expect(closeProofRowProblems({ ...devComplete(), phase_inventory: ['p2', 'p1'] }).join(' ')).toContain('정렬')
+  })
+  it('phase_inventory 중복 → 거부', () => {
+    expect(closeProofRowProblems({ ...devComplete(), phase_inventory: ['p1', 'p1'] }).join(' ')).toContain('중복')
+  })
+  it('series-terminal인데 phase_inventory 있으면 거부', () => {
+    expect(closeProofRowProblems({ ...terminal(), phase_inventory: ['p1'] }).join(' ')).toContain('series-terminal인데 phase_inventory')
+  })
+  it('정상 dev-complete(정렬·중복없음·design_ref) 통과', () => {
+    expect(closeProofRowProblems(devComplete({ phase_inventory: ['a', 'b', 'c'], design_ref: 'x' }))).toEqual([])
   })
 })
 
@@ -200,10 +242,22 @@ describe('[close-proof] 오버레이·게이트', () => {
 })
 
 describe('[close-proof] 자연키', () => {
-  it('series-terminal은 series로 구분, dev-complete은 event로', () => {
+  it('series-terminal은 series로, dev-complete은 design_ref로 구분(supersede 키)', () => {
     const sep = String.fromCharCode(31)
     expect(closeProofRowKey(terminal({ series_id: 'a' })).split(sep)).toEqual(['REQ-2026-052', 'series-terminal', 'a'])
-    expect(closeProofRowKey(devComplete()).split(sep)).toEqual(['REQ-2026-052', 'dev-complete', ''])
+    // 🔴 dev-complete은 design_ref로 키잉 — 재승인(design_ref 변경) 시 새 행이 supersede로 append된다.
+    expect(closeProofRowKey(devComplete({ design_ref: 'D1' })).split(sep)).toEqual(['REQ-2026-052', 'dev-complete', 'D1'])
+    expect(closeProofRowKey(devComplete({ design_ref: 'D2' }))).not.toBe(closeProofRowKey(devComplete({ design_ref: 'D1' })))
+  })
+  it('🔴 재승인 supersede: 두 design_ref의 dev-complete 행이 공존, verifier가 현재 design_ref 행 선택', () => {
+    const d1 = devComplete({ phase_inventory: ['p1'], design_ref: 'D1' })
+    const d2 = devComplete({ phase_inventory: ['p1'], design_ref: 'D2' })
+    // 두 행 공존(append-only) — 현재 committedDesignRef=D2면 D2 행으로 검증(옛 D1 무시).
+    expect(deriveBaseState(baseInput({ closeProofRows: [d1, d2], evidencedPhaseIds: ['p1'], committedDesignRef: 'D2' }))).toBe('dev-complete')
+    // committedDesignRef=D1이면 D1 행으로 검증.
+    expect(deriveBaseState(baseInput({ closeProofRows: [d1, d2], evidencedPhaseIds: ['p1'], committedDesignRef: 'D1' }))).toBe('dev-complete')
+    // 현재 design_ref가 D3(둘 다 아님)면 매칭 행 없음 → developing.
+    expect(deriveBaseState(baseInput({ closeProofRows: [d1, d2], evidencedPhaseIds: ['p1'], committedDesignRef: 'D3' }))).toBe('developing')
   })
   it('구분자는 제어문자(가시문자 아님)', () => {
     expect(closeProofRowKey(terminal())).toContain(String.fromCharCode(31))

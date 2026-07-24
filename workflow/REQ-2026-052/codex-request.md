@@ -1,5 +1,16 @@
 # REQ-2026-052 리뷰 요청
 
+## r04-delta 보정 (phase-3 착수 전 — self-verifying dev-complete + phase 재분할)
+
+phase-2 완료 후, 승인 설계의 phase-3에서 두 문제를 사용자와 함께 확정해 보정했다. **이 delta review는 아래 보정에 집중한다.**
+
+1. **`dev-complete` proof 발행 위치**: 승인 설계는 "req:next가 DONE 판정 시 방출"이라 했으나 **`req:next`는 strict read-only**(add/commit/write-tree throw). 발행을 **마지막 phase의 `req:commit` evidence-finalize**로 옮긴다(DEC-B3). req:next는 read-only 그대로.
+2. **self-verifying 확장**(DEC-B2): 기존 dev-complete row는 phase inventory가 없어, 워킹 state를 안 읽는 미래 `req:new`가 "모든 phase 증거 완비"를 HEAD만으로 판정할 수 없었다. row에 **정렬·중복 없는 `phase_inventory` + `design_ref`(묶인 design 승인)**를 넣어 self-verifying화. HEAD verifier는 inventory의 모든 phase 증거 + design_ref 일치를 HEAD-committed로만 확인.
+3. **runtime state 역할 제한**(DEC-B4): state.phases는 proof 만들 때 **입력으로만**. 유효성 판정·req:new 차단은 runtime 절대 미사용. design 재승인으로 inventory가 바뀌면 옛 design_ref와 섞인 proof는 무효.
+4. **phase 재분할**: phase-3 → **phase-3a**(발행+HEAD 검증) / **phase-3b**(intake gate). 각 독립 리뷰·커밋. phase-4 reconstruct는 phase-3b 뒤 별도. 🔴 **이번 delta 승인 후 phase-3a만 구현·리뷰·커밋**한다.
+
+(b)안(dev-complete row 제거·evidence 순수 추정)은 채택하지 않았다 — 승인 설계의 proof-row state model을 보존한다.
+
 ## 배경
 
 REQ-051(B1)은 원장을 승인 시에만 커밋한다 — `attempt-opened`는 외부 호출 전 워킹트리에 쓰이지만 다음 durable checkpoint(승인)에서야 커밋된다. NEEDS_FIX 후 폐기·브랜치 전환 시 원장이 소실될 수 있다. 이 REQ는 "원장이 있다"(working tree)와 "원장이 durable하다"(HEAD committed blob)를 구분하고, scratch state가 사라져도 HEAD만으로 티켓 상태·req:new 허용·재구성 여부를 판별 가능하게 한다.
@@ -46,6 +57,35 @@ r03-delta P1이 정확했다 — semantic identity를 "ledger 한 줄만 제외"
 수정: exclusion을 **ledger 한 줄 → 티켓 `responses/` audit 디렉터리 전체**로 넓혔다. 근거: `responses/`는 순수 audit(ledger·approvals·아카이브·close-proof·codex-response·preview)이고 **리뷰 대상은 절대 그 안에 없다**(design 문서=티켓루트 0N-*.md, phase 코드=workflow/ 밖). 따라서 responses/ 전체를 제외해도 리뷰 대상은 identity에 남고, pre-call 커밋과 evidence-finalize 양쪽 bookkeeping에 identity가 불변이다. oracle ⑭b(정상 승인→evidence-finalize→G2 통과) 추가.
 
 **⚠️ 사용자 지침 "approvals archive를 광범위하게 제외 말라"에서 의도적 이탈**: 그대로 두면 evidence-finalize가 요구 #4를 어긴다(리뷰어 확증). 사용자의 더 깊은 의도(정상 흐름 무회귀·bookkeeping에 identity 불변)를 지키는 유일한 방법이라 표기하고 진행한다.
+
+## phase-3a r02 반영 (P1: design 재승인 후 재완료가 영구 실패)
+
+r02 P1이 정확했다 — dev-complete 자연키가 `(ticket, event)`라 모든 dev-complete 행이 한 키를 공유했다. design 재승인(design_ref D1→D2) 후 마지막 phase 재완료 시 새 proof(design_ref=D2)가 기존 D1 행과 **자연키 충돌**→append 안 됨→verifier가 옛 D1을 골라 developing→throw. evidence commit은 이미 났고 재시도도 동일 실패 → **재완료 경로 영구 차단**(설계 "재승인으로 이전 proof 무효, 새 proof 발행" 위반).
+
+수정(append-only supersede):
+- `closeProofRowKey`: dev-complete을 **design_ref로 키잉**(series-terminal은 series_id 유지). design_ref가 다르면 다른 자연키 → 새 dev-complete 행이 **append-only로 추가**(옛 행은 삭제 없이 supersede).
+- `isDevCompleteVerified`: **현재 committedDesignRef에 맞는** dev-complete 행을 `find`로 선택(옛 design_ref 행 무시).
+- 테스트: close-proof 단위(두 design_ref 행 공존·현재 ref로 선택·둘 다 아니면 developing) + **실 git 재승인→재완료 e2e**(새 proof supersede append·HEAD-verify 통과·D1+D2 공존·재시도 멱등). 전체 1533 green.
+
+## phase-3a r01 반영 (P1: finalize 멱등성이 HEAD가 아니라 디스크 기준)
+
+r01 P1이 **선재 버그**를 정확히 짚었다 — `finalizeEvidenceAndConsume`이 멱등성·base를 **워킹트리 매니페스트**(`ctx.existing`)로 판정했다. evidence commit이 실패하면 디스크엔 매니페스트가 이미 쓰였으므로 재시도가 그걸 "이미 finalize됨"으로 오판해 **HEAD에 증거가 없는데 완료로 진행**했다(dev-complete·archive·ledger·manifest 미커밋). DEC-B3·㉟ 위반.
+
+수정: finalize 멱등성·base를 **HEAD blob 기준**으로 바꿨다. `headManifest = git show HEAD:approvals.jsonl`(후행 개행 복원)를 base·`manifestHasConsumed` 입력으로 쓴다 — "커밋 성공 여부"가 아니라 "HEAD에 실제 존재하는지"로 판정. 실패 후 재시도는 HEAD가 증거를 잃었으므로 재커밋하고, 성공 후 재시도는 HEAD에 있으므로 skip한다. 죽은 `ctx.existing` 필드 제거.
+
+테스트 추가(실 git·`__setGitForTest`+export `finalizeEvidenceAndConsume`): **㉟** 디스크엔 마지막 phase 엔트리 있으나 HEAD엔 없음(커밋 실패 모사) → 재시도가 재커밋·dev-complete 발행·**중복 0**(manifest 3줄·dev-complete 1) → 다시 재시도 skip·중복 0. + **㊱** 마지막 phase 아니면 미발행. 전체 1531 green.
+
+## phase-3a 구현 노트 (이번 staged diff — self-verifying dev-complete)
+
+phase-3을 3a/3b로 재분할한 뒤 **3a만** 구현했다(3b·4는 후속).
+
+- **close-proof.ts**: `CloseProofRow`에 `phase_inventory`(정렬·중복없음)·`design_ref` 추가. `series-terminal`은 둘 다 null. dev-complete는 둘 다 필수(검증 강제). `deriveBaseState`의 dev-complete를 **self-verify**로: `isDevCompleteVerified` = dev-complete row 존재 + inventory 전 phase가 `evidencedPhaseIds`에 있음 + `design_ref === committedDesignRef`. `CloseStateInput`에서 `allPhasesEvidenced` → `evidencedPhaseIds`+`committedDesignRef`로 교체(runtime 미사용, HEAD-committed만).
+- **req-commit.ts**: `computeDevCompleteProof`(순수·export) = 이 phase 커밋이 마지막 phase 완료면 proof row, 아니면 null. `state.phases`는 inventory 입력으로만(DEC-B4). `finalizeEvidenceAndConsume`이 마지막 phase면 dev-complete proof를 **같은 evidence 커밋**에 stage/commit(DEC-B3) + **발행 후 HEAD-only 재검증**(`verifyDevCompleteAtHead` → deriveBaseState가 dev-complete여야). 멱등(자연키 duplicate). design_ref는 커밋된 매니페스트 design 엔트리에서(HEAD-일관).
+- **req:next는 미접촉** — read-only 그대로.
+
+검증: typecheck 0 · 전체 1529 green. 신규 테스트: computeDevCompleteProof 6(㊱㊳ 포함) + close-proof self-verify 파생 4(㉛㉜㉝ + null design_ref) + dev-complete 스키마 6 + **실 git HEAD-only 검증 4**(㉛㉜㉝㉞ — runtime state 삭제·변조에도 판정 불변).
+
+**주의(리뷰 포인트)**: ㉚(마지막 evidence 커밋에 4종 함께 durable)·㉟(재시도 중복 없음)의 full reqCommitMain e2e는 이 REQ의 **실제 마지막 phase에서 dogfood로 실증**된다(3a는 마지막 아님 → 이번 커밋엔 dev-complete 미발행). 발행 결정·HEAD 검증·멱등은 위 단위/실git 테스트가 덮는다.
 
 ## phase-2 구현 노트 (이번 staged diff)
 

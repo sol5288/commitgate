@@ -1254,6 +1254,8 @@ export function durableParentSeriesTerminal(args: {
       event: 'series-terminal',
       series_id: s.series_id,
       resolution,
+      phase_inventory: null,
+      design_ref: null,
       at: args.nowIso,
       reconstructed: false,
       evidence_basis: null,

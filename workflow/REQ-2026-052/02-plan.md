@@ -47,17 +47,49 @@
 
 **핵심 재구성 주의**: DEC-A6 순서 고정. recordAttempt+opened 커밋을 binding 캡처 앞으로 옮기되 예산·terminal·예외 게이트 순서·R9 계보 보존. blocked short-circuit(2단계)은 커밋·기록·예산·호출 전에 판정.
 
-## Phase 3 — dev-complete proof + req:new 게이트 (`phase-3-devcomplete-and-intake-gate`)
+## Phase 3a — self-verifying dev-complete proof (`phase-3a-devcomplete-proof`)
+
+design-r04-delta: phase-3을 3a(발행+HEAD 검증)/3b(intake gate)로 재분할. 각각 독립 리뷰·커밋.
 
 | 항목 | 내용 |
 |---|---|
-| 책임 계약 | req:next가 마지막 phase 증거 완비 시 `dev-complete` proof 커밋(멱등) · req:new가 committed proof 스캔해 미종결 durable 티켓이면 fail-closed |
-| 입력 | phase-1 · phase-2 |
-| 산출물 | `req-next.ts` · `req-new.ts` · 테스트 · `docs/guarantees.{md,en.md}` |
-| 선행 phase | **phase-1 + phase-2**(near-e2e ⑱이 phase-2의 durable 원장을 입력으로 씀) |
-| 독립 검증 | `npx vitest run tests/unit/req-next.test.ts tests/unit/req-new.test.ts` · `npm run typecheck` |
+| 책임 계약 | 마지막 phase `req:commit` evidence-finalize가 self-verifying `dev-complete` proof(phase_inventory+design_ref)를 같은 durable commit에 발행 · 발행 전 prospective 검증 · 발행 후 HEAD-only 재검증 · 멱등 복구 · close-proof.ts에 HEAD-only dev-complete 판정 |
+| 입력 | phase-1(스키마·파생) · phase-2(durable ledger·evidence 경로) |
+| 산출물 | `scripts/req/lib/close-proof.ts`(row 확장·self-verify 파생) · `scripts/req/req-commit.ts`(발행·재검증·멱등) · 테스트 |
+| 선행 phase | phase-1 + phase-2 |
+| 독립 검증 | `npx vitest run tests/unit/close-proof.test.ts tests/unit/req-commit.test.ts` · `npm run typecheck` · 임시 git 저장소 발행/복구/HEAD검증 |
 
-**Red 먼저**(요구 #4·#5·#6·#7·#9): ⑮ 정상 흐름 무회귀(design 승인·phase 승인·DONE) ⑯ 마지막 phase 후 `dev-complete` proof가 HEAD에 커밋 ⑰ evidence commit 실패 재시도에 중복 proof 없음 ⑱ scratch state 삭제 후 main에서 req:new → 미종결 durable 감지·fail-closed(실 git) ⑲ legacy 티켓은 req:new 차단 안 함(표시만) ⑳ 기본 상태별 req:new: `developing`·`needs-recovery` 차단 / `dev-complete`·`series-terminal` 허용(순수 판정) · 오버레이(`reconstructed`·`integrated`)는 게이트 무관 · `integrated`는 git-ancestry로 관측(미병합=dev-complete, 병합후=integrated).
+**Red 먼저**(사용자 필수 테스트):
+| # | oracle |
+|---|---|
+| ㉚ | 마지막 phase evidence-finalize commit에 approval archive·approvals manifest·ledger closed·**dev-complete proof**가 함께 durable |
+| ㉛ | HEAD verifier가 proof inventory의 **모든 phase**에 대응하는 committed evidence를 확인 → dev-complete |
+| ㉜ | inventory 중 하나라도 evidence 없음 → dev-complete **아님** |
+| ㉝ | design_ref가 현재 committed design 승인과 불일치(재승인으로 inventory 변경 모사) → dev-complete **아님** |
+| ㉞ | scratch state 삭제·변조해도 HEAD 판정 불변(runtime 미사용) |
+| ㉟ | 마지막 evidence commit 실패 후 재시도 → 중복 proof·manifest·ledger 행 없음(멱등) |
+| ㊱ | **아직 마지막 phase 아님** → dev-complete proof 발행 안 함 |
+| ㊲ | legacy 티켓은 기존 동작(발행 없음) |
+| ㊳ | phase_inventory는 정렬·중복 없음(runtime state.phases를 입력으로만) |
+
+## Phase 3b — req:new intake gate (`phase-3b-intake-gate`)
+
+| 항목 | 내용 |
+|---|---|
+| 책임 계약 | req:new가 HEAD-committed proof/evidence만으로 티켓 스캔·기본 상태 파생 · `developing`/`needs-recovery`면 fail-closed(이유+복구) · legacy 표시만 · runtime state 미사용 |
+| 입력 | phase-3a(self-verifying dev-complete) |
+| 산출물 | `scripts/req/req-new.ts`(intake scan·게이트) · 테스트 · `docs/guarantees.{md,en.md}` |
+| 선행 phase | phase-3a |
+| 독립 검증 | `npx vitest run tests/unit/req-new.test.ts` · `npm run typecheck` · 임시 git 저장소 |
+
+**Red 먼저**(요구 #4·#6·#7·#9):
+| # | oracle |
+|---|---|
+| ㊴ | 정상 흐름 무회귀(dev-complete 티켓 있으면 req:new 허용) |
+| ㊵ | scratch state 삭제 후 main에서 req:new → 미종결 durable(developing/needs-recovery) 감지·fail-closed(실 git·HEAD proof만) |
+| ㊶ | legacy 티켓은 req:new 차단 안 함(표시만) |
+| ㊷ | 기본 상태별 req:new: `developing`·`needs-recovery` 차단 / `dev-complete`·`series-terminal` 허용 |
+| ㊸ | AWAIT_HUMAN·통합 대기·DONE 각각 HEAD proof만으로 허용/차단 판정 |
 
 ## Phase 4 — 재구성 명령 (`phase-4-reconstruct-command`)
 
@@ -66,7 +98,7 @@
 | 책임 계약 | `req:reconstruct`가 immutable archive+approvals로 검증가능 사실만 복원·`reconstructed:true`·추정 금지·사람 확인 |
 | 입력 | phase-1 |
 | 산출물 | `bin/reconstruct.ts` · `bin/dispatch.mjs` 등록 · 테스트 |
-| 선행 phase | phase-1 (phase-2/3과 독립) |
+| 선행 phase | phase-1 · **phase-3b 완료 후 별도 진행**(사용자 지시) |
 | 독립 검증 | `npx vitest run tests/unit/reconstruct.test.ts` · `npm run typecheck` |
 
 **Red 먼저**(요구 #8): ㉑ 아카이브/매니페스트에서 유도한 행에 reconstructed:true+evidence_basis ㉒ 복원 불가 사실은 unknown(추정 안 함) ㉓ dry-run 기본·`--run`+확인 없이 미실행 ㉔ reconstructed 티켓이 원본과 구별된다(파생 상태=`reconstructed`).
@@ -76,9 +108,11 @@
 `44_yammy_sales`는 **읽기전용**. 어떤 파일도 생성·수정·stage·commit·설치하지 않는다. git 동작은 `git init` 임시 저장소로 검증하고 실행 후 삭제.
 
 ## 숨은 결합 점검
-- phase-1은 순수 — phase-2/3/4 어느 것도 요구하지 않는다.
-- **phase-3은 phase-2를 선행으로 요구한다**(design-r01 P1): 순수 상태-파생·게이트 판정은 phase-1만으로 가능하지만, near-e2e ⑯·⑱이 phase-2가 실제로 만든 durable 원장을 입력으로 쓴다. 독립성을 위장하지 않고 phase-2를 선행으로 선언한다.
-- phase-4는 phase-1만 선행. phase-2/3과 독립.
+- phase-1은 순수 — 이후 어느 phase도 요구하지 않는다.
+- **phase-2는 phase-1 선행**. ✅ 완료.
+- **phase-3a는 phase-1+phase-2 선행**(발행이 durable ledger·evidence 경로 위에 얹힌다). **phase-3b는 phase-3a 선행**(self-verifying dev-complete proof가 있어야 intake gate가 판정 가능). 이 순서 의존은 실재하므로 정직하게 선언한다.
+- phase-4는 phase-1 선행이나, **사용자 지시로 phase-3b 완료 후 별도 진행**.
+- 🔴 **이번 delta는 phase-3a만 구현·리뷰·커밋**한다. phase-3b·phase-4는 phase-3a 완료 보고 후.
 
 ## 완료
 - 게이트 해당분(unit·typecheck·lint) · 사용자 main 머지(별도 승인).

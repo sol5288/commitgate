@@ -119,9 +119,26 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 
 ```json
 {"ticket_id":"REQ-2026-052","event":"series-terminal","series_id":"design:-#1",
- "resolution":"human-resolution","at":"…","reconstructed":false}
-{"ticket_id":"REQ-2026-052","event":"dev-complete","at":"…","reconstructed":false}
+ "resolution":"human-resolution","phase_inventory":null,"design_ref":null,"at":"…","reconstructed":false,"evidence_basis":null}
+{"ticket_id":"REQ-2026-052","event":"dev-complete","series_id":null,"resolution":null,
+ "phase_inventory":["phase-1-a","phase-2-b","phase-3-c"],"design_ref":"<design_hash>","at":"…","reconstructed":false,"evidence_basis":null}
 ```
+
+### DEC-B2. 🔴 `dev-complete` proof는 **self-verifying**하다 (design-r04-delta 반영)
+
+승인 설계는 dev-complete row에 phase inventory가 없어, **워킹 state를 안 읽는 미래의 `req:new`가 "모든 phase 증거가 완비됐는지"를 HEAD만으로 판정할 수 없었다**. inventory 없이 발행하면 (a) scratch state에 다시 의존하거나 (b) 존재하는 approval 행만 보고 완료를 오판한다. 그래서 dev-complete row를 self-verifying하게 확장한다:
+
+- **`phase_inventory`**: 완료 대상으로 확정된 **정렬·중복 없는** phase ID 목록. 이 목록이 "무엇이 완료인가"의 정본이다(runtime `state.phases`가 아니라).
+- **`design_ref`**: 이 inventory가 묶인 design approval의 참조(= 발행 시점 committed design 승인의 `design_hash`). 🔴 **design 재승인으로 phase inventory가 달라지면**, 이전 design 참조와 섞인 dev-complete proof는 **무효**다(검증기가 design_ref ≠ 현재 committed design 승인이면 dev-complete 아님).
+- `series-terminal` row는 `phase_inventory`·`design_ref`가 `null`(기존 의미·자연키 멱등 유지).
+- 🔴 prompt·응답 본문·민감 데이터는 넣지 않는다(경로/해시/식별자만).
+
+**HEAD-only 검증(미래 `req:new`가 쓴다)**: dev-complete는 다음이 **전부 HEAD-committed로** 성립할 때만이다:
+1. HEAD close proof에 `dev-complete` row가 있다.
+2. 그 row의 `phase_inventory`의 **모든 phase**가 HEAD `approvals.jsonl`에 대응하는 phase evidence(consumed 엔트리·아카이브)를 갖는다.
+3. row의 `design_ref`가 HEAD의 committed design 승인(`verifyCommittedDesignEvidence`의 design_hash)과 **일치**한다.
+
+하나라도 어긋나면 dev-complete가 **아니며**, `req:new`는 차단한다(요구). **runtime state는 검증에 절대 안 쓴다** — 오직 proof inventory + committed evidence만.
 
 **5개 기본 상태(순수 파생) + 2개 오버레이**로 나눈다(design-r02 P1: `integrated`는 4종 blob으로 파생 불가). 순수 파생기의 입력은 🔴 **오직 HEAD-committed 아티팩트 4종**: ① HEAD scaffold marker(`isDurabilityRequired`) ② HEAD `ticket-close.jsonl` ③ HEAD `review-ledger.jsonl`(durable 원장) ④ HEAD 증거(`approvals.jsonl`·아카이브 — `verifyCommittedDesignEvidence` 계열). 워킹 state·워킹 승인은 절대 쓰지 않는다.
 
@@ -131,7 +148,7 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 |---|---|
 | `legacy` | HEAD scaffold state.json에 durability marker 부재/파손 → 이하 판정 안 함 |
 | `series-terminal` | HEAD close proof에 `series-terminal` 행 존재(replace·human-resolution) |
-| `dev-complete` | durable · **모든 phase가 HEAD 증거 완비** · HEAD close proof에 `dev-complete` 행 |
+| `dev-complete` | durable · HEAD close proof에 `dev-complete` 행 존재 · 그 행의 **`phase_inventory` 모든 phase가 HEAD 증거 완비** · 행의 **`design_ref` = 현재 committed design 승인**(DEC-B2 self-verify) |
 | `needs-recovery` | durable · **HEAD 증거 내부 불일치**: durable 원장에 `attempt-closed(approved)`가 있으나 그 승인의 HEAD 증거(approvals 엔트리·아카이브)가 불완전 |
 | `developing` | durable · 위 어디에도 안 걸림(HEAD에 완결 승인 흔적 없음 — "예산 사용·미확정" 포함) |
 
@@ -148,11 +165,27 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 
 **🔴 `needs-recovery`는 워킹 승인이 아니라 HEAD durable 원장으로 판정한다**(design-r01 P1). 워킹 승인/state를 삭제해도 HEAD 원장의 `attempt-closed(approved)` 흔적은 남아 불일치가 감지된다. 승인 closed 자체가 유실됐다면(DEC-A로 closed 유실 가능) HEAD엔 opened만 남아 `developing`으로 판정 — 이 역시 req:new fail-closed(DEC-C)라 완료 위장 없음.
 
-**"개발 완료" ≠ "통합 완료"**: `dev-complete`(순수 기본 상태)는 모든 phase 증거가 durable하다는 뜻이고, `integrated`(git-ancestry 오버레이)는 그 증거가 기본 브랜치에 도달 가능하다(사람이 병합함)는 뜻이다. `dev-complete` 전이는 **자동**(마지막 phase evidence-finalize 직후 req:next가 close proof 방출), `integrated`는 **사람 병합의 결과**를 ancestry로 관측할 뿐 도구가 close proof로 선언하지 않는다.
+**"개발 완료" ≠ "통합 완료"**: `dev-complete`는 모든 phase 증거가 durable하다는 뜻이고, `integrated`(git-ancestry 오버레이)는 그 증거가 기본 브랜치에 도달 가능하다는 뜻이다. `integrated`는 **사람 병합의 결과**를 ancestry로 관측할 뿐 도구가 close proof로 선언하지 않는다.
 
-**close proof 방출 시점**:
-- `series-terminal`: human-resolution/replace를 사람이 확정할 때(현재 state.json 수동편집 → B2가 원장+proof를 함께 커밋). 이 REQ는 이 경로를 **`req:new --successor-of`가 부모에 기록**하는 형태로 durable화한다(전용 명령 신설은 D의 몫이므로 최소 접점).
-- `dev-complete`: 마지막 phase의 evidence-finalize 직후. req:next가 DONE/AWAIT_HUMAN 판정 시, 모든 phase 증거가 durable하면 `dev-complete` proof를 **커밋**(멱등).
+### DEC-B3. 🔴 `dev-complete` proof 발행 위치·순서 — `req:next`가 아니라 `req:commit` (design-r04-delta)
+
+승인 설계는 "req:next가 DONE 판정 시 방출"이라 했으나 **`req:next`는 strict read-only**다(`createReadOnlyGit`이 add/commit/write-tree를 실행 전 throw). 그대로는 구현 불가. 발행 책임을 **마지막 phase의 `req:commit` evidence-finalize 경로**로 옮긴다. `req:next`는 read-only 그대로 두고, 어떤 write도 side effect도 넣지 않는다.
+
+**발행 위치·순서(고정)**:
+1. 마지막 phase의 **source commit 이후**.
+2. 그 phase의 **approval archive·approvals manifest·ledger closed를 포함하는 evidence-finalize와 동일한 durable commit 경로**에서, `dev-complete` proof도 함께 stage/commit한다(한 커밋 또는 같은 finalize 트랜잭션).
+3. **proof 생성 전**: prospective evidence content를 검증한다 — 이번 소비로 **모든 phase가 완료되는가**(runtime `state.phases`를 **입력으로만** 사용해 inventory를 만든다), 각 phase 증거가 실제로 있는가, design 승인이 committed인가.
+4. **commit 후**: HEAD blob만 읽어 inventory의 모든 phase evidence + design_ref 완비를 **재검증**(DEC-B2 HEAD-only 검증). 어긋나면 실패(fail-closed).
+5. **멱등**: evidence commit 실패·복구·재시도에서 proof·manifest·ledger 행이 **중복되지 않는다**(자연키 멱등 + `manifestHasConsumed` 계열 skip).
+
+**마지막 phase가 아니면** dev-complete proof를 **발행하지 않는다**(중간 phase의 finalize는 그대로).
+
+### DEC-B4. 🔴 runtime state의 역할 제한 (design-r04-delta)
+
+- runtime `state.phases`는 **proof를 만들 때의 입력**으로만 쓴다(inventory 산출).
+- **생성된 proof의 유효성 판정과 `req:new` 차단 판단은 runtime state를 절대 읽지 않는다** — 오직 proof의 phase inventory + committed evidence(HEAD blob).
+- future HEAD verifier(DEC-B2)는 proof inventory와 committed evidence만 쓴다. scratch state를 삭제·변조해도 HEAD 판정이 안 변한다.
+- design 재승인으로 inventory가 달라지면, 이전 design 참조와 섞인 dev-complete proof를 허용하지 않는다(design_ref 불일치 → dev-complete 아님).
 
 ### DEC-C. req:new 게이트 — committed proof만으로 판정
 
@@ -204,17 +237,25 @@ design-r01 P1이 지적한 모순을 명시적으로 해소한다. `state.json`�
 - 산출물: `scripts/req/lib/review-target.ts`(신규) · `review-codex.ts`·`req-next.ts`(G2)·`req-new.ts`(successor-of terminal proof)·`scratch.ts` 배선 · 테스트(요구 #1·#2·#3 + semantic identity 안정성).
 - 선행: phase-1.
 
-### phase-3-devcomplete-and-intake-gate
-- 책임: req:next가 `dev-complete` proof 방출(멱등), req:new 게이트(committed proof 스캔·fail-closed).
-- 입력: phase-1·phase-2.
-- 산출물: `req-next.ts`·`req-new.ts` 배선 · 테스트(요구 #4·#5·#6·#7·#9).
-- **선행: phase-1 + phase-2**(design-r01 P1). near-e2e ⑱이 phase-2가 만든 durable 원장을 실측 입력으로 쓴다 — 순수 판정은 phase-1만으로 가능하나 near-e2e 검증은 phase-2를 요구하므로, 선행을 phase-2로 정직하게 선언한다.
+### phase-3a-devcomplete-proof (design-r04-delta: phase-3 재분할)
+- 책임: **self-verifying `dev-complete` proof**를 마지막 phase의 `req:commit` evidence-finalize에서 발행(phase_inventory + design_ref, DEC-B2/B3) + prospective 검증(발행 전) + HEAD-only 재검증(발행 후) + 멱등 복구 + HEAD verifier(DEC-B2, close-proof.ts의 순수 판정 확장).
+- 입력: phase-1(close-proof 스키마·파생) · phase-2(durable ledger·evidence 경로).
+- 산출물: `scripts/req/lib/close-proof.ts`(dev-complete row에 phase_inventory·design_ref 추가·self-verify 파생) · `scripts/req/req-commit.ts`(마지막 phase 발행·HEAD 재검증·멱등) · 테스트.
+- **선행: phase-1 + phase-2**.
+- 독립 검증: `vitest close-proof req-commit` · typecheck · 임시 git 저장소로 발행·복구·HEAD 검증.
+
+### phase-3b-intake-gate (design-r04-delta: phase-3 재분할)
+- 책임: `req:new`가 `workflow/REQ-*`를 **HEAD-committed proof/evidence만으로** 스캔해 각 티켓 기본 상태를 파생, `developing`/`needs-recovery`가 있으면 fail-closed(이유+복구 명령), legacy는 표시만. runtime state 미사용.
+- 입력: phase-3a(self-verifying dev-complete proof).
+- 산출물: `scripts/req/req-new.ts`(intake scan·게이트) · 테스트(요구 #4·#5·#6·#7·#9).
+- **선행: phase-3a**.
+- 독립 검증: `vitest req-new` · typecheck · 임시 git 저장소로 scratch 삭제 후 판정 불변.
 
 ### phase-4-reconstruct-command
 - 책임: `req:reconstruct` 명령 — 검증가능 사실만·reconstructed 표시·추정 금지·사람 확인.
 - 입력: phase-1.
 - 산출물: `bin/reconstruct.ts` + dispatch 등록 · 테스트(요구 #8).
-- 선행: phase-1.
+- **선행: phase-3b 완료 후**(사용자 지시 — phase-3a/3b 뒤 별도 진행).
 
 ## 변경 파일
 
