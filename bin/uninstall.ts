@@ -35,6 +35,7 @@ import {
   KIT_CLAUDE_DEST_REL,
   KIT_AGENTS_CONTRACT_COPY_REL,
   REQ_SCRIPTS,
+  STAGE_B_REQ_SCRIPTS,
   REQ_DEV_DEPS,
   assertGitWorkTree,
 } from './init'
@@ -304,13 +305,18 @@ export function collectFacts(opts: UninstallOptions, run?: GitRunner): Uninstall
   const pkg = existsSync(pkgAbs) ? readJsonObject(pkgAbs) : null
   const scripts = stringMap(pkg, 'scripts')
   const devDeps = stringMap(pkg, 'devDependencies')
-  for (const [k, injected] of Object.entries(REQ_SCRIPTS)) {
+  // 🔴 DEC-D3: req:* script를 **Stage-A 서명(REQ_SCRIPTS) ∪ Stage-B 값(STAGE_B_REQ_SCRIPTS)** 양쪽 기준으로
+  //    분류한다. 현재 값이 둘 중 하나와 일치하면 CommitGate 주입값(제거 대상 표시), 아니면 사용자 정의(보존).
+  //    Stage-B 표면(dispatch 파생)이라 reconstruct 등 신규 verb도 포함된다.
+  const reqKeys = [...new Set([...Object.keys(REQ_SCRIPTS), ...Object.keys(STAGE_B_REQ_SCRIPTS)])].sort()
+  for (const k of reqKeys) {
     const cur = scripts[k]
     if (cur === undefined) continue
+    const isInjected = cur === REQ_SCRIPTS[k] || cur === STAGE_B_REQ_SCRIPTS[k]
     ambiguous.push({
       path: `package.json#scripts.${k}`,
       present: true,
-      note: cur === injected ? 'init 주입값과 동일' : `사용자 값(init 주입값과 다름): ${cur}`,
+      note: isInjected ? 'init 주입값과 동일' : `사용자 값(init 주입값과 다름): ${cur}`,
     })
   }
   for (const [k, injected] of Object.entries(REQ_DEV_DEPS)) {

@@ -37,6 +37,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadConfig, stripBom, DEFAULT_REVIEW_PERSONA_RELPATH, type PackageManager } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
 import { parseStatusZ, entryPaths, STATUS_Z_ARGS, type StatusEntry } from '../scripts/req/lib/porcelain'
+import { VERB_MODULES } from './dispatch.mjs' // 🔴 DEC-D3: 현재 Stage-B req 명령 표면 SSOT.
 import * as semver from 'semver'
 
 /** 이 패키지 루트(bin/ 기준 1단계 위). 복사 원본. */
@@ -178,14 +179,26 @@ export const REQ_SCRIPTS: Record<string, string> = {
 }
 
 /**
+ * 🔴 **현재 Stage-B 명령 표면의 SSOT = `bin/dispatch.mjs`의 `VERB_MODULES` req:* verb**(REQ-2026-052 DEC-D3).
+ *
+ * ⚠️ `REQ_SCRIPTS`(Stage-A 서명)에서 파생하지 **않는다**. Stage-A 서명은 "과거에 무엇을 주입했는가"의 frozen
+ *    기록이고, 현재 설치·마이그레이션이 다뤄야 하는 명령 집합은 **dispatch가 실제로 노출하는 verb 표면**이다.
+ *    dispatch에 verb를 추가하면(예: `req:reconstruct`) 이 목록·init 주입·migrate·smoke가 **자동으로** 따라간다
+ *    — 정합성 테스트(`dispatch req:* === STAGE_B_REQ_SCRIPTS 키`)와 tarball smoke가 누락을 CI에서 잡는다.
+ */
+export const STAGE_B_REQ_VERBS: string[] = Object.keys(VERB_MODULES)
+  .filter((v) => v.startsWith('req:'))
+  .sort()
+
+/**
  * **Stage B**가 주입하는 req:* 스크립트 값 — 로컬 패키지 bin을 dispatch한다(REQ-2026-014 R1/R2).
- * 키 집합은 `REQ_SCRIPTS`에서 파생해 SSOT를 하나로 유지한다(값만 다르고 키는 같다).
+ * 키 집합은 **dispatch 표면(`STAGE_B_REQ_VERBS`)에서 파생**한다(DEC-D3 — REQ_SCRIPTS 아님).
  *
  * `npm run req:new -- <args>` → `commitgate req:new <args>` → `node_modules/.bin/commitgate`
  * → `bin/commitgate.mjs`가 verb를 `scripts/req/req-new.ts`(**패키지 안**)로 dispatch.
  */
 export const STAGE_B_REQ_SCRIPTS: Record<string, string> = Object.fromEntries(
-  Object.keys(REQ_SCRIPTS).map((k) => [k, `commitgate ${k}`]),
+  STAGE_B_REQ_VERBS.map((k) => [k, `commitgate ${k}`]),
 )
 
 /**

@@ -166,13 +166,14 @@ try {
   // 사용자가 설치한 commitgate 선언은 그대로 있어야 한다(init 의 D14 전제).
   assert('commitgate' in (pkgAfter.devDependencies ?? {}), '대상 devDependencies.commitgate 선언이 사라졌다')
 
-  // (c) R1/R2: 다섯 req:* 값이 패키지 bin dispatch를 가리킨다.
-  //     검증 목록을 하드코딩하지 않고 **dispatch 의 VERB_MODULES 에서 파생**한다 — SSOT 1개 유지, verb 누락 시 smoke 가 잡는다.
+  // (c) R1/R2 + DEC-D3: **dispatch 가 노출한 모든 req:* verb**가 대상 package.json에 `commitgate <verb>` 로 설치됐는지
+  //     검증한다. 🔴 **개수 하드코딩을 쓰지 않는다**(REQ-2026-052 — `=== 5`가 req:reconstruct 추가를 못 따라가 CI를
+  //     막았다). dispatch VERB_MODULES가 SSOT라, 미래에 verb를 추가하면 **이 루프가 자동으로** 누락·오값을 잡는다.
   const reqVerbs = Object.keys(VERB_MODULES).filter((v) => v.startsWith('req:'))
-  assert(reqVerbs.length === 5, `dispatch 의 req:* verb 가 5개가 아니다(${reqVerbs.length}개)`)
+  assert(reqVerbs.length > 0, 'dispatch 에 req:* verb 가 하나도 없다(SSOT 파손 의심)')
   for (const verb of reqVerbs) {
     const got = (pkgAfter.scripts ?? {})[verb]
-    assert(got === `commitgate ${verb}`, `대상 scripts.${verb} = ${JSON.stringify(got)} — 기대: "commitgate ${verb}"`)
+    assert(got === `commitgate ${verb}`, `대상 scripts.${verb} = ${JSON.stringify(got)} — 기대: "commitgate ${verb}"(dispatch verb인데 미설치/오값)`)
   }
 
   // (d) **실제 dispatch 도달 증명** — 성공 종료가 아니라 "어느 모듈에 도달했는가"로 증명한다.

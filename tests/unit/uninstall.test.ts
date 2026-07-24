@@ -343,6 +343,29 @@ describe('[uninstall] ambiguous 아티팩트는 자동 제거 대상이 아니�
       cleanup(dir)
     }
   })
+
+  it('㉟ 🔴 DEC-D3: 주입된 reconstruct(commitgate ...)는 "동일"로 분류·사용자 정의 reconstruct는 "사용자 값"으로 보존', () => {
+    const dir = tmpRepo({
+      pkg: {
+        name: 'x',
+        version: '0.0.0',
+        // 🔴 Stage-B 주입값 reconstruct(dispatch 파생 표면 — REQ_SCRIPTS엔 없다) + 사용자 정의 스크립트.
+        scripts: { 'req:reconstruct': 'commitgate req:reconstruct', 'req:new': 'node my-own.mjs' },
+      },
+    })
+    try {
+      installStageA(dir) // 설치 컨텍스트(init은 기존 키 미덮어씀 — 위 두 값 보존)
+      const plan = planUninstall({ dir })
+      // 주입된 Stage-B reconstruct는 "동일"(제거 대상 표시)로 인식된다.
+      expect(plan.keep.find((a) => a.path === 'package.json#scripts.req:reconstruct')?.note).toMatch(/동일/)
+      // 사용자 정의 req:new는 "사용자 값"으로 보존(제거 안 함).
+      expect(plan.keep.find((a) => a.path === 'package.json#scripts.req:new')?.note).toMatch(/사용자 값/)
+      // package.json 키는 어떤 것도 자동 removable이 아니다(항상 keep — 사용자 검토).
+      expect(plan.removable.some((a) => a.path.startsWith('package.json#scripts.req:'))).toBe(false)
+    } finally {
+      cleanup(dir)
+    }
+  })
 })
 
 describe('[uninstall] 커밋 전/후 안내 분기', () => {

@@ -38,16 +38,22 @@ export interface MigrateOptions {
 export interface ScriptDecision {
   key: string
   current: string | undefined
-  /** 'convert' = 정확한 Stage A 값 → 전환 대상. 'stage-b' = 이미 전환됨. 'custom' = 사용자 값(보존). 'absent' = 키 없음. */
-  kind: 'convert' | 'stage-b' | 'custom' | 'absent'
+  /**
+   * 'convert' = 정확한 Stage A 값 → 전환 대상. 'stage-b' = 이미 전환됨. 'custom' = 사용자 값(보존).
+   * 'absent' = 역사적 verb 키 부재(무변경, 기존 동작). 'add' = **신규 Stage-B verb**(Stage-A 서명 없음)가 부재 →
+   *   현재 표면으로 올리며 Stage-B 값을 **추가**(DEC-D3 — 예: `req:reconstruct`).
+   */
+  kind: 'convert' | 'stage-b' | 'custom' | 'absent' | 'add'
   next: string | undefined
 }
 
 export interface MigratePlan {
   targetRoot: string
   decisions: ScriptDecision[]
-  /** 실제로 바꿀 키(kind==='convert'). 비어 있으면 쓸 것이 없다. */
+  /** Stage-A 값을 Stage-B로 바꿀 키(kind==='convert'). */
   converts: ScriptDecision[]
+  /** 🔴 신규 Stage-B verb 추가 키(kind==='add', DEC-D3) — reconstruct 등. converts와 함께 write된다. */
+  adds: ScriptDecision[]
   /** 보존하는 사용자 정의 키(kind==='custom') — 수동 조치 안내 대상. */
   customs: ScriptDecision[]
   /** vendored `scripts/req/**`가 남아 있는가(삭제하지 않는다 — 안내만). */
@@ -61,14 +67,19 @@ export interface MigratePlan {
  * `REQ_SCRIPTS`가 그 SSOT다. 사용자 정의 값(`req:new = "node custom.mjs"` 등)은 **절대 덮어쓰지 않는다**.
  */
 export function decideScripts(scripts: Record<string, string>): ScriptDecision[] {
-  return Object.keys(REQ_SCRIPTS).map((key) => {
+  // 🔴 DEC-D3: **현재 Stage-B 표면(dispatch 파생)**을 순회한다 — REQ_SCRIPTS(역사적 5)가 아니다.
+  //    그래야 신규 verb(reconstruct)도 판정 대상에 들어와 부재 시 add된다.
+  return Object.keys(STAGE_B_REQ_SCRIPTS).map((key) => {
     const current = scripts[key]
-    const stageA = REQ_SCRIPTS[key]
+    const stageA = REQ_SCRIPTS[key] // 신규 verb면 undefined(Stage-A 서명 없음)
     const stageB = STAGE_B_REQ_SCRIPTS[key]
-    if (current === undefined) return { key, current, kind: 'absent' as const, next: undefined }
-    if (current === stageA) return { key, current, kind: 'convert' as const, next: stageB }
     if (current === stageB) return { key, current, kind: 'stage-b' as const, next: undefined }
-    return { key, current, kind: 'custom' as const, next: undefined }
+    if (stageA !== undefined && current === stageA) return { key, current, kind: 'convert' as const, next: stageB }
+    if (current === undefined) {
+      // Stage-A 서명이 없는 **신규** verb만 add(현재 표면으로 올림). 역사적 verb의 부재는 기존 동작(absent·무변경) 보존.
+      return stageA === undefined ? { key, current, kind: 'add' as const, next: stageB } : { key, current, kind: 'absent' as const, next: undefined }
+    }
+    return { key, current, kind: 'custom' as const, next: undefined } // 사용자 정의(reconstruct 포함) 보존
   })
 }
 
@@ -89,6 +100,7 @@ export function planMigrate(opts: MigrateOptions): MigratePlan {
     targetRoot,
     decisions,
     converts: decisions.filter((d) => d.kind === 'convert'),
+    adds: decisions.filter((d) => d.kind === 'add'),
     customs: decisions.filter((d) => d.kind === 'custom'),
     vendoredPresent: existsSync(join(targetRoot, KIT_SOURCE_DIR_REL)),
   }
@@ -119,6 +131,11 @@ export function renderPlan(plan: MigratePlan, apply: boolean): string[] {
   L.push(`  대상: ${plan.targetRoot}`)
   L.push('')
 
+  if (plan.adds.length > 0) {
+    L.push(`  🔴 신규 Stage-B verb 추가 ${plan.adds.length}개(현재 dispatch 표면, 예: req:reconstruct):`)
+    for (const d of plan.adds) L.push(`    package.json#scripts.${d.key} = "${d.next}"  (신규)`)
+    L.push('')
+  }
   if (plan.converts.length > 0) {
     L.push(`  전환 대상 — 현재 값이 정확히 Stage A 주입값인 키 ${plan.converts.length}개:`)
     for (const d of plan.converts) L.push(`    package.json#scripts.${d.key}:  "${d.current}"  →  "${d.next}"`)
@@ -148,7 +165,7 @@ export function renderPlan(plan: MigratePlan, apply: boolean): string[] {
   if (!apply) {
     L.push('  적용하려면: npx commitgate migrate --apply')
     L.push('  (--apply 는 package.json 만 씁니다. 커밋하지 않습니다 — 직접 검토 후 stage/commit 하십시오.)')
-  } else if (plan.converts.length > 0) {
+  } else if (plan.converts.length > 0 || plan.adds.length > 0) {
     L.push('  다음: git diff package.json 으로 확인한 뒤 커밋하십시오.')
     L.push('    git add -- package.json')
     L.push('    git commit -m "chore: migrate commitgate to Stage B runtime"')
@@ -174,9 +191,10 @@ export function runMigrate(opts: MigrateOptions): MigratePlan {
         `devDependencies.commitgate 선언이 없습니다 — Stage B 는 req:* 를 'commitgate <verb>' 로 심으므로 ` +
           `대상에 commitgate 가 devDependency 로 있어야 합니다. 먼저 'npm install -D commitgate' 를 실행한 뒤 다시 시도하십시오.`,
       )
-    if (plan.converts.length > 0) {
+    const writes = [...plan.converts, ...plan.adds] // 🔴 DEC-D3: convert(전환) + add(신규 verb) 모두 쓴다.
+    if (writes.length > 0) {
       const scripts = pkg.scripts ?? {}
-      for (const d of plan.converts) if (d.next !== undefined) scripts[d.key] = d.next
+      for (const d of writes) if (d.next !== undefined) scripts[d.key] = d.next
       pkg.scripts = scripts
       writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
     }

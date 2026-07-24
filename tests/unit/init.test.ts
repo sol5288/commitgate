@@ -42,6 +42,7 @@ import {
   LOCKFILE,
   REQ_SCRIPTS,
   STAGE_B_REQ_SCRIPTS,
+  STAGE_B_REQ_VERBS,
   detectStageA,
   commitgateDeclared,
   statWritableDest,
@@ -716,9 +717,17 @@ describe('[init][Stage B] 전제 검사 — D19(Stage A 서명) → D14(선행 �
 })
 
 describe('[init][Stage B] 순수 함수 — detectStageA / commitgateDeclared', () => {
-  it('STAGE_B_REQ_SCRIPTS는 REQ_SCRIPTS와 같은 키에 `commitgate <verb>` 값을 갖는다', () => {
-    expect(Object.keys(STAGE_B_REQ_SCRIPTS).sort()).toEqual(Object.keys(REQ_SCRIPTS).sort())
-    for (const k of Object.keys(REQ_SCRIPTS)) expect(STAGE_B_REQ_SCRIPTS[k]).toBe(`commitgate ${k}`)
+  it('㉚ 🔴 STAGE_B_REQ_SCRIPTS 키 === dispatch req:* verb 집합(SSOT 정합 — 미래 verb 자동 검출)', async () => {
+    const { VERB_MODULES } = await import('../../bin/dispatch.mjs')
+    const dispatchReqVerbs = Object.keys(VERB_MODULES).filter((v) => v.startsWith('req:')).sort()
+    // Stage-B 표면 = dispatch req:* verb(REQ_SCRIPTS 아님). 값은 모두 `commitgate <verb>`.
+    expect(STAGE_B_REQ_VERBS).toEqual(dispatchReqVerbs)
+    expect(Object.keys(STAGE_B_REQ_SCRIPTS).sort()).toEqual(dispatchReqVerbs)
+    for (const k of dispatchReqVerbs) expect(STAGE_B_REQ_SCRIPTS[k]).toBe(`commitgate ${k}`)
+    expect(dispatchReqVerbs).toContain('req:reconstruct') // 현재 표면에 reconstruct 포함(phase-4)
+    // 🔴 REQ_SCRIPTS(Stage-A 서명 5)는 STAGE_B의 **부분집합** — frozen·reconstruct 미포함(과거 주입 기록).
+    for (const k of Object.keys(REQ_SCRIPTS)) expect(Object.keys(STAGE_B_REQ_SCRIPTS)).toContain(k)
+    expect(Object.keys(REQ_SCRIPTS)).not.toContain('req:reconstruct')
   })
 
   it('commitgateDeclared: 키 존재만 본다(값 형태 무관), 상속 키는 인정하지 않는다', () => {
@@ -784,9 +793,10 @@ describe('[init] 정상 설치', () => {
       expect(pkg.scripts['req:next']).toBe('commitgate req:next')
       expect(pkg.scripts['req:doctor']).toBe('commitgate req:doctor')
       expect(pkg.scripts['req:review-codex']).toBe('commitgate req:review-codex')
-      expect(Object.keys(pkg.scripts).sort()).toEqual(
-        ['req:commit', 'req:doctor', 'req:new', 'req:next', 'req:review-codex'].sort(),
-      )
+      expect(pkg.scripts['req:reconstruct']).toBe('commitgate req:reconstruct') // ㉛ 🔴 fresh init이 reconstruct 주입
+      // 🔴 DEC-D3: 주입된 req:* 집합 === 현재 Stage-B 표면(dispatch 파생, reconstruct 포함).
+      expect(Object.keys(pkg.scripts).sort()).toEqual(STAGE_B_REQ_VERBS)
+      expect(Object.keys(pkg.scripts)).toContain('req:reconstruct')
       // ── R3 무주입: tsx·ajv·cross-spawn은 commitgate 패키지의 runtime dependency지 대상의 것이 아니다.
       //    사용자가 넣은 devDependencies.commitgate(픽스처)는 그대로 보존된다 — init은 devDeps를 건드리지 않는다.
       expect(pkg.devDependencies.tsx).toBeUndefined()

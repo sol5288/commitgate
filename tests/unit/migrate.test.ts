@@ -71,10 +71,23 @@ const readPkg = (dir: string): { scripts: Record<string, string>; devDependencie
   JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
 
 describe('[migrate] decideScripts — 정확한 Stage A 값만 전환 대상(D5, 순수)', () => {
-  it('Stage A 주입값 → convert', () => {
+  it('㉝ Stage A 주입값 5 → convert · 신규 verb(reconstruct) 부재 → add(DEC-D3)', () => {
     const d = decideScripts({ ...REQ_SCRIPTS })
-    expect(d.every((x) => x.kind === 'convert')).toBe(true)
-    for (const x of d) expect(x.next).toBe(STAGE_B_REQ_SCRIPTS[x.key])
+    const byKey = Object.fromEntries(d.map((x) => [x.key, x]))
+    for (const k of Object.keys(REQ_SCRIPTS)) {
+      expect(byKey[k]!.kind).toBe('convert')
+      expect(byKey[k]!.next).toBe(STAGE_B_REQ_SCRIPTS[k])
+    }
+    // 🔴 reconstruct: Stage-A 서명 없음 + 부재 → add(현재 dispatch 표면으로 올림).
+    expect(byKey['req:reconstruct']!.kind).toBe('add')
+    expect(byKey['req:reconstruct']!.next).toBe('commitgate req:reconstruct')
+  })
+
+  it('㉞ 사용자 정의 reconstruct → custom(보존 — 덮어쓰지 않음)', () => {
+    const d = decideScripts({ 'req:reconstruct': 'node my-reconstruct.mjs' })
+    const rec = d.find((x) => x.key === 'req:reconstruct')!
+    expect(rec.kind).toBe('custom')
+    expect(rec.next).toBeUndefined()
   })
 
   it('이미 Stage B 값 → stage-b(재전환 안 함)', () => {
@@ -91,10 +104,17 @@ describe('[migrate] decideScripts — 정확한 Stage A 값만 전환 대상(D5,
     expect(byKey['req:doctor']!.kind).toBe('custom')
   })
 
-  it('키 없음 → absent(새로 만들지 않는다 — migrate는 설치가 아니다)', () => {
+  it('키 없음 → 역사적 verb는 absent(무변경)·신규 verb(reconstruct)는 add(DEC-D3)', () => {
     const d = decideScripts({})
-    expect(d.every((x) => x.kind === 'absent')).toBe(true)
-    expect(d.every((x) => x.next === undefined)).toBe(true)
+    const byKey = Object.fromEntries(d.map((x) => [x.key, x]))
+    // 역사적 verb(Stage-A 서명 존재)의 부재는 무변경(기존 동작 — migrate는 설치가 아니다).
+    for (const k of Object.keys(REQ_SCRIPTS)) {
+      expect(byKey[k]!.kind).toBe('absent')
+      expect(byKey[k]!.next).toBeUndefined()
+    }
+    // 🔴 신규 verb(reconstruct)만 add(현재 표면으로 올림).
+    expect(byKey['req:reconstruct']!.kind).toBe('add')
+    expect(byKey['req:reconstruct']!.next).toBe('commitgate req:reconstruct')
   })
 
   it('한 글자만 달라도 사용자 값이다(바이트 정확 일치만 전환)', () => {
@@ -155,12 +175,27 @@ describe('[migrate] dry-run(기본) — 부작용 0건', () => {
 })
 
 describe('[migrate] --apply — exact-match만 전환, 그 외 전부 보존', () => {
-  it('Stage A req:* 5개를 commitgate <verb> 로 전환한다', () => {
+  it('㉝ Stage A req:* 5개를 commitgate <verb> 로 전환하고 신규 verb(reconstruct)를 add 한다', () => {
     const dir = tmpStageA()
     try {
       runMigrate({ dir, apply: true })
       const pkg = readPkg(dir)
       for (const k of Object.keys(REQ_SCRIPTS)) expect(pkg.scripts[k]).toBe(STAGE_B_REQ_SCRIPTS[k])
+      // 🔴 DEC-D3: Stage-A 프로젝트엔 없던 reconstruct가 add된다(현재 dispatch 표면으로 올림).
+      expect(pkg.scripts['req:reconstruct']).toBe('commitgate req:reconstruct')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('㉞ migrate 시 사용자 정의 reconstruct는 덮어쓰지 않고 보존', () => {
+    const dir = tmpStageA({ scripts: { ...REQ_SCRIPTS, 'req:reconstruct': 'node my-reconstruct.mjs' } })
+    try {
+      const plan = runMigrate({ dir, apply: true })
+      const pkg = readPkg(dir)
+      expect(pkg.scripts['req:reconstruct']).toBe('node my-reconstruct.mjs') // 미덮어씀
+      expect(plan.adds.map((d) => d.key)).not.toContain('req:reconstruct') // add 대상 아님
+      expect(plan.customs.map((d) => d.key)).toContain('req:reconstruct') // custom 보존
     } finally {
       cleanup(dir)
     }
