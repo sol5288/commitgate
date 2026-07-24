@@ -210,6 +210,74 @@ describe('[REQ-2026-052 phase-4] req:reconstruct (실 git·DEC-D2)', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  const stRow = (ticketId: string, seriesId: string, at: string): string =>
+    serializeCloseProofRow({ ticket_id: ticketId, event: 'series-terminal', series_id: seriesId, resolution: 'replace', phase_inventory: null, design_ref: null, at, reconstructed: false, evidence_basis: null } as CloseProofRow)
+
+  it('🔴 ㉕ 같은 series_id + 서로 다른 decided_at 2 successor → ambiguity(--run --confirm도 commit 0·close-proof 0)', () => {
+    const repo = mkRepo()
+    try {
+      commitTicket(repo, PARENT, {})
+      commitSuccessor(repo, 'REQ-2026-002', validSuccessorOf(PARENT, 'design:-#1')) // at=ISO
+      commitSuccessor(repo, 'REQ-2026-003', { req_id: PARENT, parent_replace_resolution: { decision: 'replace', method: 'm', decided_at: '2026-07-25T00:00:00.000Z' }, parent_series_id: 'design:-#1' }) // 다른 at
+      const head0 = g(repo, ['rev-parse', 'HEAD'])
+      reconstructMain([PARENT, '--run', '--confirm', '--root', repo])
+      expect(g(repo, ['rev-parse', 'HEAD'])).toBe(head0) // commit 0
+      expect(cpRows(repo, PARENT).length).toBe(0) // close-proof 0
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('🔴 ㉖ 같은 series_id + 동일 at 2 successor → reconstructed 행 1개·evidence_basis 두 경로 정렬', () => {
+    const repo = mkRepo()
+    try {
+      commitTicket(repo, PARENT, {})
+      commitSuccessor(repo, 'REQ-2026-002', validSuccessorOf(PARENT, 'design:-#1')) // at=ISO
+      commitSuccessor(repo, 'REQ-2026-003', validSuccessorOf(PARENT, 'design:-#1')) // at=ISO 동일
+      reconstructMain([PARENT, '--run', '--confirm', '--root', repo])
+      const rows = cpRows(repo, PARENT)
+      expect(rows.length).toBe(1)
+      expect(rows[0]!.series_id).toBe('design:-#1')
+      expect(rows[0]!.evidence_basis).toEqual(['workflow/REQ-2026-002/state.json', 'workflow/REQ-2026-003/state.json']) // 정렬
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('🔴 ㉗ 서로 다른 series_id 2 successor → 각 series-terminal 행 독립 복원', () => {
+    const repo = mkRepo()
+    try {
+      commitTicket(repo, PARENT, {})
+      commitSuccessor(repo, 'REQ-2026-002', validSuccessorOf(PARENT, 'design:-#1'))
+      commitSuccessor(repo, 'REQ-2026-003', validSuccessorOf(PARENT, 'design:-#2'))
+      reconstructMain([PARENT, '--run', '--confirm', '--root', repo])
+      const rows = cpRows(repo, PARENT)
+      expect(rows.map((r) => r.series_id).sort()).toEqual(['design:-#1', 'design:-#2'])
+      expect(rows.every((r) => r.event === 'series-terminal' && r.reconstructed === true)).toBe(true)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('🔴 ㉘ HEAD 행과 후보의 at 충돌 → fail-closed·write 0', () => {
+    const repo = mkRepo()
+    try {
+      // HEAD에 이미 series-terminal(design:-#1, at=OLD) 커밋. successor는 다른 at(ISO).
+      commitTicket(repo, PARENT, { close: stRow(PARENT, 'design:-#1', '2026-07-01T00:00:00.000Z') })
+      commitSuccessor(repo, SUCC, validSuccessorOf(PARENT, 'design:-#1')) // at=ISO ≠ OLD
+      const head0 = g(repo, ['rev-parse', 'HEAD'])
+      expect(() => reconstructMain([PARENT, '--run', '--confirm', '--root', repo])).toThrow(/모순|conflict|fail-closed/)
+      expect(g(repo, ['rev-parse', 'HEAD'])).toBe(head0) // write 0
+      expect(cpRows(repo, PARENT).length).toBe(1) // 기존 행 그대로(덮어쓰기 없음)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  it('㉙ 동일한 기존 행(material 일치) → 재시도 no-op·추가 커밋 0', () => {
+    const repo = mkRepo()
+    try {
+      commitTicket(repo, PARENT, { close: stRow(PARENT, 'design:-#1', ISO) }) // HEAD에 이미 존재(at=ISO)
+      commitSuccessor(repo, SUCC, validSuccessorOf(PARENT, 'design:-#1')) // at=ISO 동일
+      const head0 = g(repo, ['rev-parse', 'HEAD'])
+      reconstructMain([PARENT, '--run', '--confirm', '--root', repo])
+      expect(g(repo, ['rev-parse', 'HEAD'])).toBe(head0) // 멱등 no-op·추가 커밋 0
+      expect(cpRows(repo, PARENT).length).toBe(1)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   it('collectSuccessorEvidence: 유효 replace lineage만 수집(비-replace·구식·형식무효 제외)', () => {
     const repo = mkRepo()
     try {
@@ -224,15 +292,16 @@ describe('[REQ-2026-052 phase-4] req:reconstruct (실 git·DEC-D2)', () => {
   })
 })
 
-describe('[REQ-2026-052 phase-4] planReconstruction (순수·DEC-D2)', () => {
-  const ev = (sid: string, at = ISO): { successorTicketId: string; successorStatePath: string; parentSeriesId: string; at: string } =>
-    ({ successorTicketId: 'REQ-2026-002', successorStatePath: 'workflow/REQ-2026-002/state.json', parentSeriesId: sid, at })
+describe('[REQ-2026-052 phase-4] planReconstruction (순수·DEC-D2 multi-witness)', () => {
+  const ev = (sid: string, at = ISO, path = 'workflow/REQ-2026-002/state.json'): { successorTicketId: string; successorStatePath: string; parentSeriesId: string; resolution: 'replace'; at: string } =>
+    ({ successorTicketId: 'REQ-2026-002', successorStatePath: path, parentSeriesId: sid, resolution: 'replace', at })
 
   it('유효 successor → series-terminal 후보(reconstructed:true·evidence_basis)', () => {
     const p = planReconstruction({ ticketId: 'REQ-2026-001', existingRows: [], successors: [ev('design:-#1')] })
     expect(p.candidates.length).toBe(1)
     expect(p.candidates[0]!.row).toMatchObject({ event: 'series-terminal', series_id: 'design:-#1', resolution: 'replace', reconstructed: true, phase_inventory: null, design_ref: null })
     expect(p.candidates[0]!.evidenceBasis).toEqual(['workflow/REQ-2026-002/state.json'])
+    expect(p.conflicts).toEqual([])
   })
   it('🔴 dev-complete는 절대 후보에 없다(합성 금지) — successor 있어도 series-terminal만', () => {
     const p = planReconstruction({ ticketId: 'REQ-2026-001', existingRows: [], successors: [ev('design:-#1')] })
@@ -243,11 +312,34 @@ describe('[REQ-2026-052 phase-4] planReconstruction (순수·DEC-D2)', () => {
     expect(p.candidates.length).toBe(0)
     expect(p.refusals.some((r) => /미결정|모호/.test(r))).toBe(true)
   })
-  it('기존 series-terminal 행 존재 → 복원 불필요(refusal·중복 없음)', () => {
+  it('기존 series-terminal 행(material 일치) → 멱등 no-op(refusal·conflict 아님)', () => {
     const existing: CloseProofRow = { ticket_id: 'REQ-2026-001', event: 'series-terminal', series_id: 'design:-#1', resolution: 'replace', phase_inventory: null, design_ref: null, at: ISO, reconstructed: false, evidence_basis: null }
     const p = planReconstruction({ ticketId: 'REQ-2026-001', existingRows: [existing], successors: [ev('design:-#1')] })
     expect(p.candidates.length).toBe(0)
-    expect(p.refusals.some((r) => /이미.*존재/.test(r))).toBe(true)
+    expect(p.conflicts).toEqual([])
+    expect(p.refusals.some((r) => /멱등|존재/.test(r))).toBe(true)
+  })
+  it('🔴 multi-witness: 같은 series_id + 다른 at → ambiguity refusal(후보 0·conflict 아님)', () => {
+    const p = planReconstruction({ ticketId: 'REQ-2026-001', existingRows: [], successors: [ev('design:-#1', ISO, 'workflow/A/state.json'), ev('design:-#1', '2026-07-25T00:00:00.000Z', 'workflow/B/state.json')] })
+    expect(p.candidates.length).toBe(0)
+    expect(p.conflicts).toEqual([])
+    expect(p.refusals.some((r) => /ambiguity|불일치/.test(r))).toBe(true)
+  })
+  it('🔴 multi-witness: 같은 series_id + 같은 at 2개 → 후보 1개·evidence_basis 두 경로 정렬', () => {
+    const p = planReconstruction({ ticketId: 'REQ-2026-001', existingRows: [], successors: [ev('design:-#1', ISO, 'workflow/B/state.json'), ev('design:-#1', ISO, 'workflow/A/state.json')] })
+    expect(p.candidates.length).toBe(1)
+    expect(p.candidates[0]!.evidenceBasis).toEqual(['workflow/A/state.json', 'workflow/B/state.json']) // 정렬·중복제거
+    expect(p.candidates[0]!.row.evidence_basis).toEqual(['workflow/A/state.json', 'workflow/B/state.json'])
+  })
+  it('🔴 다른 series_id 2개 → 각 독립 후보', () => {
+    const p = planReconstruction({ ticketId: 'REQ-2026-001', existingRows: [], successors: [ev('design:-#1', ISO, 'workflow/A/state.json'), ev('design:-#2', ISO, 'workflow/B/state.json')] })
+    expect(p.candidates.map((c) => c.row.series_id).sort()).toEqual(['design:-#1', 'design:-#2'])
+  })
+  it('🔴 HEAD 행과 at 모순 → conflict(fail-closed·refusal로 숨기지 않음)', () => {
+    const existing: CloseProofRow = { ticket_id: 'REQ-2026-001', event: 'series-terminal', series_id: 'design:-#1', resolution: 'replace', phase_inventory: null, design_ref: null, at: '2026-07-01T00:00:00.000Z', reconstructed: false, evidence_basis: null }
+    const p = planReconstruction({ ticketId: 'REQ-2026-001', existingRows: [existing], successors: [ev('design:-#1', ISO)] }) // 다른 at
+    expect(p.candidates.length).toBe(0)
+    expect(p.conflicts.some((c) => /모순|fail-closed/.test(c))).toBe(true)
   })
   it('parseArgs: reqId·--run·--confirm·--root', () => {
     expect(parseArgs(['2026-001', '--run', '--confirm'])).toMatchObject({ reqId: '2026-001', run: true, confirm: true })

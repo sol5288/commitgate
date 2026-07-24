@@ -97,6 +97,7 @@ export function collectSuccessorEvidence(workflowDirRel: string, parentReqId: st
       successorTicketId: id,
       successorStatePath: `${rel}/state.json`,
       parentSeriesId: s.parent_series_id,
+      resolution: 'replace', // collect는 decision==='replace'만 통과시킨다(material field로 명시).
       at: (hr as { decided_at: string }).decided_at,
     })
   }
@@ -113,8 +114,12 @@ function renderPlan(reqId: string, plan: ReconstructPlan): string {
     lines.push('  복원 예정 행: 없음')
   }
   if (plan.refusals.length) {
-    lines.push('  복원 불가·불필요:')
+    lines.push('  복원 불가·불필요·모호:')
     for (const r of plan.refusals) lines.push(`    - ${r}`)
+  }
+  if (plan.conflicts.length) {
+    lines.push('  🔴 fail-closed conflict(HEAD 모순 — write 0):')
+    for (const c of plan.conflicts) lines.push(`    - ${c}`)
   }
   return lines.join('\n')
 }
@@ -147,6 +152,10 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const successors = collectSuccessorEvidence(workflowDirRel, reqId, (a) => git(a))
   const plan = planReconstruction({ ticketId: reqId, existingRows: parsed.rows, successors })
   console.log(renderPlan(reqId, plan))
+
+  // 🔴 conflict(HEAD 모순)는 dry-run/`--run` 무관하게 **명령 전체를 fail-closed**한다 — 멱등으로 숨기지 않는다.
+  if (plan.conflicts.length)
+    throw new Error(`${reqId}: HEAD close-proof와 모순되는 복원 대상(conflict) — fail-closed(write 0): ${plan.conflicts.join('; ')}`)
 
   // 4. 실행 모델.
   if (!o.run) {

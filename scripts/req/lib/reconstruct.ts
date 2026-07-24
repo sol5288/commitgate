@@ -22,7 +22,9 @@ export interface SuccessorEvidence {
   successorStatePath: string
   /** `successor_of.parent_series_id` — 부모의 replace 종결 series_id. */
   parentSeriesId: string
-  /** `successor_of.parent_replace_resolution.at` — 종결 시점(부모 값). */
+  /** 종결 사유. successor는 항상 `replace`(collect가 그렇게 거른다) — material field로 명시 검사한다. */
+  resolution: 'replace'
+  /** `successor_of.parent_replace_resolution.decided_at` — 종결 시점(부모 값). */
   at: string
 }
 
@@ -34,14 +36,20 @@ export interface ReconstructCandidate {
 export interface ReconstructPlan {
   /** 복원 예정(신규) 행. */
   candidates: ReconstructCandidate[]
-  /** 복원 불가·불필요 사유(진단 표시용). */
+  /** 복원 불가·불필요·모호 사유(진단 표시용 — write는 안 하지만 명령은 계속). */
   refusals: string[]
+  /** 🔴 fail-closed conflict(HEAD 모순) — 하나라도 있으면 CLI는 **전체를 write 0으로 중단**한다. */
+  conflicts: string[]
 }
 
 /**
- * 이 티켓의 복원 가능한 close-proof 행을 매트릭스(DEC-D2)대로 산출(순수). dev-complete는 절대 산출 안 함.
+ * 이 티켓의 복원 가능한 close-proof 행을 매트릭스(DEC-D2 multi-witness)대로 산출(순수). dev-complete는 절대 산출 안 함.
  *
- * @param existingRows 이 티켓 HEAD close-proof를 파싱한 행들(모순/중복 판정 기준). 손상 티켓은 CLI가 이 함수 **전에** 거른다.
+ * 🔴 **parent_series_id별 그룹화**: 같은 series를 가리키는 복수 witness의 material field(resolution·at)가 **전부 일치**할
+ *    때만 후보 1개(evidence_basis=모든 successor state 경로 정렬·중복제거). 불일치=ambiguity refusal(그 series write 0).
+ * 🔴 **HEAD 정합**: 같은 자연키 행이 HEAD에 있으면 material 일치=멱등 no-op, 모순=**conflict**(숨기지 않고 fail-closed).
+ *
+ * @param existingRows 이 티켓 HEAD close-proof를 파싱한 행들. 손상 티켓은 CLI가 이 함수 **전에** 거른다.
  * @param successors 이 티켓을 부모로 지목하는 committed successor 증거들.
  */
 export function planReconstruction(args: {
@@ -51,33 +59,60 @@ export function planReconstruction(args: {
 }): ReconstructPlan {
   const candidates: ReconstructCandidate[] = []
   const refusals: string[] = []
-  const seen = new Set<string>()
+  const conflicts: string[] = []
+
+  // ① parent_series_id별 그룹화(빈 필드는 미결정으로 개별 refusal).
+  const groups = new Map<string, SuccessorEvidence[]>()
   for (const s of args.successors) {
-    // 필드 완전성(요구 불변식 #3): series_id·at가 모두 명확해야 한다.
-    if (!s.parentSeriesId || !s.at) {
-      refusals.push(`successor ${s.successorTicketId}: parent_series_id 또는 at 미결정 → 복원 불가(모호)`)
+    if (!s.parentSeriesId || !s.at || !s.resolution) {
+      refusals.push(`successor ${s.successorTicketId}: parent_series_id·resolution·at 중 미결정 → 복원 불가(모호)`)
       continue
     }
+    const g = groups.get(s.parentSeriesId)
+    if (g) g.push(s)
+    else groups.set(s.parentSeriesId, [s])
+  }
+
+  for (const seriesId of [...groups.keys()].sort()) {
+    const witnesses = groups.get(seriesId)!
+    // ② material field(resolution·at) 전부 일치해야 후보. 불일치=ambiguity(그 series 후보 없음).
+    const ats = new Set(witnesses.map((w) => w.at))
+    const resolutions = new Set(witnesses.map((w) => w.resolution))
+    if (ats.size > 1 || resolutions.size > 1) {
+      refusals.push(
+        `series ${seriesId}: 복수 successor의 material field 불일치(at=[${[...ats].sort().join(', ')}] resolution=[${[...resolutions].sort().join(', ')}]) → ambiguity 복원 불가(write 0)`,
+      )
+      continue
+    }
+    const at = witnesses[0]!.at
+    const resolution = witnesses[0]!.resolution
+    // 완전 일치하는 복수 witness → evidence_basis에 모든 경로 정렬·중복제거.
+    const evidenceBasis = [...new Set(witnesses.map((w) => w.successorStatePath))].sort()
     const row: CloseProofRow = {
       ticket_id: args.ticketId,
       event: 'series-terminal',
-      series_id: s.parentSeriesId,
-      resolution: 'replace',
+      series_id: seriesId,
+      resolution,
       phase_inventory: null,
       design_ref: null,
-      at: s.at,
+      at,
       reconstructed: true,
-      evidence_basis: [s.successorStatePath],
+      evidence_basis: evidenceBasis,
     }
+    // ③ HEAD 정합: 같은 자연키 행이 있으면 material 일치=멱등 no-op, 모순=conflict(fail-closed).
     const key = closeProofRowKey(row)
-    // 🔴 기존 HEAD 행과 모순/중복: 같은 자연키가 이미 있으면 복원 불필요(append가 duplicate/conflict로 안전 처리).
-    if (args.existingRows.some((r) => closeProofRowKey(r) === key)) {
-      refusals.push(`series ${s.parentSeriesId}: 이미 series-terminal 행이 HEAD에 존재 → 복원 불필요`)
+    const prior = args.existingRows.find((r) => closeProofRowKey(r) === key)
+    if (prior) {
+      if (prior.resolution === resolution && prior.at === at) {
+        refusals.push(`series ${seriesId}: 동일 series-terminal 행이 HEAD에 존재 → 복원 불필요(멱등 no-op)`)
+      } else {
+        conflicts.push(
+          `series ${seriesId}: HEAD 행과 모순(HEAD at=${prior.at} resolution=${prior.resolution} ≠ 후보 at=${at} resolution=${resolution}) → fail-closed(숨기지 않음)`,
+        )
+      }
       continue
     }
-    if (seen.has(key)) continue // 같은 실행에서 중복 successor는 한 번만.
-    seen.add(key)
-    candidates.push({ row, evidenceBasis: [s.successorStatePath] })
+    candidates.push({ row, evidenceBasis })
   }
-  return { candidates, refusals }
+  return { candidates, refusals, conflicts }
 }
