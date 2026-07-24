@@ -1,6 +1,14 @@
 # REQ-2026-052 리뷰 요청
 
-## phase-4 설계 (req:reconstruct — 복원 가능성 매트릭스 DEC-D2) 🔴 이번 delta review 대상
+## phase-4 P1 보정 (successor 증거 모호성 — DEC-D2 multi-witness) 🔴 이번 delta review 대상
+
+phase-4 사후 P1: 같은 parent_series_id를 가리키는 successor 증거가 복수일 수 있는데, 현재 planReconstruction은 같은 자연키의 두 번째를 조용히 skip → `at`(decided_at)가 다르면 열거순 먼저 온 witness가 임의 채택되는 **fail-open**(필수 필드 모호한데 행 생성).
+
+정책(DEC-D2 multi-witness): ① parent_series_id별 그룹화 후 material field(parent_series_id·resolution·at) **전부 일치 시만** 후보 1개(evidence_basis=모든 successor state 경로 정렬·중복제거). ② at/resolution 불일치=**ambiguity refusal**(그 series write 0·다른 series 독립 진행). ③ HEAD 같은 자연키 행 존재 시 전 필드 일치=멱등 no-op·resolution/at 모순=**fail-closed conflict**(숨기지 않음). ④ 다른 series_id=독립 후보. ⑤ dev-complete 합성 금지·integrity·dry-run·--confirm·미커밋 보호 유지.
+
+이 delta는 위 multi-witness 정책(그룹화·일치·ambiguity·conflict)에 집중해 검토를 요청한다.
+
+## phase-4 설계 (req:reconstruct — 복원 가능성 매트릭스 DEC-D2) — 승인·구현됨
 
 reconstruct는 HEAD-committed immutable evidence만 읽고, 그 evidence가 close-proof 행의 **모든 필드를 명확·모호없이 결정할 때만** 복원한다. 매트릭스:
 - **dev-complete = 절대 불가**: phase_inventory를 approvals.jsonl phase_id 집합으로 합성하면 미커밋 계획 phase를 조용히 빼는 DEC-B5 P1 재발. inventory 독립 기록 없음 → self-verifying 행 없으면 복원 근거 없음 → 재검토가 유일 경로(reconstruct는 완료 migration 아님).

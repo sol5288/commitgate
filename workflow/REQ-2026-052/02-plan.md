@@ -192,6 +192,15 @@ phase-3b2 후속 대칭 보정(DEC-B7). dev-complete가 design_ref를 근거로 
 | ㉓ | reconstructed overlay는 intake 기본 상태 규칙 불변(series-terminal은 event 때문이지 overlay 때문 아님) |
 | ㉔ | `--run` 전 사람 확인 없으면 write 0 |
 
+**multi-witness 모호성 보정(P1 delta)**:
+| # | oracle |
+|---|---|
+| ㉕ | 같은 series_id + 서로 다른 decided_at successor 2개 → dry-run ambiguity 표시 · `--run --confirm`도 commit 0 / close-proof 0 |
+| ㉖ | 같은 series_id + 동일 at successor 2개 → reconstructed 행 1개 · evidence_basis에 두 state 경로 정렬 기록 |
+| ㉗ | 서로 다른 series_id successor 2개 → 각 series-terminal 행 독립 복원 |
+| ㉘ | 기존 HEAD 행과 후보의 at 또는 resolution 충돌 → fail-closed·write 0(멱등으로 숨기지 않음) |
+| ㉙ | 동일한 기존 행 → 재시도 no-op·추가 커밋 0 |
+
 ## 검증 fixture 정책
 
 `44_yammy_sales`는 **읽기전용**. 어떤 파일도 생성·수정·stage·commit·설치하지 않는다. git 동작은 `git init` 임시 저장소로 검증하고 실행 후 삭제.
