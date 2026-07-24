@@ -19,14 +19,22 @@ delta reviews) can be silently disabled. `commitgate sync` restores those assets
 ```sh
 npx commitgate sync                    # plan only (dry-run — see what would change)
 npx commitgate sync --apply            # re-sync the schema axis
-npx commitgate sync --apply --persona  # persona too (restore if missing; your edits are preserved)
+npx commitgate sync --apply --persona  # persona too (restore if missing; if it differs, show a diff and preserve)
+npx commitgate sync --apply --persona --persona-apply  # after reviewing that diff, replace it (keeps a .bak)
 ```
 
 - `sync` restores the **schema axis only** (contracts, always kept current). It does not touch companion skills,
   `workflow/.gitignore`, `package.json`, or `req:*`.
-- The **persona (`review-persona.md`) is handled only with `--persona`**, and only as a **restore-if-missing**. A
-  persona you edited yourself is never overwritten (if it differs, it is preserved and only reported) — to customize
-  it, point `reviewPersonaPath` in `req.config.json` at a separate file.
+- The **persona (`review-persona.md`) is handled only with `--persona`**. It is restored when missing, and when it
+  differs the tool **prints the real content diff before doing anything and preserves the file by default** (you see
+  the diff in dry-run too).
+- **To pick up review-policy updates**, review that diff and pass `--persona-apply` **together with** `--persona`.
+  A backup is written to `workflow/review-persona.md.bak` first (last generation only), and **if the backup or the
+  diff cannot be produced, nothing is replaced** (fail-closed). Personas installed by 0.9.8 and earlier carry no kit
+  marker, so they get a louder "you may have written this yourself" warning — but the replace path is the same.
+  Decide from the diff.
+- To keep managing the persona yourself, point `reviewPersonaPath` in `req.config.json` at a separate file
+  (`sync` then leaves it completely untouched).
 - `req:doctor`'s **D20** WARNs when the vendored schema drifts from the installed copy (it never blocks the commit).
 
 **③ If you are on an older (vendored) install**, follow up with the `migrate` step below to move to the Stage B runtime.

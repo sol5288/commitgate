@@ -46,6 +46,38 @@ export function safeSpawnSync(file: string, args: readonly string[], opts: SafeS
   return res.stdout ? res.stdout.toString('utf8') : ''
 }
 
+/**
+ * `safeSpawnSync`의 **exit code 보존** 변형 (REQ-2026-050 D5).
+ *
+ * `safeSpawnSync`는 non-zero를 전부 실패로 보고 throw한다. 그러나 **non-zero가 정상 신호**인 명령이 있다 —
+ * `git diff --no-index`는 두 파일 내용이 다르면 exit **1**을 낸다(정상 결과이지 오류가 아니다).
+ * 그런 명령에 `safeSpawnSync`를 쓰면 정상 결과를 오류로 오판한다.
+ *
+ * 🔴 **새 spawn 경로를 만드는 것이 아니다.** shell 없는 `cross-spawn` 단일 경로(주입 차단 경계)를 그대로
+ *    재사용하고, 달라지는 것은 **exit code 해석을 호출자에게 넘긴다**는 것뿐이다. 어떤 code가 정상인지는
+ *    명령마다 다르므로 여기서 정책을 갖지 않는다.
+ *
+ * spawn 자체의 실패(`res.error` — 예: git 부재 ENOENT)는 여기서도 throw한다. 그건 code 해석의 문제가 아니다.
+ */
+export function safeSpawnSyncStatus(
+  file: string,
+  args: readonly string[],
+  opts: SafeSpawnOptions = {},
+): { status: number | null; stdout: string; stderr: string } {
+  const res = spawn.sync(file, args as string[], {
+    cwd: opts.cwd,
+    input: opts.input,
+    stdio: opts.stdio ?? 'pipe',
+    maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
+  })
+  if (res.error) throw res.error
+  return {
+    status: res.status,
+    stdout: res.stdout ? res.stdout.toString('utf8') : '',
+    stderr: res.stderr ? res.stderr.toString('utf8') : '',
+  }
+}
+
 // ──────────────────────────────────────────────────────────── Git ──
 
 /** git 호출 경계(D-017-3). exec(args) = trim된 stdout, 실패 시 throw(fail-closed). */

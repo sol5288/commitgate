@@ -10,6 +10,10 @@ import {
   normalizeIgnoreLine,
   missingKitIgnoreRules,
   appendIgnoreRules,
+  hasPersonaKitMarker,
+  renderPersonaDiff,
+  PERSONA_KIT_MARKER,
+  PERSONA_DIFF_MAX_LINES,
   type SyncPlan,
 } from '../../bin/sync'
 import { PACKAGE_ROOT, KIT_SCHEMA_RELPATHS, sha256File } from '../../bin/init'
@@ -417,5 +421,373 @@ describe('[sync] gitignore 축 — planSync/runSync', () => {
   it('parseArgs: --gitignore 를 인식하고 기본은 false', () => {
     expect(parseArgs(['--gitignore']).gitignore).toBe(true)
     expect(parseArgs([]).gitignore).toBe(false)
+  })
+})
+
+// ─────────────────────────── REQ-2026-050: persona managed-drift 경로 ───────────────────────────
+//
+// 왜 이 경로가 생겼나: 0.9.8까지 persona 차이는 `preserved-differs`로 **미접촉**만 했다. 안전하지만
+// 갱신 경로가 아예 없어, 배포된 리뷰 정책이 기존 프로젝트에 **영영 도달하지 못했다**(design-r02 P1).
+// 이제 두 status 모두 "적용 전 실제 내용 diff → 이중 플래그 opt-in → 백업 → 교체"를 탄다.
+// 마커는 **차단 조건이 아니라 경고 강도**다.
+
+const shippedPersona = (): string => readFileSync(join(PACKAGE_ROOT, PERSONA_REL), 'utf8')
+
+/** kit 계보(마커 有)이면서 shipped와는 다른 persona를 심는다. */
+function seedMarkedDrift(dir: string): void {
+  mkdirSync(join(dir, 'workflow'), { recursive: true })
+  writeFileSync(join(dir, PERSONA_REL), shippedPersona() + '\n<!-- 사용자가 덧붙인 절 -->\n')
+}
+
+/** 마커 없는(직접 작성 가능성) persona를 심는다. */
+function seedUnmarkedDrift(dir: string): void {
+  mkdirSync(join(dir, 'workflow'), { recursive: true })
+  writeFileSync(join(dir, PERSONA_REL), '# 내가 처음부터 쓴 persona\n')
+}
+
+const UNMARKED_BODY = '# 내가 처음부터 쓴 persona\n'
+
+/** deps 스텁 — diff 텍스트·이벤트 순서를 관측한다. 실제 git을 호출하지 않는다. */
+function stubDeps(diffText = '@@ -1 +1 @@\n-old line\n+new line\n') {
+  const events: string[] = []
+  const lines: string[] = []
+  return {
+    events,
+    lines,
+    deps: {
+      diff: (): string => {
+        events.push('diff-produced')
+        return diffText
+      },
+      backup: (): void => {
+        events.push('backup')
+      },
+      log: (l: string): void => {
+        lines.push(l)
+        if (l.includes('-old line') || l.includes('+new line')) events.push('diff-printed')
+      },
+    },
+  }
+}
+
+describe('[sync] hasPersonaKitMarker — 계보 판정(순수)', () => {
+  it('첫 줄이 마커면 true', () => {
+    expect(hasPersonaKitMarker(PERSONA_KIT_MARKER + '\n# Reviewer\n')).toBe(true)
+  })
+  it('CRLF·BOM·선행 공백에 무관하다', () => {
+    expect(hasPersonaKitMarker('﻿  ' + PERSONA_KIT_MARKER + '  \r\n# Reviewer\r\n')).toBe(true)
+  })
+  it('둘째 줄에 있으면 false(첫 줄만 본다)', () => {
+    expect(hasPersonaKitMarker('# Reviewer\n' + PERSONA_KIT_MARKER + '\n')).toBe(false)
+  })
+  it('마커가 없으면 false', () => {
+    expect(hasPersonaKitMarker('# Reviewer\n')).toBe(false)
+  })
+  it('shipped persona에는 마커가 있다(phase-1 산출물과의 결속)', () => {
+    expect(hasPersonaKitMarker(shippedPersona())).toBe(true)
+  })
+})
+
+describe('[sync] planSync — persona 마커 유무 2분기', () => {
+  it('① 마커 有 · shipped와 다름 → managed-drift', () => {
+    const dir = mk()
+    try {
+      seedSchemas(dir, 'shipped')
+      seedMarkedDrift(dir)
+      const plan = planSync(dir, cfgFor(dir), true)
+      expect(findAsset(plan, PERSONA_REL)?.status).toBe('managed-drift')
+      expect(plan.personaDiff?.unmarked).toBe(false)
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('② 마커 無 · 다름 → preserved-differs(기존 식별자 유지)', () => {
+    const dir = mk()
+    try {
+      seedSchemas(dir, 'shipped')
+      seedUnmarkedDrift(dir)
+      const plan = planSync(dir, cfgFor(dir), true)
+      expect(findAsset(plan, PERSONA_REL)?.status).toBe('preserved-differs')
+      expect(plan.personaDiff?.unmarked).toBe(true)
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('③ --persona-apply 없으면 두 status 모두 writes 0건', () => {
+    for (const seed of [seedMarkedDrift, seedUnmarkedDrift]) {
+      const dir = mk()
+      try {
+        seedSchemas(dir, 'shipped')
+        seed(dir)
+        const plan = planSync(dir, cfgFor(dir), true, false, false)
+        expect(inWrites(plan, PERSONA_REL)).toBe(false)
+        expect(plan.backups.length).toBe(0)
+      } finally {
+        rm(dir)
+      }
+    }
+  })
+
+  it('--persona-apply 면 두 status 모두 writes + backups에 들어간다', () => {
+    for (const seed of [seedMarkedDrift, seedUnmarkedDrift]) {
+      const dir = mk()
+      try {
+        seedSchemas(dir, 'shipped')
+        seed(dir)
+        const plan = planSync(dir, cfgFor(dir), true, false, true)
+        expect(inWrites(plan, PERSONA_REL)).toBe(true)
+        expect(plan.backups).toEqual([{ srcRel: PERSONA_REL, bakRel: PERSONA_REL + '.bak' }])
+      } finally {
+        rm(dir)
+      }
+    }
+  })
+
+  it('⑫ unmanaged(custom·null)는 --persona-apply 여도 writes 0건', () => {
+    for (const raw of [{ reviewPersonaPath: 'docs/my-persona.md' }, { reviewPersonaPath: null }]) {
+      const dir = mk()
+      try {
+        seedSchemas(dir, 'shipped')
+        writeFileSync(join(dir, 'req.config.json'), JSON.stringify(raw))
+        const plan = planSync(dir, cfgFor(dir), true, false, true)
+        expect(plan.writes.some((w) => w.destRel.includes('persona'))).toBe(false)
+        expect(plan.backups.length).toBe(0)
+        expect(plan.personaDiff).toBeNull()
+      } finally {
+        rm(dir)
+      }
+    }
+  })
+})
+
+describe('[sync] renderPersonaDiff — 실제 내용 diff 표시', () => {
+  const d = {
+    shippedAbs: '/pkg/workflow/review-persona.md',
+    targetAbs: '/t/workflow/review-persona.md',
+    targetRel: PERSONA_REL,
+    unmarked: false,
+  }
+
+  it('④ 실제 변경 행이 출력에 포함된다(요약이 아니다)', () => {
+    const out = renderPersonaDiff('@@ -1 +1 @@\n-옛 문장\n+새 문장\n', d).join('\n')
+    expect(out).toContain('-옛 문장')
+    expect(out).toContain('+새 문장')
+  })
+
+  it('⑤ 상한 초과면 절단 표시 + shipped 절대경로를 낸다', () => {
+    const many = Array.from({ length: PERSONA_DIFF_MAX_LINES + 50 }, (_, i) => '+line ' + i).join('\n')
+    const out = renderPersonaDiff(many, d).join('\n')
+    expect(out).toContain('출력 상한 ' + PERSONA_DIFF_MAX_LINES + '행에서 잘림')
+    expect(out).toContain('50행 더 있음')
+    expect(out).toContain(d.shippedAbs)
+  })
+
+  it('상한 이내면 절단 표시가 없다', () => {
+    expect(renderPersonaDiff('+one\n+two\n', d).join('\n')).not.toContain('잘림')
+  })
+
+  it('⑪ 마커 없으면 "직접 작성했을 수 있다" 경고가 붙고, 있으면 안 붙는다', () => {
+    const marked = renderPersonaDiff('+x\n', { ...d, unmarked: false }).join('\n')
+    const unmarked = renderPersonaDiff('+x\n', { ...d, unmarked: true }).join('\n')
+    expect(unmarked).toContain('직접 작성했을 수 있습니다')
+    expect(marked).not.toContain('직접 작성했을 수 있습니다')
+  })
+
+  it('diff 텍스트가 비면 그 사실을 숨기지 않고 알린다', () => {
+    expect(renderPersonaDiff('', d).join('\n')).toContain('diff 출력이 비어 있습니다')
+  })
+})
+
+describe('[sync] runSync — persona 교체의 fail-closed 계약', () => {
+  it('⑨ 정상 경로: 마커 無(pre-050 설치분)에서도 .bak 생성 후 교체된다', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedUnmarkedDrift(dir)
+      const st = stubDeps()
+      runSync(
+        { dir, apply: true, persona: true, personaApply: true },
+        { ...st.deps, backup: (s: string, b: string): void => writeFileSync(b, readFileSync(s)) },
+      )
+      expect(existsSync(join(dir, PERSONA_REL + '.bak'))).toBe(true)
+      expect(readFileSync(join(dir, PERSONA_REL + '.bak'), 'utf8')).toBe(UNMARKED_BODY)
+      expect(readFileSync(join(dir, PERSONA_REL), 'utf8')).toBe(shippedPersona())
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('교체된 파일에는 마커가 생겨 다음부터 managed-drift로 판정된다', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedUnmarkedDrift(dir)
+      const st = stubDeps()
+      runSync(
+        { dir, apply: true, persona: true, personaApply: true },
+        { ...st.deps, backup: (s: string, b: string): void => writeFileSync(b, readFileSync(s)) },
+      )
+      expect(hasPersonaKitMarker(readFileSync(join(dir, PERSONA_REL), 'utf8'))).toBe(true)
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('⑥ diff 출력이 어떤 파일 쓰기보다 먼저다(백업 시점에 대상은 아직 원본)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedUnmarkedDrift(dir)
+      const st = stubDeps()
+      let contentAtBackup = ''
+      runSync(
+        { dir, apply: true, persona: true, personaApply: true },
+        {
+          ...st.deps,
+          backup: (s: string, b: string): void => {
+            st.events.push('backup')
+            contentAtBackup = readFileSync(join(dir, PERSONA_REL), 'utf8')
+            writeFileSync(b, readFileSync(s))
+          },
+        },
+      )
+      expect(st.events.indexOf('diff-printed')).toBeGreaterThan(-1)
+      expect(st.events.indexOf('backup')).toBeGreaterThan(st.events.indexOf('diff-printed'))
+      // 백업 시점에도 대상은 **아직 교체 전**이다 = diff가 사후 설명이 아니다.
+      expect(contentAtBackup).toBe(UNMARKED_BODY)
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('⑦ diff 생산 실패 → 교체하지 않는다(fail-closed)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedUnmarkedDrift(dir)
+      const st = stubDeps()
+      const plan = runSync(
+        { dir, apply: true, persona: true, personaApply: true },
+        {
+          ...st.deps,
+          diff: (): string => {
+            throw new Error('git diff --no-index 실패(exit=128)')
+          },
+        },
+      )
+      expect(inWrites(plan, PERSONA_REL)).toBe(false)
+      expect(readFileSync(join(dir, PERSONA_REL), 'utf8')).toBe(UNMARKED_BODY)
+      expect(st.lines.join('\n')).toContain('diff 없이는 교체하지 않습니다')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('⑧ 백업 실패 → 교체하지 않는다(fail-closed)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedUnmarkedDrift(dir)
+      const st = stubDeps()
+      runSync(
+        { dir, apply: true, persona: true, personaApply: true },
+        {
+          ...st.deps,
+          backup: (): void => {
+            throw new Error('EACCES')
+          },
+        },
+      )
+      expect(readFileSync(join(dir, PERSONA_REL), 'utf8')).toBe(UNMARKED_BODY)
+      expect(existsSync(join(dir, PERSONA_REL + '.bak'))).toBe(false)
+      expect(st.lines.join('\n')).toContain('백업 없이는 교체하지 않습니다')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('③ --persona-apply 없이 --apply 만 → 교체 안 함 · diff는 그래도 보여준다', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedUnmarkedDrift(dir)
+      const st = stubDeps()
+      runSync({ dir, apply: true, persona: true }, st.deps)
+      expect(readFileSync(join(dir, PERSONA_REL), 'utf8')).toBe(UNMARKED_BODY)
+      expect(st.events).toContain('diff-printed')
+      expect(st.lines.join('\n')).toContain('--persona-apply')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('④ dry-run(--apply 없음)에서도 diff를 보여준다 — 적용 전에 봐야 고를 수 있다', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedMarkedDrift(dir)
+      const st = stubDeps()
+      runSync({ dir, apply: false, persona: true }, st.deps)
+      expect(st.events).toContain('diff-printed')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('⑩ --persona 없이 --persona-apply 만 → persona 축 완전 미접촉', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedUnmarkedDrift(dir)
+      const st = stubDeps()
+      const plan = runSync({ dir, apply: true, persona: false, personaApply: true }, st.deps)
+      expect(plan.assets.some((a) => a.axis === 'persona')).toBe(false)
+      expect(plan.personaDiff).toBeNull()
+      expect(readFileSync(join(dir, PERSONA_REL), 'utf8')).toBe(UNMARKED_BODY)
+      expect(st.lines.join('\n')).toContain('--persona-apply 는 --persona 를 함의하지 않습니다')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('in-sync persona는 diff도 교체도 없다(멱등)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      mkdirSync(join(dir, 'workflow'), { recursive: true })
+      writeFileSync(join(dir, PERSONA_REL), shippedPersona())
+      const st = stubDeps()
+      const plan = runSync({ dir, apply: true, persona: true, personaApply: true }, st.deps)
+      expect(findAsset(plan, PERSONA_REL)?.status).toBe('in-sync')
+      expect(plan.personaDiff).toBeNull()
+      expect(st.events).not.toContain('diff-produced')
+    } finally {
+      rm(dir)
+    }
+  })
+})
+
+describe('[sync] parseArgs — --persona-apply', () => {
+  it('--persona-apply 를 인식한다', () => {
+    expect(parseArgs(['--persona', '--persona-apply']).personaApply).toBe(true)
+  })
+  it('기본값은 false(기존 동작 불변)', () => {
+    expect(parseArgs(['--persona']).personaApply).toBe(false)
+  })
+  it('--persona-apply 는 --persona 를 함의하지 않는다', () => {
+    const o = parseArgs(['--persona-apply'])
+    expect(o.personaApply).toBe(true)
+    expect(o.persona).toBe(false)
   })
 })

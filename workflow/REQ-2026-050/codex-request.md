@@ -26,6 +26,14 @@
 > **r01 반영**: "diff 요약"으로는 정보에 기반한 선택이 안 된다 → D5 신설(생산 방식·표시 시점·출력 상한·실패 시 fail-closed).
 > **r02 반영**: 마커 게이팅이 pre-050 설치분 전체의 갱신 경로를 봉쇄해 요구사항 4를 위반한다 → 마커를 경고 강도로 강등하고 두 status 모두에 opt-in 교체 경로를 열었다. oracle 12건.
 
+## phase-2 구현 노트 (이번 staged diff)
+
+- `AssetStatus`에 `managed-drift` 추가. `preserved-differs`는 **식별자를 유지**하고 의미만 "마커 無 · 다름"으로 좁혔다 — 기존 테스트(사용자 편집 persona → `preserved-differs`)가 그대로 통과한다.
+- diff 생산은 `safeSpawnSyncStatus`(신규, `adapters.ts`)로 `git diff --no-index --no-color`를 부른다. `safeSpawnSync`는 non-zero를 전부 throw해서 exit 1(=다름)을 오류로 오판하므로 쓸 수 없다. **shell 없는 cross-spawn 단일 경로는 그대로 재사용**하고 exit code 해석만 호출자로 옮겼다.
+- `runSync(opts, deps)`에 주입 경계(`diff`·`backup`·`log`)를 뒀다. 테스트는 stub으로 실패 분기와 **호출 순서**를 검증하고, 실 git 경로는 임시 저장소 스모크로 따로 확인했다(dry-run diff 출력 · 미교체 · 교체+백업 · 재실행 멱등 4단계 전부 실동작 확인).
+- 백업은 `statWritableDest`를 타서 confinement를 재구현하지 않는다.
+- 검증: typecheck 0 · 전체 1401 green(+27) · `docs:lint` 통과.
+
 ## 리뷰 포인트
 
 1. **D2의 안전장치가 충분한가.** 분해 관점 추가가 차단 기준 확대로 읽히면 리뷰가 미수렴하고, 그것은 이 REQ가 고치려는 문제의 재생산이다. persona 문구가 "탐색 하한이지 P1 확대가 아님"을 실제로 강제하는가, 아니면 더 강한 표현이 필요한가.

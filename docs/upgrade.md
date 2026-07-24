@@ -18,13 +18,20 @@ npm install -D commitgate@latest     # 또는 특정 버전: commitgate@^0.8.0
 ```sh
 npx commitgate sync                  # 계획만 출력(dry-run — 무엇이 바뀔지 확인)
 npx commitgate sync --apply          # 스키마 축 재동기화
-npx commitgate sync --apply --persona  # 페르소나도 함께(부재면 복원, 직접 수정본은 보존)
+npx commitgate sync --apply --persona  # 페르소나도 함께(부재면 복원, 다르면 diff만 보여주고 보존)
+npx commitgate sync --apply --persona --persona-apply  # 위 diff 확인 후 페르소나를 shipped 로 교체(.bak 백업)
 ```
 
 - `sync`는 **스키마 축만** 되돌립니다(계약이라 항상 최신으로). companion skills·`workflow/.gitignore`·
   `package.json`·`req:*`는 건드리지 않습니다.
-- **페르소나(`review-persona.md`)는 `--persona`에서만**, 그것도 **부재 복원**만 합니다. 직접 수정한 페르소나는
-  덮지 않습니다(다르면 보존하고 알림만) — 커스터마이즈하려면 `req.config.json`의 `reviewPersonaPath`를 별도 파일로 지정하세요.
+- **페르소나(`review-persona.md`)는 `--persona`에서만** 다룹니다. 부재면 복원하고, 내용이 다르면
+  **적용 전에 실제 내용 diff를 출력한 뒤 기본적으로는 보존**합니다(dry-run 에서도 diff 를 봅니다).
+- **리뷰 정책 업데이트를 받으려면** diff 를 확인한 뒤 `--persona-apply` 를 `--persona` 와 **함께** 주십시오.
+  교체 전에 `workflow/review-persona.md.bak` 을 남기며(직전 1세대), **백업이나 diff 생성이 실패하면 교체하지
+  않습니다**(fail-closed). 0.9.8 이하가 깐 페르소나에는 kit 마커가 없어 "직접 작성분일 수 있음" 경고가
+  붙지만, 교체 경로는 동일합니다 — 무엇을 잃는지는 diff 로 확인하고 판단하십시오.
+- 페르소나를 계속 직접 관리하려면 `req.config.json`의 `reviewPersonaPath`를 별도 파일로 지정하세요
+  (그 경우 `sync`는 완전히 미접촉입니다).
 - `req:doctor`의 **D20**이 vendored 스키마가 설치 사본과 어긋나면 **WARN**으로 알려 줍니다(커밋은 막지 않습니다).
 
 **③ 예전(vendored) 설치본이면** 이어서 아래 `migrate`로 Stage B 전환까지 하세요.
