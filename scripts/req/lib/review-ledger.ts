@@ -59,8 +59,10 @@ export interface LedgerRow {
   outcome: LedgerOutcome | null
   /** 이 attempt가 autoBudget 초과라 사람 예외를 소비했는지. scratch에서 지워지는 유일한 사실이라 여기서만 살아남는다. */
   exception_consumed: boolean
-  archive_path: string | null
-  archive_sha256: string | null
+  // 🔴 **archive path·sha256을 담지 않는다**(phase-2 리뷰 P1). 아카이브된 라운드의 경로·해시는 이미
+  //    `approvals.jsonl`의 `archive_inventory`가 단일 출처로 보관한다. 원장이 그걸 복제하면 두 사본이
+  //    갈라질 수 있고, 이 REQ의 헤드라인 원칙("approvals.jsonl을 중복하지 않는다")을 스스로 어긴다.
+  //    아카이브 존재 여부는 `outcome`이 이미 알려 준다(approved/needs-fix=아카이브됨, blocked/invalid=아님).
   /** 🔴 프롬프트 **해시만**. 본문은 원장에 들어가지 않는다. */
   prompt_sha256: string | null
   at: string
@@ -71,6 +73,12 @@ export interface LedgerRow {
 /**
  * 직렬화 키 순서(고정 — deterministic). `serializeManifestLine`과 같은 방식.
  * 허용키 화이트리스트로도 쓰인다 — 여기 없는 top-level 키는 오염 신호로 거부한다.
+ *
+ * 🔴 **릴리스 후 스키마 변경은 additive-only여야 한다.** 키를 **제거**하면, 옛 스키마로 커밋된 기존 원장이
+ *    새 검증기에서 "알 수 없는 키"로 거부되고 D5 fail-closed가 그 티켓의 모든 리뷰를 막는다(실제로 이
+ *    REQ의 phase-2 개발 중 dogfood에서 발생했다 — 미커밋 원장이라 재생성으로 해결). 이 REQ는 **릴리스 전**이라
+ *    archive_path·archive_sha256을 제거해도 야생에 옛 원장이 없어 안전하다. 릴리스 후에는 키 추가만 하고,
+ *    값 확장은 forward-compatible하게(모르는 값은 거부 안 함, `lifecycle` 참조).
  */
 export const LEDGER_KEYS = [
   'ticket_id',
@@ -82,8 +90,6 @@ export const LEDGER_KEYS = [
   'lifecycle',
   'outcome',
   'exception_consumed',
-  'archive_path',
-  'archive_sha256',
   'prompt_sha256',
   'at',
   'reconstructed',
@@ -143,16 +149,21 @@ export function ledgerRowProblems(raw: unknown): string[] {
   if (typeof r.reconstructed !== 'boolean') p.push('reconstructed는 boolean')
   if (!isValidIsoInstant(r.at)) p.push('at이 ISO instant가 아님')
   if (r.lifecycle !== null && typeof r.lifecycle !== 'string') p.push('lifecycle은 null이거나 문자열')
-  for (const k of ['archive_path', 'archive_sha256', 'prompt_sha256'] as const)
-    if (r[k] !== null && typeof r[k] !== 'string') p.push(`${k}는 null이거나 문자열`)
+  if (r.prompt_sha256 !== null && typeof r.prompt_sha256 !== 'string') p.push('prompt_sha256는 null이거나 문자열')
 
   if (r.outcome !== null && (typeof r.outcome !== 'string' || !OUTCOMES.includes(r.outcome)))
     p.push(`outcome 부적합: ${String(r.outcome)}`)
 
   // 🔴 `attempt-opened`는 결과를 알 수 없는 시점이다 — 결과 필드가 채워져 있으면 순서가 뒤집힌 기록이다.
   if (r.event === 'attempt-opened') {
-    for (const k of ['outcome', 'archive_path', 'archive_sha256', 'lifecycle'] as const)
-      if (r[k] !== null) p.push(`attempt-opened인데 ${k}가 채워져 있음`)
+    for (const k of ['outcome', 'lifecycle'] as const) if (r[k] !== null) p.push(`attempt-opened인데 ${k}가 채워져 있음`)
+  }
+
+  // 🔴 `attempt-closed`는 판정이 끝난 시점이다 — 최소한 outcome·lifecycle은 있어야 한다(design 리뷰 observation).
+  //    이게 없으면 outcome=null인 closed 행이 통과해 "완료됐지만 판정 불명"이라는 자기모순 상태가 원장에 남는다.
+  if (r.event === 'attempt-closed') {
+    if (r.outcome === null) p.push('attempt-closed인데 outcome이 null')
+    if (r.lifecycle === null) p.push('attempt-closed인데 lifecycle이 null')
   }
   return p
 }

@@ -32,8 +32,6 @@ const opened = (over: Partial<LedgerRow> = {}): LedgerRow => ({
   lifecycle: null,
   outcome: null,
   exception_consumed: false,
-  archive_path: null,
-  archive_sha256: null,
   prompt_sha256: 'a'.repeat(64),
   at: '2026-07-24T04:00:00.000Z',
   reconstructed: false,
@@ -45,8 +43,6 @@ const closed = (over: Partial<LedgerRow> = {}): LedgerRow =>
     event: 'attempt-closed',
     lifecycle: 'completed',
     outcome: 'approved',
-    archive_path: 'workflow/REQ-2026-051/responses/design-r01-approved.json',
-    archive_sha256: 'b'.repeat(64),
     ...over,
   })
 
@@ -76,8 +72,6 @@ describe('[ledger] ① 직렬화 — 고정 키 순서 + 끝 개행', () => {
       'lifecycle',
       'outcome',
       'exception_consumed',
-      'archive_path',
-      'archive_sha256',
       'prompt_sha256',
       'at',
       'reconstructed',
@@ -94,6 +88,12 @@ describe('[ledger] ① 직렬화 — 고정 키 순서 + 끝 개행', () => {
     const keys = new Set<string>(LEDGER_KEYS)
     for (const forbidden of ['prompt', 'response', 'body', 'text', 'findings', 'detail'])
       expect(keys.has(forbidden)).toBe(false)
+  })
+
+  it('archive path·sha 키가 없다 — approvals.jsonl의 archive_inventory가 단일 출처(중복 금지)', () => {
+    const keys = new Set<string>(LEDGER_KEYS)
+    expect(keys.has('archive_path')).toBe(false)
+    expect(keys.has('archive_sha256')).toBe(false)
   })
 })
 
@@ -203,14 +203,23 @@ describe('[ledger] ⑧ attempt-opened 는 결과 필드가 비어야 한다', ()
   it('outcome 이 채워져 있으면 거부', () => {
     expect(ledgerRowProblems(opened({ outcome: 'approved' })).join(' ')).toContain('attempt-opened인데 outcome')
   })
-  it('archive_path 가 채워져 있으면 거부', () => {
-    expect(ledgerRowProblems(opened({ archive_path: 'x.json' })).join(' ')).toContain('attempt-opened인데 archive_path')
-  })
   it('lifecycle 이 채워져 있으면 거부', () => {
     expect(ledgerRowProblems(opened({ lifecycle: 'completed' })).join(' ')).toContain('attempt-opened인데 lifecycle')
   })
   it('정상 attempt-opened 는 통과', () => {
     expect(ledgerRowProblems(opened())).toEqual([])
+  })
+})
+
+describe('[ledger] ⑰ attempt-closed 는 판정이 있어야 한다(design 리뷰 observation)', () => {
+  it('outcome 이 null 인 closed 는 거부(완료됐지만 판정 불명 = 자기모순)', () => {
+    expect(ledgerRowProblems(closed({ outcome: null })).join(' ')).toContain('attempt-closed인데 outcome이 null')
+  })
+  it('lifecycle 이 null 인 closed 는 거부', () => {
+    expect(ledgerRowProblems(closed({ lifecycle: null })).join(' ')).toContain('attempt-closed인데 lifecycle이 null')
+  })
+  it('정상 attempt-closed 는 통과', () => {
+    expect(ledgerRowProblems(closed())).toEqual([])
   })
 })
 

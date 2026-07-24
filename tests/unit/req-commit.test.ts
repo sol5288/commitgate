@@ -650,6 +650,20 @@ describe('[REQ-2026-048] archive_inventory — 라운드 아카이브 전량 영
     expect(designEvidenceStagePaths([], APPROVED_REL, T)).toEqual([APPROVED_REL, `${T}/responses/approvals.jsonl`])
   })
 
+  /** ⑯ REQ-2026-051: 원장이 있으면 같은 커밋에 합류한다. 없으면 넣지 않는다(없는 pathspec으로 커밋 실패 방지). */
+  it('designEvidenceStagePaths: ledgerExists=true면 원장이 합류, false면 미포함', () => {
+    expect(designEvidenceStagePaths([], APPROVED_REL, T, false)).toEqual([APPROVED_REL, `${T}/responses/approvals.jsonl`])
+    expect(designEvidenceStagePaths([], APPROVED_REL, T, true)).toEqual([
+      APPROVED_REL,
+      `${T}/responses/approvals.jsonl`,
+      `${T}/responses/review-ledger.jsonl`,
+    ])
+  })
+
+  it('designEvidenceStagePaths: 3-arg 호출은 원장 없이(기존 호출부 무회귀)', () => {
+    expect(designEvidenceStagePaths([], APPROVED_REL, T)).not.toContain(`${T}/responses/review-ledger.jsonl`)
+  })
+
   /** 🔴 무관한 index 변경이 evidence 커밋에 딸려 들어가지 못하게 — 티켓 responses/ 밖 경로는 절대 stage하지 않는다. */
   it('designEvidenceStagePaths: 티켓 responses/ 밖 경로는 걸러낸다', () => {
     const evil = [

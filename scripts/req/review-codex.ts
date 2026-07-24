@@ -43,6 +43,12 @@ import {
   type GitAdapter,
   type ReviewerAdapter,
 } from './lib/adapters'
+import {
+  ledgerPath,
+  appendLedgerRow,
+  serializeLedgerRow,
+  type LedgerRow,
+} from './lib/review-ledger'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
 
@@ -1147,10 +1153,68 @@ export function consumeReviewException(
  * **예산 게이트가 `recordAttempt` 전이다**(REQ-2026-028 R5): 막을 거면 호출도 기록도 하기 전에 막는다.
  * throw 시 state는 바뀌지 않는다(예외 소비 성공 시에만 쓰기). **반환 `state`가 후처리의 유일한 base다**(R9).
  */
+/**
+ * 원장 1행 append(REQ-2026-051 D5·D6). 티켓 `responses/review-ledger.jsonl`에 쓴다.
+ *
+ * 🔴 **두 실패를 분리한다**(phase-2 리뷰 P1 — D5와 D6이 뭉개지면 안 된다):
+ *
+ *   1. **기존 원장 읽기·파싱·검증 실패 = 전파(fail-closed, D5).** 기존 본문이 파싱 불가(잘린 JSONL)이거나
+ *      같은 자연키에 다른 내용이 오면 `appendLedgerRow`가 `conflict`를 낸다. `readFileSync` 자체의 오류도
+ *      마찬가지다. 이것들은 **감사 원장의 무결성 손상**이므로 조용히 진행하면 D5 위반이다 — throw한다.
+ *      호출자(attempt-opened)가 외부 호출 **전**에 이걸 부르므로, 손상된 원장은 리뷰를 시작조차 못 한다
+ *      (D10 pre-review clean-tree 게이트와 같은 자리·같은 태도).
+ *
+ *   2. **새 행 쓰기 실패 = 삼킴(D6).** 읽기·검증이 통과했는데 mkdir/write가 실패하는 것은 순수한 I/O
+ *      문제다. 이것이 승인·차단 판정이나 exit code를 뒤집으면 계약 위반이다(측정 로그 R8과 같은 취지).
+ *      경고만 내고 판정은 그대로 둔다.
+ *
+ * 정상 경로에서 attempt-opened가 무결성을 확인하고 우리가 유효한 행 하나만 append하므로, attempt-closed
+ * 시점의 재검증은 (협조적 단일 worktree 전제에서) 통과한다 — closed에서 전파가 실제로 발화하는 것은
+ * "일어나선 안 될" 손상뿐이고, 그때는 크게 실패하는 편이 옳다.
+ */
+export function appendLedgerRowToDisk(root: string, ticketRel: string, row: LedgerRow): void {
+  const abs = join(root, ledgerPath(ticketRel))
+  // ── 읽기·검증 단계(D5 — 전파) ──
+  const existing = existsSync(abs) ? readFileSync(abs, 'utf8') : '' // readFileSync 오류는 전파(무결성 신호)
+  const r = appendLedgerRow(existing, row)
+  if (r.outcome === 'conflict')
+    throw new Error(`리뷰 원장 무결성 실패(fail-closed): ${r.problems.join('; ')}`)
+  if (r.outcome === 'duplicate') return // 재실행 멱등(no-op)
+  // ── 쓰기 단계(D6 — 삼킴) ──
+  try {
+    mkdirSync(dirname(abs), { recursive: true })
+    writeFileSync(abs, r.content, 'utf8')
+  } catch (err) {
+    console.warn(`[req:review-codex] ⚠️ 리뷰 원장 쓰기 실패(판정에는 영향 없음): ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+export interface AttemptInfo {
+  /** 열린 series의 id. 원장 자연키의 일부다. */
+  series_id: string
+  /** 이 호출이 몇 번째 attempt인가(recordAttempt 이후 값). */
+  attempt: number
+  /** autoBudget 초과라 사람 예외를 소비했는지 — scratch에서 지워지는 유일한 사실(REQ-2026-051). */
+  exception_consumed: boolean
+}
+
 export function withAttemptRecorded<T>(
-  ctx: { ticketDir: string; state: WorkflowState; kind: ReviewKind; phaseId: string | null; budget: ReviewBudget },
+  ctx: {
+    ticketDir: string
+    state: WorkflowState
+    kind: ReviewKind
+    phaseId: string | null
+    budget: ReviewBudget
+    /**
+     * attempt 확정·영속 **직후, 외부 호출 직전**에 불린다(REQ-2026-051 D2 — `attempt-opened`).
+     * 🔴 **여기서 던진 예외는 전파된다**(외부 호출 전에). `appendLedgerRowToDisk`가 쓰기 실패는 이미
+     *    삼키므로, 여기까지 올라오는 예외는 **원장 무결성 손상**뿐이다 — 손상된 감사 원장 위에서 리뷰를
+     *    시작하지 않는다(D5 fail-closed, D10 pre-review 게이트와 같은 자리).
+     */
+    onAttemptOpened?: (info: AttemptInfo) => void
+  },
   call: () => T,
-): { result: T; state: WorkflowState } {
+): { result: T; state: WorkflowState; attempt: AttemptInfo } {
   // REQ-2026-029 D2: terminal 가드 — 예산 게이트보다 **앞**. human-resolution으로 종결된 키는 예산을 볼
   // 필요도 없이 막는다(배분표 ③). 가드 없으면 recordAttempt가 새 series(0회)를 열어 예산이 리셋된다.
   if (isSeriesKeyTerminal(ctx.state, ctx.kind, ctx.phaseId))
@@ -1175,8 +1239,20 @@ export function withAttemptRecorded<T>(
   }
   const state = recordAttempt(gated, ctx.kind, ctx.phaseId)
   writeState(ctx.ticketDir, state) // 호출 **전** 영속 — throw해도 남는다
+  const opened = openSeriesRecord(state, ctx.kind, ctx.phaseId)
+  const info: AttemptInfo = {
+    series_id: opened?.series_id ?? '',
+    attempt: opened?.attempts ?? 0,
+    exception_consumed: decision.kind === 'needs-exception',
+  }
+  // 🔴 원장 `attempt-opened`도 **호출 전**에 남는다 — 그래야 호출이 실패해 완료 기록이 없는 attempt가
+  //    "예산은 깎였는데 완료되지 않은 호출"로 관측된다(REQ-2026-051 요구사항 #1).
+  //    🔴 **여기서 삼키지 않는다**(phase-2 리뷰 P1). `appendLedgerRowToDisk`가 이미 쓰기 실패는 삼키고
+  //    읽기·검증 손상만 throw한다(D5/D6 분리). 그 throw는 **외부 호출 전에 전파**되어야 손상된 원장이
+  //    리뷰를 시작조차 못 한다(D10 pre-review 게이트와 같은 자리). 여기서 catch하면 그 fail-closed가 죽는다.
+  ctx.onAttemptOpened?.(info)
   const result = call() // throw면 그대로 전파(기록은 이미 선행)
-  return { result, state }
+  return { result, state, attempt: info }
 }
 
 /** 같은 `(kind, phase_id)`의 열린 series record(없으면 undefined). series_id를 재구성하지 않고 직접 얻는다. */
@@ -1976,8 +2052,32 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   // REQ-2026-027 D3: attempt를 **호출 직전**에 기록·writeState(withAttemptRecorded). 반환 state(afterAttempt)가
   // 이후 모든 처리의 base다 — 호출 전 `state`를 다시 쓰면 최종 writeState가 attempt를 되돌린다(R9).
   let reviewDurationMs = 0 // REQ-2026-045: callReviewer 소요(측정 전용 — 판정/exit/state 무영향).
-  const { result: callRes, state: afterAttempt } = withAttemptRecorded(
-    { ticketDir, state, kind: opts.kind, phaseId, budget: cfg.reviewBudget },
+  const ledgerBase = {
+    ticket_id: String(state.id ?? ''),
+    review_kind: opts.kind,
+    phase_id: phaseId,
+    prompt_sha256: createHash('sha256').update(prompt, 'utf8').digest('hex'),
+    reconstructed: false,
+  } as const
+  const { result: callRes, state: afterAttempt, attempt: attemptInfo } = withAttemptRecorded(
+    {
+      ticketDir,
+      state,
+      kind: opts.kind,
+      phaseId,
+      budget: cfg.reviewBudget,
+      onAttemptOpened: (info) =>
+        appendLedgerRowToDisk(cfg.root, ticketRel, {
+          ...ledgerBase,
+          series_id: info.series_id,
+          attempt: info.attempt,
+          event: 'attempt-opened',
+          lifecycle: null,
+          outcome: null,
+          exception_consumed: info.exception_consumed,
+          at: new Date().toISOString(),
+        }),
+    },
     () => {
       const callStartMs = Date.now()
       try {
@@ -2097,6 +2197,21 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
       }
     }
   }
+
+  // REQ-2026-051 D2: 원장 `attempt-closed`. 대응하는 `attempt-opened`가 이미 있고, 이 행이 없으면
+  // 그 attempt는 "예산은 깎였는데 완료되지 않은 호출"로 남는다 — 그것이 요구사항 #1의 관측 방식이다.
+  // `approvedAt`을 재사용해 같은 call의 다른 기록과 시각이 어긋나지 않게 한다(새 시계를 읽지 않는다).
+  appendLedgerRowToDisk(cfg.root, ticketRel, {
+    ...ledgerBase,
+    series_id: attemptInfo.series_id,
+    attempt: attemptInfo.attempt,
+    event: 'attempt-closed',
+    lifecycle: 'completed', // 이 REQ는 completed만 쓴다. 실패 분류는 후속 REQ 소관(D3).
+    outcome, // ReviewOutcome === LedgerOutcome. 캐스트하지 않는다 — 갈라지면 빌드가 깨져야 한다.
+    exception_consumed: attemptInfo.exception_consumed,
+    // 🔴 archive path·sha는 담지 않는다 — approvals.jsonl의 archive_inventory가 단일 출처다(phase-2 리뷰 P1).
+    at: approvedAt,
+  })
 
   // REQ-2026-025 D4: 완료된 review call 1행 기록(측정 전용). `approvedAt`을 재사용해 같은 call의 다른
   // 기록과 시각이 어긋나지 않게 한다 — 새 시계를 읽지 않는다. 실패는 삼켜진다(R8).

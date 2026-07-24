@@ -14,12 +14,14 @@ const se = (index: string, worktree: string, path: string, origPath?: string): S
 /** untracked 엔트리(X=Y=`?`). */
 const u = (path: string): StatusEntry => se('?', '?', path)
 
-describe('reviewScratchPaths — review/doctor의 3경로', () => {
-  it('codex-response.json · .review-preview.txt · state.json', () => {
+describe('reviewScratchPaths — review/doctor의 4경로', () => {
+  it('codex-response.json · .review-preview.txt · state.json · review-ledger.jsonl', () => {
+    // REQ-2026-051: 리뷰 원장이 4번째. state.json과 같은 범주(리뷰 중 append되는 도구 산출물, 승인 시 커밋).
     expect(reviewScratchPaths('workflow/REQ-2026-001')).toEqual([
       'workflow/REQ-2026-001/codex-response.json',
       'workflow/REQ-2026-001/.review-preview.txt',
       'workflow/REQ-2026-001/state.json',
+      'workflow/REQ-2026-001/responses/review-ledger.jsonl',
     ])
   })
   it('후행 슬래시·역슬래시를 정규화한다', () => {
@@ -27,7 +29,13 @@ describe('reviewScratchPaths — review/doctor의 3경로', () => {
       'workflow/REQ-2026-001/codex-response.json',
       'workflow/REQ-2026-001/.review-preview.txt',
       'workflow/REQ-2026-001/state.json',
+      'workflow/REQ-2026-001/responses/review-ledger.jsonl',
     ])
+  })
+  it('원장은 exact 경로만 허용 — responses/ 하위지만 다른 파일은 미포함(증거 변조 차단)', () => {
+    const paths = reviewScratchPaths('workflow/REQ-2026-001')
+    expect(paths).toContain('workflow/REQ-2026-001/responses/review-ledger.jsonl')
+    expect(paths.some((p) => p.includes('approvals.jsonl'))).toBe(false)
   })
   it('TOOL_OUTPUT_BASENAMES는 state.json을 포함하지 않는다(D8 — req:new 예외에서 제외돼야)', () => {
     expect(TOOL_OUTPUT_BASENAMES).toEqual(['codex-response.json', '.review-preview.txt'])

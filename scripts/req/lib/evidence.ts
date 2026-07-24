@@ -165,12 +165,20 @@ export function designEvidenceStagePaths(
   inventory: readonly ArchiveInventoryItem[],
   responsePath: string,
   ticketRel: string,
+  /**
+   * 리뷰 원장이 디스크에 **존재하는가**(REQ-2026-051 D7). 존재할 때만 pathspec에 합류시킨다 —
+   * 없는 경로를 넣으면 `commitPaths`가 실패해 승인 증거 커밋 **전체**가 무산된다(원장 때문에 승인
+   * 증거를 잃는 것은 본말전도다).
+   * 생략 가능: 기존 3-arg 호출부를 깨지 않는다.
+   */
+  ledgerExists = false,
 ): string[] {
   const dir = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses`
   const archives = [...inventory.map((i) => i.response_path), responsePath].filter(
     (p) => typeof p === 'string' && p.length > 0 && isConfinedArchivePath(p, ticketRel),
   )
-  return [...new Set([...archives, `${dir}/approvals.jsonl`])]
+  const tail = ledgerExists ? [`${dir}/approvals.jsonl`, `${dir}/review-ledger.jsonl`] : [`${dir}/approvals.jsonl`]
+  return [...new Set([...archives, ...tail])]
 }
 
 /** 인벤토리 항목의 형식 문제 목록(순수). 빈 배열 = 정상. `line N: ` 접두는 호출부가 붙인다. */
@@ -483,7 +491,11 @@ export function durableDesignEvidence(args: {
     ports.writeText(manifestRel, candidate)
   }
 
-  const stagePaths = designEvidenceStagePaths(inventory, ev.response_path, ticketRel)
+  // REQ-2026-051 D7: 원장이 있으면 같은 커밋에 싣는다. `readText`로 존재를 확인한다 — 포트 경계를
+  // 넘지 않고(fs 직접 접근 금지), 없으면 pathspec에 넣지 않아 커밋이 실패하지 않는다.
+  const ledgerRel = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/review-ledger.jsonl`
+  const ledgerExists = ports.readText(ledgerRel) !== null
+  const stagePaths = designEvidenceStagePaths(inventory, ev.response_path, ticketRel, ledgerExists)
   // 🔴 가드는 **우리가 커밋할 경로**에만 건다 — index 전체가 아니다(phase-3 리뷰 P1).
   //    index 전체를 보면 설계 문서를 stage한 정상 승인 경로에서 항상 실패한다. pathspec 범위 커밋이라
   //    무관한 staged 변경은 애초에 이 커밋에 들어갈 수 없고, 커밋 후에도 index에 그대로 남는다.

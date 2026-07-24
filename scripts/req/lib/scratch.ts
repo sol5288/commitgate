@@ -20,6 +20,14 @@ import { isUntracked } from './porcelain'
 /** 티켓 디렉터리 안의 순수 untracked 도구 산출물. 커밋된 적이 없고 승인 증거가 아니다. */
 export const TOOL_OUTPUT_BASENAMES = ['codex-response.json', '.review-preview.txt'] as const
 
+/**
+ * 리뷰 원장(REQ-2026-051)의 티켓-상대 경로. `state.json`과 **같은 범주**다 — 워크플로가 리뷰 중에
+ * (attempt-opened/closed) `responses/` 아래에 쓰는 메타데이터이고, 승인 시점에 커밋된다.
+ * 🔴 exact 경로로만 허용한다(rename/카피는 아래 responses/ 규칙으로 여전히 차단) — `responses/**` 전체를
+ *    scratch로 열면 승인 아카이브 변조 구멍이 된다(REQ-2026-012 D8).
+ */
+export const REVIEW_LEDGER_RELNAME = 'responses/review-ledger.jsonl' as const
+
 /** 경로 정규화: 역슬래시→슬래시(호출부가 넘기는 repo-상대는 이미 `/`지만 방어), 후행 슬래시 제거. */
 function normDir(dirRel: string): string {
   return dirRel.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -31,7 +39,12 @@ function normDir(dirRel: string): string {
  */
 export function reviewScratchPaths(ticketDirRel: string): string[] {
   const dir = normDir(ticketDirRel)
-  return [`${dir}/${TOOL_OUTPUT_BASENAMES[0]}`, `${dir}/${TOOL_OUTPUT_BASENAMES[1]}`, `${dir}/state.json`]
+  return [
+    `${dir}/${TOOL_OUTPUT_BASENAMES[0]}`,
+    `${dir}/${TOOL_OUTPUT_BASENAMES[1]}`,
+    `${dir}/state.json`,
+    `${dir}/${REVIEW_LEDGER_RELNAME}`, // REQ-2026-051: 리뷰 중 append되는 원장(state.json과 동종). exact 경로만.
+  ]
 }
 
 /** `REQ-<4자리>-<숫자>` 디렉터리명인가(문자열 분해 — 정규식 보간 금지, 설계 D7). */

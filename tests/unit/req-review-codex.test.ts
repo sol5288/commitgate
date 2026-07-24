@@ -67,6 +67,7 @@ import {
   recordAttempt,
   closeSeriesApproved,
   withAttemptRecorded,
+  appendLedgerRowToDisk,
   checkReviewBudget,
   consumeReviewException,
   isValidIsoInstant,
@@ -3622,6 +3623,218 @@ describe('REQ-2026-027 phase-2 — attempt 배선(main near-e2e)', () => {
       // 🔴 호출 뒤 전역은 fake가 아니라 원래(before)로 복원됐다 — 이후 인자 없는 main()이 fake를 쓰지 않는다.
       expect(__getReviewerForTest()).toBe(before)
       expect(__getReviewerForTest()).not.toBe(fake)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * REQ-2026-051 phase-2 — 원장 배선을 main() 실제 실행 경로에서 검증(near-e2e).
+ *
+ * 순수 원장 모듈은 review-ledger.test.ts가 잡는다. 여기서는 main()이 실제로 attempt-opened를 **호출 전**에,
+ * attempt-closed를 **판정 후**에 남기는지, 호출이 throw하면 closed가 없는지, 원장 쓰기 실패가 판정을
+ * 뒤집지 않는지를 near-e2e로 고정한다.
+ */
+describe('REQ-2026-051 phase-2 — 원장 배선(main near-e2e)', () => {
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+
+  const setupRepo = (stateExtra: Record<string, unknown> = {}): { repo: string; ticket: string; head: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req051-ledger-'))
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    mkdirSync(join(repo, 'workflow'), { recursive: true })
+    const realSchema = readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')
+    writeFileSync(join(repo, 'workflow', 'machine.schema.json'), realSchema)
+    // 실제 설치본처럼 측정 로그(.review-calls.jsonl)를 무시한다 — 없으면 2회차 리뷰의 D10 preflight가 잡는다.
+    writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n')
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticket, { recursive: true })
+    for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
+    writeFileSync(join(ticket, 'codex-request.md'), '# req\n리뷰 포인트\n')
+    writeFileSync(
+      join(ticket, 'state.json'),
+      JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE', phases: [], approval_evidence_required: true, review_series_model_version: 1, ...stateExtra }, null, 2) + '\n',
+    )
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    const head = git(['rev-parse', 'HEAD']).trim()
+    return { repo, ticket, head }
+  }
+
+  const cannedDesign = (head: string, kind: 'approved' | 'needs-fix'): string => {
+    const base = { machine_schema_version: '1.1', review_base_sha: head, risk_level: 'LOW', review_kind: 'design' }
+    if (kind === 'approved') return JSON.stringify({ ...base, status: 'STEP_COMPLETE', commit_approved: 'yes', merge_ready: 'no', findings: [], next_action: '' })
+    return JSON.stringify({ ...base, status: 'NEEDS_FIX', commit_approved: 'no', merge_ready: 'no', findings: [{ severity: 'P1', file: 'x', detail: 'd' }], next_action: 'fix' })
+  }
+
+  const SEP = String.fromCharCode(31)
+  const ledgerFileOf = (ticket: string): string => join(ticket, 'responses', 'review-ledger.jsonl')
+  const readLedger = (ticket: string): Array<Record<string, unknown>> => {
+    const f = ledgerFileOf(ticket)
+    if (!existsSync(f)) return []
+    return readFileSync(f, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '')
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+  }
+
+  it('⑫⑭ 정상 완료 → opened(호출 전) + closed(판정 후)가 순서대로 남는다', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'TID', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      const rows = readLedger(ticket)
+      expect(rows.map((r) => r.event)).toEqual(['attempt-opened', 'attempt-closed'])
+      const [opened, closed] = rows
+      expect(opened!.outcome).toBeNull()
+      expect(closed!.outcome).toBe('approved')
+      // 🔴 archive path·sha는 원장에 없다 — approvals.jsonl의 archive_inventory가 단일 출처(중복 금지).
+      expect(Object.keys(closed!)).not.toContain('archive_path')
+      expect(Object.keys(closed!)).not.toContain('archive_sha256')
+      // 본문도 안 들어간다 — 프롬프트는 해시만.
+      expect(Object.keys(closed!)).not.toContain('prompt')
+      expect(typeof closed!.prompt_sha256).toBe('string')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑫ opened는 attempt 확정 직후 = 호출 전에 기록된다(호출이 throw해도 남는다)', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      // 호출 자체가 throw하는 reviewer. opened는 호출 전이므로 남고, closed는 판정에 도달 못 해 없다.
+      const throwing = {
+        requests: [] as unknown[],
+        review(req: unknown) {
+          this.requests.push(req)
+          throw new Error('codex 호출 실패(usage limit)')
+        },
+      }
+      let threw = false
+      try {
+        reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: throwing as never })
+      } catch {
+        threw = true
+      }
+      expect(threw).toBe(true)
+      const rows = readLedger(ticket)
+      // ⑬ opened만 있고 closed는 없다 = "예산은 깎였는데 완료되지 않은 호출"이 원장 구조로 관측된다.
+      expect(rows.map((r) => r.event)).toEqual(['attempt-opened'])
+      const closedFor1 = rows.filter((r) => r.event === 'attempt-closed' && r.attempt === 1)
+      expect(closedFor1).toHaveLength(0)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑬ needs-fix 후 재리뷰 → 미완 attempt 없이 두 attempt가 각각 opened+closed', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'needs-fix'), threadId: 'TID', rawStdout: '' })
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+        throw new Error(`__EXIT__${code ?? 0}`)
+      }) as never)
+      try {
+        for (let i = 0; i < 2; i++) {
+          try {
+            reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+          } catch (e) {
+            if (!/^__EXIT__/.test(e instanceof Error ? e.message : '')) throw e
+          }
+        }
+      } finally {
+        exitSpy.mockRestore()
+      }
+      const rows = readLedger(ticket)
+      const opened = rows.filter((r) => r.event === 'attempt-opened').map((r) => r.attempt)
+      const closed = rows.filter((r) => r.event === 'attempt-closed').map((r) => r.attempt)
+      expect(opened).toEqual([1, 2])
+      expect(closed).toEqual([1, 2])
+      expect(rows.every((r) => r.outcome === null || r.outcome === 'needs-fix')).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('⑮ 쓰기 실패는 삼킨다(D6) — appendLedgerRowToDisk 단위: 읽기 통과 후 write 실패는 throw 안 함', () => {
+    // 읽기·검증은 통과(기존 원장 부재=빈 문자열)하지만 mkdir/write가 실패하는 상황을 만든다:
+    // 티켓의 `responses` 자리에 **파일**을 두면 mkdirSync(responses/…)가 ENOTDIR로 실패한다.
+    const repo = mkdtempSync(join(tmpdir(), 'req051-write-'))
+    try {
+      const ticketRel = 'workflow/REQ-2026-001'
+      mkdirSync(join(repo, ticketRel), { recursive: true })
+      writeFileSync(join(repo, ticketRel, 'responses'), 'this is a file, not a dir')
+      const row = {
+        ticket_id: 'REQ-2026-001', series_id: 'design:-#1', review_kind: 'design' as const, phase_id: null,
+        attempt: 1, event: 'attempt-opened' as const, lifecycle: null, outcome: null, exception_consumed: false,
+        prompt_sha256: 'a'.repeat(64), at: '2026-07-24T04:00:00.000Z', reconstructed: false,
+      }
+      // 🔴 throw하지 않아야 한다 — 쓰기 실패는 판정을 흔들지 않는다(D6).
+      expect(() => appendLedgerRowToDisk(repo, ticketRel, row)).not.toThrow()
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 읽기·검증 손상은 fail-closed로 전파한다(D5) — appendLedgerRowToDisk 단위', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'req051-corrupt-'))
+    try {
+      const ticketRel = 'workflow/REQ-2026-001'
+      mkdirSync(join(repo, ticketRel, 'responses'), { recursive: true })
+      // 잘린 JSONL(파싱 불가) — 이전 append가 중단된 상태를 모사.
+      writeFileSync(join(repo, ticketRel, 'responses', 'review-ledger.jsonl'), '{"ticket_id":"REQ-2026-001","series_id":"design')
+      const row = {
+        ticket_id: 'REQ-2026-001', series_id: 'design:-#1', review_kind: 'design' as const, phase_id: null,
+        attempt: 1, event: 'attempt-opened' as const, lifecycle: null, outcome: null, exception_consumed: false,
+        prompt_sha256: 'a'.repeat(64), at: '2026-07-24T04:00:00.000Z', reconstructed: false,
+      }
+      expect(() => appendLedgerRowToDisk(repo, ticketRel, row)).toThrow(/무결성 실패/)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 손상된 원장은 리뷰를 시작조차 못 한다(D5·near-e2e) — 외부 호출 전에 fail-closed', () => {
+    const { repo, ticket, head } = setupRepo()
+    // 유효 baseline 위에 잘린 JSONL 원장을 커밋해 둔다(tracked라 pre-review D10은 통과, 그러나 무결성 손상).
+    const git = gitOf(repo)
+    mkdirSync(join(ticket, 'responses'), { recursive: true })
+    writeFileSync(join(ticket, 'responses', 'review-ledger.jsonl'), '{"broken JSONL')
+    git(['add', '-A'])
+    git(['commit', '-qm', 'corrupt ledger'])
+    const corruptHead = git(['rev-parse', 'HEAD']).trim()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(corruptHead, 'approved'), threadId: 'TID', rawStdout: '' })
+      let threw = false
+      try {
+        reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      } catch (e) {
+        threw = true
+        expect(e instanceof Error ? e.message : '').toMatch(/무결성 실패/)
+      }
+      expect(threw).toBe(true)
+      // 🔴 외부 호출이 일어나지 않았다 — 손상된 원장 위에서 codex를 부르지 않는다.
+      expect(fake.requests.length).toBe(0)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('opened→closed 자연키가 event로 갈려 멱등 재기록이 서로를 덮지 않는다', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'TID', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      const raw = readFileSync(ledgerFileOf(ticket), 'utf8')
+      // 자연키 구분자는 원장 파일 본문(직렬화된 JSON 문자열)에는 나타나지 않는다 — 키는 파생값이다.
+      expect(raw).not.toContain(SEP)
+      expect(raw.split('\n').filter((l) => l.trim()).length).toBe(2)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
