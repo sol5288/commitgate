@@ -26,10 +26,13 @@ export function closeProofPath(ticketRel: string): string {
  * lifecycle 전이 종류(DEC-B).
  * - `series-terminal`: 사람이 한 series를 replace/human-resolution으로 종결(원장과 함께 커밋).
  * - `dev-complete`: 모든 phase 증거가 durable해진 시점(마지막 evidence-finalize 직후 방출).
+ * - `migrated-complete`(REQ-2026-053): close-proof/`phase_design_ref` regime **이전에** 완료·병합돼
+ *   dev-complete로 자기증명될 수 없는 레거시 티켓을, 운영자가 완료 확인 후 남기는 **사후 마이그레이션 종결**
+ *   (`reconstructed:true` 강제 — self-verifying dev-complete와 구별). `req:close --migrate`가 발행.
  *
  * 🔴 `integrated`는 여기 없다 — git ancestry로 관측하는 오버레이이지 커밋되는 전이가 아니다(DEC-B).
  */
-export type CloseProofEvent = 'series-terminal' | 'dev-complete'
+export type CloseProofEvent = 'series-terminal' | 'dev-complete' | 'migrated-complete'
 
 /** series-terminal의 종결 사유(사람 결정). */
 export type TerminalResolution = 'replace' | 'human-resolution'
@@ -74,7 +77,7 @@ export const CLOSE_PROOF_KEYS = [
   'evidence_basis',
 ] as const
 
-const EVENTS: readonly string[] = ['series-terminal', 'dev-complete']
+const EVENTS: readonly string[] = ['series-terminal', 'dev-complete', 'migrated-complete']
 const RESOLUTIONS: readonly string[] = ['replace', 'human-resolution']
 
 /** 한 줄 직렬화(JSONL): 고정 키 순서 JSON + 끝 개행. */
@@ -98,13 +101,31 @@ const KEY_SEP = String.fromCharCode(31)
  *   자연키 충돌(conflict)로 영구 실패한다.
  */
 export function closeProofRowKey(row: Pick<CloseProofRow, 'ticket_id' | 'event' | 'series_id' | 'design_ref'>): string {
-  const discriminator = row.event === 'dev-complete' ? (row.design_ref ?? '') : (row.series_id ?? '')
+  // dev-complete: design_ref(재승인 supersede). series-terminal: series_id(series별 1행).
+  // migrated-complete(REQ-2026-053): discriminator 없음 — 티켓당 1행(마이그레이션은 일회성).
+  const discriminator =
+    row.event === 'dev-complete' ? (row.design_ref ?? '') : row.event === 'series-terminal' ? (row.series_id ?? '') : ''
   return [row.ticket_id, row.event, discriminator].join(KEY_SEP)
+}
+
+/** `dev-complete`·`migrated-complete` 공유: phase_inventory 형식 검증(비지 않은 문자열·정렬·중복 없음). */
+function phaseInventoryProblems(v: unknown, eventLabel: string): string[] {
+  const p: string[] = []
+  if (!Array.isArray(v)) {
+    p.push(`${eventLabel}인데 phase_inventory가 배열이 아님`)
+    return p
+  }
+  if (v.length === 0) p.push(`${eventLabel}인데 phase_inventory가 비어 있음`)
+  if (!v.every((x) => typeof x === 'string' && x !== '')) p.push('phase_inventory 항목은 비지 않은 문자열')
+  const sorted = [...v].sort()
+  if (JSON.stringify(sorted) !== JSON.stringify(v)) p.push('phase_inventory가 정렬돼 있지 않음')
+  if (new Set(v).size !== v.length) p.push('phase_inventory에 중복 있음')
+  return p
 }
 
 /**
  * 행 하나의 형식 문제 목록(순수). 빈 배열 = 정상.
- * 🔴 모르는 top-level 키는 거부(주입·오염 방어). `dev-complete`은 series/resolution이 null이어야 한다.
+ * 🔴 모르는 top-level 키는 거부(주입·오염 방어). `dev-complete`·`migrated-complete`은 series/resolution이 null이어야 한다.
  */
 export function closeProofRowProblems(raw: unknown): string[] {
   const p: string[] = []
@@ -131,15 +152,17 @@ export function closeProofRowProblems(raw: unknown): string[] {
     if (r.series_id !== null) p.push('dev-complete인데 series_id가 null이 아님')
     if (r.resolution !== null) p.push('dev-complete인데 resolution이 null이 아님')
     // 🔴 dev-complete는 self-verifying — phase_inventory(정렬·중복 없음)와 design_ref가 필수(DEC-B2).
-    if (!Array.isArray(r.phase_inventory)) p.push('dev-complete인데 phase_inventory가 배열이 아님')
-    else {
-      if (r.phase_inventory.length === 0) p.push('dev-complete인데 phase_inventory가 비어 있음')
-      if (!r.phase_inventory.every((x) => typeof x === 'string' && x !== '')) p.push('phase_inventory 항목은 비지 않은 문자열')
-      const sorted = [...r.phase_inventory].sort()
-      if (JSON.stringify(sorted) !== JSON.stringify(r.phase_inventory)) p.push('phase_inventory가 정렬돼 있지 않음')
-      if (new Set(r.phase_inventory).size !== r.phase_inventory.length) p.push('phase_inventory에 중복 있음')
-    }
+    p.push(...phaseInventoryProblems(r.phase_inventory, 'dev-complete'))
     if (typeof r.design_ref !== 'string' || r.design_ref === '') p.push('dev-complete인데 design_ref가 비어 있음')
+  } else if (r.event === 'migrated-complete') {
+    // 🔴 REQ-2026-053(DEC-M2): 운영자 확인 마이그레이션 종결. dev-complete와 같은 phase_inventory·design_ref를
+    //    담되 self-verifying이 아니라 **사후 스탬프**임을 스키마가 드러낸다 — reconstructed===true 강제.
+    if (r.series_id !== null) p.push('migrated-complete인데 series_id가 null이 아님')
+    if (r.resolution !== null) p.push('migrated-complete인데 resolution이 null이 아님')
+    p.push(...phaseInventoryProblems(r.phase_inventory, 'migrated-complete'))
+    if (typeof r.design_ref !== 'string' || r.design_ref === '') p.push('migrated-complete인데 design_ref가 비어 있음')
+    // 🔴 마이그레이션은 항상 사후 스탬프 — reconstructed:true 필수(evidence_basis 비-빔은 아래 공통 규칙이 강제).
+    if (r.reconstructed !== true) p.push('migrated-complete인데 reconstructed가 true가 아님(마이그레이션은 사후 스탬프)')
   }
 
   if (r.evidence_basis !== null) {
@@ -249,8 +272,8 @@ export interface CloseStateInput {
   committedDesignRef: string | null
 }
 
-/** 5개 기본 상태(배타·완결). */
-export type CloseBaseState = 'legacy' | 'series-terminal' | 'dev-complete' | 'needs-recovery' | 'developing'
+/** 기본 상태(배타·완결). `migrated-complete`(REQ-2026-053)는 dev-complete 아래·needs-recovery 위의 비차단 종결. */
+export type CloseBaseState = 'legacy' | 'series-terminal' | 'dev-complete' | 'migrated-complete' | 'needs-recovery' | 'developing'
 
 /**
  * 🔴 dev-complete self-verify(순수, DEC-B2). HEAD close proof의 dev-complete row가 **자기 완결적으로** 증명되는가:
@@ -269,7 +292,7 @@ export function isDevCompleteVerified(input: CloseStateInput): boolean {
 
 /**
  * 기본 상태 파생(순수·배타·완결 — 항상 정확히 하나). 우선순위:
- * `legacy` > `series-terminal` > `dev-complete` > `needs-recovery` > `developing`(기본값).
+ * `legacy` > `series-terminal` > `dev-complete` > `migrated-complete` > `needs-recovery` > `developing`(기본값).
  *
  * 🔴 워킹 state·워킹 승인을 절대 입력으로 받지 않는다(design-r01 P1·B4). `integrated`는 여기서 내지 않는다
  *    — git ancestry 오버레이라 순수 파생 밖이다(design-r02 P1).
@@ -280,6 +303,10 @@ export function deriveBaseState(input: CloseStateInput): CloseBaseState {
   if (hasEvent('series-terminal')) return 'series-terminal'
   // 🔴 dev-complete는 self-verifying(DEC-B2): proof + committed evidence + design_ref로만 판정.
   if (isDevCompleteVerified(input)) return 'dev-complete'
+  // 🔴 REQ-2026-053(DEC-M1): 마이그레이션 종결 — dev-complete **아래**(정상 완료가 이김), needs-recovery
+  //    **위**(일단 마이그레이션되면 종결). req:close가 needs-recovery/corrupt엔 스탬프를 찍지 않으므로(DEC-M3)
+  //    이 우선순위가 recovery 필요를 가리지 않는다.
+  if (hasEvent('migrated-complete')) return 'migrated-complete'
   // 승인 흔적(원장)은 있으나 HEAD 증거가 불완전 = 복구 필요.
   if (input.ledgerHasApprovedClose && !input.committedEvidenceComplete) return 'needs-recovery'
   return 'developing'

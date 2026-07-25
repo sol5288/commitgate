@@ -49,6 +49,20 @@ const devComplete = (over: Partial<CloseProofRow> = {}): CloseProofRow => ({
   ...over,
 })
 
+// REQ-2026-053: 마이그레이션 종결 행. reconstructed:true + evidence_basis 필수(사후 스탬프).
+const migratedComplete = (over: Partial<CloseProofRow> = {}): CloseProofRow => ({
+  ticket_id: 'REQ-2026-049',
+  event: 'migrated-complete',
+  series_id: null,
+  resolution: null,
+  phase_inventory: ['phase-1-a', 'phase-2-b'],
+  design_ref: 'd'.repeat(64),
+  at: '2026-07-25T05:00:00.000Z',
+  reconstructed: true,
+  evidence_basis: ['workflow/REQ-2026-049/responses/approvals.jsonl'],
+  ...over,
+})
+
 const baseInput = (over: Partial<CloseStateInput> = {}): CloseStateInput => ({
   durabilityRequired: true,
   closeProofRows: [],
@@ -262,6 +276,79 @@ describe('[close-proof] 자연키', () => {
   it('구분자는 제어문자(가시문자 아님)', () => {
     expect(closeProofRowKey(terminal())).toContain(String.fromCharCode(31))
     expect(closeProofRowKey(terminal())).not.toContain(' ')
+  })
+})
+
+describe('[close-proof] migrated-complete(REQ-2026-053) — 마이그레이션 종결', () => {
+  it('① 정상 migrated-complete round-trip(직렬화→파싱)', () => {
+    const row = migratedComplete()
+    const parsed = parseCloseProof(serializeCloseProofRow(row))
+    expect(parsed.problems).toEqual([])
+    expect(parsed.rows).toEqual([row])
+  })
+  it('① 정상 행 문제 없음', () => {
+    expect(closeProofRowProblems(migratedComplete())).toEqual([])
+  })
+  it('② series_id 비-null → 거부', () => {
+    expect(closeProofRowProblems(migratedComplete({ series_id: 'x' })).join(' ')).toContain('migrated-complete인데 series_id')
+  })
+  it('② resolution 비-null → 거부', () => {
+    expect(closeProofRowProblems(migratedComplete({ resolution: 'replace' })).join(' ')).toContain('migrated-complete인데 resolution')
+  })
+  it('③ reconstructed:false → 거부(마이그레이션은 사후 스탬프)', () => {
+    // reconstructed:false면 evidence_basis도 null이어야 원본 규칙을 통과하지만, 그 경우 reconstructed 강제에서 걸린다.
+    expect(closeProofRowProblems(migratedComplete({ reconstructed: false, evidence_basis: null })).join(' ')).toContain('reconstructed가 true가 아님')
+  })
+  it('③ reconstructed:true인데 evidence_basis 비어 있으면 거부(근거 없는 복원)', () => {
+    expect(closeProofRowProblems(migratedComplete({ evidence_basis: null })).join(' ')).toContain('근거 없는 복원')
+  })
+  it('④ phase_inventory 빈 배열 → 거부', () => {
+    expect(closeProofRowProblems(migratedComplete({ phase_inventory: [] })).join(' ')).toContain('migrated-complete인데 phase_inventory가 비어 있음')
+  })
+  it('④ phase_inventory 비정렬 → 거부', () => {
+    expect(closeProofRowProblems(migratedComplete({ phase_inventory: ['p2', 'p1'] })).join(' ')).toContain('정렬')
+  })
+  it('④ phase_inventory 중복 → 거부', () => {
+    expect(closeProofRowProblems(migratedComplete({ phase_inventory: ['p1', 'p1'] })).join(' ')).toContain('중복')
+  })
+  it('⑤ design_ref 빈 문자열 → 거부', () => {
+    expect(closeProofRowProblems(migratedComplete({ design_ref: '' })).join(' ')).toContain('migrated-complete인데 design_ref가 비어 있음')
+  })
+  it('⑥ deriveBaseState: migrated-complete 행 → migrated-complete(비차단)', () => {
+    expect(deriveBaseState(baseInput({ closeProofRows: [migratedComplete()] }))).toBe('migrated-complete')
+    expect(baseStateBlocksIntake('migrated-complete')).toBe(false)
+  })
+  it('⑥ 우선순위: dev-complete가 migrated-complete를 이긴다(정상 완료가 우선)', () => {
+    const dc = devComplete({ phase_inventory: ['p1'], design_ref: 'DREF' })
+    expect(
+      deriveBaseState(baseInput({ closeProofRows: [migratedComplete(), dc], evidencedPhaseIds: ['p1'], committedDesignRef: 'DREF' })),
+    ).toBe('dev-complete')
+  })
+  it('⑥ 우선순위: series-terminal이 migrated-complete를 이긴다', () => {
+    expect(deriveBaseState(baseInput({ closeProofRows: [migratedComplete(), terminal()] }))).toBe('series-terminal')
+  })
+  it('⑦ 우선순위: migrated-complete가 needs-recovery를 이긴다(일단 종결)', () => {
+    // needs-recovery 조건(원장 approved + 증거 불완전)과 공존해도 migrated-complete가 이긴다.
+    expect(
+      deriveBaseState(baseInput({ closeProofRows: [migratedComplete()], ledgerHasApprovedClose: true, committedEvidenceComplete: false })),
+    ).toBe('migrated-complete')
+  })
+  it('⑧ append 멱등: 같은 티켓 재-migrate 동일 내용 → duplicate', () => {
+    const row = migratedComplete()
+    const existing = serializeCloseProofRow(row)
+    expect(appendCloseProofRow(existing, row).outcome).toBe('duplicate')
+  })
+  it('⑧ append conflict: 같은 자연키(티켓·event) 다른 내용 → conflict(덮지 않음)', () => {
+    const existing = serializeCloseProofRow(migratedComplete({ at: '2026-07-25T05:00:00.000Z' }))
+    const r = appendCloseProofRow(existing, migratedComplete({ at: '2026-07-25T06:00:00.000Z' }))
+    expect(r.outcome).toBe('conflict')
+    expect(r.content).toBe(existing) // 원본 보존
+  })
+  it('자연키: migrated-complete discriminator 없음(티켓당 1행)', () => {
+    const sep = String.fromCharCode(31)
+    // design_ref가 달라도 같은 자연키(티켓당 1행) — dev-complete와 다르다.
+    expect(closeProofRowKey(migratedComplete({ design_ref: 'A' }))).toBe(closeProofRowKey(migratedComplete({ design_ref: 'B' })))
+    expect(closeProofRowKey(migratedComplete()).split(sep)).toEqual(['REQ-2026-049', 'migrated-complete', ''])
   })
 })
 
