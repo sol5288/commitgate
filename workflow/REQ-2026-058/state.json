@@ -3,15 +3,24 @@
   "branch": "feat/req-2026-058-guidance-and-diagnostics",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9a06-ea53-7fc0-ad4f-86dac9a8cc71",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9a13-9663-7602-9541-42984d05bf42",
+  "review_base_sha": "529297b9ebd54d7eca3aa38a33e280f50693fdc5",
+  "review_diff_hash": "366d43978f41f6403b290159c2446c2268db26f6",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "e95b99b29e99e4e1c90bd27802815ea8b9f1af0b1411a8d7db173d1020dc4370",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-workflow-guidance",
+  "phases": [
+    {
+      "id": "phase-1-workflow-guidance",
+      "approved": true
+    },
+    {
+      "id": "phase-2-install-uninstall-guidance",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -20,6 +29,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-workflow-guidance#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-workflow-guidance",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -43,14 +59,23 @@
     "design_hash": "e95b99b29e99e4e1c90bd27802815ea8b9f1af0b1411a8d7db173d1020dc4370"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-workflow-guidance",
     "outcome": "approved",
-    "compare_hash": "87fa0e34b0c3ca9aecb50979fb6fb64eee390b080f5c2541ac1d43699427953e",
+    "compare_hash": "18abeef68a777be2c30abff1e3f22c85f88df7d30a61adfdfa58c754431836d8",
     "count": 1,
     "errors": [],
-    "at": "2026-07-25T16:06:52.517Z",
+    "at": "2026-07-25T16:20:54.880Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "366d43978f41f6403b290159c2446c2268db26f6",
+      "phase_id": "phase-1-workflow-guidance",
+      "consumed_by_commit_sha": "db5bac9d4d380ba230aa4d8d8d840fe072a87aa1",
+      "approval_consumed_at": "2026-07-25T16:21:06.544Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
