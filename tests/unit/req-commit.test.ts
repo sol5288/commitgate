@@ -1133,3 +1133,127 @@ describe('[REQ-2026-052] finalize 멱등성 HEAD 기준(re-commit 재시도)', (
     }
   })
 })
+
+// ─── REQ-2026-057 phase-2: 소비 상태 durable checkpoint(완주 직후 clean) ───
+import { findReqNewDirtyEntries } from '../../scripts/req/req-new'
+import { STATUS_Z_ARGS } from '../../scripts/req/lib/porcelain'
+
+/**
+ * REQ-2026-057 phase-2 — **완주 직후 워킹트리가 clean이고 다음 `req:new`가 통과한다.**
+ *
+ * 🔴 "state.json이 커밋된다"만 단언하면 공허하다. 이 REQ가 고치는 결함은 **마지막 상태 쓰기가 마지막
+ *    커밋보다 뒤에 남는 것**이라, 커밋 자체는 있는데도 dirty가 남는 형태였다. 그래서 오라클은
+ *    ① `git status` 전체가 비었는가 ② `req:new`의 clean-tree 판정이 통과하는가 — 둘 다여야 한다.
+ */
+describe('[REQ-2026-057] finalize 후 완주 상태 durable checkpoint', () => {
+  const g = (repo: string, args: string[]) =>
+    _execFileSync('git', ['-c', 'user.email=t@t.t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+  const arContent = (pid: string, round: string): string => JSON.stringify({ phase: pid, round, approved: true })
+  const arSha = (pid: string, round: string): string => _createHash('sha256').update(arContent(pid, round), 'utf8').digest('hex')
+  const designArContentOf = (name: string): string => JSON.stringify({ archive: name })
+  const designArShaOf = (name: string): string => _createHash('sha256').update(designArContentOf(name), 'utf8').digest('hex')
+  const designRel = (name: string): string => `workflow/REQ-2026-001/responses/${name}`
+  const designEntry = (hash: string): string =>
+    _serMf(_bldMf(
+      { response_path: designRel('design-r01-approved.json'), response_sha256: designArShaOf('design-r01-approved.json'), review_kind: 'design', phase_id: null, review_base_sha: 'b'.repeat(40), design_hash: hash, codex_thread_id: 'T', machine_schema_version: '1.1', status: 'COMPLETE', commit_approved: 'yes', approved_at: '2026-07-24T00:00:00.000Z' } as never,
+      { consumedAt: '2026-07-24T01:00:00.000Z', consumedByCommitSha: 'c'.repeat(40), userCommitConfirmed: null, archiveInventory: [{ response_path: designRel('design-r01-approved.json'), sha256: designArShaOf('design-r01-approved.json') }] },
+    ))
+  const evFor = (pid: string): unknown => ({
+    response_path: `workflow/REQ-2026-001/responses/${pid}-r01-approved.json`,
+    response_sha256: arSha(pid, 'r01'),
+    review_kind: 'phase',
+    phase_id: pid,
+    review_base_sha: 'b'.repeat(40),
+    approved_tree: 'c'.repeat(40),
+    phase_design_ref: 'e'.repeat(64),
+    codex_thread_id: 'T',
+    machine_schema_version: '1.1',
+    status: 'COMPLETE',
+    commit_approved: 'yes',
+    approved_at: '2026-07-24T00:00:00.000Z',
+  })
+
+  /** 승인·아카이브가 커밋된 티켓 + 미소비 상태(승인 핀·pending 마커 보유). */
+  const setup = (): { repo: string; ticketRel: string; ctx: Record<string, unknown> } => {
+    const repo = _mkdtempSync(_join(_tmpdir(), 'req057-'))
+    g(repo, ['init', '-q'])
+    g(repo, ['config', 'user.email', 't@t.t'])
+    g(repo, ['config', 'user.name', 't'])
+    const ticketRel = 'workflow/REQ-2026-001'
+    const ticketDir = _join(repo, ticketRel)
+    const responsesDir = _join(ticketDir, 'responses')
+    _mkdirSync(responsesDir, { recursive: true })
+    _writeFileSync(_join(responsesDir, 'approvals.jsonl'), designEntry('e'.repeat(64)))
+    _writeFileSync(_join(responsesDir, 'design-r01-approved.json'), designArContentOf('design-r01-approved.json'))
+    _writeFileSync(_join(responsesDir, 'p1-r01-approved.json'), arContent('p1', 'r01'))
+    const state = {
+      id: 'REQ-2026-001',
+      phase: 'INTAKE',
+      current_phase: 'p1',
+      phases: [{ id: 'p1', approved: true }],
+      review_series_model_version: 1,
+      evidence_durability_required: true,
+      commit_allowed: true,
+      approval_evidence: evFor('p1'),
+      pending_evidence_for: { source_commit_sha: 'd'.repeat(40) },
+    }
+    _writeFileSync(_join(ticketDir, 'state.json'), JSON.stringify(state, null, 2) + '\n')
+    g(repo, ['add', '-A'])
+    g(repo, ['commit', '-qm', 'ticket evidence'])
+    __setGitForTest(repo)
+    return {
+      repo,
+      ticketRel,
+      ctx: {
+        ticketDir,
+        ticketRel,
+        responsesDir,
+        manifestPath: _join(responsesDir, 'approvals.jsonl'),
+        state,
+        ev: evFor('p1'),
+        archiveNames: ['p1-r01-approved.json'],
+        validPhaseIds: ['p1'],
+        sourceSha: 'd'.repeat(40),
+        rootForClose: repo,
+      },
+    }
+  }
+
+  it('🔴 완주 직후 워킹트리가 clean이고 req:new clean-tree 판정이 통과한다', () => {
+    const { repo, ctx } = setup()
+    try {
+      finalizeEvidenceAndConsume(ctx as never)
+
+      // ① 워킹트리 전체가 clean — 소비 상태가 커밋됐다.
+      expect(g(repo, ['status', '--porcelain']).trim()).toBe('')
+      // ② 다음 티켓을 열 수 있다(F-1이 막던 지점).
+      const raw = _execFileSync('git', [...STATUS_Z_ARGS], { cwd: repo, encoding: 'utf8' })
+      expect(findReqNewDirtyEntries(raw, 'workflow')).toEqual([])
+      // 커밋된 상태가 소비 결과다(승인 핀·pending 마커 제거).
+      const committed = JSON.parse(g(repo, ['show', 'HEAD:workflow/REQ-2026-001/state.json'])) as Record<string, unknown>
+      expect(committed.commit_allowed).toBe(false)
+      expect(committed.approval_evidence).toBeUndefined()
+      expect(committed.pending_evidence_for).toBeUndefined()
+    } finally {
+      _rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 재실행(복구 경로) 뒤에도 워킹트리가 clean으로 남는다', () => {
+    const { repo, ctx } = setup()
+    try {
+      finalizeEvidenceAndConsume(ctx as never)
+      expect(g(repo, ['status', '--porcelain']).trim()).toBe('')
+
+      // `--finalize` 재실행과 같은 경로: evidence는 HEAD에 이미 있어 skip되고 소비만 재수행된다.
+      // ⚠️ 이때 커밋이 하나 더 생길 수 있다 — `consumeState`가 `consumed_approvals`에 **매번 append**하는
+      //    기존 동작 때문에 상태 내용이 실제로 달라지기 때문이다(이 REQ가 바꾸는 규약이 아니다).
+      //    이 REQ가 보장하는 것은 "**어느 경우에도 소비 상태가 미커밋으로 남지 않는다**"이므로 그것을 단언한다.
+      //    (내용이 같을 때 커밋하지 않는 멱등은 `commitStateCheckpoint` 단위 테스트가 고정한다.)
+      finalizeEvidenceAndConsume(ctx as never)
+      expect(g(repo, ['status', '--porcelain']).trim()).toBe('')
+    } finally {
+      _rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})

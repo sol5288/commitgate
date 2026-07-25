@@ -25,6 +25,8 @@ import {
   type WorkflowState,
 } from './review-codex'
 import { isArchiveFileName } from './lib/scratch'
+// REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
+import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { LEDGER_BASENAME } from './lib/review-ledger'
 import { CLOSE_PROOF_BASENAME, parseCloseProof, deriveBaseState } from './lib/close-proof'
 import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
@@ -564,7 +566,34 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     console.log('[req:commit] evidence 이미 finalize됨(멱등 skip) — 소비만 수행')
   }
   // 소비(마지막) — commit_allowed=false·approved_diff_hash=null·pending 마커 제거.
-  writeState(ctx.ticketDir, consumeState(ctx.state, { sourceCommitSha: ctx.sourceSha, consumedAt: new Date().toISOString() }))
+  const consumed = consumeState(ctx.state, { sourceCommitSha: ctx.sourceSha, consumedAt: new Date().toISOString() })
+  writeState(ctx.ticketDir, consumed)
+
+  // ── REQ-2026-057: 소비 상태 durable checkpoint ──
+  // 🔴 **순서를 바꾸지 않는다**(설계 DEC-2). consume을 evidence 커밋 앞으로 옮겨 한 커밋에 담으면,
+  //    그 커밋이 실패했을 때 `pending_evidence_for`·`approval_evidence`가 이미 제거돼 `--finalize` 복구가
+  //    근거를 잃는다. 그래서 소비를 마지막에 두고 **그 결과만** 별도 pathspec 커밋으로 내구화한다.
+  //
+  // 🔴 실패를 삼킨다 — 커밋은 이미 성공했다. 여기서 throw하면 사용자는 커밋이 실패한 것으로 오해한다.
+  //    checkpoint가 없으면 이 REQ 이전과 같은 상태(dirty state.json)로 남고, 재실행이 흡수한다(멱등).
+  try {
+    if (
+      commitStateCheckpoint({
+        root: ctx.rootForClose,
+        ticketRel: ctx.ticketRel,
+        ticketId: String(ctx.state.id ?? ''),
+        state: consumed,
+        reason: `phase ${ctx.ev.phase_id ?? ''} 소비`,
+        gitFn: git,
+      })
+    )
+      console.log('[req:commit] state checkpoint 커밋(소비 상태).')
+  } catch (err) {
+    console.warn(
+      `[req:commit] ⚠️ state checkpoint 커밋 실패(커밋·증거는 유효): ${err instanceof Error ? err.message : String(err)}\n` +
+        `   ${ctx.ticketRel}/state.json 이 미커밋으로 남아 다음 req:new 가 막힐 수 있습니다 — 원인 해소 후 재실행하십시오.`,
+    )
+  }
 }
 
 /**
