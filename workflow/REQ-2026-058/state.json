@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-058-guidance-and-diagnostics",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9a13-9663-7602-9541-42984d05bf42",
-  "review_base_sha": "529297b9ebd54d7eca3aa38a33e280f50693fdc5",
-  "review_diff_hash": "366d43978f41f6403b290159c2446c2268db26f6",
+  "codex_thread_id": "019f9a28-f409-78b0-b86f-4fb0739d78c8",
+  "review_base_sha": "1e0496289611df8b851ab9ee968ad694af77abaf",
+  "review_diff_hash": "30e6fdc48984b1bbfbdc221d8db89c8e98864221",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "e95b99b29e99e4e1c90bd27802815ea8b9f1af0b1411a8d7db173d1020dc4370",
-  "current_phase": "phase-1-workflow-guidance",
+  "current_phase": "phase-2-install-uninstall-guidance",
   "phases": [
     {
       "id": "phase-1-workflow-guidance",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-install-uninstall-guidance",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -36,6 +36,13 @@
       "series_id": "phase:phase-1-workflow-guidance#1",
       "review_kind": "phase",
       "phase_id": "phase-1-workflow-guidance",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-install-uninstall-guidance#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-install-uninstall-guidance",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -60,12 +67,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-workflow-guidance",
+    "phase_id": "phase-2-install-uninstall-guidance",
     "outcome": "approved",
-    "compare_hash": "18abeef68a777be2c30abff1e3f22c85f88df7d30a61adfdfa58c754431836d8",
+    "compare_hash": "60310817bd3e52ac8d4522ef4fb04704ef656f7c1bfbd3492c6a254eb8313dcb",
     "count": 1,
     "errors": [],
-    "at": "2026-07-25T16:20:54.880Z",
+    "at": "2026-07-25T16:44:03.403Z",
     "findings": [],
     "elided_count": 0
   },
@@ -75,6 +82,12 @@
       "phase_id": "phase-1-workflow-guidance",
       "consumed_by_commit_sha": "db5bac9d4d380ba230aa4d8d8d840fe072a87aa1",
       "approval_consumed_at": "2026-07-25T16:21:06.544Z"
+    },
+    {
+      "approved_tree": "30e6fdc48984b1bbfbdc221d8db89c8e98864221",
+      "phase_id": "phase-2-install-uninstall-guidance",
+      "consumed_by_commit_sha": "01192241db90f90c01e9ea07d4264b467d17de2c",
+      "approval_consumed_at": "2026-07-25T16:44:17.196Z"
     }
   ],
   "user_commit_confirmed": null
