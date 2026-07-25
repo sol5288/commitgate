@@ -2,6 +2,26 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## 0.9.10
+
+**티켓을 끝낸 뒤 다음 티켓을 시작할 수 있습니다** (REQ-2026-057~059, 실제 Nuxt 소비자 프로젝트에 설치→사용→제거 전 과정을 따라간 감사의 후속).
+
+- **작업 상태가 승인 증거와 함께 커밋됩니다 — durable state checkpoint** (REQ-2026-057). 지금까지 `req:commit`의 evidence-finalize는 `responses/`만 커밋하고 **소비된 상태는 커밋 뒤에 디스크에만** 썼습니다. 그래서 티켓을 정상 완주해도 `state.json`이 dirty로 남았고, 그 파일이 **다음 `req:new`의 clean-tree 게이트를 막았습니다**(`req:new`의 스크래치 예외는 증거 변조를 막으려고 `state.json`을 의도적으로 제외합니다). 그런데 계약과 문서는 `state.json`을 직접 커밋하지 말라고 하므로 **남겨도 막히고 버려도 안 되는** 상태였고, 실제로 버리면(문서가 지시하는 유일한 해소책) 커밋된 승인 증거가 있는데도 `req:next`가 **설계 재리뷰를 지시**했습니다(유료 Codex 호출). `git checkout <다른 브랜치>`도 같은 이유로 막혔습니다.
+
+  이제 **design 승인 직후**와 **phase 소비 직후**에 해당 티켓의 `state.json` **한 경로만** 담는 pathspec 커밋을 발행합니다. 🔴 **순서를 바꾸지 않았습니다** — 소비를 evidence 커밋 앞으로 옮겨 한 커밋에 담으면 `consumeState`가 `pending_evidence_for`·`approval_evidence`를 제거하므로 커밋 실패 시 `req:commit --finalize` 복구가 근거를 잃습니다. 🔴 evidence 커밋의 **"`responses/` 외 staged 금지" 가드도 완화하지 않았습니다** — 상태는 자기 커밋으로 갑니다. 커밋 전에 디스크 내용이 도구가 방금 쓴 상태와 **바이트 동일한지**, `state.id`가 대상 티켓과 일치하는지 확인하고 아니면 fail-closed합니다. 변경이 없으면 커밋하지 않습니다(멱등). checkpoint 실패는 승인·커밋 판정을 바꾸지 않고 경고만 냅니다.
+
+  `computeReviewSemanticIdentity`에서 **`state.json`을 제외**했습니다. checkpoint가 인덱스의 그 항목을 갱신하므로, 제외하지 않으면 **방금 승인한 리뷰를 `req:next` G2가 stale로 오판**합니다 — `responses/`를 제외한 것과 같은 이유입니다. 승인 바인딩(D9)은 그대로라 방어가 약해지지 않습니다.
+
+- **안내가 그대로 실행 가능해지고, 정상 상태가 실패처럼 보이지 않습니다** (REQ-2026-058).
+  - `req:next`가 사람 승인(`AWAIT_HUMAN`) 경로에서 출력하던 커밋 명령에 **메시지 자리표시자가 빠져** 있어, 그대로 실행하면 `req:doctor` 17개 체크를 모두 통과한 **뒤에** `커밋 메시지 필요`로 죽었습니다(LOW 자동 커밋 경로에만 자리표시자가 있었습니다). 두 경로가 **같은 상수**를 공유하도록 했습니다.
+  - HEAD에 증거가 아직 없는 **정상 상태**에서 git의 `fatal: path … does not exist in 'HEAD'`가 그대로 표출됐습니다(코드는 이미 `catch → null`로 처리하고 있었습니다). 부재가 정상인 조회 4곳에만 stderr를 버리는 runner를 씁니다 — **전역 억제가 아니라** 그 조회들에 한정하므로 진짜 오류의 진단은 그대로 보입니다.
+  - `commitgate uninstall` 계획이 도입 커밋 revert를 권하면서 그 커밋에 든 **`workflow/.gitignore`가 함께 사라져 기존 티켓의 scratch가 드러난다**는 파급을 예고하지 않았습니다(§3은 증거 보존을 지시하므로 두 안내가 서로를 무효화했습니다). 보존할 증거가 있을 때만 경고와 선택지를 냅니다. 그 밖에 Stage B에 존재하지 않는 `scripts/`를 잔여 후보에서 빼고, `not-installed` 판정에서도 **남아 있는 티켓 증거를 고지**하며, `_npx` 삭제가 CommitGate만이 아니라 **그 사용자의 모든 npx 패키지 캐시**를 지운다는 범위를 명시합니다.
+  - 설치 안내의 lockfile 인과 설명("2단계 install이 lockfile을 만든다")을 Stage B 사실대로 고쳤습니다 — lockfile을 바꾸는 것은 `init` **이전**의 `npm i -D commitgate`입니다.
+
+- **테스트 픽스처 정리를 결정적으로** (REQ-2026-059). 새 near-e2e 픽스처의 임시 저장소 정리가 git의 **detached auto 유지보수**와 경합해 `ENOTEMPTY`로 간헐 실패했습니다(단언은 전부 통과, ubuntu·Node 20에서만 재현). 픽스처 저장소에서 `gc.auto`·`maintenance.auto`를 모두 끄고(git 버전별 두 경로), 정리에 짧은 재시도를 더했습니다. 단언은 변경하지 않았습니다.
+
+전체 테스트 1709 → 1729.
+
 ## 0.9.9
 
 **리뷰 게이트 운영 보강 4종** (REQ-2026-053~056, 소비 저장소 운영감사 후속). 모두 0.9.8 위의 **추가 기능**(신규 명령·additive 필드·opt-in)이라 기존 사용자는 무회귀입니다.
