@@ -55,6 +55,8 @@ import { closeProofPath, appendCloseProofRow, type CloseProofRow } from './lib/c
 import { summarizeLockfileDiff } from './lib/lockfile-diff'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
+// REQ-2026-057: 상태 직렬화 단일 지점 + durable checkpoint(leaf — 여기서 값으로 import해도 순환 없음).
+import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -1683,9 +1685,14 @@ export function processResponse(args: {
   return { ok, errors, nextState, verdict }
 }
 
-/** state.json 기록 — UTF-8(BOM 없음), 2-space + 끝 개행. */
+/**
+ * state.json 기록 — UTF-8(BOM 없음), 2-space + 끝 개행.
+ *
+ * 🔴 직렬화는 `lib/state-checkpoint`의 `serializeState`가 정본이다(REQ-2026-057). checkpoint 커밋이
+ *    "디스크 내용 == 도구가 쓴 상태"를 바이트로 대조하므로, 두 곳이 갈라지면 그 대조가 항상 실패한다.
+ */
 export function writeState(ticketDir: string, state: WorkflowState): void {
-  writeFileSync(join(ticketDir, 'state.json'), `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+  writeFileSync(join(ticketDir, 'state.json'), serializeState(state), 'utf8')
 }
 
 function verdictHasFindings(verdict: Verdict): boolean {
@@ -2468,6 +2475,20 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
         })
         if (r.outcome !== 'already-durable')
           console.log('[req:review-codex] design 승인 증거를 커밋했습니다(아카이브·approvals.jsonl).')
+        // REQ-2026-057 DEC-5: 승인 상태 durable checkpoint — **증거 커밋 직후**에만 낸다.
+        // 증거 커밋이 실패했다면(위 throw) 여기 도달하지 않는다 — 증거 없이 "design_approved=true"만
+        // 커밋되어 상태가 증거를 앞서는 일을 만들지 않는다. 실패 정책도 같은 catch를 공유한다(승인 판정 불변).
+        if (
+          commitStateCheckpoint({
+            root: cfg.root,
+            ticketRel: ticketRelForEvidence,
+            ticketId: String(persistedState.id ?? ''),
+            state: persistedState,
+            reason: 'design 승인',
+            gitFn: git,
+          })
+        )
+          console.log('[req:review-codex] state checkpoint 커밋(design 승인).')
       } catch (err) {
         console.warn(
           `[req:review-codex] ⚠️ design 승인 증거 커밋 실패(승인 자체는 유효): ${err instanceof Error ? err.message : String(err)}

@@ -4034,8 +4034,17 @@ describe('REQ-2026-052 phase-2 — pre-call durable checkpoint·semantic identit
       const promptSha = promptBase(fake.requests[0]!.prompt)
       // pre-call 원장 커밋으로 HEAD가 옮겨졌다 → 프롬프트 base != baseline head.
       expect(promptSha).not.toBe(head)
-      // 프롬프트 base = 원장 opened 커밋 직후의 HEAD(= design-finalize 직전). 원장 opened 커밋이 HEAD~1.
-      expect(promptSha).toBe(git(['rev-parse', 'HEAD~1']).trim())
+      // 프롬프트 base = **원장 opened 커밋** 직후의 HEAD.
+      // 🔴 `HEAD~1` 같은 깊이로 찾지 않는다(REQ-2026-057): 승인 뒤 커밋 수는 audit 배선이 늘 때마다 바뀐다
+      //    (design-finalize · state checkpoint …). 불변식은 "원장 opened 커밋이 프롬프트 base"이지
+      //    "그것이 HEAD에서 몇 번째냐"가 아니므로, 그 커밋을 **제목으로 찾아** 토폴로지에 의존하지 않게 한다.
+      const openedSha = git(['log', '--format=%H %s'])
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l.includes('ledger attempt-opened'))
+        ?.split(' ')[0]
+      expect(openedSha).toBeTruthy()
+      expect(promptSha).toBe(openedSha)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

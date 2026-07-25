@@ -17,6 +17,13 @@
  *    그 안에 없다(design 문서=티켓 루트 `0N-*.md`, phase 코드=`workflow/` 밖). 따라서 `responses/`를
  *    통째로 제외해도 리뷰 대상 손실 없이 pre-call 커밋·evidence-finalize 양쪽에 identity가 불변이다.
  *
+ * 🔴 **`state.json`도 같은 이유로 제외한다**(REQ-2026-057). durable state checkpoint가 승인 상태를
+ *    커밋하면서 **인덱스의 `state.json` 항목**을 갱신하는데, 그것이 identity에 잡히면 방금 승인한 리뷰가
+ *    다시 stale로 오판된다 — `responses/`에서 이미 한 번 겪은 결함과 같은 형태다.
+ *    `state.json`은 **도구가 쓰는 작업 상태**이고 리뷰 대상이 아니다(사람이 리뷰받는 것은 설계 문서와
+ *    staged 코드다). 제외해도 승인 바인딩(D9 staged tree == approved tree)은 그대로이므로 방어가 약해지지
+ *    않는다 — identity는 "같은 리뷰의 반복인가"를 볼 뿐 승인 근거가 아니다.
+ *
  * 🔴 **읽기 전용**: `git ls-files -s`만 쓴다. `git write-tree`는 object DB에 tree를 쓰므로 금지
  *    (`captureIndexHash`와 같은 기법 — req:next가 재계산할 수 있어야 한다).
  *
@@ -37,16 +44,20 @@ function pathOfLsFilesLine(line: string): string | null {
 /**
  * 현재 리뷰의 semantic identity(hex SHA256).
  *
- * = SHA256( 정렬된 `git ls-files -s` 줄들 중, 경로가 `<ticketRel>/responses/` 아래인 줄을 제외 ).
+ * = SHA256( 정렬된 `git ls-files -s` 줄들 중, 경로가 `<ticketRel>/responses/` 아래이거나
+ *   정확히 `<ticketRel>/state.json`인 줄을 제외 ).
  *
- * 원장·approvals·아카이브가 untracked/modified/committed 어느 상태든 `responses/` 경로라 제외되므로
- * identity가 그 변화에 불변이다. 리뷰 대상(문서·코드)과 `responses/` 밖의 non-audit 변경은 반영된다.
+ * 원장·approvals·아카이브·작업 상태가 untracked/modified/committed 어느 상태든 제외되므로 identity가
+ * 그 변화에 불변이다. 리뷰 대상(문서·코드)과 그 밖의 non-audit 변경은 반영된다.
  */
 export function computeReviewSemanticIdentity(ticketRel: string, gitFn: GitFn): string {
   const normTicket = ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')
   // 🔴 ticketRel 경계가 애매하면(빈 값) fail-closed — 잘못된 접두사로 무언가를 조용히 제외하지 않는다.
   if (normTicket === '') throw new Error('computeReviewSemanticIdentity: ticketRel이 비어 있음(제외 경계 불명 — fail-closed)')
   const responsesPrefix = `${normTicket}/responses/` // 🔴 정확히 이 티켓의 responses/ 하위만. 다른 workflow 파일·문서·코드 미제외.
+  // 🔴 `state.json`은 **정확 일치**로만 제외한다(REQ-2026-057). 접두사 매칭으로 넓히면
+  //    `state.json.bak` 같은 사용자 파일까지 조용히 사라진다.
+  const statePath = `${normTicket}/state.json`
   const lines = gitFn(['ls-files', '-s'])
     .split('\n')
     .map((l) => l.replace(/\r$/, ''))
@@ -54,8 +65,8 @@ export function computeReviewSemanticIdentity(ticketRel: string, gitFn: GitFn): 
     .filter((l) => {
       const p = pathOfLsFilesLine(l)
       // 🔴 경로를 못 뽑으면(malformed) **보수적으로 포함**한다 — 모호한 경로를 제외하지 않는다(constraint 3).
-      //    제외는 명확히 `<ticketRel>/responses/` 하위일 때만.
-      return p === null ? true : !p.startsWith(responsesPrefix)
+      //    제외는 명확히 `<ticketRel>/responses/` 하위이거나 `<ticketRel>/state.json`일 때만.
+      return p === null ? true : !p.startsWith(responsesPrefix) && p !== statePath
     })
   return createHash('sha256').update([...lines].sort().join('\n')).digest('hex')
 }
