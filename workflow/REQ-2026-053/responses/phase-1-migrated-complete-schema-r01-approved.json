@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"48c0abcdb8aed36732d8be27a567dd4474b989df","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"현재 INTAKE staged 변경을 커밋하고, 후속 phase에서 req:close planner·CLI와 경로별 통합 검증을 진행하세요.","observations":[]}
