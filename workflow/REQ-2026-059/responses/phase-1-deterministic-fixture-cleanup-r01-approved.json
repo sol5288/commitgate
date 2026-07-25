@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"32e6597d0dbc804b74d69a57a03e09037a8facc8","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"Staged change approved. Run the declared test/typecheck and confirm CI 9/9 before merge.","observations":[]}
