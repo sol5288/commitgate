@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"31541b403260ad85d1b25cc84c7ea2956b25dfcd","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"Phase 1에서 설계된 fixture-local Git maintenance 차단과 제한 재시도를 구현하고, unit/typecheck 및 CI 9개 job을 검증하세요.","observations":[]}
