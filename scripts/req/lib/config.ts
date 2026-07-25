@@ -64,6 +64,8 @@ export interface RawConfig {
   reviewBudget?: ReviewBudget
   /** REQ-2026-037: phase 자동 커밋 정책. 미지정 = DEFAULTS(never = 현행 매 phase 정지). */
   phaseCommit?: PhaseCommit
+  /** REQ-2026-056: true면 리뷰 프롬프트에 lockfile diff 전문을 담는다. 미지정/false = 요약(기본). */
+  lockfilePromptFull?: boolean
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -81,6 +83,7 @@ export interface ResolvedConfig {
   reviewReasoningEffort: ReviewReasoningEffort | null
   reviewBudget: ReviewBudget
   phaseCommit: PhaseCommit
+  lockfilePromptFull: boolean
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -132,6 +135,8 @@ export const DEFAULTS = {
   reviewBudget: { autoBudget: 5, hardCap: 8 } as ReviewBudget,
   // REQ-2026-037: phase 자동 커밋은 opt-in. 코어 기본 never = 현행(매 phase 정지) — 업그레이드로 완화되지 않는다.
   phaseCommit: { autoApprove: 'never' } as PhaseCommit,
+  // REQ-2026-056: lockfile 프롬프트 기본 요약(false). 전문이 필요하면 config에 true 명시(opt-in).
+  lockfilePromptFull: false,
 }
 
 const BASENAME_RE = '^[A-Za-z0-9][A-Za-z0-9._-]*$' // basename만(슬래시·백슬래시·선행 `.`(→`..`) 금지)
@@ -172,6 +177,8 @@ export const CONFIG_SCHEMA = {
         autoApprove: { type: 'string', enum: ['never', 'low-only'] },
       },
     },
+    // REQ-2026-056: lockfile 프롬프트 전문 opt-in.
+    lockfilePromptFull: { type: 'boolean' },
     designDocs: {
       type: 'object',
       additionalProperties: false,
@@ -259,6 +266,8 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     reviewBudget: raw.reviewBudget ?? DEFAULTS.reviewBudget,
     // REQ-2026-037: 미지정 → DEFAULTS(never). `?? `로 충분(phaseCommit은 nullable 아님 — null 탈출구 없음).
     phaseCommit: raw.phaseCommit ?? DEFAULTS.phaseCommit,
+    // REQ-2026-056: 미지정 → DEFAULTS(false = 요약).
+    lockfilePromptFull: raw.lockfilePromptFull ?? DEFAULTS.lockfilePromptFull,
   }
 
   // REQ-2026-028 R7: 교차검증(스키마가 표현 못 함). AJV가 이미 hardCap∈[1,8]·autoBudget≥1을 잡았고,

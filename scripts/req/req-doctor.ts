@@ -28,7 +28,7 @@ import {
   type Verdict,
   type ApprovalEvidence,
 } from './review-codex'
-import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig } from './lib/config'
+import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { missingQuickstartFiles } from '../../bin/quickstart'
 
@@ -109,6 +109,11 @@ export interface DoctorInputs {
   //   undefined = 미계산(2-arg/legacy) → OK. [] = 전부 보호됨 → OK. 비어있지 않음 → WARN.
   //   dev/dogfood(packageRootDiffers===false)면 D20/D21처럼 skip. optional이어야 테스트 base 리터럴이 안 깨진다.
   repoRootScratchUnprotected?: string[]
+  // D23(REQ-2026-056): frozen-lockfile 위생. 감지된 PM의 lockfile이 없거나 untracked면 재현 가능한 설치
+  //   (`<pm> ci`/`--frozen-lockfile`)가 불가하다. undefined = 미계산(2-arg/legacy) → OK.
+  //   'no-package-json'/'ok' → OK. 'missing'/'untracked' → **WARN**(FAIL 아님 — D19~D22 근거 동일).
+  //   optional이어야 테스트 base 리터럴이 안 깨진다.
+  lockfileStatus?: 'ok' | 'missing' | 'untracked' | 'no-package-json'
 }
 
 /**
@@ -508,6 +513,26 @@ export function runChecks(inp: DoctorInputs): Check[] {
     })
   }
 
+  // D23(REQ-2026-056): frozen-lockfile 위생 진단.
+  //
+  // 🔴 **level 상한은 WARN — 절대 FAIL이 아니다**(D19~D22와 동일 근거). `req:commit`이 doctor를 하드 게이트로
+  //    spawn하므로 FAIL이면 lockfile 없는 프로젝트의 모든 커밋이 벽돌이 된다. lockfile ↔ package.json 동기
+  //    여부는 검사하지 않는다(PM 실행 없이 신뢰 불가) — 존재·tracked 위생만.
+  if (inp.lockfileStatus === undefined || inp.lockfileStatus === 'ok') {
+    c.push({ id: 'D23', level: 'OK', msg: inp.lockfileStatus === undefined ? 'lockfile 위생 점검 불요(미계산)' : 'lockfile 존재·git-tracked — 재현 가능한 설치(--frozen-lockfile) 가능' })
+  } else if (inp.lockfileStatus === 'no-package-json') {
+    c.push({ id: 'D23', level: 'OK', msg: 'lockfile 위생 점검 불요(package.json 없음)' })
+  } else {
+    c.push({
+      id: 'D23',
+      level: 'WARN',
+      msg:
+        inp.lockfileStatus === 'missing'
+          ? '감지된 패키지 매니저의 lockfile이 없습니다 — 재현 가능한 설치(`<pm> ci` / `--frozen-lockfile`)가 불가합니다. lockfile을 생성·커밋하세요.'
+          : 'lockfile이 git-tracked가 아닙니다(untracked) — 재현 가능한 설치가 불가합니다. lockfile을 커밋하세요.',
+    })
+  }
+
   return c
 }
 
@@ -651,6 +676,29 @@ function safeReadVersion(pkgAbs: string): string | null {
   }
 }
 
+/** PM별 기대 lockfile 후보(npm은 둘 다 유효). */
+const LOCKFILES_FOR_PM: Record<PackageManager, string[]> = {
+  npm: ['package-lock.json', 'npm-shrinkwrap.json'],
+  pnpm: ['pnpm-lock.yaml'],
+  yarn: ['yarn.lock'],
+}
+
+/**
+ * frozen-lockfile 위생 판정(D23·REQ-2026-056). package.json 없으면 점검 불요. PM 기대 lockfile이 하나라도
+ * 존재+tracked면 ok, 존재하나 전부 untracked면 untracked, 하나도 없으면 missing.
+ * 🔴 lockfile↔package.json **동기 검사는 안 한다**(PM 실행 없이 신뢰 불가) — 존재·tracked 위생만.
+ */
+export function lockfileHygiene(
+  root: string,
+  pm: PackageManager,
+  isTracked: (rel: string) => boolean,
+): 'ok' | 'missing' | 'untracked' | 'no-package-json' {
+  if (!existsSync(join(root, 'package.json'))) return 'no-package-json'
+  const present = LOCKFILES_FOR_PM[pm].filter((f) => existsSync(join(root, f)))
+  if (present.length === 0) return 'missing'
+  return present.some((f) => isTracked(f)) ? 'ok' : 'untracked'
+}
+
 export function main(argv: string[] = process.argv.slice(2)): void {
   const opts = parseArgs(argv)
   const cfg = loadConfig({ root: opts.root })
@@ -760,6 +808,15 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // D22(REQ-2026-047): 현재 repo-root 런타임 스크래치 축은 review-call 측정 로그 1건.
     // 새 축이 생기면 이 배열에 추가하고 packed-consumer smoke 단언도 함께 늘린다(docs 인벤토리 표의 유지 규칙).
     repoRootScratchUnprotected: unprotectedRepoRootScratch([REVIEW_CALL_LOG_REL], git),
+    // D23(REQ-2026-056): frozen-lockfile 위생(존재·tracked). tracked 판정은 read-only `git ls-files`.
+    lockfileStatus: lockfileHygiene(cfg.root, cfg.packageManager, (rel) => {
+      try {
+        git(['ls-files', '--error-unmatch', '--', rel])
+        return true
+      } catch {
+        return false
+      }
+    }),
   }
 
   const checks = runChecks(inp)

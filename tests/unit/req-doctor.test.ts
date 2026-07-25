@@ -116,6 +116,21 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     expect(warned.find((c) => c.id === 'D22')?.msg).toContain('commitgate sync --gitignore --apply')
   })
 
+  it('D23(REQ-2026-056): frozen-lockfile 위생 — missing/untracked는 WARN, ok/no-package-json/미계산은 OK, 절대 FAIL 아님', () => {
+    // ⑩ ok → OK
+    expect(lvl(runChecks(mk({ lockfileStatus: 'ok' })), 'D23')).toBe('OK')
+    // ⑬ no-package-json·미계산(undefined) → OK
+    expect(lvl(runChecks(mk({ lockfileStatus: 'no-package-json' })), 'D23')).toBe('OK')
+    expect(lvl(runChecks(mk({})), 'D23')).toBe('OK')
+    // ⑪ missing → WARN. ⑫ untracked → WARN.
+    const missing = runChecks(mk({ lockfileStatus: 'missing' }))
+    expect(lvl(missing, 'D23')).toBe('WARN')
+    expect(lvl(runChecks(mk({ lockfileStatus: 'untracked' })), 'D23')).toBe('WARN')
+    // ⑭ 🔴 WARN 상한 — FAIL 승격 시 lockfile 없는 프로젝트의 모든 커밋이 벽돌이 된다.
+    expect(missing.filter((c) => c.level === 'FAIL')).toEqual([])
+    expect(missing.find((c) => c.id === 'D23')?.msg).toContain('lockfile')
+  })
+
   it('unprotectedRepoRootScratch: ignore되면 제외 · tracked면 제외 · 둘 다 아니면 보고', () => {
     const p = 'workflow/.review-calls.jsonl'
     const ok = (args: string[]): string => {

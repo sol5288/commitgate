@@ -52,6 +52,7 @@ import {
 } from './lib/review-ledger'
 import { computeReviewSemanticIdentity } from './lib/review-target'
 import { closeProofPath, appendCloseProofRow, type CloseProofRow } from './lib/close-proof'
+import { summarizeLockfileDiff } from './lib/lockfile-diff'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
 
@@ -2153,7 +2154,9 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     const baseline = state.design_baseline
     if (hasDesignBaseline(state) && baseline) designDelta = computeDesignDelta(baseline, designDocBlobs)
   } else {
-    stagedDiff = git(['diff', '--cached'])
+    // REQ-2026-056: lockfile diff는 프롬프트에서 요약(전문 opt-in = cfg.lockfilePromptFull). 🔴 프롬프트 문자열만
+    // 바꾼다 — 바인딩(reviewTree = git write-tree)은 전체 index라 무영향(승인은 여전히 전체 lockfile 결속).
+    stagedDiff = summarizeLockfileDiff(git(['diff', '--cached']), { full: cfg.lockfilePromptFull })
   }
   // REQ-2026-034 B-2b: delta 모드(designDelta 설정 = design + baseline)면 persona에 delta 계약을 얹는다.
   // 이 effectivePersona **하나**를 프롬프트와 review-call 로그 policy_version 양쪽에 흘린다(단일 배선, 032 r02·r03).

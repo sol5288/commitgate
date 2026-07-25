@@ -384,6 +384,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   reviewReasoningEffort: 'high',
   reviewBudget: { autoBudget: 5, hardCap: 8 },
   phaseCommit: { autoApprove: 'never' },
+  lockfilePromptFull: false,
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,

@@ -492,4 +492,14 @@ describe('REQ-2026-037 — phaseCommit.autoApprove 설정(opt-in)', () => {
   it('CONFIG_SCHEMA에 phaseCommit 존재(배포 스키마 동치는 드리프트 가드가 고정)', () => {
     expect((CONFIG_SCHEMA.properties as Record<string, unknown>).phaseCommit).toBeDefined()
   })
+  // REQ-2026-056: lockfilePromptFull
+  it('⑨ lockfilePromptFull 기본 false·opt-in true·CONFIG_SCHEMA 존재', () => {
+    const def = tmpRoot()
+    const optin = tmpRoot({ lockfilePromptFull: true })
+    try {
+      expect(loadConfig({ root: def }).lockfilePromptFull).toBe(false)
+      expect(loadConfig({ root: optin }).lockfilePromptFull).toBe(true)
+      expect((CONFIG_SCHEMA.properties as Record<string, unknown>).lockfilePromptFull).toBeDefined()
+    } finally { cleanup(def); cleanup(optin) }
+  })
 })
