@@ -2,6 +2,20 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## 0.9.9
+
+**리뷰 게이트 운영 보강 4종** (REQ-2026-053~056, 소비 저장소 운영감사 후속). 모두 0.9.8 위의 **추가 기능**(신규 명령·additive 필드·opt-in)이라 기존 사용자는 무회귀입니다.
+
+- **레거시 완료 티켓 마이그레이션 종결 — `req:close --migrate`** (REQ-2026-053). 0.9.8의 `req:next` DONE 게이트/intake가 close-proof·design 결속 도입 **이전에** 완료·병합된 durable 티켓을 영구 미종결로 분류해 **새 REQ 생성을 막던 워크플로 잠금**을 해소합니다. dev-complete를 흉내 내지 않는 별도 close 이벤트 **`migrated-complete`**(사후 스탬프 — `reconstructed:true`+근거 필수)를 두고, `req:close`가 HEAD-committed 증거 무결성·커밋된 design 승인·phase 증거·**본선 병합 여부(integrated)**·부분완료 여부(커밋된 phase 계획)를 검증한 티켓만 종결합니다. 🔴 완료성 판정의 mainline은 **신뢰된 ref**(`origin/HEAD`→`origin/main`→로컬 `main`)로만 해소하며 운영자 override를 받지 않습니다(임의 ref로 미병합 티켓을 통과시키는 우회 차단). dry-run 기본·재실행 멱등.
+
+- **리뷰 호출 lifecycle 분류 + pre-dispatch 무차감 예산** (REQ-2026-054). 리뷰 attempt 실패를 `pre_dispatch_failed`(reviewer subprocess 미기동)·`dispatched_unknown`·`dispatch_confirmed`·`completed`로 분류해 원장(`review-ledger.jsonl`)에 **보상 `attempt-closed`**를 남깁니다 — 이전엔 실패가 조용한 unclosed로 뭉개져 "codex가 뜨지도 못한 실패"와 "모델이 부분 실행된 실패"가 구별되지 않았습니다. **명백한 pre-dispatch 실패(spawn 실패)만 회차를 환불**하고 dispatch 후·불명은 fail-closed로 차감합니다. 환불은 `attempts`를 감소시키지 않고(원장 자연키 충돌 회피) **`refunded_attempts` 별도 카운터**로 예산이 보는 유효 회차를 낮춥니다.
+
+- **`req:review-exception` 전용 명령 + 구조화 rationale** (REQ-2026-055). 예산 needs-exception 구간(6~8회차)의 사람 예외를 `state.json` 수동 편집 대신 **검증·원자 기록**합니다. 대상 series·회차를 소비 게이트와 **같은 함수**로 계산해 오기를 막고, 구조화 rationale(직전 findings·이번 변경·미해결·재시도 근거)을 전용 `review-exceptions.jsonl`에 durable하게 남깁니다(릴리스된 `review-ledger` 스키마는 불변 — 필수 키 추가가 기존 커밋 원장을 깨뜨리지 않게 sibling 파일 사용). 🔴 **durable rationale을 먼저 커밋한 뒤에만** 소비 가능한 state를 기록해, 부분 실패 시 근거 없는 예외가 소비되지 않습니다. 소비 로직·예산 게이트는 무변경.
+
+- **lockfile 리뷰 프롬프트 요약 + frozen-lockfile doctor D23** (REQ-2026-056). `git diff --cached`의 lockfile(수천 줄 기계생성) 구획을 리뷰 프롬프트에서 **요약**(경로·변경 통계·생략분 SHA-256)으로 대체해 토큰과 리뷰 노이즈를 줄입니다. 🔴 **승인 바인딩(reviewTree)은 불변**이라 승인은 여전히 전체 lockfile을 결속하고, 요약은 리뷰어가 보는 프롬프트만 바꿉니다(측정 로그·원장 prompt 해시는 전송된 요약본 기준이라 자동 정합). config **`lockfilePromptFull`**(기본 false)로 전문 opt-in. `req:doctor` **D23**은 감지된 패키지 매니저의 lockfile이 없거나 untracked면 **WARN**합니다(FAIL 아님 — 재현 가능한 설치 안내). 경로 판별은 rename(한쪽만 lockfile)·git quoted(공백) 경로까지 처리합니다.
+
+전체 테스트 1363 → 1709.
+
 ## 0.9.8
 
 **design 승인 증거가 커밋 이력에 확실히 남습니다** (REQ-2026-048). CommitGate는 `state.json`을 의도적으로 커밋하지 않으므로 저장소의 감사 정본은 `approvals.jsonl` 매니페스트와 커밋된 응답 아카이브뿐인데, 그 정본을 만드는 경로가 비대칭이었습니다 — **phase 증거는 매 `req:commit`이 자동 커밋**(needs-fix 라운드 포함)하는 반면 **design 증거는 수동 `req:commit --finalize-design`에만 의존**했고, 그마저 승인본 1건만 커밋했습니다. 게다가 그 수동 단계는 어떤 도구 출력·문서에도 안내되지 않았고, 커밋된 매니페스트를 확인하는 게이트도 없었습니다(D13은 미커밋 `state.json` 플래그를, D17은 **온디스크** 아카이브를 봅니다). 그 결과 REQ가 "전 phase 커밋 + 병합"에 도달해도 **설계 승인 증거가 커밋 이력에 전혀 남지 않을 수 있었고 아무 게이트도 불평하지 않았습니다** — 소비자 저장소에서 실측된 사고입니다.
