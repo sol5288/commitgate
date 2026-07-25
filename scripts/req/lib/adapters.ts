@@ -89,6 +89,20 @@ export interface GitAdapter {
 export type GitRunner = (file: string, args: string[], opts: { cwd: string; encoding: 'utf8'; maxBuffer: number }) => string
 const defaultGitRunner: GitRunner = (file, args, opts) => execFileSync(file, args, opts)
 
+/**
+ * **부재가 정상인 조회** 전용 runner — git의 stderr를 버린다 (REQ-2026-058 F-5).
+ *
+ * `git show HEAD:<path>` 류는 "아직 커밋되지 않음"이 **정상 상태**이고 호출부가 `catch → null`로 처리한다.
+ * 그런데 `execFileSync`는 기본적으로 자식 stderr를 부모로 흘리므로, 정상 경로에서
+ * `fatal: path '…' does not exist in 'HEAD'`가 사용자 화면에 뜬다 — 실패로 오해된다(Nuxt 소비자 감사 실측).
+ *
+ * 🔴 **전역으로 쓰지 말 것.** 진짜 오류(권한·손상·잠금)의 진단까지 사라진다. `bin/init.ts`의
+ *    `assertGitWorkTree`가 probe 전용 quiet runner를 쓰는 것과 같은 좁은 용도다.
+ * ⚠️ 판정은 바뀌지 않는다 — 실패는 여전히 throw이고 호출부의 `catch`가 부재로 해석한다.
+ */
+export const quietGitRunner: GitRunner = (file, args, opts) =>
+  execFileSync(file, args, { ...opts, stdio: ['ignore', 'pipe', 'ignore'] })
+
 /** git stdout 상한 — codex 경로(safeSpawnSync)와 동일 64 MiB. 큰 staged diff/status에서 Node 기본 1 MiB의 ENOBUFS throw 방지. */
 const GIT_MAX_BUFFER = 64 * 1024 * 1024
 

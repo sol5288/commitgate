@@ -48,7 +48,13 @@ export function createEvidencePorts(root: string, responsesDirRel: string): Evid
     },
     headText(repoRel) {
       try {
-        return gitText(['show', `HEAD:${repoRel}`])
+        // 🔴 부재가 정상이므로 git stderr를 버린다(REQ-2026-058 F-5) — 판정은 그대로 `catch → null`.
+        return execFileSync('git', ['show', `HEAD:${repoRel}`], {
+          cwd: root,
+          encoding: 'utf8',
+          maxBuffer: 64 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        })
       } catch {
         return null // HEAD에 없는 경로
       }
@@ -68,6 +74,7 @@ export function createEvidencePorts(root: string, responsesDirRel: string): Evid
         const buf = execFileSync('git', ['cat-file', 'blob', `HEAD:${repoRel}`], {
           cwd: root,
           maxBuffer: 64 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'ignore'], // 부재가 정상 — stderr 노이즈 억제(REQ-2026-058 F-5)
         })
         return createHash('sha256').update(buf).digest('hex')
       } catch {

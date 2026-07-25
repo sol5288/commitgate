@@ -65,12 +65,17 @@ export {
   type ArchiveInventoryItem,
 } from './lib/evidence'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type PackageManager, type ResolvedConfig } from './lib/config'
-import { createGitAdapter, safeSpawnSync, type GitAdapter } from './lib/adapters'
+import { createGitAdapter, quietGitRunner, safeSpawnSync, type GitAdapter } from './lib/adapters'
 
 // git=GitAdapter 경유(D-017-3), 패키지매니저=config. runDoctor(pnpm/npm 실행)는 cwd=gitRoot 필요(비-git 호출). main()이 loadConfig 후 config.root로 설정.
 let gitRoot = packageRoot()
 let pkgManager: PackageManager = DEFAULTS.packageManager
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
+/**
+ * **부재가 정상인 HEAD 조회 전용** 어댑터(REQ-2026-058 F-5). `gitAdapter`와 같은 root를 따라간다.
+ * 일반 호출에는 쓰지 않는다 — 진짜 오류의 진단이 사라진다.
+ */
+let quietGitAdapter: GitAdapter = createGitAdapter(packageRoot(), quietGitRunner)
 
 /**
  * repo-상대 경로 파일의 sha256(hex). `lib/evidence`는 fs를 모르는 순수 모듈이라 여기서 주입한다.
@@ -481,10 +486,14 @@ function verifyDevCompleteAtHead(ctx: FinalizeCtx): void {
     throw new Error(`dev-complete HEAD 재검증 실패: 발행 후 파생 상태가 dev-complete가 아니다(${state})`)
 }
 
-/** `HEAD:<repoRel>` blob 텍스트(없으면 null). */
+/**
+ * `HEAD:<repoRel>` blob 텍스트(없으면 null).
+ * 🔴 부재가 정상이므로 quiet 어댑터를 쓴다 — git의 `fatal: … does not exist in 'HEAD'`가 정상 경로에서
+ *    사용자 화면에 뜨지 않게 한다(REQ-2026-058 F-5). 판정(`catch → null`)은 그대로다.
+ */
 function headBlobText(repoRel: string): string | null {
   try {
-    return git(['show', `HEAD:${repoRel}`])
+    return quietGitAdapter.exec(['show', `HEAD:${repoRel}`])
   } catch {
     return null
   }
@@ -513,6 +522,7 @@ interface FinalizeCtx {
 export function __setGitForTest(root: string): void {
   gitRoot = root
   gitAdapter = createGitAdapter(root)
+  quietGitAdapter = createGitAdapter(root, quietGitRunner) // 같은 root를 따라가야 HEAD 조회가 엉뚱한 저장소를 보지 않는다
 }
 
 export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
@@ -640,6 +650,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   gitRoot = cfg.root // runDoctor(pnpm/npm) cwd
   pkgManager = cfg.packageManager
   gitAdapter = createGitAdapter(cfg.root)
+  quietGitAdapter = createGitAdapter(cfg.root, quietGitRunner) // HEAD 부재 조회 전용(F-5)
   const { ticketDir, doctorArgs } = resolveCommitTarget(opts, cfg)
   const { run, message, messageFile, finalize, finalizeDesign } = opts
   const state = loadState(ticketDir)

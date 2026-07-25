@@ -343,8 +343,27 @@ function reviewCmd(pm: PackageManager, target: NextTarget, kind: ReviewKind, pha
   return buildScriptInvocation(pm, 'req:review-codex', args).join(' ')
 }
 
+/**
+ * 커밋 메시지 자리표시자 — **사람 승인 경로와 LOW 자동 경로가 공유**한다(REQ-2026-058 F-3).
+ *
+ * `req:commit`은 메시지 없이는 fail-closed로 죽고, read-only인 `req:next`는 메시지를 **합성할 수 없다**
+ * (합성해서도 안 된다 — 커밋 메시지는 사람·Builder의 판단이다). 그래서 자리표시자를 실어 보내고
+ * 실행자가 그 자리를 메운다. 두 경로가 문자열을 각자 들고 있으면 갈라지므로 상수 하나를 공유한다.
+ */
+export const COMMIT_MESSAGE_PLACEHOLDER = '"<이 phase의 conventional 커밋 메시지>"'
+
+/**
+ * 사람 승인(AWAIT_HUMAN) 경로의 커밋 명령.
+ *
+ * 🔴 자리표시자를 **반드시** 싣는다. 이 문자열은 "승인 후 실행: $ …"로 제시되므로 **그대로 실행 가능**해야
+ *    한다 — 없으면 doctor 17개 체크를 모두 통과한 뒤 `커밋 메시지 필요`로 죽어, 사용자는 게이트가 막은
+ *    것으로 오해한다(REQ-2026-058 F-3, Nuxt 소비자 감사 실측).
+ *
+ * ⚠️ `autoCommitCmd`와 합치지 않는다 — 승인 주체가 다르고(정책 자동 vs 사람 확인) 앞으로 인자가 갈라질 수
+ *    있다. 공유해야 하는 것은 자리표시자 문자열 하나뿐이고, 그것은 상수로 뽑았다.
+ */
 function commitCmd(pm: PackageManager, target: NextTarget): string {
-  return buildScriptInvocation(pm, 'req:commit', [...targetArgs(target), '--run']).join(' ')
+  return buildScriptInvocation(pm, 'req:commit', [...targetArgs(target), '--run', '-m', COMMIT_MESSAGE_PLACEHOLDER]).join(' ')
 }
 
 /**
@@ -353,7 +372,7 @@ function commitCmd(pm: PackageManager, target: NextTarget): string {
  * 자리표시자를 실제 conventional 메시지로 바꿔 실행한다(AGENT 단계에서 `git add` 대상을 고르는 것과 동형).
  */
 function autoCommitCmd(pm: PackageManager, target: NextTarget): string {
-  return buildScriptInvocation(pm, 'req:commit', [...targetArgs(target), '--run', '-m', '"<이 phase의 conventional 커밋 메시지>"']).join(' ')
+  return buildScriptInvocation(pm, 'req:commit', [...targetArgs(target), '--run', '-m', COMMIT_MESSAGE_PLACEHOLDER]).join(' ')
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   renderAction,
   READONLY_GIT_SUBCOMMANDS,
   NEXT_EXIT_CODES,
+  COMMIT_MESSAGE_PLACEHOLDER,
   type NextInput,
   type NextTarget,
 } from '../../scripts/req/req-next'
@@ -81,6 +82,25 @@ describe('[req:next] 판정표 — 먼저 매치되는 분기가 이긴다', () 
     expect(a.approvalSentence).toBe('req:commit --run 승인')
     expect(a.controlPoint).toContain('req:commit --run')
     expect(a.command).toContain('req:commit')
+    // 🔴 REQ-2026-058 F-3: 이 명령은 **그대로 실행 가능**해야 한다. `req:commit`은 메시지 없이는
+    //    fail-closed로 죽으므로(LOW 자동 경로가 같은 이유로 자리표시자를 싣는다), 사람 승인 경로도
+    //    자리표시자를 실어야 "req:next 출력을 그대로 실행하라"는 계약이 성립한다.
+    expect(a.command).toContain('-m')
+    expect(a.command).toContain(COMMIT_MESSAGE_PLACEHOLDER)
+  })
+
+  it('1b. LOW 자동 커밋 경로와 사람 승인 경로가 **같은** 메시지 자리표시자를 쓴다(드리프트 금지)', () => {
+    const human = resolveNext(baseInput({ state: baseState({ commit_allowed: true }), hasStagedChanges: true }))
+    const auto = resolveNext(
+      baseInput({
+        state: baseState({ commit_allowed: true, risk_level: 'LOW' }),
+        hasStagedChanges: true,
+        phaseCommitAutoApprove: 'low-only',
+      }),
+    )
+    expect(auto.kind).toBe('RUN')
+    expect(human.command).toContain(COMMIT_MESSAGE_PLACEHOLDER)
+    expect(auto.command).toContain(COMMIT_MESSAGE_PLACEHOLDER)
   })
 
   it('2. 설계 문서 미인덱스 → AGENT', () => {
@@ -1080,6 +1100,26 @@ describe('[REQ-2026-048] req:next main() 배선 — HEAD 기준 DONE 게이트',
       const out = runNext(repo)
       expect(out).toContain('BLOCKED')
       expect(out).toContain('--finalize-design')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 REQ-2026-058 F-5: HEAD에 증거가 없는 정상 상태에서 raw git `fatal:`을 표출하지 않는다', () => {
+    // 이 픽스처가 바로 그 조회를 유발한다(HEAD에 approvals.jsonl 없음). 판정 자체는 위 테스트가 고정하고,
+    // 여기서는 **사람에게 보이는 노이즈**만 본다 — 부재는 정상이고 코드가 이미 null로 처리한다.
+    // 자식 프로세스를 띄워 실제 stderr를 캡처한다(부재 단언이라 in-process spy로는 잡히지 않는다).
+    const repo = setupTerminal(true)
+    try {
+      // 음성 대조: 같은 저장소에서 억제 없는 조회는 실제로 fatal을 낸다 — 픽스처가 공허하지 않음을 증명.
+      const probe = spawn.sync('git', ['show', 'HEAD:workflow/REQ-2026-001/responses/approvals.jsonl'], {
+        cwd: repo,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      })
+      expect(`${probe.stderr ?? ''}`).toContain('fatal:')
+
+      expect(runNext(repo)).not.toContain('fatal:')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

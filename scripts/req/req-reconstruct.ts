@@ -16,7 +16,7 @@ import { writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, packageRoot } from './lib/config'
-import { createGitAdapter, type GitAdapter } from './lib/adapters'
+import { createGitAdapter, quietGitRunner, type GitAdapter } from './lib/adapters'
 import { createEvidencePorts } from './lib/evidence-ports'
 import { verifyCommittedEvidenceIntegrity } from './lib/evidence'
 import { parseCloseProof, appendCloseProofRow, closeProofPath, type CloseProofRow } from './lib/close-proof'
@@ -25,13 +25,18 @@ import { listHeadTicketIds } from './lib/intake'
 import { isValidHumanResolution } from './review-codex'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
+/**
+ * **부재가 정상인 HEAD 조회 전용** 어댑터(REQ-2026-058 F-5). 이 명령의 HEAD 조회는 "아직 없음"이 정상이라
+ * git stderr의 `fatal: … does not exist in 'HEAD'`가 사용자에게 실패로 보인다. 판정은 그대로 `catch → null`.
+ */
+let quietGitAdapter: GitAdapter = createGitAdapter(packageRoot(), quietGitRunner)
 function git(args: string[]): string {
   return gitAdapter.exec(args)
 }
-/** `HEAD:<repoRel>` blob 텍스트(없으면 null). */
+/** `HEAD:<repoRel>` blob 텍스트(없으면 null). 부재가 정상이므로 quiet 어댑터를 쓴다(F-5). */
 function headBlob(repoRel: string): string | null {
   try {
-    return git(['show', `HEAD:${repoRel}`])
+    return quietGitAdapter.exec(['show', `HEAD:${repoRel}`])
   } catch {
     return null
   }
@@ -129,6 +134,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   if (!o.reqId) throw new Error('REQ 필요 (예: req:reconstruct 2026-029)')
   const cfg = loadConfig({ root: o.root })
   gitAdapter = createGitAdapter(cfg.root)
+  quietGitAdapter = createGitAdapter(cfg.root, quietGitRunner) // HEAD 부재 조회 전용(F-5)
   const reqId = o.reqId.startsWith('REQ-') ? o.reqId : `REQ-${o.reqId}`
   const ticketDir = join(cfg.workflowDirAbs, reqId)
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
@@ -149,7 +155,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     throw new Error(`${reqId}: HEAD close-proof 손상 — 복원 거부: ${parsed.problems.slice(0, 3).join('; ')}`)
 
   // 3. successor 증거 수집(HEAD tree) → 매트릭스(순수) 판정.
-  const successors = collectSuccessorEvidence(workflowDirRel, reqId, (a) => git(a))
+  // 🔴 quiet 어댑터를 넘긴다 — 이 함수의 git 호출은 전부 **HEAD 조회**이고 부재가 정상이다(F-5).
+  const successors = collectSuccessorEvidence(workflowDirRel, reqId, (a) => quietGitAdapter.exec(a))
   const plan = planReconstruction({ ticketId: reqId, existingRows: parsed.rows, successors })
   console.log(renderPlan(reqId, plan))
 
