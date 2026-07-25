@@ -20,6 +20,30 @@ import { computeReviewSemanticIdentity } from '../../scripts/req/lib/review-targ
  * 가드를 완화하지 않고, 사용자가 stage해 둔 코드도 건드리지 않는다(설계 DEC-1).
  */
 
+/**
+ * 픽스처 저장소의 **auto 유지보수를 끈다** (REQ-2026-059 DEC-1).
+ *
+ * git은 커밋 뒤 유지보수를 **detached 프로세스**로 띄울 수 있고, 그 프로세스가 `.git/objects/pack/`에
+ * 쓰는 동안 정리(`rmSync`)가 그 디렉터리를 지우려 하면 `ENOTEMPTY`로 죽는다 — 실제로 CI
+ * (ubuntu·node 20)에서 단언은 전부 통과했는데 정리에서만 실패했다.
+ *
+ * 🔴 두 경로를 **모두** 닫는다: git 버전에 따라 자동 실행 경로가 `gc --auto`이거나
+ *    `maintenance run --auto`다. 하나만 끄면 다른 러너에서 같은 증상이 남는다.
+ * ⚠️ 피시험 동작에는 영향이 없다 — 유지보수는 저장소 관리 기능이고, 검증 대상은 커밋 내용·인덱스·상태다.
+ */
+function disableAutoMaintenance(git: (args: string[]) => string): void {
+  git(['config', 'gc.auto', '0'])
+  git(['config', 'maintenance.auto', 'false'])
+}
+
+/**
+ * 임시 저장소 정리 — `disableAutoMaintenance`가 원인을 없앤 뒤의 **얇은 보험**(REQ-2026-059 DEC-2).
+ * `rmSync`의 재시도는 `EBUSY`·`ENOTEMPTY`·`EPERM`에만 적용되므로 다른 오류는 그대로 드러난다.
+ */
+function cleanupRepo(dir: string): void {
+  rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+}
+
 const TICKET_ID = 'REQ-2026-001'
 const TICKET_REL = `workflow/${TICKET_ID}`
 
@@ -36,6 +60,7 @@ function makeRepo(): Fixture {
   // 🔴 repo-local identity — 전역 config는 tests/setup/git-hermetic.ts가 차단한다.
   git(['config', 'user.email', 't@t.t'])
   git(['config', 'user.name', 't'])
+  disableAutoMaintenance(git)
   const ticketDir = join(dir, 'workflow', TICKET_ID)
   mkdirSync(ticketDir, { recursive: true })
   const state: WorkflowState = { id: TICKET_ID, phase: 'INTAKE', design_approved: false }
@@ -74,7 +99,7 @@ describe('commitStateCheckpoint', () => {
       expect(commitStateCheckpoint(args(f, f.state))).toBe(false)
       expect(f.git(['rev-parse', 'HEAD']).trim()).toBe(before)
     } finally {
-      rmSync(f.dir, { recursive: true, force: true })
+      cleanupRepo(f.dir)
     }
   })
 
@@ -92,7 +117,7 @@ describe('commitStateCheckpoint', () => {
       const committed = f.git(['show', `HEAD:${TICKET_REL}/state.json`])
       expect(JSON.parse(committed).design_approved).toBe(true)
     } finally {
-      rmSync(f.dir, { recursive: true, force: true })
+      cleanupRepo(f.dir)
     }
   })
 
@@ -111,7 +136,7 @@ describe('commitStateCheckpoint', () => {
       // staged 코드는 그대로 인덱스에 남아 있어야 한다.
       expect(f.git(['diff', '--cached', '--name-only']).trim()).toBe('src.ts')
     } finally {
-      rmSync(f.dir, { recursive: true, force: true })
+      cleanupRepo(f.dir)
     }
   })
 
@@ -126,7 +151,7 @@ describe('commitStateCheckpoint', () => {
       expect(() => commitStateCheckpoint(args(f, next))).toThrow(/state\.json/)
       expect(f.git(['rev-parse', 'HEAD']).trim()).toBe(before)
     } finally {
-      rmSync(f.dir, { recursive: true, force: true })
+      cleanupRepo(f.dir)
     }
   })
 
@@ -140,7 +165,7 @@ describe('commitStateCheckpoint', () => {
       expect(() => commitStateCheckpoint(args(f, alien))).toThrow(/REQ-2026-999/)
       expect(f.git(['rev-parse', 'HEAD']).trim()).toBe(before)
     } finally {
-      rmSync(f.dir, { recursive: true, force: true })
+      cleanupRepo(f.dir)
     }
   })
 
@@ -154,7 +179,7 @@ describe('commitStateCheckpoint', () => {
       expect(subject).toContain(TICKET_ID)
       expect(subject).toContain('phase-1-x')
     } finally {
-      rmSync(f.dir, { recursive: true, force: true })
+      cleanupRepo(f.dir)
     }
   })
 })
@@ -169,7 +194,7 @@ describe('commitStateCheckpoint', () => {
 describe('design 승인 경로 — state checkpoint 배선(near-e2e)', () => {
   const repos: string[] = []
   afterEach(() => {
-    while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true })
+    while (repos.length) cleanupRepo(repos.pop() as string)
   })
 
   const SCHEMA_SRC = readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')
@@ -183,6 +208,7 @@ describe('design 승인 경로 — state checkpoint 배선(near-e2e)', () => {
     // REQ-2026-049: repo-local identity(피시험 코드의 커밋이 전역 config에 기대지 않아야 한다).
     git(['config', 'user.email', 't@t.t'])
     git(['config', 'user.name', 't'])
+    disableAutoMaintenance(git)
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
     writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
     const ticketAbs = join(repo, 'workflow', TICKET_ID)
@@ -270,7 +296,7 @@ describe('serializeState', () => {
       writeState(ticketDir, s)
       expect(readFileSync(join(ticketDir, 'state.json'), 'utf8')).toBe(serializeState(s))
     } finally {
-      rmSync(f.dir, { recursive: true, force: true })
+      cleanupRepo(f.dir)
     }
   })
 })
