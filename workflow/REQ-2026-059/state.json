@@ -3,15 +3,20 @@
   "branch": "feat/req-2026-059-fix-e2e-fixture-cleanup",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9a37-fd04-71c2-b64e-86ea8c755e4e",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9a40-7d3d-7de2-b3bf-f5e72199875f",
+  "review_base_sha": "32e6597d0dbc804b74d69a57a03e09037a8facc8",
+  "review_diff_hash": "0f38a0e2ac4562f009bcf763dbe8f1c587811770",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "e1551129f4eb50c5ea474893783698c99956f8a8f51d7f346a1fa93e0e39d421",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-deterministic-fixture-cleanup",
+  "phases": [
+    {
+      "id": "phase-1-deterministic-fixture-cleanup",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -20,6 +25,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-deterministic-fixture-cleanup#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-deterministic-fixture-cleanup",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -43,14 +55,23 @@
     "design_hash": "e1551129f4eb50c5ea474893783698c99956f8a8f51d7f346a1fa93e0e39d421"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-deterministic-fixture-cleanup",
     "outcome": "approved",
-    "compare_hash": "7ba41792649b819e46b0a168f7f4d49ce8363df3ee05ffe30577af8fd82fbedc",
+    "compare_hash": "933d3f46b5ef51ad49c64442a2dfe04f2e81051f25ccd03440af262a56635dae",
     "count": 1,
     "errors": [],
-    "at": "2026-07-25T17:00:07.702Z",
+    "at": "2026-07-25T17:09:50.468Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "0f38a0e2ac4562f009bcf763dbe8f1c587811770",
+      "phase_id": "phase-1-deterministic-fixture-cleanup",
+      "consumed_by_commit_sha": "b470ec557f575abd1d34f82e9405a3cd26dbea24",
+      "approval_consumed_at": "2026-07-25T17:10:03.503Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
