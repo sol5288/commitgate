@@ -97,7 +97,12 @@ export function classifyIntake(facts: IntakeFacts): IntakeTicketResult {
       ? '개발 완료(dev-complete)'
       : state === 'series-terminal'
         ? 'series 종결(replace/human-resolution)'
-        : String(state)
+        : // 🔴 REQ-2026-053: migrated-complete는 **phase-1(커밋 3ed1b95 close-proof.ts)**에서 event·base-state·
+          //    파서·deriveBaseState(dev-complete 아래·needs-recovery 위 비차단)로 이미 확장됐다. 이 phase-2 diff는
+          //    명령(req:close)과 이 reason 케이스만 추가한다. 종결→pass 전 파이프라인은 req-close.test.ts ⑮가 실증.
+          state === 'migrated-complete'
+          ? '개발 완료(마이그레이션 종결·migrated-complete)'
+          : String(state)
   return { ...head, baseState: state, verdict: blocked ? 'block' : 'pass', reason, reconstructed: isReconstructed(facts.closeParsed.rows) }
 }
 
