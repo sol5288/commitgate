@@ -3,16 +3,92 @@
   "branch": "feat/req-2026-057-durable-state-checkpoint",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9a02-b2dd-7f01-843f-2f8f404808a1",
+  "review_base_sha": "30757390edca471926d219e2cee5cfdaa8249c27",
+  "review_diff_hash": "91e864d37b0010e638d46e403b27cbd3815c11ee",
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
-  "current_phase": null,
-  "phases": [],
+  "design_approved": true,
+  "design_approved_hash": "417d2956114b68d0c68927ed022b6a30f0a0cca2e687d1dab8d17fe5a0447b0e",
+  "current_phase": "phase-2-checkpoint-phase-path",
+  "phases": [
+    {
+      "id": "phase-1-checkpoint-design-path",
+      "approved": true
+    },
+    {
+      "id": "phase-2-checkpoint-phase-path",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-checkpoint-design-path#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-checkpoint-design-path",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-checkpoint-phase-path#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-checkpoint-phase-path",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "2bd87f2815ecee13cc422f7bd6e9b687cfa23fcd",
+    "design": "367d6c45b8ffbaad07f4797d6ba08de52b78f518",
+    "plan": "0758b52aee1f46b0306ca74df0eed7a4fe5fecc0"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-057/responses/design-r01-approved.json",
+    "response_sha256": "d3ab072a5889c60ee29ace0f72a43bda507359d124112272f4f86e5f99791be6",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "0f7d6da49642353eb94fb22627c9f719058821c5",
+    "codex_thread_id": "019f99df-f035-7070-9e4a-a9d39108ab77",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-25T15:24:49.634Z",
+    "design_hash": "417d2956114b68d0c68927ed022b6a30f0a0cca2e687d1dab8d17fe5a0447b0e"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-checkpoint-phase-path",
+    "outcome": "approved",
+    "compare_hash": "9e9adac38234d69853f31a7238d0781e30d037f10d6770c7a08923eb07e2bb8a",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-25T16:02:12.616Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "1a74717fe4e72b9359229625969332897f0aa209",
+      "phase_id": "phase-1-checkpoint-design-path",
+      "consumed_by_commit_sha": "2ad9775974ab6d52e0ac9d5dbc475c6f529638a5",
+      "approval_consumed_at": "2026-07-25T15:51:26.628Z"
+    },
+    {
+      "approved_tree": "91e864d37b0010e638d46e403b27cbd3815c11ee",
+      "phase_id": "phase-2-checkpoint-phase-path",
+      "consumed_by_commit_sha": "acc3bbba640100ab73dd7b419dbc17dd6435d31b",
+      "approval_consumed_at": "2026-07-25T16:02:28.757Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
