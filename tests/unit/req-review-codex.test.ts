@@ -3729,10 +3729,11 @@ describe('REQ-2026-051 phase-2 — 원장 배선(main near-e2e)', () => {
     }
   })
 
-  it('⑫ opened는 attempt 확정 직후 = 호출 전에 기록된다(호출이 throw해도 남는다)', () => {
+  it('⑫ opened는 호출 전에 기록된다(throw해도 남는다) + REQ-2026-054: 실패도 보상 attempt-closed', () => {
     const { repo, ticket, head } = setupRepo()
     try {
-      // 호출 자체가 throw하는 reviewer. opened는 호출 전이므로 남고, closed는 판정에 도달 못 해 없다.
+      // 호출 자체가 throw하는 reviewer(일반 Error·확인 전). opened는 호출 전이라 남고, REQ-2026-054가
+      // 이제 보상 attempt-closed(dispatched_unknown·일반 오류·미확인 = fail-closed 차감)를 남긴다.
       const throwing = {
         requests: [] as unknown[],
         review(req: unknown) {
@@ -3746,12 +3747,14 @@ describe('REQ-2026-051 phase-2 — 원장 배선(main near-e2e)', () => {
       } catch {
         threw = true
       }
-      expect(threw).toBe(true)
+      expect(threw).toBe(true) // fail-closed — 원본 오류 re-throw
       const rows = readLedger(ticket)
-      // ⑬ opened만 있고 closed는 없다 = "예산은 깎였는데 완료되지 않은 호출"이 원장 구조로 관측된다.
-      expect(rows.map((r) => r.event)).toEqual(['attempt-opened'])
+      // REQ-2026-054: opened + 보상 closed. "예산 깎였는데 미완료"는 이제 unclosed 대신 lifecycle로 구별된다.
+      expect(rows.map((r) => r.event)).toEqual(['attempt-opened', 'attempt-closed'])
       const closedFor1 = rows.filter((r) => r.event === 'attempt-closed' && r.attempt === 1)
-      expect(closedFor1).toHaveLength(0)
+      expect(closedFor1).toHaveLength(1)
+      expect(closedFor1[0]!.lifecycle).toBe('dispatched_unknown') // 일반 오류·확인 전 = 차감(환불 아님)
+      expect(closedFor1[0]!.outcome).toBe('invalid')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

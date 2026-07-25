@@ -138,12 +138,48 @@ export function parseThreadId(jsonl: string): string | null {
   return null
 }
 
-/** codex 실행자(주입 가능 — 테스트). stdout 반환, 실패 시 throw. */
+/**
+ * 리뷰 호출 실패의 **타입된 분류**(REQ-2026-054·DEC-C1). 예산 환불·lifecycle 판정이 메시지 문자열 sniffing이
+ * 아니라 이 타입으로 결정된다.
+ * - `pre-dispatch`: reviewer subprocess가 **기동조차 못 함**(spawn 실패·ENOENT). 청구 불가 → 환불 대상.
+ * - `dispatched`: subprocess는 떴으나 사용 가능한 결과 없음(non-zero exit·thread_id 없음). 청구 가능성 → 차감.
+ */
+export class ReviewCallError extends Error {
+  readonly dispatchPhase: 'pre-dispatch' | 'dispatched'
+  constructor(dispatchPhase: 'pre-dispatch' | 'dispatched', message: string) {
+    super(message)
+    this.name = 'ReviewCallError'
+    this.dispatchPhase = dispatchPhase
+  }
+}
+
+/** codex 실행자(주입 가능 — 테스트). stdout 반환, 실패 시 throw(`ReviewCallError`로 dispatch 단계 분류). */
 export type CodexRunner = (args: string[], input: string, cwd: string) => string
-const defaultCodexRunner: CodexRunner = (args, input, cwd) =>
-  // shell 없이 안전 실행(safeSpawnSync/cross-spawn). 프롬프트는 stdin(input)으로 전달.
-  // ⚠️ 과거 `shell:true`는 args(schemaPath·resumeThreadId 등)의 메타문자로 **명령 주입**이 가능했고 공백 경로도 깨졌음 — P1 수정.
-  safeSpawnSync('codex', args, { cwd, input, maxBuffer: 64 * 1024 * 1024 })
+
+/** status 보존 spawn 함수 타입(주입 seam — `safeSpawnSyncStatus` 서명). */
+export type StatusSpawn = (file: string, args: readonly string[], opts?: SafeSpawnOptions) => { status: number | null; stdout: string; stderr: string }
+
+/**
+ * codex 러너 팩토리(REQ-2026-054·DEC-C1). spawn을 주입해 분류 로직을 테스트 가능하게 한다.
+ * - spawn 자체 실패(`res.error` throw — ENOENT 등): subprocess 미기동 = `pre-dispatch`(청구 불가·환불 대상).
+ * - `res.status !== 0`(subprocess는 떴고 non-zero — usage limit 등 모델 부분 실행 가능): `dispatched`(차감).
+ */
+export function makeCodexRunner(spawn: StatusSpawn): CodexRunner {
+  return (args, input, cwd) => {
+    // shell 없이 안전 실행(cross-spawn). 프롬프트는 stdin(input). 과거 `shell:true`의 명령 주입/공백 경로 결함 방지.
+    let res: { status: number | null; stdout: string; stderr: string }
+    try {
+      res = spawn('codex', args, { cwd, input, maxBuffer: 64 * 1024 * 1024 })
+    } catch (err) {
+      throw new ReviewCallError('pre-dispatch', `codex 실행(spawn) 실패 — subprocess 미기동: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    if (res.status !== 0)
+      throw new ReviewCallError('dispatched', `codex 종료 코드 ${res.status ?? 'null'}: ${res.stderr.trim()}`.trim())
+    return res.stdout
+  }
+}
+
+const defaultCodexRunner: CodexRunner = makeCodexRunner(safeSpawnSyncStatus)
 
 /** unknown → 평범한 객체(배열·null 제외). 스키마 경로 탐색용. */
 function asPlainObject(v: unknown): Record<string, unknown> | null {

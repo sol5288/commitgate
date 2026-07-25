@@ -40,6 +40,7 @@ import { createEvidencePorts } from './lib/evidence-ports'
 import {
   createGitAdapter,
   createCodexReviewerAdapter,
+  ReviewCallError,
   type GitAdapter,
   type ReviewerAdapter,
 } from './lib/adapters'
@@ -933,6 +934,21 @@ export interface SeriesRecord {
   closed_reason: 'approved' | 'human-resolution' | null
   // closed_reason='human-resolution'일 때만. 사람이 escalate된 series를 종료·대체로 결정한 손기록.
   human_resolution?: HumanResolution
+  // 🔴 REQ-2026-054(DEC-C3): pre-dispatch 실패로 **환불된** 회차 수(additive·기본 0). 예산 게이트가 보는 유효
+  //    회차 = attempts - refunded_attempts. attempts는 단조 유지(원장 자연키 충돌 회피)하고 여기서만 환불한다.
+  refunded_attempts?: number
+}
+
+/**
+ * 리뷰 호출 실패의 lifecycle 분류(REQ-2026-054·DEC-C2, 순수). 도달한 가장 먼 단계로 분류한다.
+ * 🔴 **오직 타입된 pre-dispatch만 환불 대상**(pre_dispatch_failed). 일반 오류·확인 전 dispatched는
+ *    dispatched_unknown으로 **차감**(fail-closed — "명백한 pre-dispatch만 무차감").
+ */
+export type DispatchFailureLifecycle = 'pre_dispatch_failed' | 'dispatched_unknown' | 'dispatch_confirmed'
+export function classifyDispatchFailure(err: unknown, dispatchConfirmed: boolean): DispatchFailureLifecycle {
+  if (err instanceof ReviewCallError && err.dispatchPhase === 'pre-dispatch') return 'pre_dispatch_failed'
+  if (dispatchConfirmed) return 'dispatch_confirmed' // thread_id 확보 후 실패 = dispatched 확실.
+  return 'dispatched_unknown' // 확인 전 dispatched·타입 없는 일반 오류(fail-closed 차감).
 }
 
 /** 사람의 series 종결 결정(REQ-2026-029 A-2b D1). accept-risk 없음(배분표 ④ — decision은 둘뿐). */
@@ -1109,7 +1125,24 @@ export type BudgetDecision =
  */
 export function openSeriesAttempts(state: WorkflowState, kind: ReviewKind, phaseId: string | null): number {
   const rec = openSeriesRecord(state, kind, phaseId)
-  return rec ? rec.attempts : 0
+  // 🔴 REQ-2026-054(DEC-C3): 유효 회차 = attempts - refunded_attempts. pre-dispatch 실패로 환불된 회차는
+  //    예산에서 뺀다. refunded_attempts 부재(옛 state)면 attempts 그대로(하위호환).
+  return rec ? Math.max(0, rec.attempts - (rec.refunded_attempts ?? 0)) : 0
+}
+
+/**
+ * pre-dispatch 실패 회차 환불(REQ-2026-054·DEC-C3, 순수). 열린 series의 `refunded_attempts +1`.
+ * 🔴 `attempts`는 건드리지 않는다 — 감소하면 재시도가 같은 `(series_id, attempt)`를 만들어 원장 자연키가
+ *    충돌(conflict)한다. 유효 회차는 `openSeriesAttempts`가 차감으로 낸다. 열린 series 없으면 no-op(방어).
+ */
+export function refundAttempt(state: WorkflowState, kind: ReviewKind, phaseId: string | null): WorkflowState {
+  const series = readSeries(state)
+  const openIdx = series.findIndex(
+    (r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId && r.closed_reason === null,
+  )
+  if (openIdx < 0) return state
+  const next = series.map((r, i) => (i === openIdx ? { ...r, refunded_attempts: (r.refunded_attempts ?? 0) + 1 } : r))
+  return { ...state, review_series: next }
 }
 
 /**
@@ -2012,6 +2045,12 @@ export function callReviewer(
     respPath: string
     model: string | null
     reasoningEffort: string | null
+    /**
+     * 🔴 REQ-2026-054(DEC-C1): thread_id **파싱 성공 즉시**(respPath 기록 前) 호출된다 — 호출자가 dispatch
+     *    확인 시점을 정확히 안다. 그래야 thread_id 확보 **후** respPath I/O 실패도 dispatch_confirmed로 분류된다
+     *    (반환 후에만 알면 이 경로가 dispatched_unknown으로 오분류됨).
+     */
+    onDispatchConfirmed?: (threadId: string) => void
   },
 ): { threadId: string } {
   const { lastMessage, threadId } = rv.review({
@@ -2022,7 +2061,9 @@ export function callReviewer(
     model: opts.model,
     reasoningEffort: opts.reasoningEffort,
   })
-  if (!threadId) throw new Error('thread_id 파싱 실패 (codex exec --json에 thread.started 없음)')
+  // thread_id 없음 = codex는 실행됐으나(exit 0) 출력이 무효 = dispatched(차감), pre-dispatch 아님.
+  if (!threadId) throw new ReviewCallError('dispatched', 'thread_id 파싱 실패 (codex exec --json에 thread.started 없음)')
+  opts.onDispatchConfirmed?.(threadId) // 🔴 respPath 기록 前 — 이후 I/O 실패도 dispatch_confirmed.
   writeFileSync(opts.respPath, lastMessage, 'utf8')
   return { threadId }
 }
@@ -2243,49 +2284,99 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   const promptSha256 = createHash('sha256').update(prompt, 'utf8').digest('hex')
   console.warn(`⚠️  codex 실제 호출 (${isResume ? 'resume' : 'exec'}) — 호출 1회 발생 (DEC-WF-026: 호출 직전 확인)`)
   let reviewDurationMs = 0 // REQ-2026-045: callReviewer 소요(측정 전용).
-  const callStartMs = Date.now()
-  let callRes: ReturnType<typeof callReviewer>
+  // 🔴 REQ-2026-054(DEC-C4): dispatch 구간(callReviewer → 사후 tamper 검증 → 응답 파싱)을 try/catch로 감싼다.
+  //    실패 시 lifecycle을 분류해 **보상 attempt-closed**를 남기고(durable이면 pathspec 커밋), **명백한
+  //    pre-dispatch면 회차를 환불**한 뒤 **원본 오류를 re-throw**(fail-closed). `dispatchConfirmed`는 thread_id
+  //    확보 즉시(onDispatchConfirmed) true — 그 후 실패(respPath I/O·tamper·응답 파싱)는 dispatch_confirmed.
+  //    이 try는 outcome이 정해지기 **전**(probe)에서 끝난다 → 정상 경로의 attempt-closed(completed)와 상호배타.
+  let dispatchConfirmed = false
+  let threadId!: string
+  let approvedAt!: string
+  let baseArgs!: Parameters<typeof processResponse>[0]
+  let probe!: ReturnType<typeof processResponse>
   try {
-    callRes = callReviewer(reviewer, {
-      prompt,
+    const callStartMs = Date.now()
+    let callRes: ReturnType<typeof callReviewer>
+    try {
+      callRes = callReviewer(reviewer, {
+        prompt,
+        schemaPath: cfg.schemaPathAbs,
+        resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
+        cwd: cfg.root,
+        respPath,
+        // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
+        model: cfg.reviewModel,
+        reasoningEffort: cfg.reviewReasoningEffort,
+        onDispatchConfirmed: () => {
+          dispatchConfirmed = true
+        },
+      })
+    } finally {
+      reviewDurationMs = Date.now() - callStartMs
+    }
+    threadId = callRes.threadId
+
+    // 사후 리뷰어 무수정 검증: worktree 절대검사 + index(staged tree OID) 불변 (content 기반)
+    const postDirty = findUnstagedOrUntracked(gitStatusEntries(), SCRATCH, ticketRel)
+    if (postDirty.length)
+      throw new Error(`리뷰 호출 후 워킹트리 변경(리뷰어 수정?):\n  ${postDirty.map(formatStatusEntry).join('\n  ')}`)
+    const afterTree = git(['write-tree'])
+    if (afterTree !== reviewTree)
+      throw new Error(`리뷰 호출 후 staged tree 변경(리뷰어 index 수정?): ${reviewTree} → ${afterTree}`)
+
+    // A2(D-016-1 · A2-P2-2): reviewer 무수정 검증 이후, **검증 먼저(아카이브 없이)** → archiveDecision으로 suffix/생략 결정 → 기록.
+    // 무효(kind 불일치·모순 등)면 아카이브를 남기지 않는다(round/finalize 오염 방지). 유효 NEEDS_FIX는 보존, 승인은 evidence 핀 부착.
+    approvedAt = new Date().toISOString()
+    baseArgs = {
+      ticketDir,
+      state,
+      binding: { reviewBaseSha, reviewTree },
+      threadId,
+      kind: opts.kind,
+      designHash,
+      phaseDesignRef, // REQ-2026-052 DEC-B5: phase 승인 시점 design 결속(designValid 통과값)
+      phaseId,
+      designValid,
       schemaPath: cfg.schemaPathAbs,
-      resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
-      cwd: cfg.root,
-      respPath,
-      // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
-      model: cfg.reviewModel,
-      reasoningEffort: cfg.reviewReasoningEffort,
-    })
-  } finally {
-    reviewDurationMs = Date.now() - callStartMs
+      designDocBlobs, // REQ-2026-031 B-1: design kind일 때만 값 있음. 승인+archive 분기에서만 baseline에 저장.
+    }
+    probe = processResponse(baseArgs) // 아카이브 없이 검증(진짜 승인 여부·유효성)
+  } catch (err) {
+    // 🔴 DEC-C4 보상 경로. classifyDispatchFailure로 lifecycle 판정 → attempt-closed(invalid) 기록 → durable이면
+    //    원장 pathspec 커밋(best-effort) → pre-dispatch면 환불 → 원본 오류 re-throw.
+    const lifecycle = classifyDispatchFailure(err, dispatchConfirmed)
+    try {
+      appendLedgerRowToDisk(cfg.root, ticketRel, {
+        ticket_id: String(state.id ?? ''),
+        review_kind: opts.kind,
+        phase_id: phaseId,
+        series_id: attemptInfo.series_id,
+        attempt: attemptInfo.attempt,
+        event: 'attempt-closed',
+        lifecycle, // pre_dispatch_failed | dispatched_unknown | dispatch_confirmed
+        outcome: 'invalid', // 실패한 호출 — 유효 판정 없음.
+        exception_consumed: attemptInfo.exception_consumed,
+        prompt_sha256: null, // 실패 경로는 프롬프트 해시를 담지 않는다(opened와 동일).
+        at: new Date().toISOString(),
+        reconstructed: false,
+      })
+      if (isDurable) {
+        // 원장 modified가 남으면 다음 리뷰 D10이 막힌다 → attempt-opened와 동일 조건·기법으로 pathspec 커밋.
+        const ledgerRel = ledgerPath(ticketRel)
+        git(['add', '--', ledgerRel])
+        git(['commit', '-m', `chore(${String(state.id ?? '')}): ledger attempt-closed ${attemptInfo.series_id} #${attemptInfo.attempt} (${lifecycle})`, '--', ledgerRel])
+      }
+    } catch (compErr) {
+      // 보상 기록/커밋 실패는 삼킨다 — 원본 dispatch 오류가 전파돼야 한다(판정을 가리지 않는다).
+      console.warn(`[req:review-codex] ⚠️ 보상 attempt-closed 기록/커밋 실패(원본 오류 전파): ${compErr instanceof Error ? compErr.message : String(compErr)}`)
+    }
+    if (lifecycle === 'pre_dispatch_failed') {
+      // 🔴 명백한 pre-dispatch만 환불(유효 회차 -1 효과). attempts는 단조 유지 → 재시도가 원장 자연키 충돌 없음.
+      state = refundAttempt(state, opts.kind, phaseId)
+      writeState(ticketDir, state)
+    }
+    throw err // fail-closed — 실패는 실패(exit 비-0).
   }
-  const { threadId } = callRes
-
-  // 사후 리뷰어 무수정 검증: worktree 절대검사 + index(staged tree OID) 불변 (content 기반)
-  const postDirty = findUnstagedOrUntracked(gitStatusEntries(), SCRATCH, ticketRel)
-  if (postDirty.length)
-    throw new Error(`리뷰 호출 후 워킹트리 변경(리뷰어 수정?):\n  ${postDirty.map(formatStatusEntry).join('\n  ')}`)
-  const afterTree = git(['write-tree'])
-  if (afterTree !== reviewTree)
-    throw new Error(`리뷰 호출 후 staged tree 변경(리뷰어 index 수정?): ${reviewTree} → ${afterTree}`)
-
-  // A2(D-016-1 · A2-P2-2): reviewer 무수정 검증 이후, **검증 먼저(아카이브 없이)** → archiveDecision으로 suffix/생략 결정 → 기록.
-  // 무효(kind 불일치·모순 등)면 아카이브를 남기지 않는다(round/finalize 오염 방지). 유효 NEEDS_FIX는 보존, 승인은 evidence 핀 부착.
-  const approvedAt = new Date().toISOString()
-  const baseArgs = {
-    ticketDir,
-    state,
-    binding: { reviewBaseSha, reviewTree },
-    threadId,
-    kind: opts.kind,
-    designHash,
-    phaseDesignRef, // REQ-2026-052 DEC-B5: phase 승인 시점 design 결속(designValid 통과값)
-    phaseId,
-    designValid,
-    schemaPath: cfg.schemaPathAbs,
-    designDocBlobs, // REQ-2026-031 B-1: design kind일 때만 값 있음. 승인+archive 분기에서만 baseline에 저장.
-  }
-  const probe = processResponse(baseArgs) // 아카이브 없이 검증(진짜 승인 여부·유효성)
   const decision = archiveDecision(probe, opts.kind) // null=아카이브 안 함(무효), 'approved'|'needs-fix'
   let archiveDesc: { path: string; sha256: string } | undefined
   // REQ-2026-025 D4: 측정 로그의 archive_round. 무효 응답은 아카이브를 남기지 않으므로 null로 남는다.
