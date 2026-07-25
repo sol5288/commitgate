@@ -1378,7 +1378,12 @@ export function installGuidance(r: InitResult): string[] {
   out.push(`  ${n++}. 설치분만 stage 하십시오. 전체를 담는 stage(-A / .)는 쓰지 마십시오 — 무관한 변경·.env 가`)
   out.push(`     함께 커밋되고, 이어지는 req:review-codex 가 staged diff 전문을 외부로 전송합니다.`)
   if (r.lockfileRel !== null)
-    out.push(`     (2단계 install 을 먼저 실행해야 ${r.lockfileRel} 이 존재합니다. lockfile 을 만들지 않는 설정이라면 그 경로는 빼십시오.)`)
+    // 🔴 REQ-2026-058 F-4: Stage B에서 이 파일을 바꾸는 것은 **init 앞의** `npm i -D commitgate`(D14가 요구)이지
+    //    안내 2단계의 `install`이 아니다. init 자신은 devDeps를 주입하지 않으므로 lockfile을 건드리지 않는다.
+    //    이미 커밋했다면 아래 add는 무해한 no-op이고, 아직 미커밋이면 이 경로가 설치 커밋에 함께 담겨야 한다.
+    out.push(
+      `     (${r.lockfileRel} 은 선행 'npm i -D commitgate' 가 갱신한 것입니다 — 이미 커밋했다면 이 경로는 빼도 됩니다. lockfile 을 만들지 않는 설정도 마찬가지입니다.)`,
+    )
   out.push(`       git add -- ${toStage.map(quoteForShell).join(' ')}`)
   out.push(`       git status                    # 의도한 것만 staged 인지 눈으로 확인`)
   out.push(`       git commit -m "chore: install commitgate"`)

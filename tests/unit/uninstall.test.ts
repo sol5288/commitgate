@@ -1056,3 +1056,80 @@ describe('[uninstall] companion skills (REQ-2026-021)', () => {
     }
   })
 })
+
+// ─── REQ-2026-058 phase-2: 제거 계획 안내 정확성(F-6·F-7·F-8·F-9) ───
+describe('[uninstall][REQ-2026-058] 계획 안내 정확성', () => {
+  it('🔴 F-6: 도입 커밋이 workflow/.gitignore를 담고 보존할 증거가 있으면 revert 파급을 예고한다', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      // 티켓 증거를 만든다 — 이것이 있어야 scratch 노출이 실제 문제가 된다.
+      mkdirSync(join(dir, 'workflow', 'REQ-2026-001', 'responses'), { recursive: true })
+      writeFileSync(join(dir, 'workflow', 'REQ-2026-001', 'state.json'), '{}')
+      commitAll(dir, 'chore: install commitgate')
+      const text = renderPlan(planUninstall({ dir }))
+      expect(text).toContain('git revert')
+      // 그 커밋에 workflow/.gitignore가 들어 있다는 사실과, 되돌리면 scratch가 드러난다는 파급을 알려야 한다.
+      expect(text).toContain(KIT_GITIGNORE.dest)
+      expect(text).toMatch(/scratch|스크래치/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('🔴 F-6: 보존할 티켓 증거가 없으면 그 경고를 내지 않는다(소음 방지)', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir) // 티켓 없음
+      commitAll(dir, 'chore: install commitgate')
+      const plan = planUninstall({ dir })
+      expect(plan.protect).toHaveLength(0)
+      expect(renderPlan(plan)).not.toMatch(/scratch가 드러|스크래치가 드러/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('🔴 F-7: Stage B 설치본 계획은 잔여 디렉터리로 scripts/ 를 나열하지 않는다', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      commitAll(dir)
+      const text = renderPlan(planUninstall({ dir }))
+      expect(text).toContain('빈 디렉터리')
+      expect(text).not.toContain(`${KIT_SOURCE_DIR_REL}/ ·`) // 'scripts/req/ ·' 형태의 나열
+      expect(text).not.toMatch(/빈 디렉터리\(scripts\//)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('🔴 F-8: not-installed 여도 남아 있는 티켓 증거를 고지한다', () => {
+    const dir = tmpRepo()
+    try {
+      // 설치 흔적 없이 티켓 증거만 남은 상태(제거를 마친 뒤의 실제 모습).
+      mkdirSync(join(dir, 'workflow', 'REQ-2026-001', 'responses'), { recursive: true })
+      writeFileSync(join(dir, 'workflow', 'REQ-2026-001', 'state.json'), '{}')
+      const plan = planUninstall({ dir })
+      expect(plan.mode).toBe('not-installed')
+      const text = renderPlan(plan)
+      expect(text).toContain('되돌릴 것이 없습니다')
+      expect(text).toContain('REQ 티켓') // 남은 증거를 알려야 한다
+      expect(text).toContain('workflow')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('🔴 F-9: _npx 삭제가 모든 npx 패키지 캐시를 지운다는 범위를 밝힌다', () => {
+    const dir = tmpRepo()
+    try {
+      install(dir)
+      const text = renderPlan(planUninstall({ dir }))
+      expect(text).toContain('_npx')
+      expect(text).toMatch(/모든 npx|npx 로 실행한 모든|전부 삭제/)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})

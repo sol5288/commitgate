@@ -122,6 +122,11 @@ export interface UninstallPlan {
   /** 티켓이 실제로 쌓인 증거 디렉터리 — 삭제 금지. */
   protect: EvidenceDir[]
   scaffoldCommits: ScaffoldCommit[]
+  /**
+   * 도입 커밋 revert가 `workflow/.gitignore`를 함께 되돌려 **보존 대상 티켓의 scratch가 드러나는가**
+   * (REQ-2026-058 F-6). git 조회가 필요하므로 순수 `buildPlan`은 항상 `false`로 두고 `enrichCommits`가 채운다.
+   */
+  revertDropsWorkflowGitignore: boolean
 }
 
 const TICKET_DIR_RE = /^REQ-\d{4}-\d+$/
@@ -407,6 +412,7 @@ export function buildPlan(facts: UninstallFacts): UninstallPlan {
     keep: facts.ambiguous.filter((a) => a.present),
     protect: facts.evidence.filter((e) => e.ticketCount > 0),
     scaffoldCommits,
+    revertDropsWorkflowGitignore: false, // git 조회는 enrichCommits가 한다(순수 유지)
   }
 }
 
@@ -422,7 +428,10 @@ function enrichCommits(plan: UninstallPlan, git: GitAdapter): UninstallPlan {
     const found = anchor ? introducingCommit(git, anchor) : null
     return { sha: c.sha, subject: found?.subject ?? '' }
   })
-  return { ...plan, scaffoldCommits }
+  // F-6: 보존할 증거가 있을 때만 판정한다 — 증거가 없으면 드러날 scratch도 없어 경고가 소음이다.
+  const revertDropsWorkflowGitignore =
+    plan.protect.length > 0 && revertDropsWorkflowGitignoreCheck(scaffoldCommits, git)
+  return { ...plan, scaffoldCommits, revertDropsWorkflowGitignore }
 }
 
 // ────────────────────────────────────────────────────── 출력 (순수) ──
@@ -448,6 +457,15 @@ export function renderPlan(plan: UninstallPlan): string {
 
   if (plan.mode === 'not-installed') {
     L.push('이 repo에서 CommitGate 설치 흔적을 찾지 못했습니다. 되돌릴 것이 없습니다.')
+    // 🔴 REQ-2026-058 F-8: "되돌릴 것이 없다"와 "감사 증거가 남아 있다"는 **동시에 참일 수 있다**.
+    //    제거를 마친 뒤의 정상적인 모습이 정확히 이것이다 — 티켓 디렉터리는 보존하도록 안내했기 때문이다.
+    //    이 절을 건너뛰면 사용자는 남은 증거의 존재를 모른 채 "아무것도 없다"고 읽는다.
+    if (plan.protect.length) {
+      L.push('')
+      L.push('## 남아 있는 감사 증거 — 삭제하지 마세요')
+      for (const e of plan.protect) L.push(`     - ${e.path}/  (REQ 티켓 ${e.ticketCount}개 · state.json · approvals.jsonl)`)
+      L.push('   설치는 제거됐지만 이 기록은 남습니다. 이력을 보존할 것인지 함께 정리할 것인지는 직접 판단하세요.')
+    }
     L.push('')
     L.push(renderNpxSection())
     return L.join('\n')
@@ -483,7 +501,7 @@ export function renderPlan(plan: UninstallPlan): string {
   L.push('')
 
   L.push('## 4. 되돌리는 방법 (아래 명령은 직접 실행하세요)')
-  L.push(...renderRevertSection(plan))
+  L.push(...renderRevertSection(plan, plan.revertDropsWorkflowGitignore))
   L.push('')
 
   L.push('## 5. 런타임 패키지 제거 (Stage B)')
@@ -491,8 +509,13 @@ export function renderPlan(plan: UninstallPlan): string {
   L.push('')
 
   L.push('## 6. 잔여물 경고')
+  // 🔴 REQ-2026-058 F-7: `scripts/`는 **Stage A(vendored) 설치본에만** 존재한다. Stage B init은 실행 코드를
+  //    복사하지 않으므로 그 디렉터리가 애초에 생기지 않는다 — 나열하면 없는 잔여물을 찾게 만든다.
+  //    `unknownKitFiles`/tool 분류에 kit 디렉터리 흔적이 있을 때만 언급한다.
+  const hasVendoredDir = facts.tool.some((t) => t.present && t.path.startsWith(`${KIT_SOURCE_DIR_REL}/`)) || facts.unknownKitFiles.length > 0
+  const emptyDirs = [...(hasVendoredDir ? [`${KIT_SOURCE_DIR_REL}/`] : []), `${facts.ticketRoot}/`, '.claude/', '.cursor/']
   L.push('   - git은 빈 디렉터리를 추적하지 않습니다. 위 파일을 지운 뒤 `git status`가 clean이어도')
-  L.push(`     빈 디렉터리(scripts/ · ${facts.ticketRoot}/ · .claude/ · .cursor/)가 파일시스템에 남을 수 있습니다.`)
+  L.push(`     빈 디렉터리(${emptyDirs.join(' · ')})가 파일시스템에 남을 수 있습니다.`)
   L.push('   - node_modules의 ajv · cross-spawn · tsx 는 다른 패키지도 쓸 수 있어 제거를 권하지 않습니다.')
   L.push('')
 
@@ -524,7 +547,37 @@ function renderRuntimeRemovalSection(plan: UninstallPlan): string[] {
   return L
 }
 
-function renderRevertSection(plan: UninstallPlan): string[] {
+/**
+ * revert가 `workflow/.gitignore`를 함께 되돌려 **기존 티켓 scratch가 드러나는** 파급을 경고할 것인가
+ * (REQ-2026-058 F-6).
+ *
+ * 두 조건이 모두 참일 때만 낸다:
+ *   1. 그 도입 커밋이 실제로 `KIT_GITIGNORE.dest`를 담고 있다(git이 오라클 — 추측하지 않는다).
+ *   2. 보존해야 할 티켓 증거가 있다(`plan.protect`). 증거가 없으면 드러날 scratch도 없어 경고가 소음이다.
+ *
+ * 이 경고가 없으면 계획이 스스로 모순된다 — §3은 "증거 디렉터리를 보존하라"고 하면서 §4는 그 디렉터리의
+ * 무시 규칙을 지우는 명령을 권하게 된다(Nuxt 소비자 감사에서 scratch 5건 노출로 실측).
+ */
+function revertDropsWorkflowGitignoreCheck(commits: readonly ScaffoldCommit[], git: GitAdapter): boolean {
+  for (const c of commits) {
+    let names: string
+    try {
+      names = git.exec(['show', '--pretty=format:', '--name-only', c.sha])
+    } catch {
+      continue // 조회 실패는 경고 근거로 삼지 않는다(읽기 전용 planner — 추측 금지)
+    }
+    if (
+      names
+        .split('\n')
+        .map((l) => l.trim())
+        .includes(KIT_GITIGNORE.dest)
+    )
+      return true
+  }
+  return false
+}
+
+function renderRevertSection(plan: UninstallPlan, gitignoreWarning: boolean): string[] {
   const L: string[] = []
   const { facts } = plan
 
@@ -540,6 +593,13 @@ function renderRevertSection(plan: UninstallPlan): string[] {
       L.push('   ⚠️ 스캐폴딩 도입 커밋이 여러 개로 흩어져 있어 단일 revert로 되돌릴 수 없습니다:')
       for (const c of plan.scaffoldCommits) L.push(`     ${c.sha}  ${c.subject}`)
       L.push('   각 커밋의 내용을 확인한 뒤(`git show <sha>`) 되돌릴 범위를 직접 정하세요.')
+    }
+    if (gitignoreWarning) {
+      L.push(`   ⚠️ 이 커밋에는 ${KIT_GITIGNORE.dest} 가 들어 있습니다 — revert하면 그 파일도 함께 사라집니다.`)
+      L.push('      그러면 위 3번의 티켓 안 scratch(codex-response.json · .review-preview.txt · .review-calls.jsonl)가')
+      L.push('      무시되지 않아 `git status`에 드러납니다. 둘 중 하나를 고르십시오:')
+      L.push(`        - 증거를 계속 쓸 것이면: revert 뒤 ${KIT_GITIGNORE.dest} 를 복원하거나 그 규칙을 루트 .gitignore로 옮기십시오.`)
+      L.push('        - 티켓 증거까지 정리할 것이면: 그 scratch 파일들도 함께 지우십시오(그때는 노출이 문제가 아닙니다).')
     }
     if (plan.mode === 'mixed') L.push('   일부 파일은 아직 커밋되지 않았습니다 — 아래 미커밋 절차도 함께 보세요.')
   }
@@ -571,6 +631,9 @@ function renderNpxSection(): string {
     '   `npx commitgate`는 전역 설치가 아닙니다. 패키지는 npm 캐시의 `_npx/<hash>/`에만 들어갑니다.',
     '     확인          : npm ls -g commitgate      (비어 있으면 전역 설치 아님)',
     '     전역이었다면  : npm uninstall -g commitgate',
+    // 🔴 REQ-2026-058 F-9: 이 명령의 범위를 밝힌다 — CommitGate만 지우는 것이 **아니다**.
+    '   ⚠️ 아래 명령은 CommitGate 것만이 아니라 이 사용자가 npx 로 실행한 모든 패키지 캐시를 삭제합니다.',
+    '      CommitGate만 정리하려면 `_npx/<hash>/` 중 해당 항목만 골라 지우십시오(선택적 · 필수 아님).',
     '   캐시에 남은 npx 패키지 정리:',
     '     Windows (PowerShell) : Remove-Item -Recurse -Force "$(npm config get cache)\\_npx"',
     '     macOS / Linux        : rm -rf "$(npm config get cache)/_npx"',

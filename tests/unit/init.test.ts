@@ -1465,6 +1465,19 @@ describe('[init] installGuidance — 안내 문구 (D4)', () => {
     }
   })
 
+  it('🔴 REQ-2026-058 F-4: lockfile 인과를 Stage B 사실대로 설명한다(안내 2단계 install이 만든다고 하지 않는다)', () => {
+    const dir = tmpTarget()
+    try {
+      const t = text(dir)
+      // Stage B init은 devDeps를 주입하지 않으므로 안내의 `install` 단계가 lockfile을 만들지 않는다.
+      // lockfile을 바꾼 것은 D14가 요구하는 **선행** `npm i -D commitgate`다.
+      expect(t).not.toMatch(/2단계 install 을 먼저 실행해야 .* 이 존재합니다/)
+      if (t.includes('package-lock.json')) expect(t).toContain("선행 'npm i -D commitgate'")
+    } finally {
+      cleanup(dir)
+    }
+  })
+
   it('shell 연산자 `&&` 를 쓰지 않는다 — PowerShell 5.1·cmd 비호환', () => {
     const dir = tmpTarget()
     try {
