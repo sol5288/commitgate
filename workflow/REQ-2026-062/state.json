@@ -3,15 +3,32 @@
   "branch": "feat/req-2026-062-setup-enforcement",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9c9e-c3aa-7000-9fc2-dfca1c3b2948",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9caa-c20b-7cd2-bfba-8b6ce947a698",
+  "review_base_sha": "8101ba88235208631b7d092aa9afcc3a524d2d2a",
+  "review_diff_hash": "8eac96c77f4b41f24e0d297f2340f1d8cdab480e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "8f14a815bf83cf2adda1411049f4e0829a7b807e3d9cc14875204b6797f09548",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-marker",
+  "phases": [
+    {
+      "id": "phase-1-marker",
+      "approved": true
+    },
+    {
+      "id": "phase-2-gate-module",
+      "approved": false
+    },
+    {
+      "id": "phase-3-wiring",
+      "approved": false
+    },
+    {
+      "id": "phase-4-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -20,6 +37,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-marker#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-marker",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -43,14 +67,23 @@
     "design_hash": "8f14a815bf83cf2adda1411049f4e0829a7b807e3d9cc14875204b6797f09548"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-marker",
     "outcome": "approved",
-    "compare_hash": "0c03fa374cb97f74b65f55457fa81ca07e1f13c954d6ab3048eb1cfb9790a0d6",
+    "compare_hash": "676decad40f681dfad65883adc2aaccd47cdb23492825eb51fc05751536d7ec7",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T04:12:18.316Z",
+    "at": "2026-07-26T04:25:19.874Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "8eac96c77f4b41f24e0d297f2340f1d8cdab480e",
+      "phase_id": "phase-1-marker",
+      "consumed_by_commit_sha": "b9fb58ea8ea7db8ee2d82da16fe2a32ef9c53a2b",
+      "approval_consumed_at": "2026-07-26T04:25:40.475Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
