@@ -25,6 +25,7 @@ export const VERB_MODULES = {
   migrate: 'migrate.ts',
   sync: 'sync.ts',
   quickstart: 'quickstart.ts',
+  setup: 'setup.ts',
   init: 'init.ts',
 }
 

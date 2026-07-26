@@ -57,6 +57,12 @@ describe('[dispatch] resolveDispatch — 알려진 req:* verb 라우팅(verb 토
     })
   })
 
+  it('setup verb 라우팅 — REQ-2026-060 파일 생성과 동시에 등록(인자 통과)', () => {
+    expect('setup' in VERB_MODULES).toBe(true)
+    expect(resolveDispatch(['setup'])).toEqual({ entry: 'setup.ts', rest: [] })
+    expect(resolveDispatch(['setup', '--dir', 'x'])).toEqual({ entry: 'setup.ts', rest: ['--dir', 'x'] })
+  })
+
   it('verb 뒤 bare `--`는 그대로 전달된다(스트립은 각 스크립트 parseArgs의 몫)', () => {
     expect(resolveDispatch(['req:next', '--', '2026-014'])).toEqual({
       entry: '../scripts/req/req-next.ts',
