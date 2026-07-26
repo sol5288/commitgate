@@ -503,3 +503,100 @@ describe('REQ-2026-037 — phaseCommit.autoApprove 설정(opt-in)', () => {
     } finally { cleanup(def); cleanup(optin) }
   })
 })
+
+// ─────────────────────────── REQ-2026-063: stopGate 단일 축 + phaseCommit alias ──
+
+describe('[P1] stopGate ⇄ phaseCommit — 두 축 해소(DEC-1~DEC-3)', () => {
+  it('수용기준 1·2: stopGate 가 대응 autoApprove 로 파생된다', () => {
+    const a = tmpRoot({ stopGate: 'phase' })
+    const b = tmpRoot({ stopGate: 'req' })
+    try {
+      expect(loadConfig({ root: a }).phaseCommit.autoApprove).toBe('never')
+      expect(loadConfig({ root: b }).phaseCommit.autoApprove).toBe('low-only')
+    } finally { cleanup(a); cleanup(b) }
+  })
+
+  // 🔴 수용기준 3(C2): phaseCommit 만 쓰던 기존 사용자의 동작이 바뀌면 안 된다.
+  it('🔴 legacy phaseCommit 만 있는 설정이 그대로 동작하고 stopGate 가 역파생된다', () => {
+    const d = tmpRoot({ phaseCommit: { autoApprove: 'low-only' } })
+    try {
+      const cfg = loadConfig({ root: d })
+      expect(cfg.phaseCommit.autoApprove).toBe('low-only')
+      expect(cfg.stopGate).toBe('req')
+    } finally { cleanup(d) }
+  })
+
+  /**
+   * 🔴 수용기준 4(C1) — 이 REQ에서 가장 틀리기 쉬운 지점.
+   * `phaseCommit`은 raw 에 없어도 `DEFAULTS`(never)로 **채워진다**. 그래서 해소값을 비교하는 구현은
+   * `stopGate:"req"`만 쓴 **정상 설정**을 "never와 모순"으로 거부한다 — 새 축을 아무도 못 쓰게 된다.
+   */
+  it('🔴 stopGate 만 명시한 설정은 거부되지 않는다(해소된 기본값과의 오탐 없음)', () => {
+    const d = tmpRoot({ stopGate: 'req' })
+    try {
+      expect(() => loadConfig({ root: d })).not.toThrow()
+      expect(loadConfig({ root: d }).stopGate).toBe('req')
+    } finally { cleanup(d) }
+  })
+
+  it('둘 다 명시했고 일치하면 통과', () => {
+    const d = tmpRoot({ stopGate: 'req', phaseCommit: { autoApprove: 'low-only' } })
+    try {
+      expect(loadConfig({ root: d }).stopGate).toBe('req')
+    } finally { cleanup(d) }
+  })
+
+  it('설정이 없으면 기본 phase/never', () => {
+    const d = tmpRoot({})
+    try {
+      const cfg = loadConfig({ root: d })
+      expect(cfg.stopGate).toBe('phase')
+      expect(cfg.phaseCommit.autoApprove).toBe('never')
+    } finally { cleanup(d) }
+  })
+
+  it('스키마 enum 은 2값뿐 — merge 는 아직 없다(동작 없는 선택지 금지, DEC-5)', () => {
+    const sg = (CONFIG_SCHEMA.properties as unknown as Record<string, { enum?: unknown[] }>).stopGate
+    expect(sg?.enum).toEqual(['phase', 'req'])
+    const d = tmpRoot({ stopGate: 'merge' })
+    try {
+      expect(() => loadConfig({ root: d })).toThrow(/스키마 위반/)
+    } finally { cleanup(d) }
+  })
+})
+
+describe('[P1] stopGate 모순 — 거부하고 무엇이 모순인지 말한다(DEC-2b · 수용기준 5)', () => {
+  const conflicted = () => tmpRoot({ stopGate: 'req', phaseCommit: { autoApprove: 'never' } })
+
+  it('모순이면 throw', () => {
+    const d = conflicted()
+    try {
+      expect(() => loadConfig({ root: d })).toThrow()
+    } finally { cleanup(d) }
+  })
+
+  /**
+   * 🔴 "거부한다"만 단언하면 `throw new Error('설정 충돌')`짜리 구현도 통과하고,
+   * 사용자는 **무엇을 고쳐야 하는지 알 수 없다**. 진단 내용까지 오라클로 고정한다.
+   */
+  it('🔴 오류가 두 키의 실제 값 · 기대 매핑 · 해결 방법을 담는다', () => {
+    const d = conflicted()
+    try {
+      let msg = ''
+      try { loadConfig({ root: d }) } catch (e) { msg = e instanceof Error ? e.message : String(e) }
+      expect(msg).toContain('stopGate')
+      expect(msg).toContain('phaseCommit.autoApprove')
+      expect(msg).toContain('"req"')        // 실제 stopGate 값
+      expect(msg).toContain('"never"')      // 실제 autoApprove 값
+      expect(msg).toContain('"low-only"')   // 기대 매핑
+      expect(msg).toContain('해결')          // 해결 방법
+    } finally { cleanup(d) }
+  })
+
+  it('반대 방향 모순도 거부한다', () => {
+    const d = tmpRoot({ stopGate: 'phase', phaseCommit: { autoApprove: 'low-only' } })
+    try {
+      expect(() => loadConfig({ root: d })).toThrow(/모순/)
+    } finally { cleanup(d) }
+  })
+})

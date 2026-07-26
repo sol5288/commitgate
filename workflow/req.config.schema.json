@@ -99,6 +99,13 @@
     "lockfilePromptFull": {
       "type": "boolean"
     },
+    "stopGate": {
+      "type": "string",
+      "enum": [
+        "phase",
+        "req"
+      ]
+    },
     "setup": {
       "type": "object",
       "additionalProperties": false,

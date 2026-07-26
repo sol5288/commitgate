@@ -386,6 +386,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   phaseCommit: { autoApprove: 'never' },
   lockfilePromptFull: false,
   setup: null,
+  stopGate: 'phase',
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,

@@ -41,6 +41,27 @@ export interface ReviewBudget {
  *     `user_commit_confirmed`를 요구하므로 자동 커밋이 livelock/위조를 부른다(REQ-2026-019 폐기 사유).
  */
 export type PhaseCommitPolicy = 'never' | 'low-only'
+
+/**
+ * 사람이 **어디서 멈추는가**(REQ-2026-063 DEC-1). `phaseCommit.autoApprove`가 구현 언어라면
+ * 이쪽이 **의미 SSOT**다 — `commitgate setup`이 묻는 것도 이 축이다.
+ *
+ * - `phase`: 매 phase 커밋 전에 사람 확인(현행 기본).
+ * - `req`  : REQ 안의 LOW phase는 자율 커밋하고, 사람 확인을 **통합 직전 한 번**으로 모은다.
+ *
+ * 🔴 **HIGH 위험 티켓은 어느 값에서도 매 phase 확인**이다. `"all"`류 값은 없다 — HIGH는 매 phase 신선한
+ *    `user_commit_confirmed`를 요구하므로 자동화하면 livelock 또는 타임스탬프 위조가 된다
+ *    (REQ-2026-019 폐기 사유).
+ * 🔴 `"merge"`는 **아직 없다**. delivery set 없이는 "언제 멈출지"를 아무도 모르는 상태가 되므로,
+ *    동작이 함께 착륙할 때 넣는다 — 스키마에 값만 먼저 넣으면 고를 수는 있는데 동작이 없는 거짓 UI다.
+ */
+export type StopGate = 'phase' | 'req'
+
+/** `stopGate` → 파생 `phaseCommit.autoApprove`. 두 축의 유일한 번역표(SSOT). */
+export const AUTO_APPROVE_OF: Record<StopGate, PhaseCommitPolicy> = { phase: 'never', req: 'low-only' }
+/** 역방향(legacy config에서 `stopGate` 역파생). */
+export const STOP_GATE_OF: Record<PhaseCommitPolicy, StopGate> = { never: 'phase', 'low-only': 'req' }
+
 export interface PhaseCommit {
   autoApprove: PhaseCommitPolicy
 }
@@ -81,6 +102,8 @@ export interface RawConfig {
   lockfilePromptFull?: boolean
   /** REQ-2026-062: setup 완료 마커. 부재 = 아직 setup을 하지 않음. */
   setup?: SetupMarker
+  /** REQ-2026-063: 멈춤 위치(의미 SSOT). 미지정 = `phaseCommit`에서 역파생하거나 DEFAULTS. */
+  stopGate?: StopGate
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -101,6 +124,8 @@ export interface ResolvedConfig {
   lockfilePromptFull: boolean
   /** REQ-2026-062: setup 완료 마커. `null` = 미완료(게이트 판정 입력). */
   setup: SetupMarker | null
+  /** REQ-2026-063: 멈춤 위치. `phaseCommit`과 **항상 정합**(둘 중 하나가 다른 하나에서 파생된다). */
+  stopGate: StopGate
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -156,6 +181,8 @@ export const DEFAULTS = {
   lockfilePromptFull: false,
   // REQ-2026-062: setup 미완료가 기본. `as` 는 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
   setup: null as SetupMarker | null,
+  // REQ-2026-063: 현행 기본(매 phase 정지) = phaseCommit.never 와 같은 값.
+  stopGate: 'phase' as StopGate,
 }
 
 /** ISO instant(UTC). `close-proof`의 `isValidIsoInstant`와 같은 형태를 스키마 수준에서 강제한다. */
@@ -201,6 +228,9 @@ export const CONFIG_SCHEMA = {
     },
     // REQ-2026-056: lockfile 프롬프트 전문 opt-in.
     lockfilePromptFull: { type: 'boolean' },
+    // REQ-2026-063: 멈춤 위치. 🔴 enum은 **2값만** — `merge`는 delivery set 없이는 동작이 없어 거짓 UI가 된다.
+    //    `null`을 넣지 않으므로 "비움" 입력은 기존 검증 경로가 자동으로 거부한다(전역 상속 개념이 없는 축).
+    stopGate: { type: 'string', enum: ['phase', 'req'] },
     // REQ-2026-062: setup 완료 마커. 🔴 `workflow/req.config.schema.json` 과 **동시에** 확장해야 한다 —
     // 한쪽만 고치면 소비자의 vendored 스키마가 신규 키를 additionalProperties:false 로 거부해 모든 명령이 죽는다.
     setup: {
@@ -227,6 +257,42 @@ export const CONFIG_SCHEMA = {
 
 const ajv = new Ajv({ allErrors: true })
 const validateConfig = ajv.compile(CONFIG_SCHEMA)
+
+/**
+ * `stopGate`·`phaseCommit` 두 축 해소(REQ-2026-063 DEC-2·DEC-3).
+ *
+ * 🔴 **충돌 검사는 raw key 명시 여부 기준**이다. `phaseCommit`은 부재해도 DEFAULTS로 채워지므로,
+ *    해소값을 비교하면 `stopGate`만 쓴 정상 설정이 "never와 모순"으로 거부된다 — 새 축을 아무도 못 쓰게 된다.
+ * 🔴 오류는 **무엇이 모순인지** 말한다(DEC-2b): 두 키의 실제 값 · 기대 매핑 · 해결 방법.
+ *    "거부만 하고 안내는 없는" 구현은 사용자가 무엇을 고쳐야 할지 알 수 없게 만든다.
+ */
+export function resolveStopAxes(raw: RawConfig): { stopGate: StopGate; phaseCommit: PhaseCommit } {
+  const hasStopGate = Object.prototype.hasOwnProperty.call(raw, 'stopGate') && raw.stopGate !== undefined
+  const hasPhaseCommit = Object.prototype.hasOwnProperty.call(raw, 'phaseCommit') && raw.phaseCommit !== undefined
+
+  if (hasStopGate && hasPhaseCommit) {
+    const sg = raw.stopGate as StopGate
+    const pc = raw.phaseCommit as PhaseCommit
+    const expected = AUTO_APPROVE_OF[sg]
+    if (expected !== pc.autoApprove)
+      throw new Error(
+        `req.config: stopGate 와 phaseCommit.autoApprove 가 모순입니다 — ` +
+          `stopGate: "${sg}" 인데 phaseCommit.autoApprove: "${pc.autoApprove}" 입니다. ` +
+          `기대 매핑은 stopGate "phase" ⇄ "never" · "req" ⇄ "low-only" 이므로 stopGate "${sg}" 는 "${expected}" 여야 합니다. ` +
+          `해결: 둘 중 하나를 지우거나 값을 맞추세요 — stopGate 가 새 축이고 phaseCommit 은 deprecated alias 입니다.`,
+      )
+    return { stopGate: sg, phaseCommit: pc }
+  }
+  if (hasStopGate) {
+    const sg = raw.stopGate as StopGate
+    return { stopGate: sg, phaseCommit: { autoApprove: AUTO_APPROVE_OF[sg] } }
+  }
+  if (hasPhaseCommit) {
+    const pc = raw.phaseCommit as PhaseCommit
+    return { stopGate: STOP_GATE_OF[pc.autoApprove], phaseCommit: pc }
+  }
+  return { stopGate: DEFAULTS.stopGate, phaseCommit: DEFAULTS.phaseCommit }
+}
 
 /** kit 패키지 루트(= 현재 APP_ROOT와 동일 디렉터리). config.ts는 scripts/req/lib/ 이므로 3단계 상위. */
 export function packageRoot(): string {
@@ -298,8 +364,9 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     reviewReasoningEffort:
       raw.reviewReasoningEffort !== undefined ? raw.reviewReasoningEffort : DEFAULTS.reviewReasoningEffort,
     reviewBudget: raw.reviewBudget ?? DEFAULTS.reviewBudget,
-    // REQ-2026-037: 미지정 → DEFAULTS(never). `?? `로 충분(phaseCommit은 nullable 아님 — null 탈출구 없음).
-    phaseCommit: raw.phaseCommit ?? DEFAULTS.phaseCommit,
+    // REQ-2026-063: 두 축 해소. 🔴 **raw key 명시 여부**로 판정한다 — 해소값을 비교하면 `phaseCommit`이
+    //    부재해도 `never`로 채워지므로 `stopGate:"req"`만 쓴 **정상 설정**이 오탐되어 거부된다(새 축을 아무도 못 쓴다).
+    ...resolveStopAxes(raw),
     // REQ-2026-062: 부재 = 미완료(null). 게이트가 이 값을 본다.
     setup: raw.setup ?? DEFAULTS.setup,
     // REQ-2026-056: 미지정 → DEFAULTS(false = 요약).
