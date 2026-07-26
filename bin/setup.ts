@@ -16,6 +16,8 @@
  */
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import Ajv from 'ajv'
+import { CONFIG_SCHEMA, DEFAULTS, stripBom } from '../scripts/req/lib/config'
 
 /**
  * TTY 판정 입력(주입 가능 — 테스트). `process.std*.isTTY`는 **비-TTY에서 `undefined`**이지 `false`가 아니므로
@@ -81,6 +83,176 @@ export const PHASE1_INTERACTIVE_NOTICE = [
   '리뷰 모델·추론강도 설정과 codex 로그인은 다음 단계에서 제공됩니다(REQ-2026-060 phase-2/3).',
   '이 단계에서는 아무 파일도 변경하지 않았습니다.',
 ].join('\n')
+
+// ─────────────────────────────────────────── 순수 코어 (phase-2) ──
+
+/**
+ * setup이 다루는 설정 키(설계 DEC-4). **의도적으로 2개다.**
+ *
+ * ⚠️ `CONFIG_SCHEMA` **전체에서 질문을 파생하지 않는다** — 그러면 `ticketRoot`·`handoffPath`·`designDocs`까지
+ *    묻게 되어 이 REQ의 범위(모델·effort)를 넘는다. 대신 **질문은 여기서 명시하고, 검증 규칙만 스키마에서
+ *    가져온다**(`subSchemaFor`). 그래서 enum이 늘어도 질문이 자동으로 따라가고 스키마와 갈라지지 않는다.
+ */
+export const SETUP_KEYS = ['reviewModel', 'reviewReasoningEffort'] as const
+export type SetupKey = (typeof SETUP_KEYS)[number]
+
+/**
+ * "값을 비운다(= codex 전역 설정 상속)"를 뜻하는 입력 sentinel.
+ *
+ * `-`를 쓰는 이유: `reviewModel`의 패턴(`^[A-Za-z0-9]…`)은 선행 `-`를 **거부**하고,
+ * `reviewReasoningEffort`의 enum에도 `-`가 없다. 즉 두 키 모두에서 **정상 값과 충돌하지 않는다**.
+ * (`none`은 쓸 수 없다 — effort의 **유효한 enum 값**이라 "비움"과 구별되지 않는다.)
+ */
+export const NULL_SENTINEL = '-'
+
+export interface Question {
+  key: SetupKey
+  prompt: string
+  /** 현재 해소값(파일 또는 DEFAULTS). `null` = 비움(전역 상속). */
+  current: string | null
+  /** 현재값이 파일이 아니라 `DEFAULTS`에서 왔는지 — 프롬프트가 "(기본값)"을 붙이는 근거. */
+  currentIsDefault: boolean
+  /** enum 키일 때 선택지(표시용). 검증 자체는 스키마가 한다. */
+  choices?: readonly string[]
+}
+
+export interface Prompter {
+  ask(q: Question, hint: string): Promise<string>
+}
+
+/** `CONFIG_SCHEMA`에서 해당 키의 서브스키마를 꺼낸다(검증 SSOT — DEC-4). 없으면 fail-closed. */
+export function subSchemaFor(key: SetupKey): Record<string, unknown> {
+  const props = CONFIG_SCHEMA.properties as Record<string, unknown>
+  const sub = props[key]
+  if (!sub || typeof sub !== 'object')
+    throw new Error(`CONFIG_SCHEMA에 '${key}' 서브스키마가 없습니다 — 설정 검증 SSOT가 깨졌습니다(fail-closed).`)
+  return sub as Record<string, unknown>
+}
+
+const ajv = new Ajv({ allErrors: true })
+
+/** 값 하나를 해당 키의 서브스키마로 검증. 문제 목록(빈 배열 = 통과). */
+export function validateValue(key: SetupKey, value: string | null): string[] {
+  const validate = ajv.compile(subSchemaFor(key))
+  if (validate(value)) return []
+  return (validate.errors ?? []).map((e) => `${e.message ?? 'invalid'}${e.params ? ` (${JSON.stringify(e.params)})` : ''}`)
+}
+
+/** 스키마의 enum에서 표시용 선택지를 뽑는다(`null` 제외 — 그건 `NULL_SENTINEL`로 표현된다). */
+export function choicesFor(key: SetupKey): readonly string[] | undefined {
+  const sub = subSchemaFor(key)
+  const en = sub.enum
+  if (!Array.isArray(en)) return undefined
+  return en.filter((v): v is string => typeof v === 'string')
+}
+
+/** 현재 설정(파일 raw + DEFAULTS)에서 질문 목록을 만든다. */
+export function buildQuestions(raw: Record<string, unknown>): Question[] {
+  const PROMPTS: Record<SetupKey, string> = {
+    reviewModel: '리뷰 모델(codex `-c model=`)',
+    reviewReasoningEffort: '리뷰 추론강도(codex `-c model_reasoning_effort=`)',
+  }
+  return SETUP_KEYS.map((key) => {
+    const present = Object.prototype.hasOwnProperty.call(raw, key)
+    const v = present ? raw[key] : (DEFAULTS as Record<string, unknown>)[key]
+    return {
+      key,
+      prompt: PROMPTS[key],
+      current: typeof v === 'string' ? v : null,
+      currentIsDefault: !present,
+      choices: choicesFor(key),
+    }
+  })
+}
+
+/** 질문 하나에 붙일 안내 문구(순수 — 프롬프트 렌더링의 SSOT). */
+export function hintFor(q: Question): string {
+  const cur = q.current === null ? '(비움 — codex 전역 설정 상속)' : q.current
+  const src = q.currentIsDefault ? ' [기본값]' : ''
+  const choices = q.choices ? `\n  선택지: ${q.choices.join(' / ')}` : ''
+  return `현재: ${cur}${src}${choices}\n  Enter=유지 · '${NULL_SENTINEL}'=비움(전역 상속)`
+}
+
+/**
+ * 원시 입력 → 패치 값. `undefined` = **패치하지 않음**(현재값 유지).
+ *
+ * 🔴 유지일 때 키를 쓰지 않는 것이 의도다(DEC-6: 건드린 키만 바꾼다). 파일에 없던 키를 Enter만으로
+ *    박아 넣으면 사용자가 고르지 않은 값을 고른 것처럼 고정된다.
+ */
+export function interpretAnswer(rawInput: string): string | null | undefined {
+  const t = rawInput.trim()
+  if (t === '') return undefined
+  if (t === NULL_SENTINEL) return null
+  return t
+}
+
+/** 유효하지 않은 답변을 다시 묻는 횟수 상한(무한 루프 방지 — fail-closed). */
+export const MAX_ANSWER_ATTEMPTS = 3
+
+/** 질문을 순회하며 패치를 모은다. 잘못된 답은 상한까지 재질문하고, 넘으면 throw. */
+export async function askAll(
+  questions: readonly Question[],
+  prompter: Prompter,
+  onInvalid: (msg: string) => void = () => {},
+): Promise<Partial<Record<SetupKey, string | null>>> {
+  const patch: Partial<Record<SetupKey, string | null>> = {}
+  for (const q of questions) {
+    let accepted = false
+    for (let attempt = 1; attempt <= MAX_ANSWER_ATTEMPTS && !accepted; attempt++) {
+      const value = interpretAnswer(await prompter.ask(q, hintFor(q)))
+      if (value === undefined) {
+        accepted = true // 유지 — 패치 없음
+        break
+      }
+      const problems = validateValue(q.key, value)
+      if (problems.length === 0) {
+        patch[q.key] = value
+        accepted = true
+      } else {
+        onInvalid(`'${q.key}' 값이 올바르지 않습니다: ${problems.join('; ')}`)
+      }
+    }
+    if (!accepted) throw new Error(`'${q.key}' 값을 ${MAX_ANSWER_ATTEMPTS}회 안에 확정하지 못했습니다 — 중단합니다.`)
+  }
+  return patch
+}
+
+/** 기존 `req.config.json` 본문 → 평범한 객체. 없으면 `{}`. 배열·null·비객체는 fail-closed. */
+export function parseConfigText(text: string | null): Record<string, unknown> {
+  if (text === null) return {}
+  const t = stripBom(text).trim()
+  if (t === '') return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(t)
+  } catch (err) {
+    throw new Error(`req.config.json 파싱 실패 — 손상된 설정을 덮어쓰지 않습니다: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+    throw new Error('req.config.json 이 JSON 객체가 아닙니다 — 덮어쓰지 않습니다(fail-closed).')
+  return parsed as Record<string, unknown>
+}
+
+/**
+ * read-merge-write의 **merge + 직렬화**(DEC-6·DEC-7).
+ *
+ * - 건드린 키만 교체하고 **나머지 키의 값과 순서를 보존**한다(기존 키는 제자리, 신규 키는 뒤에 추가).
+ * - 병합 결과를 `CONFIG_SCHEMA`로 **다시 검증**하고 실패하면 **throw**(쓰기 없음 — fail-closed).
+ * - 줄바꿈은 **LF 고정**(`JSON.stringify`는 `\n`만 낸다). autocrlf 환경에서 도구마다 CRLF/LF가 갈리면
+ *   무의미한 diff가 생긴다.
+ */
+export function mergeConfigText(existingText: string | null, patch: Partial<Record<SetupKey, string | null>>): string {
+  const base = parseConfigText(existingText)
+  const merged: Record<string, unknown> = { ...base }
+  for (const [k, v] of Object.entries(patch)) merged[k] = v
+
+  const validate = ajv.compile(CONFIG_SCHEMA)
+  if (!validate(merged)) {
+    const msg = (validate.errors ?? []).map((e) => `${e.instancePath || '/'} ${e.message ?? ''}`).join('; ')
+    throw new Error(`병합된 req.config.json 이 스키마를 위반합니다 — 쓰지 않습니다: ${msg}`)
+  }
+  return JSON.stringify(merged, null, 2) + '\n'
+}
 
 export interface Opts {
   /** 대상 repo 루트(기본: 현재 디렉터리). phase-3의 설정 쓰기가 이 값을 쓴다. */
