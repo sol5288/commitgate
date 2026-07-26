@@ -45,6 +45,19 @@ export interface PhaseCommit {
   autoApprove: PhaseCommitPolicy
 }
 
+/**
+ * setup 완료 마커(REQ-2026-062 DEC-1). **커밋되는 파일에 들어가므로 "팀 공유 설정 완료 사실"**이지
+ * "내가 로그인돼 있다"가 아니다 — 로그인은 개발자별이라 이 마커가 팀원의 인증을 보증하지 않는다(DEC-2).
+ *
+ * 🔴 `completedAt`은 **실제 시계**에서 읽는다. 지어내면 REQ-2026-019 폐기 사유(타임스탬프 날조)의 재발이다.
+ */
+export interface SetupMarker {
+  /** setup을 실행한 commitgate 버전(진단·마이그레이션 근거). */
+  completedVersion: string
+  /** ISO instant. */
+  completedAt: string
+}
+
 /** 사용자가 `req.config.json`에 줄 수 있는 부분 config(전부 선택). */
 export interface RawConfig {
   ticketRoot?: string
@@ -66,6 +79,8 @@ export interface RawConfig {
   phaseCommit?: PhaseCommit
   /** REQ-2026-056: true면 리뷰 프롬프트에 lockfile diff 전문을 담는다. 미지정/false = 요약(기본). */
   lockfilePromptFull?: boolean
+  /** REQ-2026-062: setup 완료 마커. 부재 = 아직 setup을 하지 않음. */
+  setup?: SetupMarker
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -84,6 +99,8 @@ export interface ResolvedConfig {
   reviewBudget: ReviewBudget
   phaseCommit: PhaseCommit
   lockfilePromptFull: boolean
+  /** REQ-2026-062: setup 완료 마커. `null` = 미완료(게이트 판정 입력). */
+  setup: SetupMarker | null
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -137,7 +154,12 @@ export const DEFAULTS = {
   phaseCommit: { autoApprove: 'never' } as PhaseCommit,
   // REQ-2026-056: lockfile 프롬프트 기본 요약(false). 전문이 필요하면 config에 true 명시(opt-in).
   lockfilePromptFull: false,
+  // REQ-2026-062: setup 미완료가 기본. `as` 는 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
+  setup: null as SetupMarker | null,
 }
+
+/** ISO instant(UTC). `close-proof`의 `isValidIsoInstant`와 같은 형태를 스키마 수준에서 강제한다. */
+const ISO_INSTANT_RE = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$'
 
 const BASENAME_RE = '^[A-Za-z0-9][A-Za-z0-9._-]*$' // basename만(슬래시·백슬래시·선행 `.`(→`..`) 금지)
 
@@ -179,6 +201,18 @@ export const CONFIG_SCHEMA = {
     },
     // REQ-2026-056: lockfile 프롬프트 전문 opt-in.
     lockfilePromptFull: { type: 'boolean' },
+    // REQ-2026-062: setup 완료 마커. 🔴 `workflow/req.config.schema.json` 과 **동시에** 확장해야 한다 —
+    // 한쪽만 고치면 소비자의 vendored 스키마가 신규 키를 additionalProperties:false 로 거부해 모든 명령이 죽는다.
+    setup: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['completedVersion', 'completedAt'],
+      properties: {
+        completedVersion: { type: 'string', minLength: 1 },
+        // ISO instant. 형식을 고정해 두면 날조·수기 편집이 티가 난다.
+        completedAt: { type: 'string', pattern: ISO_INSTANT_RE },
+      },
+    },
     designDocs: {
       type: 'object',
       additionalProperties: false,
@@ -266,6 +300,8 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     reviewBudget: raw.reviewBudget ?? DEFAULTS.reviewBudget,
     // REQ-2026-037: 미지정 → DEFAULTS(never). `?? `로 충분(phaseCommit은 nullable 아님 — null 탈출구 없음).
     phaseCommit: raw.phaseCommit ?? DEFAULTS.phaseCommit,
+    // REQ-2026-062: 부재 = 미완료(null). 게이트가 이 값을 본다.
+    setup: raw.setup ?? DEFAULTS.setup,
     // REQ-2026-056: 미지정 → DEFAULTS(false = 요약).
     lockfilePromptFull: raw.lockfilePromptFull ?? DEFAULTS.lockfilePromptFull,
   }

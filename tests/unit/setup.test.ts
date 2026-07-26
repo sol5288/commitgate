@@ -50,6 +50,8 @@ function deps(
     version: VersionProbeResult
     authSeq: AuthProbeResult[]
     loginStatus: number | null
+    now: string
+    cgVersion: string
   }> = {},
 ): SetupDeps & { logs: string[]; writes: string[]; loginCalls: number; asked: Question[] } {
   const logs: string[] = []
@@ -83,6 +85,8 @@ function deps(
         return a
       },
     }),
+    now: () => over.now ?? '2026-07-26T00:00:00.000Z',
+    version: over.cgVersion ?? '9.9.9-test',
     logs,
     writes,
     loginCalls: 0,
@@ -400,7 +404,10 @@ describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
     const d = deps(true, true, { answers: ['new-model', ''], authSeq: [loggedOut, loggedIn] })
     await runSetup({ dir: '/tmp/x' }, d)
     expect(d.loginCalls).toBe(1)
-    expect(JSON.parse(d.writes[0] as string)).toEqual({ reviewModel: 'new-model' })
+    expect(JSON.parse(d.writes[0] as string)).toEqual({
+      reviewModel: 'new-model',
+      setup: { completedVersion: '9.9.9-test', completedAt: '2026-07-26T00:00:00.000Z' },
+    })
   })
 
   it('🔴 로그인 실패 → throw + 설정 미변경(수용기준 4)', async () => {
@@ -429,11 +436,42 @@ describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
     expect(d.writes).toEqual([])
   })
 
-  it('모두 Enter(변경 없음) → 쓰기 0건(무의미한 diff를 만들지 않는다)', async () => {
+  // 🔴 REQ-2026-062 DEC-9: 값을 안 바꿔도 **마커는 남긴다** — 마커의 의미는 "값을 바꿨다"가 아니라
+  //    "설정을 확인했다"이고, 값을 유지한 것도 확인의 결과다.
+  it('모두 Enter인데 마커가 없으면 마커만 기록한다', async () => {
     const d = deps(true, true, { existing: '{\n  "branchPrefix": "feat/req-"\n}\n' })
+    await runSetup({ dir: '/tmp/x' }, d)
+    expect(JSON.parse(d.writes[0] as string)).toEqual({
+      branchPrefix: 'feat/req-',
+      setup: { completedVersion: '9.9.9-test', completedAt: '2026-07-26T00:00:00.000Z' },
+    })
+  })
+
+  it('모두 Enter이고 마커도 이미 있으면 쓰기 0건(무의미한 diff를 만들지 않는다)', async () => {
+    const existing = JSON.stringify(
+      { branchPrefix: 'feat/req-', setup: { completedVersion: '0.0.1', completedAt: '2026-01-01T00:00:00.000Z' } },
+      null,
+      2,
+    )
+    const d = deps(true, true, { existing })
     await runSetup({ dir: '/tmp/x' }, d)
     expect(d.writes).toEqual([])
     expect(d.logs.some((l) => l.includes('변경된 설정이 없습니다'))).toBe(true)
+  })
+
+  it('🔴 completedAt 은 주입된 실제 시계에서 온다(날조 금지 — REQ-2026-019 재발 방지)', async () => {
+    const d = deps(true, true, { answers: ['m1', ''], now: '2030-03-04T05:06:07.008Z', cgVersion: '1.2.3' })
+    await runSetup({ dir: '/tmp/x' }, d)
+    expect(JSON.parse(d.writes[0] as string).setup).toEqual({
+      completedVersion: '1.2.3',
+      completedAt: '2030-03-04T05:06:07.008Z',
+    })
+  })
+
+  it('마커가 담긴 설정도 스키마를 통과한다(하위호환)', async () => {
+    const existing = JSON.stringify({ setup: { completedVersion: '0.0.1', completedAt: '2026-01-01T00:00:00Z' } })
+    const d = deps(true, true, { existing, answers: ['m2', ''] })
+    await expect(runSetup({ dir: '/tmp/x' }, d)).resolves.toBeUndefined()
   })
 
   it('기존 키를 보존하며 저장한다', async () => {
@@ -446,6 +484,7 @@ describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
       branchPrefix: 'feat/req-',
       reviewModel: 'new-model',
       reviewReasoningEffort: 'low',
+      setup: { completedVersion: '9.9.9-test', completedAt: '2026-07-26T00:00:00.000Z' },
     })
   })
 })

@@ -15,10 +15,10 @@
  */
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
 import { resolve, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline/promises'
 import Ajv from 'ajv'
-import { CONFIG_SCHEMA, DEFAULTS, stripBom } from '../scripts/req/lib/config'
+import { CONFIG_SCHEMA, DEFAULTS, stripBom, type SetupMarker } from '../scripts/req/lib/config'
 import { createReviewerProbes, type ReviewerProbes } from '../scripts/req/lib/adapters'
 
 /**
@@ -238,10 +238,15 @@ export function parseConfigText(text: string | null): Record<string, unknown> {
  * - 줄바꿈은 **LF 고정**(`JSON.stringify`는 `\n`만 낸다). autocrlf 환경에서 도구마다 CRLF/LF가 갈리면
  *   무의미한 diff가 생긴다.
  */
-export function mergeConfigText(existingText: string | null, patch: Partial<Record<SetupKey, string | null>>): string {
+export function mergeConfigText(
+  existingText: string | null,
+  patch: Partial<Record<SetupKey, string | null>>,
+  marker?: SetupMarker,
+): string {
   const base = parseConfigText(existingText)
   const merged: Record<string, unknown> = { ...base }
   for (const [k, v] of Object.entries(patch)) merged[k] = v
+  if (marker) merged.setup = marker
 
   const validate = ajv.compile(CONFIG_SCHEMA)
   if (!validate(merged)) {
@@ -271,6 +276,13 @@ export interface SetupDeps {
   io: ConfigIo
   probes: ReviewerProbes
   createPrompter: () => Prompter
+  /**
+   * 🔴 **실제 시계**(REQ-2026-062 DEC-1). 주입 seam인 이유는 테스트를 위해서지 값을 지어내기 위해서가 아니다 —
+   * 지어낸 타임스탬프는 REQ-2026-019 폐기 사유다. 기본 구현은 `new Date().toISOString()`.
+   */
+  now: () => string
+  /** setup을 실행한 commitgate 버전(마커에 기록). */
+  version: string
 }
 
 /** 인자 파싱(fail-closed): 값 누락·알 수 없는 옵션은 즉시 throw. */
@@ -301,6 +313,20 @@ export class HelpRequested extends Error {
 
 /** 설정 파일 이름(대상 repo 루트 기준). */
 export const CONFIG_BASENAME = 'req.config.json'
+
+/**
+ * 이 패키지의 버전(마커의 `completedVersion`). **패키지 자신의** `package.json`을 읽는다 —
+ * 대상 repo의 것이 아니다(대상은 소비자 프로젝트 버전이라 의미가 다르다).
+ */
+export function packageVersion(): string {
+  try {
+    const pkgPath = join(resolve(fileURLToPath(import.meta.url), '..', '..'), 'package.json')
+    const parsed = JSON.parse(stripBom(readFileSync(pkgPath, 'utf8'))) as { version?: unknown }
+    return typeof parsed.version === 'string' && parsed.version ? parsed.version : '0.0.0-unknown'
+  } catch {
+    return '0.0.0-unknown'
+  }
+}
 
 /**
  * 원자적 교체(DEC-5). 같은 디렉터리에 temp를 쓰고 `rename`한다 — 같은 볼륨이라 rename이 원자적이고,
@@ -397,15 +423,24 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
   }
 
   // ⑥ 병합 + 스키마 재검증(실패면 throw — 쓰기 없음).
-  if (Object.keys(patch).length === 0) {
+  //
+  // 🔴 **setup 완료 마커도 여기서 함께 쓴다**(REQ-2026-062 DEC-9). 값을 하나도 바꾸지 않았어도(모두 Enter)
+  //    마커는 남긴다 — 마커의 의미는 "값을 바꿨다"가 아니라 **"설정을 확인했다"**이고, 값을 유지한 것도
+  //    확인의 결과다. 다만 **마커가 이미 있고 값 변경도 없으면** 아무것도 쓰지 않는다(무의미한 diff 방지).
+  const marker: SetupMarker = { completedVersion: deps.version, completedAt: deps.now() }
+  const hadMarker = Object.prototype.hasOwnProperty.call(raw, 'setup')
+  if (Object.keys(patch).length === 0 && hadMarker) {
     deps.log('변경된 설정이 없습니다 — req.config.json 을 건드리지 않았습니다.')
     return
   }
-  const merged = mergeConfigText(existingText, patch)
+  const merged = mergeConfigText(existingText, patch, marker)
 
   // ⑦ 유일한 쓰기.
   deps.io.write(merged)
-  deps.log(`저장했습니다: ${join(opts.dir, CONFIG_BASENAME)} (${Object.keys(patch).join(', ')})`)
+  const changed = Object.keys(patch)
+  deps.log(
+    `저장했습니다: ${join(opts.dir, CONFIG_BASENAME)} (${changed.length ? changed.join(', ') + ' · ' : ''}setup 완료 기록)`,
+  )
 }
 
 export function printHelp(): void {
@@ -437,6 +472,8 @@ export async function runCli(argv: string[], deps?: SetupDeps): Promise<void> {
         io: createConfigIo(opts.dir),
         probes: createReviewerProbes(),
         createPrompter: createReadlinePrompter,
+        now: () => new Date().toISOString(),
+        version: packageVersion(),
       }
     await runSetup(opts, d)
   } catch (err) {
