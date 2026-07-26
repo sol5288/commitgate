@@ -3,15 +3,28 @@
   "branch": "feat/req-2026-067-setup-interactive-ui",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9f6b-4738-7c31-8b07-b369d60d4a9d",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9f83-79b8-7be1-bbac-4c3cd33a9ccd",
+  "review_base_sha": "41019063f88d40fdb59730a3a8771bfa42450b8f",
+  "review_diff_hash": "50bf121a89fc3a1b58ed2cd44deea00c580599d5",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "d8e7c321bcea7f8fa568f854e758a7fee40da017a7f404bf0452847a846d01b0",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-select-core",
+  "phases": [
+    {
+      "id": "phase-1-select-core",
+      "approved": true
+    },
+    {
+      "id": "phase-2-adapter",
+      "approved": false
+    },
+    {
+      "id": "phase-3-banner-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -22,16 +35,30 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:-#1",
+      "review_kind": "phase",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-select-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-select-core",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-select-core",
     "outcome": "approved",
-    "compare_hash": "96821f9eabe7b39bf76a01b5699d68d602e20dded0360df80ff0302d8521eb8a",
+    "compare_hash": "3d7c1990befb9fa90254fc87650cf8b25fe86c4d0c7baa3b9f5d8771b506a7e8",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T17:16:08.268Z",
+    "at": "2026-07-26T17:40:57.199Z",
     "findings": [],
     "elided_count": 0
   },
@@ -52,5 +79,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-07-26T17:16:08.268Z",
     "design_hash": "d8e7c321bcea7f8fa568f854e758a7fee40da017a7f404bf0452847a846d01b0"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "50bf121a89fc3a1b58ed2cd44deea00c580599d5",
+      "phase_id": "phase-1-select-core",
+      "consumed_by_commit_sha": "530adb06d9f8103428e096b2de6b2185e1390043",
+      "approval_consumed_at": "2026-07-26T17:41:06.580Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
