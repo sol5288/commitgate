@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-060-interactive-setup",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9c4a-e18a-7711-8393-af13122a7aca",
-  "review_base_sha": "b9631bf72cbcbe2d6ebc46b00235967b25487145",
-  "review_diff_hash": "fcecb23f6280be5ae4b9560afb542a87c620ac9f",
+  "codex_thread_id": "019f9c57-8a0e-7400-a4b8-87c9bfb4ab65",
+  "review_base_sha": "b94e899fa2ead6f077b1a5c88acae24155ae3fdd",
+  "review_diff_hash": "f50205be10538300481f488cc8c2301a897af856",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "338c5a584432f806e2f04c6cab008eeed4c62c7d964aa60da475f824f277fc68",
-  "current_phase": "phase-1-tty-detection-and-verb-skeleton",
+  "current_phase": "phase-2-pure-core",
   "phases": [
     {
       "id": "phase-1-tty-detection-and-verb-skeleton",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-pure-core",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-login-and-atomic-write",
@@ -46,6 +46,13 @@
       "phase_id": "phase-1-tty-detection-and-verb-skeleton",
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-pure-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-pure-core",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -68,12 +75,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-tty-detection-and-verb-skeleton",
+    "phase_id": "phase-2-pure-core",
     "outcome": "approved",
-    "compare_hash": "d05877a8aac926739c7f80c82463c7b33d38e72b4da091420f9be1eae295a805",
+    "compare_hash": "7127fa5353646722b3b91b837559e7ca4872a14b902f07d51c7e6189868a68dc",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T02:40:47.098Z",
+    "at": "2026-07-26T02:54:13.176Z",
     "findings": [],
     "elided_count": 0
   },
@@ -83,6 +90,12 @@
       "phase_id": "phase-1-tty-detection-and-verb-skeleton",
       "consumed_by_commit_sha": "558e673658b8190f6f13e0959c839e3b5d1dea6c",
       "approval_consumed_at": "2026-07-26T02:41:22.452Z"
+    },
+    {
+      "approved_tree": "f50205be10538300481f488cc8c2301a897af856",
+      "phase_id": "phase-2-pure-core",
+      "consumed_by_commit_sha": "256e54fb0be0253ed8d6cf0797b66d4357a9fa53",
+      "approval_consumed_at": "2026-07-26T02:54:32.668Z"
     }
   ],
   "user_commit_confirmed": null
