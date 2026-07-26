@@ -3737,6 +3737,101 @@ describe('REQ-2026-051 phase-2 — 원장 배선(main near-e2e)', () => {
     }
   })
 
+  // ───────────── REQ-2026-065: 리뷰 호출 auth preflight (bypass 없음) ─────────────
+
+  const okVersion = { ok: true, version: 'codex-cli 0.144.1', detail: '' }
+  const probesOf = (auth: { state: string; reason: string; detail: string }, version = okVersion) => ({
+    version: () => version as never,
+    auth: () => auth as never,
+    login: () => ({ status: 0 }),
+  })
+
+  /**
+   * 🔴 이 REQ의 헤드라인. preflight가 예산 gate·원장 기록보다 **뒤**에 있으면
+   * "로그인만 안 됐을 뿐인데 예산을 잃고 원장에 고아 attempt가 남는" 상태가 된다.
+   */
+  it('🔴 REQ-2026-065: 미로그인이면 원장 기록·예산 차감 전에 멈춘다(수용기준 1·2)', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'TID', rawStdout: '' })
+      const probes = probesOf({ state: 'logged-out', reason: 'ok', detail: 'Not logged in' })
+      let msg = ''
+      try {
+        reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake, probes: probes as never })
+      } catch (e) {
+        msg = e instanceof Error ? e.message : String(e)
+      }
+      expect(msg).toContain('로그인돼 있지 않습니다')
+      expect(msg).toContain('예산은 차감되지 않았습니다')
+      // 🔴 원장이 아예 만들어지지 않았다 — 고아 attempt 없음.
+      expect(readLedger(ticket)).toEqual([])
+      // 리뷰어도 호출되지 않았다.
+      expect(fake.requests).toHaveLength(0)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 REQ-2026-065: unknown 은 차단하지 않는다(수용기준 3) — 진단이지 게이트가 아니다', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'TID', rawStdout: '' })
+      const probes = probesOf({ state: 'unknown', reason: 'unrecognized-output', detail: '???' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake, probes: probes as never })
+      // 정상 완료 — 원장 두 행이 남는다.
+      expect(readLedger(ticket).map((r) => r.event)).toEqual(['attempt-opened', 'attempt-closed'])
+      expect(fake.requests).toHaveLength(1)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('REQ-2026-065: 미설치도 같은 지점에서 막힌다(수용기준 4)', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'TID', rawStdout: '' })
+      const probes = probesOf(
+        { state: 'logged-in', reason: 'ok', detail: '' },
+        { ok: false, version: null, detail: 'ENOENT' } as never,
+      )
+      let msg = ''
+      try {
+        reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake, probes: probes as never })
+      } catch (e) {
+        msg = e instanceof Error ? e.message : String(e)
+      }
+      expect(msg).toContain('리뷰어 CLI(codex)를 실행할 수 없습니다')
+      expect(readLedger(ticket)).toEqual([])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * 🔴 우회 플래그가 있으면 에이전트가 fail-closed를 argv 하나로 돌아간다.
+   *
+   * 오라클은 "그런 이름의 옵션이 파서에서 throw한다"가 **아니다** — `review-codex`의 `parseArgs`는
+   * 알 수 없는 `-` 옵션을 **조용히 무시**한다(선행 약점, 이 REQ 범위 밖). 그래서 검증해야 할 실제 성질은
+   * **"어떤 argv로도 preflight를 끌 수 없다"**이다. 우회처럼 생긴 플래그를 붙여도 미로그인이면 그대로 막힌다.
+   */
+  it('🔴 REQ-2026-065: 어떤 argv로도 preflight를 끌 수 없다(수용기준 5)', () => {
+    for (const flag of ['--skip-auth-probe', '--no-auth-check', '--force-review']) {
+      const { repo, head } = setupRepo()
+      try {
+        const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'T', rawStdout: '' })
+        const probes = probesOf({ state: 'logged-out', reason: 'ok', detail: 'Not logged in' })
+        expect(() =>
+          reviewCodexMain(['2026-001', '--kind', 'design', '--run', flag, '--root', repo], {
+            reviewer: fake,
+            probes: probes as never,
+          }),
+        ).toThrow('로그인돼 있지 않습니다')
+      } finally {
+        rmSync(repo, { recursive: true, force: true })
+      }
+    }
+  })
+
   // ───────────── REQ-2026-064: 커밋되는 원장에 핀한 모델·effort·provider가 남는다 ─────────────
 
   /**

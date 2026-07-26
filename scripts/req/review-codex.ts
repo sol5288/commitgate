@@ -58,6 +58,7 @@ import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from
 // REQ-2026-057: 상태 직렬화 단일 지점 + durable checkpoint(leaf — 여기서 값으로 import해도 순환 없음).
 import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { assertSetupComplete } from './lib/setup-gate'
+import { createReviewerProbes, type ReviewerProbes } from './lib/adapters'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -1236,6 +1237,42 @@ export function consumeReviewException(
  */
 export const REVIEW_PROVIDER_ID = 'codex'
 
+/**
+ * 리뷰 호출 preflight(REQ-2026-065). **예산 gate·원장 기록보다 앞**에서 부른다 — 그 뒤에 두면
+ * 확인 실패가 **고아 attempt를 남기고 예산을 이미 소모**한다(이 REQ가 막으려는 상태 그 자체다).
+ *
+ * 🔴 **`logged-out`만 차단하고 `unknown`은 통과시킨다.** auth probe는 **진단이지 승인 무결성 게이트가
+ *    아니다** — 미로그인이 만들 수 있는 최악은 *실패한 리뷰*이지 *미리뷰 커밋*이 아니다. 오탐 비용이
+ *    비대칭이다: false allow는 "오늘의 상태 그대로"(예산 1회)지만, false block은 codex가 `login status`
+ *    출력 문자열을 바꾼 날 **전 소비자의 모든 리뷰를 동시에 멈춘다.**
+ * 🔴 **bypass 플래그를 만들지 않는다.** 대신 차단 조건 자체를 좁게 잡아 탈출구가 필요 없게 한다.
+ */
+export function assertReviewerReady(probes: ReviewerProbes, warn: (m: string) => void = console.warn): void {
+  const v = probes.version()
+  if (!v.ok)
+    throw new Error(
+      [
+        `리뷰어 CLI(codex)를 실행할 수 없습니다: ${v.detail}`,
+        '  설치와 PATH를 확인하세요. 진단: npx commitgate check',
+        '  🔴 리뷰를 호출하지 않았으므로 예산은 차감되지 않았습니다.',
+      ].join('\n'),
+    )
+  const a = probes.auth()
+  if (a.state === 'logged-out')
+    throw new Error(
+      [
+        `리뷰어에 로그인돼 있지 않습니다${a.detail ? `: ${a.detail}` : ''}`,
+        '  사용자에게 `npx commitgate setup`(대화형) 또는 `codex login` 실행을 요청하세요.',
+        '  🔴 리뷰를 호출하지 않았으므로 예산은 차감되지 않았습니다.',
+      ].join('\n'),
+    )
+  if (a.state === 'unknown')
+    warn(
+      `[req:review-codex] ⚠️ 로그인 상태를 판정할 수 없습니다(${a.reason}) — 리뷰를 그대로 진행합니다. ` +
+        '실제로 미인증이면 호출이 스스로 실패합니다(판정 불가를 차단으로 삼으면 리뷰어 출력 변경 하나로 모든 리뷰가 멈춥니다).',
+    )
+}
+
 export function appendLedgerRowToDisk(root: string, ticketRel: string, row: LedgerRow): void {
   const abs = join(root, ledgerPath(ticketRel))
   // ── 읽기·검증 단계(D5 — 전파) ──
@@ -2083,7 +2120,10 @@ export function callReviewer(
   return { threadId }
 }
 
-export function main(argv: string[] = process.argv.slice(2), opts2?: { reviewer?: ReviewerAdapter }): void {
+export function main(
+  argv: string[] = process.argv.slice(2),
+  opts2?: { reviewer?: ReviewerAdapter; probes?: ReviewerProbes },
+): void {
   // REQ-2026-027 D3: 주입한 reviewer는 이 호출에만 유효해야 한다 — 모듈 전역에 잔존하면 이후 인자 없는
   // main()도 그것을 쓴다(리뷰어 observation). CLI는 프로세스당 1회라 무해하나, programmatic 다중 호출
   // (near-e2e 테스트 등)에선 오염된다. finally로 기본값을 복원한다.
@@ -2095,7 +2135,7 @@ export function main(argv: string[] = process.argv.slice(2), opts2?: { reviewer?
   }
 }
 
-function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void {
+function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?: ReviewerProbes }): void {
   const opts = parseArgs(argv)
   // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
   assertSetupComplete({ root: opts.root })
@@ -2257,6 +2297,16 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     console.error('  Codex will not be called again for this unchanged target. Change the staged review target or escalate.')
     process.exit(reviewOutcomeExitCode('blocked'))
   }
+
+  // 🔴 REQ-2026-065: 리뷰어 가용성 preflight — **예산 gate·원장 기록보다 앞**이다(설계 DEC-1).
+  //    `--run`일 때만 확인한다: dry-run은 외부 호출이 없으므로 로그인이 필요 없다(DEC-4).
+  //
+  // 🔴 **probe 대상은 "실제로 호출될 리뷰어"다.** reviewer가 주입돼 있으면(near-e2e 테스트) 실제 codex CLI는
+  //    호출되지 않으므로 그것을 검사하는 것은 의미가 없다 — 검사하면 codex 없는 CI에서 무관한 테스트가 전부
+  //    깨진다. probes를 명시 주입하면 그때는 preflight 자체를 검증하려는 것이므로 실행한다.
+  //    이것은 우회 플래그가 아니다(사용자 argv로 끌 수 없다 — 주입은 programmatic 경로 전용).
+  if (opts.run && (opts2?.probes !== undefined || opts2?.reviewer === undefined))
+    assertReviewerReady(opts2?.probes ?? createReviewerProbes())
 
   // DEC-A6 step 3: 예산/예외 gate + attempt-opened 기록(state.json scratch). 반환 state가 이후 base(R9).
   const { state: afterAttempt, attempt: attemptInfo } = gateAndRecordAttempt({
