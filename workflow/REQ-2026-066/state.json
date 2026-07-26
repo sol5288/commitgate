@@ -3,15 +3,28 @@
   "branch": "feat/req-2026-066-delivery-set",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9d45-617f-7fc2-8f22-3d4711365a78",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9d4f-9e85-7620-b41d-06c06b68f407",
+  "review_base_sha": "ea8e4e72da07a0fba0480b3a8452ac7a453950e4",
+  "review_diff_hash": "a4f7ced74d4d54265c5f8175508519579000bc4e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "b551054250fe092089d0c39e683b684fc9c09282dc2288eb89cb9daebe60f44a",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-model",
+  "phases": [
+    {
+      "id": "phase-1-model",
+      "approved": true
+    },
+    {
+      "id": "phase-2-verbs",
+      "approved": false
+    },
+    {
+      "id": "phase-3-gate",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -22,16 +35,23 @@
       "phase_id": null,
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-model#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-model",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-model",
     "outcome": "approved",
-    "compare_hash": "70ef561a29ae9c65a97171c9e760d0550d1016f09be678e41da87f2129898605",
+    "compare_hash": "261acb443e0827564e15c50a9b9e95a89cb56c222e5c8cb9bd1f5ad49813db70",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T07:14:07.431Z",
+    "at": "2026-07-26T07:25:19.750Z",
     "findings": [],
     "elided_count": 0
   },
@@ -52,5 +72,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-07-26T07:14:07.431Z",
     "design_hash": "b551054250fe092089d0c39e683b684fc9c09282dc2288eb89cb9daebe60f44a"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "a4f7ced74d4d54265c5f8175508519579000bc4e",
+      "phase_id": "phase-1-model",
+      "consumed_by_commit_sha": "249acb1738c842d55783ac2c56bac58004eac8c7",
+      "approval_consumed_at": "2026-07-26T07:25:48.122Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
