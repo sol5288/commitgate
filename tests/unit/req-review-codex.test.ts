@@ -3737,6 +3737,62 @@ describe('REQ-2026-051 phase-2 — 원장 배선(main near-e2e)', () => {
     }
   })
 
+  // ───────────── REQ-2026-064: 커밋되는 원장에 핀한 모델·effort·provider가 남는다 ─────────────
+
+  /**
+   * 🔴 이 단언이 없으면 fresh clone에서 **"어느 모델이 이 phase를 승인했는가"를 알 수 없다.**
+   * 모델은 지금까지 gitignore된 측정 로그(`.review-calls.jsonl`)에만 있었고, `setup`이 모델 교체를
+   * 쉽게 만들면서 그 공백이 실제 감사 구멍이 됐다.
+   */
+  it('🔴 REQ-2026-064: opened·closed 두 행 모두에 핀한 모델·effort·provider가 남는다(수용기준 4)', () => {
+    const { repo, ticket, head } = setupRepo()
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'TID', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      const rows = readLedger(ticket)
+      expect(rows).toHaveLength(2)
+      for (const r of rows) {
+        // 키는 **항상** 존재한다(값이 null이어도) — 계약 2.
+        expect(Object.prototype.hasOwnProperty.call(r, 'review_model')).toBe(true)
+        expect(Object.prototype.hasOwnProperty.call(r, 'review_reasoning_effort')).toBe(true)
+        expect(r.review_provider).toBe('codex')
+      }
+      // 🔴 값의 원천이 리뷰어에 실제로 핀된 값과 같아야 한다(DEC-5) — 리뷰어가 받은 요청과 대조한다.
+      const req = fake.requests[0]!
+      expect(rows[0]!.review_model).toBe(req.model)
+      expect(rows[0]!.review_reasoning_effort).toBe(req.reasoningEffort)
+      expect(rows[1]!.review_model).toBe(req.model)
+      expect(rows[1]!.review_reasoning_effort).toBe(req.reasoningEffort)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 REQ-2026-064: 실패 경로의 보상 attempt-closed 에도 남는다(판정 못 낸 attempt의 모델을 잃지 않는다)', () => {
+    const { repo, ticket } = setupRepo()
+    try {
+      const throwing = {
+        requests: [] as unknown[],
+        review(req: unknown) {
+          this.requests.push(req)
+          throw new Error('codex 호출 실패(usage limit)')
+        },
+      }
+      try {
+        reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: throwing as never })
+      } catch {
+        /* fail-closed 재전파 — 원장만 본다 */
+      }
+      const rows = readLedger(ticket)
+      const closed = rows.find((r) => r.event === 'attempt-closed')
+      expect(closed).toBeDefined()
+      expect(closed!.review_provider).toBe('codex')
+      expect(Object.prototype.hasOwnProperty.call(closed!, 'review_model')).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   it('⑫ opened는 호출 전에 기록된다(throw해도 남는다) + REQ-2026-054: 실패도 보상 attempt-closed', () => {
     const { repo, ticket, head } = setupRepo()
     try {

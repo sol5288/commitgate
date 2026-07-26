@@ -1230,6 +1230,12 @@ export function consumeReviewException(
  * 시점의 재검증은 (협조적 단일 worktree 전제에서) 통과한다 — closed에서 전파가 실제로 발화하는 것은
  * "일어나선 안 될" 손상뿐이고, 그때는 크게 실패하는 편이 옳다.
  */
+/**
+ * 리뷰어 provider id(REQ-2026-064 DEC-4). 현재 구현은 codex 하나지만 **자리를 지금 만들어 둔다** —
+ * provider가 늘어난 뒤에 옛 행이 "무엇이 리뷰했는지" 비어 있으면 그 시점의 감사가 불가능해진다.
+ */
+export const REVIEW_PROVIDER_ID = 'codex'
+
 export function appendLedgerRowToDisk(root: string, ticketRel: string, row: LedgerRow): void {
   const abs = join(root, ledgerPath(ticketRel))
   // ── 읽기·검증 단계(D5 — 전파) ──
@@ -2262,6 +2268,15 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
   })
   state = afterAttempt
 
+  // 🔴 REQ-2026-064 DEC-5: 리뷰어에 **핀하는 값**을 여기서 **한 번** 읽어 원장 두 행과 측정 로그에 같은 값으로
+  //    흘린다. 각 기록처가 따로 config를 읽으면 그 사이에 값이 바뀌었을 때 두 기록이 갈라진다.
+  //    🔴 이 값은 **CommitGate가 요청에 핀한 것**이지 codex가 실제로 실행한 모델이 아니다(정직성 경계).
+  const pinned = {
+    review_model: cfg.reviewModel,
+    review_reasoning_effort: cfg.reviewReasoningEffort,
+    review_provider: REVIEW_PROVIDER_ID,
+  } as const
+
   // DEC-A6 step 4: 원장 attempt-opened append + pre-call ledger-only commit(durable 티켓만·fail-closed).
   //   opened 행의 prompt_sha256은 **null** — 프롬프트는 아직 안 지었다(binding이 이 커밋 뒤라야 확정).
   //   순환의존을 끊는다: prompt_sha256은 나중에 attempt-closed 행에만 채운다.
@@ -2278,6 +2293,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     prompt_sha256: null,
     at: new Date().toISOString(),
     reconstructed: false,
+    ...pinned,
   })
   if (isDurable) precallCommitLedgerRow(git, ticketRel, String(state.id ?? ''), attemptInfo)
 
@@ -2372,6 +2388,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
         prompt_sha256: null, // 실패 경로는 프롬프트 해시를 담지 않는다(opened와 동일).
         at: new Date().toISOString(),
         reconstructed: false,
+        ...pinned,
       })
       if (isDurable) {
         // 원장 modified가 남으면 다음 리뷰 D10이 막힌다 → attempt-opened와 동일 조건·기법으로 pathspec 커밋.
@@ -2454,6 +2471,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
     // 🔴 archive path·sha는 담지 않는다 — approvals.jsonl의 archive_inventory가 단일 출처다(phase-2 리뷰 P1).
     at: approvedAt,
     reconstructed: false,
+    ...pinned,
   })
 
   // ── REQ-2026-048 phase-3: design 승인 evidence **자동 내구화**(DEC-3) ──
@@ -2516,8 +2534,9 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void 
       timestamp: approvedAt,
       policyVersion: reviewPolicyVersion(effectivePersona), // REQ-2026-034 B-2b: 전송 persona와 동일(단일 배선).
       // REQ-2026-043: codex에 흘러간 값(1942-1943)과 동일 원천. null=미핀(전역 상속).
-      reviewModel: cfg.reviewModel,
-      reviewReasoningEffort: cfg.reviewReasoningEffort,
+      // 🔴 원장과 **같은 원천**(DEC-5) — 두 기록이 갈라지지 않는다.
+      reviewModel: pinned.review_model,
+      reviewReasoningEffort: pinned.review_reasoning_effort,
       // REQ-2026-045: 관측성 지원 필드(개수/해시 — 내용배제 유지, 승인 증거 아님).
       promptBytes: assembledPromptBytes(prompt),
       reviewDurationMs,
