@@ -3,15 +3,24 @@
   "branch": "feat/req-2026-065-review-auth-preflight",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9d2b-3b96-70c0-bc4f-e176d01127cf",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9d39-a28e-74e1-b2db-f2de7deae9cc",
+  "review_base_sha": "91cb5f2f7e0d9f6e04c44264625cde89ced62375",
+  "review_diff_hash": "6bdb74fd82e89ebaf557af366904cbe17c47d26d",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "be1cb8fea2cd574dc2d3b1b3d2791c78a4ed4e280c5814283d71aa1a2691fbc2",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-preflight",
+  "phases": [
+    {
+      "id": "phase-1-preflight",
+      "approved": true
+    },
+    {
+      "id": "phase-2-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -20,6 +29,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-preflight#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-preflight",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -43,14 +59,23 @@
     "design_hash": "be1cb8fea2cd574dc2d3b1b3d2791c78a4ed4e280c5814283d71aa1a2691fbc2"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-preflight",
     "outcome": "approved",
-    "compare_hash": "4015940761fe51d7941e512f3b9e529637ae21a2b013026efe05f4af877c6e70",
+    "compare_hash": "0b85613db138bee1bb752fe15aed90221c4442d6f977d2eb9b9de0683580eae2",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T06:45:15.605Z",
+    "at": "2026-07-26T07:01:27.359Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "6bdb74fd82e89ebaf557af366904cbe17c47d26d",
+      "phase_id": "phase-1-preflight",
+      "consumed_by_commit_sha": "8b8d3c9f7633c38051b13bc85391923907630165",
+      "approval_consumed_at": "2026-07-26T07:01:49.328Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
