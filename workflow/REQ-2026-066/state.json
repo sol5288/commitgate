@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-066-delivery-set",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9ecd-bbbe-7c92-b100-b879fc19c602",
-  "review_base_sha": "b2bc3dd7c7547aef1b8b884e135c42de2ede92fe",
-  "review_diff_hash": "bea16d11cdeae2061dd4a98c443400c61e5b9670",
+  "codex_thread_id": "019f9ecf-8463-73c0-afc7-0a33b75610d7",
+  "review_base_sha": "ee99b9b116bfa74aa7f8833376d97401f3641585",
+  "review_diff_hash": "db1dd3aefceb44e3745f51ab60a841b12db81afa",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "24f75d1bce42c45e89c7821e1b1bd858d1252f4cb7f60c548915f16928b39d30",
-  "current_phase": "phase-1-model",
+  "current_phase": "phase-2-verbs",
   "phases": [
     {
       "id": "phase-1-model",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-verbs",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-gate",
@@ -54,8 +54,8 @@
       "series_id": "phase:phase-2-verbs#1",
       "review_kind": "phase",
       "phase_id": "phase-2-verbs",
-      "attempts": 6,
-      "closed_reason": null
+      "attempts": 7,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#3",
@@ -80,13 +80,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-2-verbs",
     "outcome": "approved",
     "compare_hash": "15a307f0f4836fcfcba46b78cc7ca51475d4e1ef84875b13643b95d02a1b9265",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T14:22:19.686Z",
+    "at": "2026-07-26T14:25:49.032Z",
     "findings": [],
     "elided_count": 0
   },
@@ -101,10 +101,15 @@
       "phase_id": "phase-1-model",
       "consumed_by_commit_sha": "249acb1738c842d55783ac2c56bac58004eac8c7",
       "approval_consumed_at": "2026-07-26T07:25:48.122Z"
+    },
+    {
+      "approved_tree": "db1dd3aefceb44e3745f51ab60a841b12db81afa",
+      "phase_id": "phase-2-verbs",
+      "consumed_by_commit_sha": "cd05c2c2d3a150766036bf84deab6a0708657147",
+      "approval_consumed_at": "2026-07-26T14:26:45.910Z"
     }
   ],
   "user_commit_confirmed": null,
-  "review_exception_confirmed": null,
   "design_approval_evidence": {
     "response_path": "workflow/REQ-2026-066/responses/design-r09-approved.json",
     "response_sha256": "bd8b8507bee51f52876cb9dc2030ef2f0d78d8477d0a6170a7ddf6f8dbd1c8e3",
@@ -117,5 +122,6 @@
     "commit_approved": "yes",
     "approved_at": "2026-07-26T14:22:19.686Z",
     "design_hash": "24f75d1bce42c45e89c7821e1b1bd858d1252f4cb7f60c548915f16928b39d30"
-  }
+  },
+  "review_exception_confirmed": null
 }
