@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-062-setup-enforcement",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9caa-c20b-7cd2-bfba-8b6ce947a698",
-  "review_base_sha": "8101ba88235208631b7d092aa9afcc3a524d2d2a",
-  "review_diff_hash": "8eac96c77f4b41f24e0d297f2340f1d8cdab480e",
+  "codex_thread_id": "019f9cb4-5865-7011-ba96-2084053fa2c3",
+  "review_base_sha": "bf4845913e6189cf58faccbfb6df67d100722318",
+  "review_diff_hash": "2af16d7428a9c8581e233f2cba212742c64cc3ff",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "8f14a815bf83cf2adda1411049f4e0829a7b807e3d9cc14875204b6797f09548",
-  "current_phase": "phase-1-marker",
+  "current_phase": "phase-2-gate-module",
   "phases": [
     {
       "id": "phase-1-marker",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-gate-module",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-wiring",
@@ -46,6 +46,13 @@
       "phase_id": "phase-1-marker",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-gate-module#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-gate-module",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -68,12 +75,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-marker",
+    "phase_id": "phase-2-gate-module",
     "outcome": "approved",
-    "compare_hash": "676decad40f681dfad65883adc2aaccd47cdb23492825eb51fc05751536d7ec7",
+    "compare_hash": "e5e4f74f1a33ac216c7413509ec829e45d41fb13751db4aff1aff92cdf4d2ca0",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T04:25:19.874Z",
+    "at": "2026-07-26T04:35:15.064Z",
     "findings": [],
     "elided_count": 0
   },
@@ -83,6 +90,12 @@
       "phase_id": "phase-1-marker",
       "consumed_by_commit_sha": "b9fb58ea8ea7db8ee2d82da16fe2a32ef9c53a2b",
       "approval_consumed_at": "2026-07-26T04:25:40.475Z"
+    },
+    {
+      "approved_tree": "2af16d7428a9c8581e233f2cba212742c64cc3ff",
+      "phase_id": "phase-2-gate-module",
+      "consumed_by_commit_sha": "cc1f84d469f7558bb4f2722968fd5c518726a430",
+      "approval_consumed_at": "2026-07-26T04:35:35.342Z"
     }
   ],
   "user_commit_confirmed": null
