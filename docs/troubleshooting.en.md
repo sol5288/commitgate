@@ -21,6 +21,18 @@ count if it has no `state.json`, or if that file's `id` does not match the direc
 hole where a copied shell would grant a permanent exemption. For a real install, running setup once is the
 fastest fix.
 
+**A review stops because of login — did it burn budget?**
+No. Since 0.9.11 the reviewer's install and login are checked **immediately before** the call, and a
+logged-out state stops **before any budget is spent**. Nothing is written to the ledger either, and the
+message says so. A human runs `npx commitgate setup` (interactive) or `codex login` to fix it.
+
+**I get "cannot determine login state" but the review proceeds. Is it broken?**
+No — that is **intended**. Login state is read from the reviewer CLI's output text, so a format change makes
+the verdict `unknown`. It does **not** block, because the false-positive costs are asymmetric: wrongly
+allowing means the call simply fails on its own (one budget unit), while wrongly blocking means a single
+reviewer output change **stops every review for every user at once**. The auth check is a **diagnostic**, not
+an approval-integrity gate.
+
 **A review dies with `codex exit code 1`. What now?**
 **Diagnose before retrying** — that failure counts as `dispatched` (the subprocess did start), so it
 **consumes review budget**.
