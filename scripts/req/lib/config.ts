@@ -178,7 +178,9 @@ export const DEFAULTS = {
   // 리뷰어 모델은 게이트 무결성 핵심이라 미고정 시 전역 ultra 상속이 곧 결함. 미지원 CLI는 config override/null.
   // `as ... | null`은 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
   reviewModel: 'gpt-5.6-terra' as string | null,
-  reviewReasoningEffort: 'high' as ReviewReasoningEffort | null,
+  // 🔴 기본 추론강도 = medium(REQ-2026-067 phase-4, 사용자 지시). 이전 기본은 high 였다.
+  //    **핀하지 않은 소비자의 리뷰 깊이·비용이 함께 내려간다** — 높게 유지하려면 `reviewReasoningEffort`를 명시한다.
+  reviewReasoningEffort: 'medium' as ReviewReasoningEffort | null,
   // REQ-2026-028 A-2a: review 예산. autoBudget=자동 허용 회차, hardCap=절대 상한(9번째 차단 → 8).
   reviewBudget: { autoBudget: 5, hardCap: 8 } as ReviewBudget,
   // REQ-2026-037: phase 자동 커밋은 opt-in. 코어 기본 never = 현행(매 phase 정지) — 업그레이드로 완화되지 않는다.

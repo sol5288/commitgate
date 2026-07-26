@@ -10,7 +10,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `designDocs` | `00/01/02` docs | Design document filenames |
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it — but delta design reviews still inject the built-in delta contract |
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
-| `reviewReasoningEffort` | `"high"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
+| `reviewReasoningEffort` | `"medium"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically, rounds 6–8 each require a human exception record bound to that series and round, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception. `hardCap ≤ 8`, `autoBudget ≤ hardCap` |
 | `stopGate` | `"phase"` | **Where a human stops** (preferred axis). `phase` = confirm before every phase commit; `req` = auto-commit LOW phases inside a REQ and gather the confirmation into one stop before integration; `merge` = group several REQs into a delivery set and defer until **the whole set** is done. **HIGH-risk tickets stop at every phase under any value**, and integration (main merge) approval is always required |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "never" }` | Per-phase auto-commit policy. `never` (default) stops for a human before every phase commit (current behavior). `low-only` auto-commits Codex-approved phases of **LOW-risk** tickets without a human stop and moves the single human confirmation to just before the feature→main merge. HIGH-risk tickets still stop at every phase under any value (`userConfirmGate` backstop). There is no `"all"` value (it would livelock on HIGH) |
@@ -50,8 +50,9 @@ npx commitgate setup
   Enter to confirm, Ctrl+C to cancel. The first entry is **keep the current value** and the cursor starts
   there, so pressing Enter alone changes nothing. Keys that accept an empty value also list
   **clear — inherit global codex config**.
-- **The review model is free text** (there is no fixed list). Type the value, or `-` to clear it
-  (`none` cannot be used for this: it is a **valid** reasoning-effort value).
+- **The review model is a menu too** (`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`). 🔴 That list is a
+  **suggestion, not an enum** — the last entry, **"직접 입력…" (type it yourself)**, accepts any model, and the
+  schema stays free text. Clear the value by typing `-` there.
 - Each question offers the **current value as the default**. Keeping it **writes nothing** —
   only keys you actually change are written, so a value you never chose is never pinned.
 - If you are not logged in to codex, the wizard runs `codex login` and **re-checks afterwards**.

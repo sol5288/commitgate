@@ -303,12 +303,14 @@ describe('[P1] req.config.schema.json 파일 == CONFIG_SCHEMA (드리프트 가�
 })
 
 describe('[REQ-2026-013 P1] reviewModel·reviewReasoningEffort', () => {
-  it('미설정 시 기본값 gpt-5.6-terra / high', () => {
+  // 🔴 REQ-2026-067 phase-4: 기본 추론강도가 high → medium 으로 **의도적으로** 바뀌었다(사용자 지시).
+  //    핀하지 않은 소비자의 리뷰 깊이·비용이 함께 내려간다 — 높게 쓰려면 명시해야 한다.
+  it('미설정 시 기본값 gpt-5.6-terra / medium', () => {
     const dir = tmpRoot({})
     try {
       const cfg = loadConfig({ root: dir })
       expect(cfg.reviewModel).toBe('gpt-5.6-terra')
-      expect(cfg.reviewReasoningEffort).toBe('high')
+      expect(cfg.reviewReasoningEffort).toBe('medium')
     } finally {
       cleanup(dir)
     }

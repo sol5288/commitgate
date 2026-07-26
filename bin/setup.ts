@@ -17,7 +17,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 
 import { resolve, join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline/promises'
-import { canUseRawMode, runSelect } from './select-prompt'
+import { canUseRawMode, colorEnabled, colorize, displayWidth, runSelect } from './select-prompt'
 import Ajv from 'ajv'
 import { CONFIG_SCHEMA, DEFAULTS, stripBom, STOP_GATE_OF, type SetupMarker, type PhaseCommitPolicy } from '../scripts/req/lib/config'
 import { createReviewerProbes, type ReviewerProbes } from '../scripts/req/lib/adapters'
@@ -101,6 +101,19 @@ export type SetupKey = (typeof SETUP_KEYS)[number]
  */
 export const NULL_SENTINEL = '-'
 
+/**
+ * "직접 입력하겠다"를 뜻하는 **내부 전용** 항목 값(REQ-2026-067 phase-4).
+ *
+ * 🔴 이 값은 `interpretAnswer`에 도달하지 않는다 — `ask` 구현이 그 자리에서 자유 입력으로 넘긴다.
+ *    설정 파일이나 검증 경로에 새면 안 되므로 정상 값과 겹칠 수 없는 형태로 둔다.
+ */
+/**
+ * 🔴 제어문자는 **코드로 만든다**. 소스에 원시 NUL을 박으면 git이 파일을 binary로 취급해
+ *    diff·grep·리뷰가 통째로 깨진다(REQ-2026-066에서 실제로 겪은 함정).
+ */
+export const FREE_TEXT_SENTINEL = String.fromCharCode(0) + 'free-text'
+
+
 export interface Question {
   key: SetupKey
   prompt: string
@@ -110,6 +123,14 @@ export interface Question {
   currentIsDefault: boolean
   /** enum 키일 때 선택지(표시용). 검증 자체는 스키마가 한다. */
   choices?: readonly string[]
+  /**
+   * 🔴 선택지가 **enum이 아니라 추천 목록**인가(REQ-2026-067 phase-4).
+   *
+   * `reviewModel`은 스키마가 자유 문자열이다 — codex가 받는 모델은 우리가 아는 셋보다 많고,
+   * enum으로 잠그면 다른 모델을 핀한 기존 소비자가 **설정을 못 쓰게 된다**. 그래서 셋을 목록으로
+   * 보여 주되 **"직접 입력" 항목**을 함께 둔다. 스키마는 건드리지 않는다.
+   */
+  freeTextAllowed?: boolean
 }
 
 export interface Prompter {
@@ -146,6 +167,14 @@ export function allowsNullValue(key: SetupKey): boolean {
   return validateValue(key, null).length === 0
 }
 
+/**
+ * `reviewModel`의 **추천 목록**(enum이 아니다 — 스키마는 자유 문자열 그대로다).
+ *
+ * 🔴 여기 없는 모델도 **직접 입력으로 쓸 수 있어야 한다.** enum으로 잠그면 다른 모델을 핀한
+ *    기존 소비자의 `req.config.json`이 스키마 위반으로 거부되어 모든 명령이 막힌다.
+ */
+export const MODEL_SUGGESTIONS: readonly string[] = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']
+
 /** 스키마의 enum에서 표시용 선택지를 뽑는다(`null` 제외 — 그건 `NULL_SENTINEL`로 표현된다). */
 export function choicesFor(key: SetupKey): readonly string[] | undefined {
   const sub = subSchemaFor(key)
@@ -162,6 +191,8 @@ export function buildQuestions(raw: Record<string, unknown>): Question[] {
     stopGate: '사람이 멈추는 지점',
   }
   return SETUP_KEYS.map((key) => {
+    // 🔴 `reviewModel`은 스키마상 자유 문자열이다 — 추천 목록일 뿐 enum이 아니다(위 `freeTextAllowed`).
+    const suggested = key === 'reviewModel' ? MODEL_SUGGESTIONS : choicesFor(key)
     // 🔴 `stopGate`는 legacy `phaseCommit`에서 **역파생**될 수 있다(REQ-2026-063 DEC-3). 그 경우를 무시하고
     //    DEFAULTS를 보여 주면, 파일이 `low-only`인데 화면은 `phase [기본값]`이라고 말하는 거짓 표시가 된다.
     const derived = key === 'stopGate' ? derivedStopGate(raw) : null
@@ -174,7 +205,8 @@ export function buildQuestions(raw: Record<string, unknown>): Question[] {
       prompt: PROMPTS[key],
       current: typeof v === 'string' ? v : null,
       currentIsDefault: !present,
-      choices: choicesFor(key),
+      choices: suggested,
+      freeTextAllowed: key === 'reviewModel',
     }
   })
 }
@@ -197,18 +229,37 @@ export const STOP_GATE_HIGH_NOTICE =
   'HIGH 위험 티켓은 어느 값에서도 매 phase 확인합니다 · 통합(main 병합) 승인은 어느 값에서도 필요합니다'
 
 /** 질문 하나에 붙일 안내 문구(순수 — 프롬프트 렌더링의 SSOT). */
+/**
+ * 안내 문구. **질문 형태별로 다르다**(phase-4 DEC-11).
+ *
+ * 🔴 메뉴 질문에 자유 입력용 문구를 재사용하면 **거짓 안내**가 된다. 0.10.0 실측 화면이 그랬다:
+ *    `선택지: …`(메뉴가 이미 보여 준다) · `'-'=비움`(메뉴에는 그런 입력이 없다) ·
+ *    `Enter=유지`(첫 항목이 그 역할이다). 둘은 중복이고 하나는 사용자가 따라 할 수 없는 지시다.
+ */
 export function hintFor(q: Question): string {
   const cur = q.current === null ? '(비움 — codex 전역 설정 상속)' : q.current
   const src = q.currentIsDefault ? ' [기본값]' : ''
-  const choices = q.choices ? `\n  선택지: ${q.choices.join(' / ')}` : ''
-  // `stopGate`는 "전역 상속" 개념이 없다 — 비움 sentinel을 안내하지 않는다(스키마에 null이 없어 자동 거부된다).
-  // 대신 **HIGH 예외·통합 승인 필요**를 고지한다(REQ-2026-063 DEC-6): 이 문장이 없으면 `req`를 고른 사용자가
-  // "이제 전부 자동"이라고 오해하고, HIGH 티켓에서 멈출 때 도구가 고장 난 것으로 본다.
   // 🔴 근거는 스키마 하나다(`allowsNullValue`) — 하드코딩을 두 곳에 두면 화면과 검증이 갈라진다.
-  const tail = !allowsNullValue(q.key)
-    ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}\n  Enter=유지`
-    : `\n  Enter=유지 · '${NULL_SENTINEL}'=비움(전역 상속)`
-  return `현재: ${cur}${src}${choices}${tail}`
+  const notice = !allowsNullValue(q.key) ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}` : ''
+  // 메뉴 질문: 현재 값 + (해당되면) 고지만. 조작 안내는 위젯이 낸다.
+  if (q.choices) return `현재: ${cur}${src}${notice}`
+  return freeInputHint(q)
+}
+
+/**
+ * 자유 입력 안내(순수).
+ *
+ * 🔴 위젯을 못 쓰는 환경(raw mode 미지원)에서는 메뉴 질문도 **자유 입력으로 degrade**한다(DEC-9).
+ *    그때 메뉴용 안내를 그대로 내면 사용자가 `Enter=유지`·`'-'=비움`을 알 길이 없다 —
+ *    **조작법이 사라진 화면**이 된다. 그래서 degrade 경로는 이 안내를 쓴다.
+ */
+export function freeInputHint(q: Question): string {
+  const cur = q.current === null ? '(비움 — codex 전역 설정 상속)' : q.current
+  const src = q.currentIsDefault ? ' [기본값]' : ''
+  const notice = !allowsNullValue(q.key) ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}` : ''
+  const list = q.choices?.length ? `\n  ${q.freeTextAllowed ? '추천' : '선택지'}: ${q.choices.join(' / ')}` : ''
+  const keep = allowsNullValue(q.key) ? `\n  Enter=유지 · '${NULL_SENTINEL}'=비움(전역 상속)` : `\n  Enter=유지`
+  return `현재: ${cur}${src}${notice}${list}${keep}`
 }
 
 /** 선택 목록의 한 항목: 화면에 보이는 라벨과, 고르면 `ask`가 돌려줄 **원시 답 문자열**. */
@@ -216,6 +267,33 @@ export interface SelectItem {
   label: string
   /** `interpretAnswer`가 해석할 값 — `''`=유지 · `NULL_SENTINEL`=비움 · 그 외=그 값. */
   answer: string
+  /** 값의 의미 한 줄. 없으면 라벨만 보인다(DEC-12 — 설명은 장식이다). */
+  note?: string
+}
+
+/**
+ * 값별 한 줄 설명(DEC-12). **부분 사전**이다 — 없는 값은 그냥 라벨만 나온다.
+ *
+ * 🔴 필수 대응이 아니어야 한다. enum이 늘었을 때 여기 빠졌다고 선택지가 사라지면
+ *    스키마가 SSOT라는 계약이 깨진다(REQ-2026-063 DEC-4).
+ */
+const VALUE_NOTES: Partial<Record<SetupKey, Record<string, string>>> = {
+  reviewModel: {
+    'gpt-5.6-terra': '기본값',
+  },
+  stopGate: {
+    phase: '매 phase 커밋 전에 확인',
+    req: 'REQ 하나가 끝날 때 한 번 확인',
+    merge: '여러 REQ를 묶어 묶음이 끝날 때까지 미룸',
+  },
+  reviewReasoningEffort: {
+    none: '추론 없음 · 가장 빠르고 얕다',
+    minimal: '최소',
+    low: '낮음',
+    medium: '보통 · 기본값',
+    high: '높음',
+    xhigh: '매우 높음 · 느리고 비싸다',
+  },
 }
 
 /**
@@ -230,12 +308,23 @@ export interface SelectItem {
  *    파일에 없던 키가 조용히 기록된다(DEC-5).
  */
 export function buildSelectItems(q: Question): SelectItem[] {
+  const notes = VALUE_NOTES[q.key] ?? {}
   const items: SelectItem[] = [
-    { label: `현재 값 유지 (${q.current === null ? '비움' : q.current}${q.currentIsDefault ? ' · 기본값' : ''})`, answer: '' },
+    {
+      label: '현재 값 유지',
+      answer: '',
+      note: `${q.current === null ? '비움' : q.current}${q.currentIsDefault ? ' · 기본값' : ''} · 파일에 쓰지 않음`,
+    },
   ]
   // 비움 항목은 **스키마가 null을 허용할 때만**(`hintFor`와 같은 근거).
-  if (allowsNullValue(q.key)) items.push({ label: `비움 — codex 전역 설정 상속`, answer: NULL_SENTINEL })
-  for (const c of q.choices ?? []) items.push({ label: c === q.current ? `${c}  (현재)` : c, answer: c })
+  if (allowsNullValue(q.key)) items.push({ label: '비움', answer: NULL_SENTINEL, note: 'codex 전역 설정을 상속' })
+  for (const c of q.choices ?? []) {
+    const base = notes[c]
+    items.push({ label: c, answer: c, note: c === q.current ? (base ? `${base} · 현재 값` : '현재 값') : base })
+  }
+  // 🔴 추천 목록은 enum이 아니다 — 목록에 없는 값을 쓸 길을 반드시 남긴다(`freeTextAllowed`).
+  //    남기지 않으면 다른 모델을 쓰는 소비자가 setup으로는 설정을 못 한다.
+  if (q.freeTextAllowed) items.push({ label: '직접 입력…', answer: FREE_TEXT_SENTINEL, note: '목록에 없는 값을 타이핑' })
   return items
 }
 
@@ -466,11 +555,18 @@ export function createReadlinePrompter(io: PrompterIo = { stdin: process.stdin, 
       //    확정값은 **문자열로** 반환되어 기존 해석·검증·저장 경로를 그대로 탄다.
       if (q.choices && canUseRawMode(io.stdin)) {
         const items = buildSelectItems(q)
-        io.log(`${header}\n  ↑/↓ 이동 · Enter 선택 · Ctrl+C 취소`)
-        const idx = await runSelect(items.map((it) => it.label), 0, { stdin: io.stdin, stdout: io.stdout })
+        const color = colorEnabled(process.env, io.stdout.isTTY)
+        io.log(`${header}\n  ${colorize(color, [2], '↑↓ 이동   Enter 선택   Ctrl+C 취소')}\n`)
+        const idx = await runSelect(items, 0, { stdin: io.stdin, stdout: io.stdout }, { color })
         const chosen = items[idx]
         if (!chosen) throw new Error('선택 결과가 목록 범위를 벗어났습니다(내부 오류).')
-        io.log(`  선택: ${chosen.label}`)
+        // 🔴 "직접 입력"은 값이 아니라 **경로 전환**이다 — 그 자리에서 자유 입력으로 넘긴다.
+        //    sentinel이 검증·저장 경로로 새면 안 되므로 여기서 소비한다.
+        // 🔴 여기서도 조작법을 낸다(DEC-17). 없으면 `-`로 비우려는 사용자가 방법을 알 수 없다.
+        if (chosen.answer === FREE_TEXT_SENTINEL)
+          return freeInput(`  ${q.prompt} · 직접 입력\n  ${freeInputHint(q)}\n> `)
+        // 🔴 목록은 지우되 **질문과 답을 함께** 남긴다(DEC-14) — 스크롤백에서 무엇을 물었는지 알 수 있어야 한다.
+        io.log(`  ${q.prompt} → ${colorize(color, [36, 1], chosen.label)}`)
         return chosen.answer
       }
       // 🔴 raw mode를 못 쓰는 환경은 **자유 입력으로 되돌린다**(DEC-9) — 실패시키지 않는다.
@@ -574,18 +670,20 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
  */
 export function setupBanner(version: string): string {
   // 테두리는 박스 드로잉 대신 ASCII(`+`·`-`·`|`)만 쓴다(DEC-7).
-  const bar = '+' + '-'.repeat(50) + '+'
-  // 🔴 한글·CJK는 터미널에서 **두 칸**을 차지한다. 코드포인트 수로 맞추면 테두리가 어긋난다.
-  const width = (t: string): number =>
-    [...t].reduce((n, ch) => n + (/[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1), 0)
-  const pad = (text: string): string => `| ${text}${' '.repeat(Math.max(0, 49 - width(text)))}|`
+  const inner = 52
+  const line = '+' + '-'.repeat(inner) + '+'
+  const row = (text: string): string => `|  ${text}${' '.repeat(Math.max(0, inner - 3 - displayWidth(text)))} |`
   return [
-    bar,
-    pad('  C O M M I T G A T E'),
-    pad(`  setup  v${version}`),
-    pad('  리뷰 모델 · 추론강도 · 멈춤 지점'),
-    pad('  codex 로그인까지 함께 마칩니다'),
-    bar,
+    '',
+    line,
+    row(''),
+    row('C O M M I T G A T E   ·   setup'),
+    row(`v${version}`),
+    row(''),
+    row('리뷰 모델 · 추론강도 · 멈춤 지점을 정하고'),
+    row('codex 로그인까지 함께 마칩니다.'),
+    row(''),
+    line,
   ].join('\n')
 }
 

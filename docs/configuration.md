@@ -10,7 +10,7 @@
 | `designDocs` | `00/01/02` 문서 | 설계 문서 파일명 |
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | 리뷰 프롬프트 첫 블록. `null`이면 비활성 — 단 delta design 리뷰에는 내장 delta 계약이 주입된다 |
 | `reviewModel` | `"gpt-5.6-terra"` | codex 리뷰 모델(`-c model=`로 고정). `null`이면 codex 전역 설정을 상속 |
-| `reviewReasoningEffort` | `"high"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
+| `reviewReasoningEffort` | `"medium"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | 열린 `(review_kind, phase_id)` review series의 재리뷰 시도 예산. 기본값 기준 1~5회차는 자동, 6~8회차는 회차마다 그 series·회차에 바인딩된 사람 예외 기록이 있어야 진행, `hardCap` 회를 이미 소진하면 그 다음 시도(9회차부터)는 예외가 있어도 차단. `hardCap ≤ 8`·`autoBudget ≤ hardCap` |
 | `stopGate` | `"phase"` | **사람이 멈추는 지점**(권장 축). `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 LOW phase는 자율 커밋하고 확인을 통합 직전 한 번으로 모음 · `merge`=여러 REQ를 delivery set으로 묶어 **묶음 전체가 끝날 때까지** 미룸. **HIGH 위험 티켓은 어느 값에서도 매 phase 확인**하고, 통합(main 병합) 승인도 어느 값에서나 필요합니다 |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "never" }` | phase 자동 커밋 정책. `never`(기본)면 매 phase 커밋 전에 사람 확인(현행). `low-only`면 **LOW 위험** 티켓의 Codex 승인 phase를 사람 정지 없이 자동 커밋하고 사람 확인은 feature→main 병합 직전 한 번으로 모은다. HIGH 티켓은 어느 값에서도 매 phase 확인(`userConfirmGate` 백스톱). `"all"` 같은 값은 없다(HIGH livelock 방지) |
@@ -47,8 +47,9 @@ npx commitgate setup
 - **추론강도·멈춤 지점처럼 값이 정해진 항목은 ↑/↓로 고르고 Enter로 확정**합니다. Ctrl+C로 취소합니다.
   목록의 첫 줄이 **현재 값 유지**이고 커서가 거기서 시작하므로, Enter만 누르면 아무것도 바뀌지 않습니다.
   값을 비울 수 있는 항목에는 **비움 — codex 전역 설정 상속** 항목이 함께 나옵니다.
-- **리뷰 모델은 자유 입력**입니다(정해진 목록이 없습니다). 여기서는 값을 직접 입력하고,
-  비우려면 `-` 를 입력하세요(`none`은 추론강도의 **유효한 값**이라 쓸 수 없습니다).
+- **리뷰 모델도 목록**에서 고릅니다(`gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna`). 🔴 이 목록은 enum이
+  아니라 **추천**입니다 — 목록 끝의 **"직접 입력…"**으로 어떤 모델이든 쓸 수 있고, 스키마는 자유 문자열
+  그대로입니다. 비우려면 직접 입력에서 `-` 를 입력하세요.
 - 각 항목은 **현재 값이 기본 답변**입니다. 유지하면 **파일에 기록되지 않습니다** —
   고르지 않은 값이 고정되지 않도록 **건드린 키만** 씁니다.
 - codex에 로그인돼 있지 않으면 `codex login`을 실행하고, **끝난 뒤 다시 확인**합니다.

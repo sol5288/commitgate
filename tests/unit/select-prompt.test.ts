@@ -7,6 +7,10 @@ import {
   runSelect,
   canUseRawMode,
   SelectCancelled,
+  colorEnabled,
+  colorize,
+  renderRows,
+  displayWidth,
   type Key,
   type SelectState,
 } from '../../bin/select-prompt'
@@ -225,7 +229,7 @@ describe('[select] runSelect — raw mode 어댑터', () => {
 
   it('↓ 두 번 + Enter 로 세 번째 항목이 확정된다', async () => {
     const f = fakeIo()
-    const p = runSelect(['a', 'b', 'c'], 0, f.io)
+    const p = runSelect([{ label: 'a' }, { label: 'b' }, { label: 'c' }], 0, f.io)
     f.send(DOWN)
     f.send(DOWN)
     f.send(CR)
@@ -234,7 +238,7 @@ describe('[select] runSelect — raw mode 어댑터', () => {
 
   it('🔴 분할 도착한 방향키도 어댑터를 통과한다(버퍼 이어붙이기)', async () => {
     const f = fakeIo()
-    const p = runSelect(['a', 'b'], 0, f.io)
+    const p = runSelect([{ label: 'a' }, { label: 'b' }], 0, f.io)
     f.send(ESC) // 아직 확정 못 함 — 여기서 취소되면 안 된다
     f.send('[B')
     f.send(CR)
@@ -243,7 +247,7 @@ describe('[select] runSelect — raw mode 어댑터', () => {
 
   it('🔴 확정하면 raw mode 를 되돌리고 리스너를 뗀다', async () => {
     const f = fakeIo()
-    const p = runSelect(['a'], 0, f.io)
+    const p = runSelect([{ label: 'a' }], 0, f.io)
     f.send(CR)
     await p
     expect(f.rawCalls).toEqual([true, false])
@@ -252,7 +256,7 @@ describe('[select] runSelect — raw mode 어댑터', () => {
 
   it('🔴 Ctrl+C 로 취소해도 raw mode 를 되돌린다(터미널이 먹통이 되면 안 된다)', async () => {
     const f = fakeIo()
-    const p = runSelect(['a', 'b'], 0, f.io)
+    const p = runSelect([{ label: 'a' }, { label: 'b' }], 0, f.io)
     f.send(ETX)
     await expect(p).rejects.toThrow(SelectCancelled)
     expect(f.rawCalls).toEqual([true, false])
@@ -261,7 +265,7 @@ describe('[select] runSelect — raw mode 어댑터', () => {
 
   it('초기 인덱스가 범위를 벗어나도 안전하게 잘린다', async () => {
     const f = fakeIo()
-    const p = runSelect(['a', 'b'], 99, f.io)
+    const p = runSelect([{ label: 'a' }, { label: 'b' }], 99, f.io)
     f.send(CR)
     expect(await p).toBe(1)
   })
@@ -270,5 +274,62 @@ describe('[select] runSelect — raw mode 어댑터', () => {
     expect(canUseRawMode({ isTTY: true, setRawMode: () => {} } as never)).toBe(true)
     expect(canUseRawMode({ isTTY: false, setRawMode: () => {} } as never)).toBe(false)
     expect(canUseRawMode({ isTTY: true } as never)).toBe(false)
+  })
+})
+
+/**
+ * REQ-2026-067 phase-4 — 표시.
+ *
+ * 🔴 헤드라인: **색은 꺼질 수 있어야 한다.** escape sequence 가 파이프·로그로 새면 읽을 수 없는
+ *    출력이 된다 — "대화형이니까 TTY"라고 가정하지 않는다.
+ */
+describe('[select] 색 · 행 렌더', () => {
+  it('🔴 NO_COLOR 가 있으면 값과 무관하게 끈다', () => {
+    expect(colorEnabled({ NO_COLOR: '' }, true)).toBe(false)
+    expect(colorEnabled({ NO_COLOR: '0' }, true)).toBe(false)
+  })
+
+  it('🔴 stdout 이 TTY 가 아니면 끈다', () => {
+    expect(colorEnabled({}, undefined)).toBe(false)
+    expect(colorEnabled({}, false)).toBe(false)
+    expect(colorEnabled({}, true)).toBe(true)
+  })
+
+  it('colorize 는 꺼지면 원문 그대로 — 호출부에 분기를 두지 않는다', () => {
+    expect(colorize(false, [36, 1], 'x')).toBe('x')
+    expect(colorize(true, [], 'x')).toBe('x')
+    expect(colorize(true, [36], 'x')).toBe(ESC + '[36mx' + ESC + '[0m')
+  })
+
+  it('색이 꺼져도 커서 문자로 선택을 알 수 있다(색 없이 읽힌다)', () => {
+    const lines = renderRows([{ label: 'a' }, { label: 'b' }], 1, { color: false })
+    expect(lines[1]).toContain('>')
+    expect(lines[0]).not.toContain('>')
+    expect(lines.join('')).not.toContain(ESC)
+  })
+
+  it('🔴 설명이 같은 열에서 시작한다(한글 2칸 계산)', () => {
+    const lines = renderRows(
+      [
+        { label: '현재 값 유지', note: 'x' },
+        { label: 'minimal', note: 'y' },
+      ],
+      0,
+      { color: false },
+    )
+    const col = (l: string) => displayWidth(l.slice(0, l.lastIndexOf('  ') + 2))
+    expect(col(lines[0]!)).toBe(col(lines[1]!))
+  })
+
+  it('설명이 없는 항목도 정상이다(설명은 장식이다)', () => {
+    const lines = renderRows([{ label: 'a' }, { label: 'b', note: 'n' }], 0, { color: false })
+    expect(lines[0]).toBe('  > a')
+    expect(lines[1]).toContain('n')
+  })
+
+  it('displayWidth 는 CJK 를 두 칸으로 센다', () => {
+    expect(displayWidth('abc')).toBe(3)
+    expect(displayWidth('한글')).toBe(4)
+    expect(displayWidth('한a')).toBe(3)
   })
 })

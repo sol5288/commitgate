@@ -26,6 +26,9 @@ import {
   allowsNullValue,
   setupBanner,
   savedMessage,
+  MODEL_SUGGESTIONS,
+  FREE_TEXT_SENTINEL,
+  freeInputHint,
 } from '../../bin/setup'
 import { CONFIG_SCHEMA, DEFAULTS } from '../../scripts/req/lib/config'
 import { classifyAuthOutput, type AuthProbeResult, type VersionProbeResult } from '../../scripts/req/lib/adapters'
@@ -287,11 +290,22 @@ describe('[setup] buildQuestions — 현재값과 출처(파일/기본값)', () 
     expect(model.currentIsDefault).toBe(false)
   })
 
-  it('hint 는 유지·비움 방법을 모두 알려 준다', () => {
-    const h = hintFor((buildQuestions({}) as [Question, Question])[1])
+  /**
+   * 🔴 REQ-2026-067 phase-4(DEC-11)로 **의도적으로 바뀐 계약**이다.
+   * 이 문구들(`Enter=유지` · `'-'` · `선택지:`)은 **자유 입력**의 조작법이고, 방향키 메뉴에서는
+   * 중복이거나 사용자가 따라 할 수 없는 지시였다(0.10.0 실측 화면). 이제 자유 입력 질문에만 붙는다.
+   */
+  /**
+   * 🔴 phase-4: 세 질문 모두 목록을 갖게 되면서 `hintFor`는 전부 메뉴용이 됐다.
+   * 자유 입력 안내는 **degrade 경로**(raw mode 미지원)와 "직접 입력" 항목에서 쓰인다 —
+   * 그 화면에서 조작법이 사라지면 사용자가 유지·비움을 할 방법을 알 수 없다.
+   */
+  it('freeInputHint 는 유지·비움 방법을 모두 알려 준다', () => {
+    const model = buildQuestions({}).find((q) => q.key === 'reviewModel') as Question
+    const h = freeInputHint(model)
     expect(h).toContain('Enter=유지')
     expect(h).toContain(NULL_SENTINEL)
-    expect(h).toContain('선택지')
+    expect(h).toContain('추천:') // 목록이 있으면 추천으로 보여 준다(enum 이 아니므로)
   })
 })
 
@@ -765,9 +779,10 @@ describe('[setup] buildSelectItems — 선택 목록 구성', () => {
     expect(items.map((i) => i.answer)).toEqual(['', NULL_SENTINEL, 'low', 'medium', 'high'])
   })
 
+  // phase-4(DEC-12): 표시가 라벨이 아니라 **설명 줄**로 옮겨졌다 — 라벨은 값 그대로여야 열이 맞는다.
   it('현재 값에 표시가 붙는다(고른 것과 구별)', () => {
     const items = buildSelectItems(q({ current: 'req' }))
-    expect(items.find((i) => i.answer === 'req')!.label).toContain('현재')
+    expect(items.find((i) => i.answer === 'req')!.note).toContain('현재 값')
     expect(items.find((i) => i.answer === 'merge')!.label).toBe('merge')
   })
 
@@ -869,7 +884,7 @@ describe('[setup] 배너 · 저장 안내', () => {
   })
 
   it('테두리 줄들이 같은 너비다(한글 2칸 계산)', () => {
-    const lines = setupBanner('0.10.0').split('\n')
+    const lines = setupBanner('0.10.0').split('\n').filter((l) => l !== '')
     expect(lines[0]).toBe(lines[lines.length - 1])
     for (const l of lines.slice(1, -1)) expect(l.endsWith('|')).toBe(true)
   })
@@ -921,5 +936,153 @@ describe('[setup] 배너 · 저장 안내', () => {
 
   it('바뀐 키가 없어도 setup 완료 기록은 알린다', () => {
     expect(savedMessage('/x', [], '/x')).toContain('setup 완료 기록')
+  })
+})
+
+/**
+ * REQ-2026-067 phase-4 — 안내 분리(DEC-11)와 항목 설명(DEC-12).
+ *
+ * 🔴 헤드라인: 메뉴 질문에 자유 입력용 문구가 남으면 **거짓 안내**다. 0.10.0 실측 화면이 그랬다 —
+ *    `'-'=비움`을 보고 사용자가 `-`를 입력해도 받을 곳이 없다.
+ */
+describe('[setup] 안내 분리 · 항목 설명', () => {
+  const menuQ = buildQuestions({}).find((q) => q.key === 'stopGate')!
+  const freeQ2 = buildQuestions({}).find((q) => q.key === 'reviewModel')!
+
+  it('🔴 메뉴 질문 안내에는 자유 입력용 문구가 없다', () => {
+    const h = hintFor(menuQ)
+    expect(h).not.toContain('선택지:')
+    expect(h).not.toContain("'-'")
+    expect(h).not.toContain('Enter=유지')
+  })
+
+  it('메뉴 질문 안내는 현재 값과 HIGH 고지를 남긴다', () => {
+    const h = hintFor(menuQ)
+    expect(h).toContain('현재:')
+    expect(h).toContain('HIGH')
+  })
+
+  /** 🔴 자유 입력 안내는 이 REQ의 명시 제외 — 한 글자도 바뀌면 안 된다. */
+  it('🔴 degrade 경로 안내는 조작법을 그대로 담는다', () => {
+    const h = freeInputHint(freeQ2)
+    expect(h).toContain('Enter=유지')
+    expect(h).toContain(NULL_SENTINEL)
+  })
+
+  it('값에 설명이 붙는다', () => {
+    const items = buildSelectItems(menuQ)
+    expect(items.find((i) => i.answer === 'merge')!.note).toContain('묶음')
+  })
+
+  /**
+   * 🔴 설명표는 **부분 사전**이다. 필수 대응이면 enum 이 늘었을 때 여기 빠진 값이 사라지고,
+   * 그러면 스키마가 SSOT 라는 계약이 깨진다.
+   */
+  it('🔴 설명이 없는 값도 선택지에 그대로 남는다', () => {
+    const q: Question = { ...menuQ, choices: ['phase', 'brand-new-value'] }
+    const items = buildSelectItems(q)
+    const fresh = items.find((i) => i.answer === 'brand-new-value')
+    expect(fresh).toBeDefined()
+    expect(fresh!.note).toBeUndefined()
+  })
+
+  it('현재 값 항목에 "현재 값" 표시가 붙는다', () => {
+    const items = buildSelectItems({ ...menuQ, current: 'req' })
+    expect(items.find((i) => i.answer === 'req')!.note).toContain('현재 값')
+  })
+})
+
+/**
+ * REQ-2026-067 phase-4 — 리뷰 모델 추천 목록(사용자 지시).
+ *
+ * 🔴 헤드라인: **추천 목록은 enum 이 아니다.** 스키마를 enum 으로 잠그면 다른 모델을 핀한 기존
+ *    소비자의 `req.config.json` 이 스키마 위반으로 거부되어 모든 명령이 막힌다.
+ */
+describe('[setup] 리뷰 모델 추천 목록', () => {
+  const modelQ = () => buildQuestions({}).find((q) => q.key === 'reviewModel')!
+
+  it('세 모델이 목록으로 나오고 terra 가 기본값이다', () => {
+    expect([...MODEL_SUGGESTIONS]).toEqual(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+    expect(modelQ().current).toBe('gpt-5.6-terra')
+    expect(modelQ().currentIsDefault).toBe(true)
+  })
+
+  it('🔴 스키마는 여전히 자유 문자열이다 — 목록 밖 모델도 유효하다', () => {
+    expect(choicesFor('reviewModel')).toBeUndefined() // enum 아님
+    expect(validateValue('reviewModel', 'some-other-model')).toEqual([])
+  })
+
+  it('🔴 목록에 "직접 입력" 항목이 있다 — 목록 밖 값을 쓸 길이 남는다', () => {
+    const items = buildSelectItems(modelQ())
+    expect(items.some((i) => i.answer === FREE_TEXT_SENTINEL)).toBe(true)
+  })
+
+  it('enum 질문에는 직접 입력 항목이 없다(값이 정해져 있다)', () => {
+    const stop = buildQuestions({}).find((q) => q.key === 'stopGate')!
+    expect(buildSelectItems(stop).some((i) => i.answer === FREE_TEXT_SENTINEL)).toBe(false)
+  })
+
+  /** 🔴 sentinel 이 설정 파일이나 검증 경로로 새면 안 된다 — `ask` 가 그 자리에서 소비한다. */
+  it('🔴 sentinel 은 정상 값과 겹치지 않는다', () => {
+    expect(validateValue('reviewModel', FREE_TEXT_SENTINEL).length).toBeGreaterThan(0)
+    expect(MODEL_SUGGESTIONS).not.toContain(FREE_TEXT_SENTINEL)
+  })
+
+  it('기본 추론강도는 medium 이다(사용자 지시로 high 에서 변경)', () => {
+    expect(DEFAULTS.reviewReasoningEffort).toBe('medium')
+    expect(buildQuestions({}).find((q) => q.key === 'reviewReasoningEffort')!.current).toBe('medium')
+  })
+})
+
+/**
+ * REQ-2026-067 phase-4 r01 P1 — 메뉴 → 직접 입력 경로.
+ *
+ * 🔴 헤드라인: **직접 입력 화면에도 조작법이 나와야 한다.** 없으면 `-` 로 비우려는 사용자가
+ *    방법을 알 수 없다 — 문서가 "직접 입력에서 `-` 로 비움"이라고 안내하는데 화면에는 그 말이 없다.
+ */
+describe('[setup] 메뉴 → 직접 입력', () => {
+  function ttyIo() {
+    const { Readable, Writable } = require('node:stream') as typeof import('node:stream')
+    const stdin = new Readable({ read() {} }) as unknown as NodeJS.ReadStream & { push(c: unknown): boolean }
+    Object.assign(stdin, { isTTY: true, isRaw: false, setRawMode(v: boolean) { ;(this as { isRaw: boolean }).isRaw = v; return this } })
+    const stdout = new Writable({ write(_c: unknown, _e: unknown, cb: () => void) { cb() } }) as unknown as NodeJS.WriteStream
+    const logs: string[] = []
+    return { stdin, stdout, log: (m: string) => logs.push(m), logs }
+  }
+
+  it('🔴 직접 입력 화면에 Enter=유지 · "-"=비움 안내가 나오고 `-` 가 비움으로 해석된다', async () => {
+    const io = ttyIo()
+    const p = createReadlinePrompter(io)
+    const q = buildQuestions({}).find((x) => x.key === 'reviewModel')!
+    const answer = p.ask(q, hintFor(q))
+    await new Promise((r) => setImmediate(r))
+    // 목록: [유지, 비움, sol, terra, luna, 직접 입력…] → ↓ 5번이면 마지막
+    const items = buildSelectItems(q)
+    const idx = items.findIndex((i) => i.answer === FREE_TEXT_SENTINEL)
+    for (let i = 0; i < idx; i++) io.stdin.push(String.fromCharCode(27) + '[B')
+    io.stdin.push(String.fromCharCode(13))
+    await new Promise((r) => setImmediate(r))
+    io.stdin.push(NULL_SENTINEL + '\n')
+
+    expect(await answer).toBe(NULL_SENTINEL)
+    expect(interpretAnswer(NULL_SENTINEL)).toBeNull() // 비움으로 해석된다
+    p.close?.()
+  })
+
+  it('🔴 sentinel 은 답으로 새어 나가지 않는다', async () => {
+    const io = ttyIo()
+    const p = createReadlinePrompter(io)
+    const q = buildQuestions({}).find((x) => x.key === 'reviewModel')!
+    const answer = p.ask(q, hintFor(q))
+    await new Promise((r) => setImmediate(r))
+    const idx = buildSelectItems(q).findIndex((i) => i.answer === FREE_TEXT_SENTINEL)
+    for (let i = 0; i < idx; i++) io.stdin.push(String.fromCharCode(27) + '[B')
+    io.stdin.push(String.fromCharCode(13))
+    await new Promise((r) => setImmediate(r))
+    io.stdin.push('my-own-model\n')
+    const got = await answer
+    expect(got).toBe('my-own-model')
+    expect(got).not.toContain('free-text')
+    p.close?.()
   })
 })

@@ -172,8 +172,14 @@ export function canUseRawMode(stdin: NodeJS.ReadStream): boolean {
  * 🔴 raw mode에서는 Ctrl+C가 SIGINT를 만들지 않고 그냥 `\x03` 데이터로 온다. 그래서 기본 핸들러에
  *    기댈 수 없고, 우리가 `cancel`로 받아 **정리한 뒤** 던진다.
  */
-export function runSelect(items: readonly string[], initialIndex: number, io: SelectIo): Promise<number> {
+export function runSelect(
+  rows: readonly SelectRow[],
+  initialIndex: number,
+  io: SelectIo,
+  view: SelectViewOptions = {},
+): Promise<number> {
   return new Promise<number>((resolve, reject) => {
+    const items = rows.map((r) => r.label)
     let state: SelectState = { options: items, index: Math.min(Math.max(initialIndex, 0), Math.max(items.length - 1, 0)) }
     let buffer = ''
     let drawn = 0
@@ -182,7 +188,7 @@ export function runSelect(items: readonly string[], initialIndex: number, io: Se
     const draw = (): void => {
       // 지우기와 그리기가 **같은 줄 수**를 쓴다 — 어긋나면 화면이 겹치거나 지워진다.
       if (drawn > 0) io.stdout.write(eraseLines(drawn))
-      const lines = renderSelect(state)
+      const lines = renderRows(rows, state.index, view)
       io.stdout.write(lines.join('\n') + '\n')
       drawn = lines.length
     }
@@ -228,4 +234,66 @@ export function runSelect(items: readonly string[], initialIndex: number, io: Se
       reject(err instanceof Error ? err : new Error(String(err)))
     }
   })
+}
+
+// ────────────────────────────────────────────── 색 · 표시 (phase-4) ──
+
+const CSI = ESC + '['
+const RESET = CSI + '0m'
+
+/**
+ * 색을 켤지 결정한다(순수).
+ *
+ * 🔴 `NO_COLOR`가 있거나 stdout이 TTY가 아니면 **끈다**(DEC-13). escape sequence가 파이프·로그로
+ *    새면 읽을 수 없는 출력이 된다 — "대화형이니까 TTY다"라고 가정하지 않는다.
+ *    (https://no-color.org — 값이 무엇이든 **존재**하면 끈다.)
+ */
+export function colorEnabled(env: Record<string, string | undefined>, isTty: boolean | undefined): boolean {
+  if (env.NO_COLOR !== undefined) return false
+  return isTty === true
+}
+
+/** 색 입히기(순수). `enabled=false`면 원문 그대로 — 호출부에 분기를 두지 않는다. */
+export function colorize(enabled: boolean, codes: readonly number[], text: string): string {
+  if (!enabled || codes.length === 0) return text
+  return CSI + codes.join(';') + 'm' + text + RESET
+}
+
+/** 선택 목록 한 항목: 값 라벨과(있으면) 한 줄 설명. */
+export interface SelectRow {
+  label: string
+  /** 값의 의미를 한 줄로. 없으면 라벨만 나온다(DEC-12 — 설명은 장식이다). */
+  note?: string
+}
+
+export interface SelectViewOptions {
+  color?: boolean
+  /** 커서 표시(기본 `>`). ASCII 기본 — 터미널 폰트에 의존하지 않는다. */
+  cursor?: string
+}
+
+/**
+ * 설명까지 포함해 그릴 줄들(순수, DEC-12·DEC-13).
+ *
+ * 선택 줄은 굵게(1) + 청록(36), 나머지 설명은 흐리게(2). 색이 꺼지면 커서 문자만으로 구별된다 —
+ * 그래서 **색 없이도 읽을 수 있어야** 한다.
+ */
+export function renderRows(rows: readonly SelectRow[], index: number, opts: SelectViewOptions = {}): string[] {
+  const on = opts.color === true
+  const cursor = opts.cursor ?? '>'
+  const pad = ' '.repeat(cursor.length)
+  // 🔴 라벨을 같은 너비로 맞춰 설명이 **한 열에서 시작**하게 한다 — 들쭉날쭉하면 목록이 아니라 잡음이 된다.
+  //    한글은 두 칸을 차지하므로 코드포인트 수가 아니라 표시 폭으로 센다.
+  const w = Math.max(...rows.map((r) => displayWidth(r.label)), 0)
+  return rows.map((r, i) => {
+    const selected = i === index
+    const label = r.label + ' '.repeat(Math.max(0, w - displayWidth(r.label)))
+    const head = `  ${selected ? colorize(on, [36, 1], cursor) : pad} ${selected ? colorize(on, [36, 1], label) : label}`
+    return r.note ? `${head}   ${colorize(on, [2], r.note)}` : head.trimEnd()
+  })
+}
+
+/** 터미널 표시 폭(순수). CJK·전각은 두 칸이다 — 코드포인트 수로 맞추면 열이 어긋난다. */
+export function displayWidth(text: string): number {
+  return [...text].reduce((n, ch) => n + (/[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1), 0)
 }
