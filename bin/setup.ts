@@ -504,6 +504,9 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
   // ① TTY 판정 — 질문을 만들기 전에.
   if (!isInteractiveTty(deps.streams)) throw new Error(NON_TTY_MESSAGE)
 
+  // 🔴 배너는 TTY 판정 **이후**다(DEC-7). 거부 경로에 장식이 붙으면 에이전트가 읽는 오류 출력이 흐려진다.
+  deps.log(setupBanner(deps.version))
+
   // ② 기존 설정 로드(손상이면 여기서 중단 — 덮어쓰지 않는다).
   const existingText = deps.io.read()
   const raw = parseConfigText(existingText)
@@ -560,9 +563,57 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
   // ⑦ 유일한 쓰기.
   deps.io.write(merged)
   const changed = Object.keys(patch)
-  deps.log(
-    `저장했습니다: ${join(opts.dir, CONFIG_BASENAME)} (${changed.length ? changed.join(', ') + ' · ' : ''}setup 완료 기록)`,
-  )
+  deps.log(savedMessage(opts.dir, changed, process.cwd()))
+}
+
+/**
+ * 시작 배너(순수). **테두리는 ASCII만** 쓴다 — 박스 드로잉 문자는 Windows 콘솔 기본 폰트에서 깨진다.
+ * (본문 한글은 그대로 쓰되, 폭 계산에서 2칸으로 센다.)
+ * 🔴 비-TTY 거부 경로에서는 출력하지 않는다(DEC-7): 에이전트가 읽는 오류 출력 위에 장식이 붙으면
+ *    무엇이 문제인지 흐려진다.
+ */
+export function setupBanner(version: string): string {
+  // 테두리는 박스 드로잉 대신 ASCII(`+`·`-`·`|`)만 쓴다(DEC-7).
+  const bar = '+' + '-'.repeat(50) + '+'
+  // 🔴 한글·CJK는 터미널에서 **두 칸**을 차지한다. 코드포인트 수로 맞추면 테두리가 어긋난다.
+  const width = (t: string): number =>
+    [...t].reduce((n, ch) => n + (/[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(ch) ? 2 : 1), 0)
+  const pad = (text: string): string => `| ${text}${' '.repeat(Math.max(0, 49 - width(text)))}|`
+  return [
+    bar,
+    pad('  C O M M I T G A T E'),
+    pad(`  setup  v${version}`),
+    pad('  리뷰 모델 · 추론강도 · 멈춤 지점'),
+    pad('  codex 로그인까지 함께 마칩니다'),
+    bar,
+  ].join('\n')
+}
+
+/**
+ * 저장 후 안내(순수).
+ *
+ * 🔴 **커밋 안내가 핵심이다**(DEC-8). 진행 중 티켓이 있는 저장소에서 setup을 돌리면
+ *    `req.config.json`이 uncommitted 상태가 되어 `req:doctor`가 D10(unstaged 존재)·
+ *    D13(설계 승인 없는 비-티켓 변경)으로 **FAIL**한다(matjib-nuxt 실측). 커밋하면 즉시 PASS다.
+ *    안내가 없으면 사용자는 방금 실행한 setup이 워크플로를 망가뜨렸다고 읽는다.
+ */
+export function savedMessage(dir: string, changedKeys: readonly string[], cwd: string): string {
+  const what = changedKeys.length ? changedKeys.join(', ') + ' · ' : ''
+  const path = join(dir, CONFIG_BASENAME)
+  // 🔴 **경로를 셸 명령 안에 넣지 않는다**(phase-3 r02 P1). 어떤 인용을 써도 이식성 있게 안전하지 않다 —
+  //    POSIX 셸은 큰따옴표 안에서도 `$()`·백틱을 평가하고, Windows는 인용 규칙이 또 다르다.
+  //    디렉터리 이름은 사용자가 정하는 **데이터**이므로, 그것이 붙여넣기 한 번으로 코드가 되면 안 된다.
+  //    그래서 경로는 **표시만** 하고, 명령은 경로가 들어가지 않는 고정 문자열로 준다.
+  const same = resolve(dir) === resolve(cwd)
+  const where = same ? [] : ['', `  위 파일이 있는 저장소에서 실행하세요(현재 디렉터리가 아닙니다): ${dir}`]
+  return [
+    `저장했습니다: ${path} (${what}setup 완료 기록)`,
+    '',
+    '  다음: 이 파일을 커밋하세요 —',
+    `    git add ${CONFIG_BASENAME} && git commit -m "chore: commitgate setup"`,
+    ...where,
+    '  (커밋하지 않으면 진행 중인 티켓에서 req:doctor가 D10·D13으로 막습니다)',
+  ].join('\n')
 }
 
 export function printHelp(): void {

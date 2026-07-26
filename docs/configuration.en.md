@@ -46,14 +46,20 @@ It **also handles codex login**.
 npx commitgate setup
 ```
 
-- Each question offers the **current value as the default**. Pressing Enter keeps it and **writes nothing** —
+- Questions with a fixed set of values (reasoning effort, stop gate) are **arrow-key menus**: ↑/↓ to move,
+  Enter to confirm, Ctrl+C to cancel. The first entry is **keep the current value** and the cursor starts
+  there, so pressing Enter alone changes nothing. Keys that accept an empty value also list
+  **clear — inherit global codex config**.
+- **The review model is free text** (there is no fixed list). Type the value, or `-` to clear it
+  (`none` cannot be used for this: it is a **valid** reasoning-effort value).
+- Each question offers the **current value as the default**. Keeping it **writes nothing** —
   only keys you actually change are written, so a value you never chose is never pinned.
-- Enter `-` to clear a value and inherit your global codex config (`none` cannot be used for this: it is a
-  **valid** reasoning-effort value).
 - If you are not logged in to codex, the wizard runs `codex login` and **re-checks afterwards**.
   If login cannot be confirmed, **nothing is saved** — `req.config.json` is left untouched.
 - The save is **atomic** (temp file in the same directory, then rename). Interrupting it cannot corrupt your
   existing config, and re-running picks up where you left off.
+- After saving, the wizard **tells you to commit `req.config.json`**. With a ticket in progress, an
+  uncommitted config change trips `req:doctor` checks D10 and D13.
 
 > 🔴 **This command is for a human at a terminal.** It is interactive-only, so in pipes, CI, or agent
 > sessions it exits immediately without asking anything. Agents such as Claude or Codex do not run it —

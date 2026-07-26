@@ -24,6 +24,8 @@ import {
   type Prompter,
   buildSelectItems,
   allowsNullValue,
+  setupBanner,
+  savedMessage,
 } from '../../bin/setup'
 import { CONFIG_SCHEMA, DEFAULTS } from '../../scripts/req/lib/config'
 import { classifyAuthOutput, type AuthProbeResult, type VersionProbeResult } from '../../scripts/req/lib/adapters'
@@ -853,5 +855,71 @@ describe('[setup] createReadlinePrompter — raw 위젯과 readline 격리', () 
     expect(await second).toBe('phase')
     expect(io.stdin.listenerCount('data')).toBe(0)
     p.close?.()
+  })
+})
+
+/** REQ-2026-067 phase-3 — 배너(DEC-7)와 저장 안내(DEC-8). */
+describe('[setup] 배너 · 저장 안내', () => {
+  it('배너에 버전이 들어가고 ASCII 로만 그려진다', () => {
+    const b = setupBanner('1.2.3')
+    expect(b).toContain('1.2.3')
+    expect(b).toContain('COMMITGATE'.split('').join(' '))
+    // 🔴 박스 드로잉 문자를 쓰지 않는다 — Windows 콘솔 기본 폰트에서 깨진다.
+    expect(/[─-╿]/.test(b)).toBe(false)
+  })
+
+  it('테두리 줄들이 같은 너비다(한글 2칸 계산)', () => {
+    const lines = setupBanner('0.10.0').split('\n')
+    expect(lines[0]).toBe(lines[lines.length - 1])
+    for (const l of lines.slice(1, -1)) expect(l.endsWith('|')).toBe(true)
+  })
+
+  /**
+   * 🔴 실측(matjib-nuxt): 진행 중 티켓이 있는 저장소에서 setup 을 돌리면 req.config.json 이 uncommitted 라
+   * req:doctor 가 D10·D13 으로 FAIL 한다. 안내가 없으면 사용자는 setup 이 워크플로를 망가뜨렸다고 읽는다.
+   */
+  it('🔴 저장 안내가 커밋을 지시하고 그 이유(D10·D13)를 밝힌다', () => {
+    const m = savedMessage('/x', ['stopGate'], '/x')
+    expect(m).toContain('req.config.json')
+    expect(m).toContain('stopGate')
+    expect(m).toContain('git add req.config.json')
+    expect(m).toContain('git commit')
+    expect(m).toContain('D10')
+    expect(m).toContain('D13')
+  })
+
+  /**
+   * 🔴 `--dir` 로 다른 저장소를 대상으로 삼는 정상 경로가 있다(phase-3 r01 P1).
+   * 그때 `git add req.config.json` 을 그대로 실행하면 **현재 디렉터리에서 실패하거나 엉뚱한 파일을
+   * stage** 한다 — 안내가 해결하려던 D10·D13 차단이 그대로 남는다.
+   */
+  /**
+   * 🔴 phase-3 r02 P1 — **경로를 셸 명령 안에 넣지 않는다.** 디렉터리 이름은 사용자가 정하는 데이터이고,
+   * POSIX 셸은 큰따옴표 안에서도 `$()`·백틱을 평가한다. 안내를 그대로 붙여넣으면 코드가 실행된다.
+   */
+  it('🔴 경로에 $() · 백틱이 있어도 실행되는 명령에 섞이지 않는다', () => {
+    const evil = '/tmp/repo-$(touch /tmp/pwn)-`id`'
+    const m = savedMessage(evil, ['stopGate'], '/somewhere/else')
+    const cmdLine = m.split('\n').find((l) => l.includes('git add'))!
+    // 명령 줄에는 경로가 아예 없다 — 인용이 아니라 **부재**가 방어다.
+    expect(cmdLine).not.toContain('$(')
+    expect(cmdLine).not.toContain('`')
+    expect(cmdLine).not.toContain('/tmp/repo-')
+    // 경로는 데이터로만 보여 준다.
+    expect(m).toContain(evil)
+  })
+
+  it('🔴 --dir 가 cwd 와 다르면 어느 저장소에서 실행할지 알려 준다', () => {
+    const m = savedMessage('/target/repo', ['stopGate'], '/somewhere/else')
+    expect(m).toContain('/target/repo')
+    expect(m).toContain('현재 디렉터리가 아닙니다')
+  })
+
+  it('--dir 가 cwd 와 같으면 위치 안내를 덧붙이지 않는다', () => {
+    expect(savedMessage('/x', ['stopGate'], '/x')).not.toContain('현재 디렉터리가 아닙니다')
+  })
+
+  it('바뀐 키가 없어도 setup 완료 기록은 알린다', () => {
+    expect(savedMessage('/x', [], '/x')).toContain('setup 완료 기록')
   })
 })
