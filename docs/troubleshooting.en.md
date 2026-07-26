@@ -3,6 +3,24 @@
 **What happens if Codex CLI is missing?**
 The review command fails. It is not treated as approval.
 
+**`req:new` is blocked saying setup is not finished.**
+This is a fresh install that has not been through `commitgate setup`. **A human must run it at a terminal** —
+it is interactive-only, so an agent running it exits immediately as non-TTY.
+
+```sh
+npx commitgate setup
+```
+
+The message includes the **reasoning** (marker, valid ticket count, install signals). You can diagnose at any
+time with `npx commitgate check` — that command and `req:doctor` are never blocked.
+
+**My project already used CommitGate but it is blocked.**
+The existing-install exemption applies with **at least one valid ticket and at least two install signals**
+(see [Configuration](./configuration.en.md#setup-completion-marker)). A `workflow/REQ-*` directory does not
+count if it has no `state.json`, or if that file's `id` does not match the directory name — this closes the
+hole where a copied shell would grant a permanent exemption. For a real install, running setup once is the
+fastest fix.
+
 **A review dies with `codex exit code 1`. What now?**
 **Diagnose before retrying** — that failure counts as `dispatched` (the subprocess did start), so it
 **consumes review budget**.

@@ -20,9 +20,10 @@ npx commitgate setup
 npx commitgate check
 ```
 
-> **Step 3 is run by a human at a terminal.** It is interactive-only, so in pipes, CI, or agent sessions it exits immediately without asking anything — agents do not run it, they ask you to.
-> You may skip it: the defaults from [Configuration](./configuration.en.md) (`gpt-5.6-terra`/`high`) apply, and you log in yourself with `codex login`. setup enforces nothing.
-> If you change settings, `req.config.json` becomes dirty — include it in the install commit below.
+> 🔴 **Step 3 is not optional.** On a fresh install, workflow commands such as `req:new` are blocked until setup completes — calling a review without a confirmed model/effort and codex login fails in a way that **also consumes review budget**.
+> **A human runs it at a terminal.** It is interactive-only, so in pipes, CI, or agent sessions it exits immediately without asking anything — agents do not run it, they **ask you to**.
+> Projects already using CommitGate are **not blocked** (existing-install exemption — see [Configuration](./configuration.en.md#setup-completion-marker)).
+> setup changes `req.config.json`, so your working tree becomes dirty. Include it in the install commit below.
 
 > **Why is the install two steps?** CommitGate does **not** copy its runtime code into your project. Step 1 puts the runtime in `node_modules/commitgate`; step 2 adds only **governance assets** (config, contract, schemas, persona) plus `req:* = commitgate <verb>` scripts.
 > Removing the runtime is a single `npm uninstall -D commitgate`. **For updates, follow the [Upgrading (0.x)](./upgrade.en.md) section below** — the runtime (`node_modules`) is bumped with `npm`, but the vendored assets (schemas, persona) in your project must be re-synced separately with `commitgate sync`, and a 0.x caret range (`^0.y`) does not cross a minor automatically.

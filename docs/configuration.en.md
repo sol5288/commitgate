@@ -44,7 +44,31 @@ npx commitgate setup
 > `req.config.json` is git-tracked, so changing it with setup leaves your working tree dirty.
 > `req:new` requires a clean tree — **commit the config change first**.
 >
-> setup **enforces nothing** — every command keeps working on defaults whether or not you run it.
+> Until setup completes, **workflow commands are blocked** (see below). Existing installs are exempt.
+
+### setup completion marker
+
+Finishing setup records the fact in `req.config.json`.
+
+```jsonc
+"setup": { "completedVersion": "0.9.10", "completedAt": "2026-07-26T02:00:00.000Z" }
+```
+
+🔴 **The marker means "this project's configuration is done" — not "I am logged in."**
+`req.config.json` is committed and shared by the team, while **login is per-developer**, so the marker
+never vouches for a teammate's authentication.
+
+**Without the marker these workflow commands are blocked**: `req:new`, `req:next`, `req:review-codex`,
+`req:commit`, `req:close`, `req:reconstruct`, `req:review-exception`.
+**Never blocked**: `commitgate check` and `req:doctor` (diagnostics must stay available), plus
+`init`/`migrate`/`sync`/`uninstall`/`quickstart`/`setup` (used before setup, or setup itself).
+
+**Existing-install exemption (grandfather).** A project already working with CommitGate is not blocked even
+without a marker. It qualifies when there is **at least one valid ticket** (`state.json`'s `id` matches its
+directory name) **and at least two install signals** (`req:*` scripts in `package.json`, `req.config.json`,
+`workflow/machine.schema.json`, the contract marker in `AGENTS.md`). Creating an empty `REQ-*` directory does
+not qualify. `req:doctor`'s **D24** reports the status with its reasoning (WARN — it never blocks a commit).
+
 
 **Pinned review model & effort**: `req:review-codex` injects `-c model=` and `-c model_reasoning_effort=` into the codex arguments to **pin the model and reasoning effort**. Without pinning, a review inherits your global `~/.codex/config.toml` (e.g. `model_reasoning_effort="ultra"`), making a single review take minutes and burn tokens. The defaults are `gpt-5.6-terra`/`high`; if your codex doesn't support that model, change it in `req.config.json` or set it to `null` to inherit the global config. Whether the overrides are actually honored can be checked with `npm run verify:overrides` (requires the codex CLI).
 

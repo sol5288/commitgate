@@ -42,7 +42,31 @@ npx commitgate setup
 > `req.config.json`은 git이 추적하는 파일이라, setup으로 값을 바꾸면 워킹트리가 dirty해집니다.
 > `req:new`는 clean 트리를 요구하므로 **설정 변경을 먼저 커밋**하세요.
 >
-> setup은 **아무것도 강제하지 않습니다** — 실행하지 않아도 모든 명령이 기본값으로 그대로 동작합니다.
+> setup을 마치지 않으면 **워크플로 명령이 막힙니다**(아래 참조). 기존 설치본은 예외입니다.
+
+### setup 완료 마커
+
+setup을 마치면 `req.config.json`에 완료 사실이 기록됩니다.
+
+```jsonc
+"setup": { "completedVersion": "0.9.10", "completedAt": "2026-07-26T02:00:00.000Z" }
+```
+
+🔴 **이 마커의 의미는 "이 프로젝트의 설정이 끝났다"입니다 — "내가 로그인돼 있다"가 아닙니다.**
+`req.config.json`은 커밋되어 팀이 공유하는 파일이고, **로그인은 개발자별**이라 마커가 팀원의 인증을
+보증하지 않습니다.
+
+**마커가 없으면 워크플로 명령이 막힙니다**: `req:new` · `req:next` · `req:review-codex` · `req:commit` ·
+`req:close` · `req:reconstruct` · `req:review-exception`.
+**막히지 않는 것**: `commitgate check` · `req:doctor`(진단 수단은 남깁니다) ·
+`init`/`migrate`/`sync`/`uninstall`/`quickstart`/`setup`(setup 이전에 쓰이거나 setup 자체입니다).
+
+**기존 설치본 예외(grandfather).** 이미 CommitGate로 작업하던 프로젝트는 마커가 없어도 막히지 않습니다.
+판정 기준은 **유효한 티켓이 1개 이상**(`state.json`의 `id`가 디렉터리명과 일치) **이고 설치 신호가 2개 이상**
+(`package.json`의 `req:*` 스크립트 · `req.config.json` · `workflow/machine.schema.json` ·
+`AGENTS.md`의 계약 마커)입니다. 빈 `REQ-*` 디렉터리를 만들어 두는 것만으로는 예외가 되지 않습니다.
+`req:doctor`의 **D24**가 판정 근거와 함께 상태를 알려 줍니다(WARN — 커밋을 막지 않습니다).
+
 
 **리뷰 모델·추론강도 고정**: `req:review-codex`는 codex 인자에 `-c model=`·`-c model_reasoning_effort=`를 주입해 **모델과 추론강도를 고정**합니다. 고정하지 않으면 리뷰가 사용자 전역 `~/.codex/config.toml`(예: `model_reasoning_effort="ultra"`)을 상속해 리뷰 1회가 수 분·토큰 과다가 됩니다. 기본값은 `gpt-5.6-terra`/`high`이고, 프로젝트의 codex가 그 모델을 지원하지 않으면 `req.config.json`에서 바꾸거나 `null`로 두어 전역 설정을 상속시킵니다. override가 실제로 존중되는지는 `npm run verify:overrides`(codex CLI 필요)로 확인할 수 있습니다.
 

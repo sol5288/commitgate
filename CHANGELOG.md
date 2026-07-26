@@ -4,6 +4,20 @@
 
 ## Unreleased
 
+- **setup을 마쳐야 워크플로가 시작됩니다 — 단, 기존 설치본은 그대로 동작합니다** (REQ-2026-062).
+
+  > 구현은 이 REQ의 phase-1~3에 커밋돼 있습니다 — `scripts/req/lib/config.ts`의 `SetupMarker`·`CONFIG_SCHEMA.setup`과 `workflow/req.config.schema.json`(`b9fb58e`) · `scripts/req/lib/setup-gate.ts`의 `setupGateVerdict`/`resolveGateRoot`/`countValidTickets`(`cc1f84d`) · 워크플로 verb 7종 배선과 `req-doctor.ts`의 D24(`96e2a26`).
+
+  `commitgate setup`은 만들어졌지만 강제되지 않아서, 설치 직후 리뷰 모델·추론강도를 확인하지 않고 codex 로그인도 없이 티켓을 열 수 있었습니다. 그 결과는 첫 리뷰 호출에서야 드러나고, 그 실패는 `dispatched`로 분류되어 **리뷰 예산까지 차감**합니다.
+
+  이제 setup 완료가 `req.config.json`의 `setup` 마커로 기록되고, 마커가 없으면 **변경을 만드는 워크플로 명령**(`req:new`·`req:next`·`req:review-codex`·`req:commit`·`req:close`·`req:reconstruct`·`req:review-exception`)이 fail-closed로 막힙니다. 차단 메시지는 **"실행하라"가 아니라 "사용자에게 요청하라"**고 지시합니다 — setup은 대화형 전용이라 에이전트가 실행하면 비-TTY로 즉시 실패하기 때문입니다.
+
+  🔴 **기존 설치본은 막히지 않습니다.** 업그레이드 직후 진행 중이던 티켓이 있는 사용자가 커밋도 리뷰도 못 하는 상태가 되면 안 됩니다 — 그 상황에서는 setup을 실행해도 `req.config.json`이 dirty해져 clean-tree 게이트에 걸려 더 나빠집니다. **유효 티켓 ≥ 1 이고 설치 신호 ≥ 2**면 마커 없이 통과합니다(grandfather). 유효 티켓은 `state.json`의 `id`가 디렉터리명과 일치하는 것만 세므로, **빈 `REQ-*` 디렉터리나 복사된 껍데기로는 영구 면제를 얻지 못합니다**.
+
+  🔴 **진단 수단은 남깁니다.** `commitgate check`와 `req:doctor`는 마커가 없어도 동작합니다 — 막으면 문제를 진단할 방법까지 사라집니다. `req:doctor`의 신규 **D24는 WARN 상한**입니다(FAIL로 승격하면 `req:commit`이 doctor를 하드 게이트로 spawn하므로 마커 없는 설치본의 모든 커밋이 벽돌이 됩니다).
+
+  마커의 의미는 **"이 프로젝트의 설정이 끝났다"**(팀 공유)이지 "내가 로그인돼 있다"가 아닙니다 — `req.config.json`은 커밋되고 로그인은 개발자별입니다.
+
 - **`commitgate check` — 설치 직후에도 쓸 수 있는 비대화형 진단** (REQ-2026-061).
 
   > 구현은 이 REQ의 **phase-1(`7d35fe7`)에 이미 커밋**돼 있습니다 — `bin/check.ts`(`runChecks`/`renderJson`/`parseArgs`) · `bin/dispatch.mjs`의 `check` verb 등록 · `tests/unit/check.test.ts`(C1~C4·`--json`·`--dir` 검증). 이 항목은 그 동작을 문서화하는 phase-2입니다.
