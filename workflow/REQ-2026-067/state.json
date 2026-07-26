@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-067-setup-interactive-ui",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9fc3-f39b-7bb3-8fe1-cc986478d9b0",
-  "review_base_sha": "5ea3c16e1074cccf22dc69096b0855e129744620",
-  "review_diff_hash": "10821ba4fa092d211b76258cad49c6a248d41042",
+  "codex_thread_id": "019f9fc4-b7a4-7611-80d5-19ef2c997f1e",
+  "review_base_sha": "049deaba1613a45649c8e17491b6a47524b0b4ab",
+  "review_diff_hash": "d44f05ca9ea6e99966460a92a15835c5c1cc59b6",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "62d2822d067c62cba621c9c643bf05f4701e28554642695752d7752dd45e81cc",
-  "current_phase": "phase-2-adapter",
+  "current_phase": "phase-3-banner-docs",
   "phases": [
     {
       "id": "phase-1-select-core",
@@ -22,7 +22,7 @@
     },
     {
       "id": "phase-3-banner-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -68,8 +68,8 @@
       "series_id": "phase:phase-3-banner-docs#1",
       "review_kind": "phase",
       "phase_id": "phase-3-banner-docs",
-      "attempts": 2,
-      "closed_reason": null
+      "attempts": 3,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#3",
@@ -87,13 +87,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-3-banner-docs",
     "outcome": "approved",
     "compare_hash": "a3586824b7e6dcb7d07d07c2dbe537468563a396dd598139224986b57f3e0975",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T18:51:22.181Z",
+    "at": "2026-07-26T18:52:30.700Z",
     "findings": [],
     "elided_count": 0
   },
@@ -114,6 +114,12 @@
       "phase_id": "phase-2-adapter",
       "consumed_by_commit_sha": "877bc1288c7fc041b762f41920790a619590afff",
       "approval_consumed_at": "2026-07-26T18:14:47.477Z"
+    },
+    {
+      "approved_tree": "d44f05ca9ea6e99966460a92a15835c5c1cc59b6",
+      "phase_id": "phase-3-banner-docs",
+      "consumed_by_commit_sha": "448090bbb1e9fc2ea35f8aab2c9b74016b03b843",
+      "approval_consumed_at": "2026-07-26T18:53:00.762Z"
     }
   ],
   "user_commit_confirmed": null,
