@@ -2,7 +2,7 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.10.0
 
 - **여러 REQ를 한 묶음으로 묶고 묶음이 끝날 때까지 main 병합 정지를 미룹니다** (REQ-2026-066). 🔴 **p1~p3는 한 릴리스로만 공개됩니다** — `create`/`begin`만 배포되면 통합할 수 없는 묶음이 만들어집니다.
 
