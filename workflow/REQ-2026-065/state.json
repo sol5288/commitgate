@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-065-review-auth-preflight",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9d39-a28e-74e1-b2db-f2de7deae9cc",
-  "review_base_sha": "91cb5f2f7e0d9f6e04c44264625cde89ced62375",
-  "review_diff_hash": "6bdb74fd82e89ebaf557af366904cbe17c47d26d",
+  "codex_thread_id": "019f9d3b-6aeb-7d10-bbb6-204d7f2ebf0c",
+  "review_base_sha": "7f2e7cb7dc7700c898c2640858547d5306ed42e6",
+  "review_diff_hash": "68ce67d74516e37b8a6af7cf228d7ef0417b90f8",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "be1cb8fea2cd574dc2d3b1b3d2791c78a4ed4e280c5814283d71aa1a2691fbc2",
-  "current_phase": "phase-1-preflight",
+  "current_phase": "phase-2-docs",
   "phases": [
     {
       "id": "phase-1-preflight",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -36,6 +36,13 @@
       "series_id": "phase:phase-1-preflight#1",
       "review_kind": "phase",
       "phase_id": "phase-1-preflight",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-docs",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -60,12 +67,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-preflight",
+    "phase_id": "phase-2-docs",
     "outcome": "approved",
-    "compare_hash": "0b85613db138bee1bb752fe15aed90221c4442d6f977d2eb9b9de0683580eae2",
+    "compare_hash": "a8b7675126cf1b8b76d10cd902fb0c026ba039f0a3aaccc3df59e9db4b3d33e8",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T07:01:27.359Z",
+    "at": "2026-07-26T07:03:00.044Z",
     "findings": [],
     "elided_count": 0
   },
@@ -75,6 +82,12 @@
       "phase_id": "phase-1-preflight",
       "consumed_by_commit_sha": "8b8d3c9f7633c38051b13bc85391923907630165",
       "approval_consumed_at": "2026-07-26T07:01:49.328Z"
+    },
+    {
+      "approved_tree": "68ce67d74516e37b8a6af7cf228d7ef0417b90f8",
+      "phase_id": "phase-2-docs",
+      "consumed_by_commit_sha": "16328a20f12018b13e11058dd8cb051d54647a53",
+      "approval_consumed_at": "2026-07-26T07:03:15.258Z"
     }
   ],
   "user_commit_confirmed": null
