@@ -506,8 +506,12 @@ describe('[setup] stopGate 질문', () => {
     expect(sg?.currentIsDefault).toBe(true)
   })
 
-  it('선택지는 스키마 enum에서 온다(2값 — merge 없음)', () => {
-    expect(choicesFor('stopGate')).toEqual(['phase', 'req'])
+  /**
+   * 🔴 REQ-2026-066 p3: `merge`가 **동작과 함께** 착륙하면서 3값이 됐다.
+   * 값만 먼저 넣었다면 고를 수는 있는데 동작이 없는 거짓 UI였을 것이다 — 그래서 미뤘던 값이다.
+   */
+  it('선택지는 스키마 enum에서 온다(3값 — merge 포함)', () => {
+    expect(choicesFor('stopGate')).toEqual(['phase', 'req', 'merge'])
   })
 
   /**
@@ -530,8 +534,9 @@ describe('[setup] stopGate 질문', () => {
   })
 
   it('enum 밖 값은 거부된다', () => {
-    expect(validateValue('stopGate', 'merge').length).toBeGreaterThan(0)
+    expect(validateValue('stopGate', 'always').length).toBeGreaterThan(0)
     expect(validateValue('stopGate', 'req')).toEqual([])
+    expect(validateValue('stopGate', 'merge')).toEqual([])
   })
 })
 

@@ -83,6 +83,38 @@ For multi-line commit messages, use a file instead of `-m`.
 npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 ```
 
+## delivery set — several REQs as one group
+
+Sometimes a requirement is too large for one REQ, or several design documents are implemented in sequence.
+`stopGate: "merge"` plus `commitgate delivery` groups those REQs together and defers the main-merge stop
+until **the whole group** is finished.
+
+```sh
+npx commitgate delivery create payment-improvement --run       # delivery/payment-improvement branch + record
+npx commitgate delivery begin payment-api --slug payment-improvement --run   # create the REQ and register it
+# … design, review, phases, req:commit as usual …
+npx commitgate delivery integrate --slug payment-improvement --run           # single merge commit
+npx commitgate delivery begin payment-ui --slug payment-improvement --run    # next REQ
+# …
+npx commitgate delivery seal    --slug payment-improvement --confirm "seal payment-improvement"    --run
+npx commitgate delivery approve --slug payment-improvement --confirm "approve payment-improvement" --run
+```
+
+- **One active REQ at a time.** The next `begin` is refused until the previous member is terminal — that
+  sequential invariant is what removes merge conflicts structurally.
+- `integrate` only takes **approved, completed** REQs. It checks the committed `dev-complete` proof, the
+  approval manifest, response-file integrity and approved-tree provenance on the feature ref, and **refuses
+  when code was committed after the approval**. There is no `--force` escape hatch.
+- After `seal` you cannot `begin`. Use `reopen` to undo it — the fact that an approval existed stays in the log.
+- 🔴 **The tool never merges `delivery` into `main`.** `approve` records the approval; the merge itself is
+  performed by a human at the existing control points (I1/I2/B1).
+- It does not depend on your current branch — the tool moves where it needs to and **returns you where you were**.
+
+With `stopGate: "merge"`, the `req:next` terminal also looks at the group: still open → `DONE` (you may open
+the next REQ); sealed with every member terminal → `AWAIT_HUMAN`. `integrate` and `seal` emit the same verdict
+right after the transition they cause — someone who seals after the last `integrate` has no reason to call
+`req:next` again.
+
 ## Command Cheat Sheet
 
 | Command | Purpose |

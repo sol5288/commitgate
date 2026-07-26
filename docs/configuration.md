@@ -12,7 +12,7 @@
 | `reviewModel` | `"gpt-5.6-terra"` | codex 리뷰 모델(`-c model=`로 고정). `null`이면 codex 전역 설정을 상속 |
 | `reviewReasoningEffort` | `"high"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | 열린 `(review_kind, phase_id)` review series의 재리뷰 시도 예산. 기본값 기준 1~5회차는 자동, 6~8회차는 회차마다 그 series·회차에 바인딩된 사람 예외 기록이 있어야 진행, `hardCap` 회를 이미 소진하면 그 다음 시도(9회차부터)는 예외가 있어도 차단. `hardCap ≤ 8`·`autoBudget ≤ hardCap` |
-| `stopGate` | `"phase"` | **사람이 멈추는 지점**(권장 축). `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 LOW phase는 자율 커밋하고 확인을 통합 직전 한 번으로 모음. **HIGH 위험 티켓은 어느 값에서도 매 phase 확인**하고, 통합(main 병합) 승인도 어느 값에서나 필요합니다 |
+| `stopGate` | `"phase"` | **사람이 멈추는 지점**(권장 축). `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 LOW phase는 자율 커밋하고 확인을 통합 직전 한 번으로 모음 · `merge`=여러 REQ를 delivery set으로 묶어 **묶음 전체가 끝날 때까지** 미룸. **HIGH 위험 티켓은 어느 값에서도 매 phase 확인**하고, 통합(main 병합) 승인도 어느 값에서나 필요합니다 |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "never" }` | phase 자동 커밋 정책. `never`(기본)면 매 phase 커밋 전에 사람 확인(현행). `low-only`면 **LOW 위험** 티켓의 Codex 승인 phase를 사람 정지 없이 자동 커밋하고 사람 확인은 feature→main 병합 직전 한 번으로 모은다. HIGH 티켓은 어느 값에서도 매 phase 확인(`userConfirmGate` 백스톱). `"all"` 같은 값은 없다(HIGH livelock 방지) |
 
 빈 `branchPrefix`나 프로젝트 밖으로 나가는 경로는 거부됩니다.
@@ -25,14 +25,16 @@
 |---|---|
 | `phase` | `never` |
 | `req` | `low-only` |
+| `merge` | `low-only` |
 
 - 둘 중 **하나만** 쓰면 나머지는 자동으로 파생됩니다. 기존에 `phaseCommit`만 쓰던 설정은 **그대로 동작**합니다.
 - 둘 다 썼는데 **모순**이면 거부되고, 오류가 두 값·기대 매핑·해결 방법을 알려 줍니다.
 - `commitgate setup`으로 `stopGate`를 고르면 legacy `phaseCommit` 키는 **자동으로 제거**됩니다
   (두 축이 모순인 파일이 남으면 이후 모든 명령이 막히기 때문입니다).
-- 🔴 **`merge`는 아직 없습니다.** "여러 REQ를 묶어 main 병합 직전에 한 번만 멈추기"는 그 묶음을 표현하는
-  모델(delivery set)이 함께 있어야 성립합니다 — 값만 먼저 열면 고를 수는 있는데 동작이 없습니다.
-  후속 REQ에서 동작과 함께 추가됩니다.
+- 🔴 `merge`와 `req`는 **`phaseCommit.autoApprove`가 같습니다**(둘 다 phase는 자율 커밋). 그래서 legacy
+  `phaseCommit`만 있는 설정은 보수적으로 `req`로 해소됩니다 — `merge`를 쓰려면 `stopGate`를 명시하세요.
+- `merge`는 [delivery set](workflow.md#delivery-set--여러-req를-한-묶음으로)이 있어야 의미가 있습니다.
+  묶음이 없으면 `req:next` 종단은 그냥 `DONE`이고 다음 REQ를 열 수 있습니다.
 
 ## 대화형 설정 — `commitgate setup`
 

@@ -27,7 +27,9 @@ import {
   parseManifestEntries,
 } from '../scripts/req/lib/evidence'
 import { main as reqNewMain } from '../scripts/req/req-new'
+import { assertSetupComplete } from '../scripts/req/lib/setup-gate'
 import {
+  canApprove,
   canBegin,
   deliveryGateVerdict,
   deliveryRecordProblems,
@@ -36,6 +38,7 @@ import {
   nextOrder,
   serializeDeliveryRecord,
   activeMember,
+  type DeliveryEvent,
   type DeliveryRecord,
 } from '../scripts/req/lib/delivery'
 
@@ -64,17 +67,19 @@ export function validateSlug(slug: string): void {
 }
 
 export interface Opts {
-  sub: 'create' | 'begin' | 'integrate' | 'status'
+  sub: 'create' | 'begin' | 'integrate' | 'seal' | 'approve' | 'reopen' | 'status'
   slug: string | null
   reqSlug: string | null
   successorOf: string | null
+  /** 사람이 입력한 확인 문구(seal·approve·reopen). */
+  confirm: string | null
   root: string | null
   run: boolean
 }
 
 export function parseArgs(argv: string[]): Opts {
-  const o: Opts = { sub: 'status', slug: null, reqSlug: null, successorOf: null, root: null, run: false }
-  const subs = ['create', 'begin', 'integrate', 'status'] as const
+  const o: Opts = { sub: 'status', slug: null, reqSlug: null, successorOf: null, confirm: null, root: null, run: false }
+  const subs = ['create', 'begin', 'integrate', 'seal', 'approve', 'reopen', 'status'] as const
   let i = 0
   const first = argv[0]
   if (first !== undefined && (subs as readonly string[]).includes(first)) {
@@ -98,6 +103,10 @@ export function parseArgs(argv: string[]): Opts {
       // 🔴 phase-3 소관이다. 파서만 받아 두면 사용자는 "교체했다"고 믿는데 일반 begin으로 처리된다 —
       //    지금은 **명시적으로 거부**하고 그 phase에서 구현과 함께 노출한다(phase-2 r03 observation).
       throw new Error('--successor-of 는 아직 제공되지 않습니다(후속 phase). 지금은 일반 `delivery begin`만 쓸 수 있습니다.')
+    } else if (a === '--confirm') {
+      const v = argv[++i]
+      if (v === undefined || v.startsWith('-')) throw new Error(`--confirm 에 확인 문구가 필요합니다 (받음: ${v ?? '(없음)'})`)
+      o.confirm = v
     } else if (a === '--run') o.run = true
     else if (a === '-h' || a === '--help') throw new HelpRequested()
     else if (!a.startsWith('-')) {
@@ -167,6 +176,23 @@ export function noMergeInProgress(ctx: Ctx): boolean {
   for (const p of ['MERGE_HEAD', 'REBASE_HEAD', 'rebase-merge', 'rebase-apply'])
     if (existsSync(join(ctx.root, '.git', p))) return false
   return true
+}
+
+/**
+ * 현재 위치를 잡아 두고 **되돌리는 함수**를 준다.
+ *
+ * 🔴 detached HEAD 를 브랜치 이름으로 다룰 수 없다(phase-3 r01 P1). `rev-parse --abbrev-ref HEAD` 는
+ *    detached 에서 문자열 `"HEAD"` 를 주므로, 그것으로 복원을 건너뛰면 **사용자가 delivery 브랜치에 남는다**
+ *    — 이후 작업이 통합 브랜치에서 이뤄지는 안전 문제다. detached 면 커밋 SHA 를 기억했다가
+ *    `checkout --detach <sha>` 로 정확히 그 자리로 돌아간다.
+ */
+export function captureHead(ctx: Ctx): () => void {
+  const sym = safeSpawnSyncStatus('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd: ctx.root })
+  const branch = sym.status === 0 ? sym.stdout.trim() : ''
+  if (branch) return () => void safeSpawnSyncStatus('git', ['checkout', branch], { cwd: ctx.root })
+  const sha = safeSpawnSyncStatus('git', ['rev-parse', 'HEAD'], { cwd: ctx.root }).stdout.trim()
+  if (!/^[0-9a-f]{40}$/.test(sha)) return () => {} // 커밋이 없는 저장소 등 — 돌아갈 자리가 없다.
+  return () => void safeSpawnSyncStatus('git', ['checkout', '--detach', sha], { cwd: ctx.root })
 }
 
 /** 레코드를 현재 체크아웃된 브랜치에 쓰고 **그 경로만** 커밋한다. */
@@ -586,10 +612,7 @@ export function cmdIntegrate(ctx: Ctx, slug: string, reqId: string, io: Io = def
   if (!noMergeInProgress(ctx)) throw new Error('[delivery integrate] 진행 중인 merge/rebase가 있습니다(변경 0건).')
 
   // ② 위상 전제(DEC-2). 🔴 실패해도 사용자를 원래 자리로 되돌린다 — 도구가 위치를 옮겨 놓고 끝내지 않는다.
-  const origRef = ctx.git.exec(['rev-parse', '--abbrev-ref', 'HEAD'])
-  const restore = (): void => {
-    if (origRef && origRef !== 'HEAD' && origRef !== branch) safeSpawnSyncStatus('git', ['checkout', origRef], { cwd: ctx.root })
-  }
+  const restore = captureHead(ctx)
   ctx.git.exec(['checkout', branch])
   const deliveryHead = ctx.git.exec(['rev-parse', 'HEAD'])
   // 🔴 무충돌 보장(design r03): 분기 이후 delivery에서 움직인 것이 **레코드 파일뿐**인가.
@@ -654,6 +677,91 @@ export function cmdIntegrate(ctx: Ctx, slug: string, reqId: string, io: Io = def
   }
 }
 
+// ──────────────────────────────────── seal · approve · reopen (DEC-8) ──
+
+/**
+ * 확인 문구는 **묶음마다 다르게** 만든다 — 복사-붙여넣기 습관으로 다른 묶음을 닫는 사고를 막는다.
+ * 형식은 사람이 읽고 그대로 타이핑할 수 있어야 하므로 짧게 둔다.
+ */
+export function confirmSentence(action: 'seal' | 'approve' | 'reopen', slug: string): string {
+  return `${action} ${slug}`
+}
+
+/** 확인 문구 검증(순수). 앞뒤 공백만 허용한다 — 문구 자체가 통제점이므로 느슨하게 받지 않는다. */
+export function checkConfirm(action: 'seal' | 'approve' | 'reopen', slug: string, given: string | null): void {
+  const want = confirmSentence(action, slug)
+  if ((given ?? '').trim() !== want)
+    throw new Error(`확인 문구가 필요합니다 — \`--confirm "${want}"\` (받음: ${given === null ? '(없음)' : `"${given}"`})`)
+}
+
+/**
+ * 상태 전이 + 이벤트를 **같은 커밋**에 담는다.
+ * 🔴 이벤트는 append-only다 — 상태만 갱신하면 "승인이 있었다가 무효화됐다"는 사실이 사라진다(DEC-8).
+ * 🔴 시각은 **실제 시계**에서 읽는다(REQ-2026-019 폐기 사유).
+ */
+function commitTransition(
+  ctx: Ctx,
+  slug: string,
+  record: DeliveryRecord,
+  state: DeliveryRecord['state'],
+  event: DeliveryEvent['event'],
+  confirmation: string,
+  io: Io,
+): DeliveryRecord {
+  const updated: DeliveryRecord = {
+    ...record,
+    state,
+    events: [...record.events, { event, at: io.now(), confirmation }],
+  }
+  const branch = deliveryBranchName(slug)
+  if (!worktreeClean(ctx)) throw new Error(`[delivery ${event}] 워킹트리가 clean 해야 합니다(변경 0건).`)
+  if (!noMergeInProgress(ctx)) throw new Error(`[delivery ${event}] 진행 중인 merge/rebase가 있습니다(변경 0건).`)
+  const restore = captureHead(ctx)
+  ctx.git.exec(['checkout', branch])
+  try {
+    commitRecord(ctx, slug, updated, `chore(delivery): ${event} ${slug}`)
+  } finally {
+    // 성공·실패 모두 사용자를 원래 자리로 되돌린다(DEC-7) — detached HEAD 포함.
+    restore()
+  }
+  return updated
+}
+
+export function cmdSeal(ctx: Ctx, slug: string, confirm: string | null, io: Io = defaultIo): DeliveryRecord {
+  const record = readRecord(ctx, slug)
+  if (record.state !== 'open') throw new Error(`[delivery seal] 이미 닫힌 묶음입니다(state=${record.state}).`)
+  if (record.members.length === 0) throw new Error('[delivery seal] member가 없는 묶음은 닫지 않습니다 — 닫을 내용이 없습니다.')
+  checkConfirm('seal', slug, confirm)
+  const updated = commitTransition(ctx, slug, record, 'sealed', 'sealed', confirmSentence('seal', slug), io)
+  io.log(`[delivery] '${slug}' 묶음을 닫았습니다(더 이상 begin 할 수 없습니다).`)
+  // 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a). seal이 마지막 전이인 경우 여기가 유일한 발생지다.
+  const gate = deliveryGateVerdict(updated)
+  io.log(`  gate: ${gate.kind} — ${gate.detail}`)
+  return updated
+}
+
+export function cmdApprove(ctx: Ctx, slug: string, confirm: string | null, io: Io = defaultIo): DeliveryRecord {
+  const record = readRecord(ctx, slug)
+  // 🔴 `sealed` && 모든 member terminal 일 때만(DEC-8). 판정은 순수 모델을 공유한다.
+  const v = canApprove(record)
+  if (!v.ok) throw new Error(`[delivery approve] ${v.reason}`)
+  checkConfirm('approve', slug, confirm)
+  const updated = commitTransition(ctx, slug, record, 'approved', 'approved', confirmSentence('approve', slug), io)
+  io.log(`[delivery] '${slug}' 통합 승인을 기록했습니다.`)
+  // 🔴 병합은 하지 않는다(DEC-11) — 실행은 사람이 I1/I2/B1 절차로 한다.
+  io.log(`  🔴 이 명령은 병합하지 않습니다. ${updated.branch} → ${updated.target_branch} 는 AGENTS.md 통제점표(I1/I2/B1)를 따르세요.`)
+  return updated
+}
+
+export function cmdReopen(ctx: Ctx, slug: string, confirm: string | null, io: Io = defaultIo): DeliveryRecord {
+  const record = readRecord(ctx, slug)
+  if (record.state === 'open') throw new Error('[delivery reopen] 이미 열려 있습니다.')
+  checkConfirm('reopen', slug, confirm)
+  const updated = commitTransition(ctx, slug, record, 'open', 'reopened', confirmSentence('reopen', slug), io)
+  io.log(`[delivery] '${slug}' 묶음을 다시 열었습니다 — 이전 승인은 무효이며 이력에 남습니다.`)
+  return updated
+}
+
 export function printHelp(): void {
   console.log(`commitgate delivery — 상위 작업 묶음(delivery set)
 
@@ -664,7 +772,16 @@ export function printHelp(): void {
   npx commitgate delivery create <slug> [--run]
   npx commitgate delivery begin <req-slug> --slug <slug> [--run]
   npx commitgate delivery integrate --slug <slug> [--run]
+  npx commitgate delivery seal --slug <slug> --confirm "seal <slug>" [--run]
+  npx commitgate delivery approve --slug <slug> --confirm "approve <slug>" [--run]
+  npx commitgate delivery reopen --slug <slug> --confirm "reopen <slug>" [--run]
   npx commitgate delivery status --slug <slug>
+
+흐름:
+  create → begin(REQ 1) → 작업·리뷰 → integrate → begin(REQ 2) → … → seal → approve
+  seal 이후에는 begin 할 수 없습니다. 되돌리려면 reopen(이력에 남습니다).
+
+req.config.json 의 stopGate: "merge" 를 함께 쓰면 req:next 종단도 묶음 단위로 판정합니다.
 
 하지 않는 일:
   delivery → main 병합 실행(기존 I1/I2/B1 통제점에서 사람이 합니다) ·
@@ -676,6 +793,10 @@ export function printHelp(): void {
 export function runCli(argv: string[]): void {
   try {
     const o = parseArgs(argv)
+    // 🔴 상태를 바꾸는 하위 명령은 setup 완료 게이트를 지난다(REQ-2026-062 DEC-6) — `status`는 읽기 전용이라 뺀다.
+    //    `begin`은 `req:new` 위임으로 전이적으로 막히지만, `create`/`integrate`/`seal`/`approve`/`reopen`은
+    //    그 경로를 타지 않아 여기서 막지 않으면 설정 없이 묶음을 만들고 통합할 수 있다.
+    if (o.sub !== 'status') assertSetupComplete({ root: o.root })
     const ctx = makeCtx(o.root)
     if (o.sub === 'create') {
       if (!o.slug) throw new Error('slug 필요 (예: delivery create payment-improvement --run)')
@@ -688,6 +809,16 @@ export function runCli(argv: string[]): void {
     }
     if (!o.slug) throw new Error('--slug <묶음> 필요')
     if (o.sub === 'status') return cmdStatus(ctx, o.slug)
+    if (o.sub === 'seal' || o.sub === 'approve' || o.sub === 'reopen') {
+      if (!o.run) {
+        console.log(`[delivery] DRY-RUN — --run 시 '${o.slug}' 묶음을 ${o.sub} 합니다 (--confirm "${confirmSentence(o.sub, o.slug)}" 필요)`)
+        return
+      }
+      if (o.sub === 'seal') cmdSeal(ctx, o.slug, o.confirm)
+      else if (o.sub === 'approve') cmdApprove(ctx, o.slug, o.confirm)
+      else cmdReopen(ctx, o.slug, o.confirm)
+      return
+    }
     if (o.sub === 'begin') {
       if (!o.reqSlug) throw new Error('req-slug 필요 (예: delivery begin payment-api --slug payment --run)')
       if (!o.run) {

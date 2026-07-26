@@ -25,6 +25,7 @@ import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evide
 import { createEvidencePorts } from './lib/evidence-ports'
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { reviewScratchPaths } from './lib/scratch'
+import { deliveryGateVerdict, deliveryRecordProblems, type DeliveryRecord } from './lib/delivery'
 import { computeReviewSemanticIdentity } from './lib/review-target'
 import {
   loadState,
@@ -39,7 +40,7 @@ import {
   type ReviewKind,
   type LastReviewMarker,
 } from './review-codex'
-import type { ReviewBudget, PhaseCommitPolicy } from './lib/config'
+import type { ReviewBudget, PhaseCommitPolicy, StopGate } from './lib/config'
 import { assertSetupComplete } from './lib/setup-gate'
 
 // ─────────────────────────────────────────────── 읽기 전용 git 경계 (D6-1) ──
@@ -47,7 +48,16 @@ import { assertSetupComplete } from './lib/setup-gate'
 type GitFn = (args: string[]) => string
 
 /** `req:next`가 호출해도 되는 git subcommand. 전부 무쓰기. */
-export const READONLY_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set(['rev-parse', 'status', 'diff', 'ls-files'])
+export const READONLY_GIT_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  'rev-parse',
+  'status',
+  'diff',
+  'ls-files',
+  // REQ-2026-066 DEC-10: delivery ref 에서 레코드를 읽는다. 둘 다 무쓰기다.
+  // 🔴 allowlist 를 넓히지 않고 try/catch 로 감싸면 **조용히 항상 null** 이 되어 게이트가 죽는다.
+  'for-each-ref',
+  'show',
+])
 
 /**
  * argv에서 전역 플래그(`--no-optional-locks`, `-c <k=v>`, 기타 `-`로 시작)를 걷어낸 **첫 subcommand**.
@@ -159,6 +169,24 @@ export interface NextInput {
    * - `{ required:true, durable:false }` = 신규 티켓인데 증거가 커밋되지 않음 → **DONE 대신 BLOCKED**.
    */
   designEvidenceDurability?: { required: boolean; durable: boolean; reason: string }
+  /**
+   * REQ-2026-066 DEC-10: `stopGate`. `merge`면 종단 판정이 **delivery 묶음**을 본다.
+   * 미지정 = 기존 두 축(phase/req) 동작 그대로 — 하위호환.
+   */
+  stopGate?: StopGate
+  /**
+   * REQ-2026-066 DEC-10: 이 feature 가 속한 묶음의 게이트 판정. `main()`이 **delivery ref**에서
+   * 레코드를 읽어 채운다(DEC-3 — feature 사본으로 판정하면 조기 정지한다).
+   *
+   * - `null` = 이 feature 가 속한 묶음이 없다(또는 읽을 수 없다) → 묶음 정지 대상이 아니다.
+   * - `continue` = 묶음이 아직 열려 있거나 남은 member 가 있다 → 다음 REQ 를 열 수 있다.
+   * - `await-human` = 묶음이 닫혔고 전부 종결 → 통합 직전 정지.
+   *
+   * 🔴 `req:next`는 이 게이트의 **유일한 발생지가 아니다**(DEC-8a) — `integrate`·`seal`도 같은
+   *    순수 함수로 같은 판정을 낸다. 마지막 integrate 뒤 seal한 사용자는 `req:next`를 다시 부를
+   *    이유가 없어 여기서만 내면 게이트를 영영 못 본다.
+   */
+  deliveryGate?: { slug: string; kind: 'continue' | 'await-human' | 'corrupt'; detail: string } | null
 }
 
 /** `consumed_approvals[]`에서 phase_id를 안전하게 읽는다. */
@@ -662,6 +690,39 @@ export function resolveNext(input: NextInput): NextAction {
     // REQ-2026-037 R5: 자동 커밋(low-only)에선 매 phase 정지가 없으므로, 병합 전 **단일** 사람 확인을
     // 종단에서 실체화한다 — DONE(exit 11)이 아니라 AWAIT_HUMAN(exit 10)으로 루프를 확실히 멈춘다.
     // 승인 문장은 새로 만들지 않고 계약 통제점표(I1/I2/B1)의 정본을 가리킨다(design-r01 observation).
+    // 🔴 REQ-2026-066 DEC-10: `merge`는 REQ 단위가 아니라 **묶음 단위**로 멈춘다.
+    //    묶음이 없거나 아직 열려 있으면 다음 REQ 를 열 수 있으므로 DONE 이다 — 여기서 멈추면
+    //    "묶음이 끝날 때까지 미룬다"가 REQ 단위 정지로 되돌아간다.
+    if (input.stopGate === 'merge') {
+      const g = input.deliveryGate
+      // 🔴 손상은 조용히 DONE 이 되면 안 된다 — 게이트가 사라지느니 멈춘다.
+      if (g && g.kind === 'corrupt')
+        return {
+          kind: 'BLOCKED',
+          detail:
+            `이 REQ 가 속한 delivery 묶음 '${g.slug}' 의 레코드가 손상돼 통합 정지를 판정할 수 없다. ` +
+            `${g.detail} — 레코드를 고친 뒤 다시 실행하세요(\`commitgate delivery status --slug ${g.slug}\`).`,
+          diagnostics: [`deliveryGate=corrupt`, `slug=${g.slug}`],
+        }
+      if (g && g.kind === 'await-human')
+        return {
+          kind: 'AWAIT_HUMAN',
+          detail: g.detail,
+          controlPoint: `통합(delivery/${g.slug}→main)`,
+          approvalSentence:
+            '`commitgate delivery approve --slug ' +
+            g.slug +
+            ' --confirm "approve ' +
+            g.slug +
+            '" --run` 로 승인을 기록한 뒤, 통합 경로의 정본 승인 문장을 받는다 — [I1] PR 생성 승인 → [I2] checks green 후 merge 승인, 또는 [B1] branch protection bypass direct push 승인',
+        }
+      return {
+        kind: 'DONE',
+        detail: g
+          ? `이 REQ 는 끝났다. 묶음 '${g.slug}' 은 아직 진행 중이다(${g.detail}) — 다음 REQ 를 열거나 \`commitgate delivery seal\` 로 닫는다.`
+          : '이 REQ 는 끝났다. stopGate=merge 인데 이 feature 가 속한 delivery 묶음을 찾지 못했다 — `commitgate delivery status --slug <묶음>` 으로 확인하거나, 통합 통제점(I1/B1)을 사람이 진행한다.',
+      }
+    }
     if (input.phaseCommitAutoApprove === 'low-only')
       return {
         kind: 'AWAIT_HUMAN',
@@ -757,6 +818,64 @@ export function parseArgs(argv: string[]): Opts {
 }
 
 /** 사람이 읽는 출력. `displayId`는 표시 전용(argv가 아니다) — `state.id`를 그대로 쓴다. */
+/**
+ * 이 REQ 가 속한 delivery 묶음의 게이트 판정(REQ-2026-066 DEC-10).
+ *
+ * 🔴 **delivery ref에서** 읽는다 — feature 사본은 분기 시점에 고정되어 stale 이므로 그것으로 판정하면
+ *    앞선 member 만 반영된 상태를 보고 **조기 정지**한다(DEC-3).
+ * 🔴 판정은 `deliveryGateVerdict` **하나**를 쓴다 — `integrate`·`seal`·`status`와 갈라지면 안 된다.
+ *
+ * 묶음을 찾는 방법: `refs/heads/delivery/*` 를 훑어 각 레코드에서 이 REQ 를 member 로 가진 것을 찾는다.
+ * 레코드가 손상됐거나 읽을 수 없으면 `null`(= 묶음 정지 대상 아님) — 여기서 fail-closed 하면
+ * delivery 를 쓰지 않는 사용자의 정상 종단까지 막힌다.
+ */
+/**
+ * 레코드가 이 REQ 를 member 로 **언급**하는가(손상 레코드에도 쓰이므로 방어적으로 읽는다).
+ * 스키마 검증을 통과하지 못한 값에서도 소속을 식별할 수 있어야 fail-closed 판정이 가능하다.
+ */
+export function mentionsMember(record: unknown, reqId: string): boolean {
+  if (!record || typeof record !== 'object') return false
+  const ms = (record as { members?: unknown }).members
+  if (!Array.isArray(ms)) return false
+  return ms.some((m) => !!m && typeof m === 'object' && (m as { req_id?: unknown }).req_id === reqId)
+}
+
+export function readDeliveryGate(
+  ticketRoot: string,
+  reqId: string,
+  roGit: (args: string[]) => string,
+): { slug: string; kind: 'continue' | 'await-human' | 'corrupt'; detail: string } | null {
+  let branches: string[]
+  try {
+    branches = roGit(['for-each-ref', '--format=%(refname:short)', 'refs/heads/delivery/'])
+      .split('\n')
+      .map((x) => x.trim())
+      .filter(Boolean)
+  } catch {
+    return null
+  }
+  for (const branch of branches) {
+    const slug = branch.slice('delivery/'.length)
+    if (!slug) continue
+    let record: unknown
+    try {
+      record = JSON.parse(roGit(['show', `${branch}:${ticketRoot}/delivery/${slug}.json`]))
+    } catch {
+      continue
+    }
+    // 🔴 손상 레코드를 그냥 건너뛰면 "묶음 없음"과 구분되지 않아 종단이 DONE 이 된다 —
+    //    묶음 정지 게이트가 조용히 사라진다(phase-3 r02 P1). 이 REQ 를 member 로 **식별할 수 있으면**
+    //    손상이라도 fail-closed 로 전파한다. 식별조차 안 되는 레코드만 건너뛴다.
+    const problems = deliveryRecordProblems(record)
+    if (!mentionsMember(record, reqId)) continue
+    if (problems.length)
+      return { slug, kind: 'corrupt', detail: `delivery 레코드 손상(${branch}): ${problems.slice(0, 3).join('; ')}` }
+    const v = deliveryGateVerdict(record as DeliveryRecord)
+    return { slug, kind: v.kind, detail: v.detail }
+  }
+  return null
+}
+
 export function renderAction(displayId: string, a: NextAction): string {
   const lines = [`[req:next] ${a.kind}  ${displayId}`, `  ${a.detail}`]
   if (a.command && a.kind === 'RUN') lines.push('', `  $ ${a.command}`)
@@ -821,6 +940,10 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     })(),
     reviewBudget: cfg.reviewBudget,
     phaseCommitAutoApprove: cfg.phaseCommit.autoApprove,
+    // REQ-2026-066 DEC-10: 묶음 판정은 **delivery ref**에서 읽는다(DEC-3). 실패는 조용히 null —
+    // 묶음이 없는 것과 구분되지 않지만, 어느 쪽이든 "묶음 정지 대상 아님"이라 판정은 같다.
+    stopGate: cfg.stopGate,
+    deliveryGate: cfg.stopGate === 'merge' ? readDeliveryGate(cfg.ticketRoot, state.id, roGit) : null,
     // REQ-2026-048 DEC-4: marker와 증거 모두 **HEAD blob**에서 읽는다(워킹 캐시 신뢰 금지).
     designEvidenceDurability: (() => {
       const ports = createEvidencePorts(cfg.root, `${ticketRel}/responses`)

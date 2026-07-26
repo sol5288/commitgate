@@ -103,7 +103,8 @@
       "type": "string",
       "enum": [
         "phase",
-        "req"
+        "req",
+        "merge"
       ]
     },
     "setup": {

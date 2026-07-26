@@ -7,6 +7,7 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   resolveNext,
+  mentionsMember,
   nextPhaseId,
   phaseModelProblems,
   reqIdProblems,
@@ -1140,5 +1141,59 @@ describe('[REQ-2026-048] req:next main() 배선 — HEAD 기준 DONE 게이트',
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
+  })
+})
+
+/**
+ * REQ-2026-066 DEC-10 — `stopGate: "merge"` 종단은 **묶음**을 본다.
+ *
+ * 🔴 이 그룹의 헤드라인: 손상된 묶음 레코드가 "묶음 없음"으로 흡수되면 `DONE`이 나오고
+ *    통합 정지 게이트가 **조용히 사라진다**(phase-3 r02 P1). 손상은 멈춰야 한다.
+ */
+describe('[req:next] stopGate=merge 종단', () => {
+  const done = (over: Partial<NextInput> = {}) =>
+    resolveNext(
+      baseInput({
+        state: baseState({ phases: [{ id: 'p1', approved: true }], consumed_approvals: [{ phase_id: 'p1' }] } as never),
+        stopGate: 'merge',
+        ...over,
+      }),
+    )
+
+  it('묶음이 없으면 DONE — delivery 를 안 쓰는 사용자를 막지 않는다', () => {
+    const a = done({ deliveryGate: null })
+    expect(a.kind).toBe('DONE')
+    expect(a.detail).toContain('찾지 못했다')
+  })
+
+  it('묶음이 진행 중이면 DONE — 다음 REQ 를 열 수 있다', () => {
+    const a = done({ deliveryGate: { slug: 'pay', kind: 'continue', detail: '묶음이 열려 있습니다' } })
+    expect(a.kind).toBe('DONE')
+    expect(a.detail).toContain('pay')
+  })
+
+  it('묶음이 닫히고 전부 종결이면 AWAIT_HUMAN + 승인 문장', () => {
+    const a = done({ deliveryGate: { slug: 'pay', kind: 'await-human', detail: '묶음이 닫혔습니다' } })
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.controlPoint).toContain('delivery/pay')
+    expect(a.approvalSentence).toContain('delivery approve')
+  })
+
+  it('🔴 레코드가 손상됐으면 DONE 이 아니라 BLOCKED(게이트 우회 금지)', () => {
+    const a = done({ deliveryGate: { slug: 'pay', kind: 'corrupt', detail: 'state 부적합' } })
+    expect(a.kind).toBe('BLOCKED')
+    expect(a.detail).toContain('손상')
+  })
+})
+
+describe('[req:next] mentionsMember — 손상 레코드에서도 소속을 식별한다', () => {
+  it('스키마 검증을 통과 못 해도 member 로 언급되면 true', () => {
+    expect(mentionsMember({ members: [{ req_id: 'REQ-2026-001', bogus: 1 }] }, 'REQ-2026-001')).toBe(true)
+  })
+
+  it('언급이 없거나 형태가 아니면 false', () => {
+    expect(mentionsMember({ members: [{ req_id: 'REQ-2026-002' }] }, 'REQ-2026-001')).toBe(false)
+    expect(mentionsMember({ members: 'nope' }, 'REQ-2026-001')).toBe(false)
+    expect(mentionsMember(null, 'REQ-2026-001')).toBe(false)
   })
 })

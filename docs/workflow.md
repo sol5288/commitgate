@@ -82,6 +82,37 @@ npm run req:commit -- 2026-001 --run -m "feat: my feature"
 npm run req:commit -- 2026-001 --run --message-file commit-message.txt
 ```
 
+## delivery set — 여러 REQ를 한 묶음으로
+
+요구사항이 커서 REQ를 나눠 진행하거나, 여러 설계 문서를 순차로 구현할 때가 있습니다. 그럴 때
+`stopGate: "merge"` + `commitgate delivery` 로 REQ들을 하나의 묶음으로 묶고, **묶음 전체가 끝날 때까지**
+main 병합 정지를 미룰 수 있습니다.
+
+```sh
+npx commitgate delivery create payment-improvement --run       # delivery/payment-improvement 브랜치 + 레코드
+npx commitgate delivery begin payment-api --slug payment-improvement --run   # REQ 생성 + 묶음에 등록
+# … 평소대로 설계·리뷰·phase·req:commit …
+npx commitgate delivery integrate --slug payment-improvement --run           # 단일 merge commit 으로 반영
+npx commitgate delivery begin payment-ui --slug payment-improvement --run    # 다음 REQ
+# …
+npx commitgate delivery seal    --slug payment-improvement --confirm "seal payment-improvement"    --run
+npx commitgate delivery approve --slug payment-improvement --confirm "approve payment-improvement" --run
+```
+
+- 한 번에 **활성 REQ는 하나**입니다. 앞의 REQ가 종결돼야 다음 `begin`이 통과합니다 — 이 순차 불변식이
+  병합 충돌을 구조적으로 없앱니다.
+- `integrate`는 **승인된 완료 REQ만** 반영합니다. feature ref에 커밋된 `dev-complete` 증거·승인
+  매니페스트·응답 파일 무결성·승인 트리 provenance를 확인하고, **승인 이후의 코드 커밋이 있으면 거부**합니다.
+  `--force` 류 우회는 없습니다.
+- `seal` 이후에는 `begin` 할 수 없습니다. 되돌리려면 `reopen` — 승인이 있었다는 사실은 이력에 남습니다.
+- 🔴 **도구는 `delivery` → `main` 을 병합하지 않습니다.** `approve`는 승인을 기록할 뿐이고, 실제 병합은
+  기존 통제점표(I1/I2/B1)에서 사람이 실행합니다.
+- 브랜치 위치에 의존하지 않습니다 — 도구가 필요한 곳으로 옮겼다가 **원래 브랜치로 되돌립니다**.
+
+`stopGate: "merge"` 를 켜면 `req:next` 종단도 묶음을 봅니다: 묶음이 아직 열려 있으면 `DONE`(다음 REQ를
+열 수 있다), 닫혔고 모든 member가 종결됐으면 `AWAIT_HUMAN`. 같은 판정을 `integrate`와 `seal`도
+전이 직후에 냅니다 — 마지막 `integrate` 뒤에 `seal` 한 사용자는 `req:next`를 다시 부를 이유가 없기 때문입니다.
+
 ## 명령어 요약
 
 | 명령 | 용도 |

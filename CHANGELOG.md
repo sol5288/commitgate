@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+- **여러 REQ를 한 묶음으로 묶고 묶음이 끝날 때까지 main 병합 정지를 미룹니다** (REQ-2026-066). 🔴 **p1~p3는 한 릴리스로만 공개됩니다** — `create`/`begin`만 배포되면 통합할 수 없는 묶음이 만들어집니다.
+
+  > 구현은 이 REQ의 phase-1~3에 커밋돼 있습니다 — `scripts/req/lib/delivery.ts`의 순수 모델(`isTerminal`·`canBegin`·`deliveryGateVerdict`·`integrateTopologyProblems`) · `bin/delivery.ts`의 verb와 통합 자격 검증(`cd05c2c`) · `stopGate: "merge"`와 `req:next` 종단 분기.
+
+  요구사항이 커서 REQ를 나누거나 여러 설계 문서를 순차로 구현할 때, 지금까지는 REQ마다 통합 정지가 걸렸습니다. 이제 `commitgate delivery`로 REQ들을 하나의 묶음으로 묶고, `stopGate: "merge"`로 **묶음 전체가 끝날 때까지** 정지를 미룰 수 있습니다.
+
+  한 번에 **활성 REQ는 하나**입니다 — 이 순차 불변식이 병합 충돌을 구조적으로 없앱니다. `integrate`는 feature ref에 커밋된 `dev-complete` 증거·승인 매니페스트·**응답 파일 SHA-256**·**승인 트리 provenance**를 확인하고, **승인 이후의 코드 커밋이 있으면 거부**합니다. `--force` 류 우회는 없습니다.
+
+  🔴 미검수 코드 탐지의 기준점은 **가장 최근 승인 트리의 커밋**입니다. close-proof 파일의 마지막 수정 커밋을 기준으로 삼으면, 미검수 코드를 커밋한 뒤 close-proof를 의미 동일하게 재포맷하는 커밋 하나로 검사 범위가 비어 버립니다.
+
+  🔴 **도구는 `delivery` → `main`을 병합하지 않습니다.** `approve`는 승인을 기록할 뿐이고 실제 병합은 기존 통제점표(I1/I2/B1)에서 사람이 실행합니다. `seal` 이후에는 `begin` 할 수 없고, `reopen`은 승인이 있었다는 사실을 이력에 남깁니다.
+
+  🔴 **보증 범위**: 이 검증은 실수와 절차 이탈(승인 뒤 커밋 · checkout 이탈 · amend/rebase · 증거 손상)을 막습니다. **커밋된 증거 자체를 일관되게 위조하는 행위는 막지 못합니다** — 저장소 전반의 보증 범위(협력적 worker · 단일 활성 워크트리)와 같습니다.
+
+  실측(이 저장소): 정상 완료된 REQ 6건을 각자의 `dev-complete` 커밋으로 판정 → **6/6 통과**(오탐 0), 같은 증거로 이후 이력을 주면 **전부 차단**.
+
 - **미로그인 리뷰가 예산을 태우기 전에 멈춥니다** (REQ-2026-065).
 
   > 구현은 이 REQ의 phase-1(`8b8d3c9`)에 커밋돼 있습니다 — `scripts/req/review-codex.ts`의 `assertReviewerReady`와 예산 gate 앞 배선, `probes` 주입 seam.

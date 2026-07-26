@@ -15,10 +15,15 @@ import {
   cmdCreate,
   cmdBegin,
   cmdIntegrate,
+  cmdSeal,
+  cmdApprove,
+  cmdReopen,
+  confirmSentence,
   ctxFor,
   type Io,
 } from '../../bin/delivery'
 import { resolveDispatch, VERB_MODULES } from '../../bin/dispatch.mjs'
+import { deliveryGateVerdict } from '../../scripts/req/lib/delivery'
 import { buildArchiveInventory, buildManifestEntry, serializeManifestLine } from '../../scripts/req/lib/evidence'
 import { createHash } from 'node:crypto'
 
@@ -729,6 +734,162 @@ describe('[delivery] create/begin/integrate — 실제 git repo', () => {
     const dir = setupRepo()
     try {
       expect(() => readRecord(ctxFor(dir), 'nope')).toThrow('delivery 브랜치가 없습니다')
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * REQ-2026-066 phase-3 — seal/approve/reopen 통제점과 최종 게이트(DEC-8·DEC-8a·DEC-11).
+ *
+ * 🔴 수용기준 9: **마지막 integrate → seal** 과 **seal → 마지막 integrate** **양쪽**에서 `AWAIT_HUMAN`이
+ *    나와야 한다. 한쪽만 검증하면 전이 지점을 한 곳만 배선해도 통과한다.
+ */
+describe('[delivery] seal/approve/reopen — 확인 문구 통제점', () => {
+  it('확인 문구가 없거나 틀리면 아무것도 하지 않는다', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'gate', IO_SILENT)
+      addMemberAndBranch(dir, 'gate', 'REQ-2026-020', { devComplete: true })
+      const before = git(dir, ['rev-parse', deliveryBranchName('gate')])
+      expect(() => cmdSeal(ctx, 'gate', null, IO_SILENT)).toThrow('확인 문구가 필요합니다')
+      // 🔴 다른 묶음의 문구로는 못 닫는다 — 복사-붙여넣기 사고 방지.
+      expect(() => cmdSeal(ctx, 'gate', 'seal payment', IO_SILENT)).toThrow('확인 문구가 필요합니다')
+      expect(git(dir, ['rev-parse', deliveryBranchName('gate')])).toBe(before)
+      expect(readRecord(ctx, 'gate').state).toBe('open')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('member 없는 묶음은 닫지 않는다', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'empty', IO_SILENT)
+      expect(() => cmdSeal(ctx, 'empty', confirmSentence('seal', 'empty'), IO_SILENT)).toThrow('닫을 내용이 없습니다')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('🔴 수용기준 9-A: 마지막 integrate → seal 순서에서 AWAIT_HUMAN', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'ordera', IO_SILENT)
+      addMemberAndBranch(dir, 'ordera', 'REQ-2026-021', { devComplete: true })
+      const res = cmdIntegrate(ctx, 'ordera', 'REQ-2026-021', IO_SILENT)
+      // 아직 open 이므로 integrate 시점에는 게이트가 뜨지 않는다.
+      expect(res.gate.kind).toBe('continue')
+      const sealed = cmdSeal(ctx, 'ordera', confirmSentence('seal', 'ordera'), IO_SILENT)
+      expect(deliveryGateVerdict(sealed).kind).toBe('await-human')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('🔴 수용기준 9-B: seal → 마지막 integrate 순서에서도 AWAIT_HUMAN', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'orderb', IO_SILENT)
+      addMemberAndBranch(dir, 'orderb', 'REQ-2026-022', { devComplete: true })
+      cmdSeal(ctx, 'orderb', confirmSentence('seal', 'orderb'), IO_SILENT)
+      // seal 시점에는 member 가 아직 active 라 게이트가 뜨지 않는다.
+      expect(deliveryGateVerdict(readRecord(ctx, 'orderb')).kind).toBe('continue')
+      const res = cmdIntegrate(ctx, 'orderb', 'REQ-2026-022', IO_SILENT)
+      // 🔴 여기가 유일한 발생지다 — seal 한 사용자는 req:next 를 다시 부를 이유가 없다.
+      expect(res.gate.kind).toBe('await-human')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('approve 는 sealed + 전부 terminal 일 때만 · reopen 은 이력을 남긴다', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'appr', IO_SILENT)
+      addMemberAndBranch(dir, 'appr', 'REQ-2026-023', { devComplete: true })
+      // open 상태에서는 거부.
+      expect(() => cmdApprove(ctx, 'appr', confirmSentence('approve', 'appr'), IO_SILENT)).toThrow('열려 있습니다')
+      cmdSeal(ctx, 'appr', confirmSentence('seal', 'appr'), IO_SILENT)
+      // sealed 지만 member 가 active → 거부.
+      expect(() => cmdApprove(ctx, 'appr', confirmSentence('approve', 'appr'), IO_SILENT)).toThrow('종결되지 않은 member')
+      cmdIntegrate(ctx, 'appr', 'REQ-2026-023', IO_SILENT)
+      const approved = cmdApprove(ctx, 'appr', confirmSentence('approve', 'appr'), IO_SILENT)
+      expect(approved.state).toBe('approved')
+
+      // 🔴 reopen 은 상태만 되돌리는 것이 아니라 **이력을 남긴다** — 승인이 있었다는 사실이 사라지면 안 된다.
+      const reopened = cmdReopen(ctx, 'appr', confirmSentence('reopen', 'appr'), IO_SILENT)
+      expect(reopened.state).toBe('open')
+      expect(reopened.events.map((e) => e.event)).toEqual(['created', 'sealed', 'approved', 'reopened'])
+      // 실제 시계에서 읽는다(고정값 위조 금지) — IO_SILENT 는 테스트 주입이고, 기본 Io 는 new Date() 다.
+      expect(reopened.events.every((e) => typeof e.at === 'string' && e.at.length > 0)).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('🔴 approve 는 병합하지 않는다(DEC-11) — target 브랜치가 움직이지 않는다', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'nomerge', IO_SILENT)
+      addMemberAndBranch(dir, 'nomerge', 'REQ-2026-024', { devComplete: true })
+      const mainBefore = git(dir, ['rev-parse', 'main'])
+      cmdIntegrate(ctx, 'nomerge', 'REQ-2026-024', IO_SILENT)
+      cmdSeal(ctx, 'nomerge', confirmSentence('seal', 'nomerge'), IO_SILENT)
+      cmdApprove(ctx, 'nomerge', confirmSentence('approve', 'nomerge'), IO_SILENT)
+      expect(git(dir, ['rev-parse', 'main'])).toBe(mainBefore)
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * 🔴 phase-3 r01 P1: detached HEAD 는 브랜치 이름이 아니라 커밋 SHA 로 기억해야 한다.
+ * `rev-parse --abbrev-ref HEAD` 는 detached 에서 문자열 "HEAD" 를 주므로, 그것으로 복원을 건너뛰면
+ * 사용자가 **delivery 브랜치에 남고** 이후 작업이 통합 브랜치에서 이뤄진다.
+ */
+describe('[delivery] detached HEAD 에서도 원래 자리로 되돌린다', () => {
+  it('seal 이 detached HEAD 를 보존한다', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'det', IO_SILENT)
+      addMemberAndBranch(dir, 'det', 'REQ-2026-030', { devComplete: true })
+      const feat = featureBranchOf('REQ-2026-030')
+      git(dir, ['checkout', '-q', feat])
+      const at = git(dir, ['rev-parse', 'HEAD'])
+      git(dir, ['checkout', '-q', '--detach', at])
+
+      cmdSeal(ctx, 'det', confirmSentence('seal', 'det'), IO_SILENT)
+      expect(git(dir, ['rev-parse', 'HEAD'])).toBe(at)
+      // 여전히 detached — 도구가 브랜치에 붙여 놓지 않는다.
+      expect(git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('HEAD')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('integrate 도 detached HEAD 를 보존한다', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'det2', IO_SILENT)
+      addMemberAndBranch(dir, 'det2', 'REQ-2026-031', { devComplete: true })
+      git(dir, ['checkout', '-q', featureBranchOf('REQ-2026-031')])
+      const at = git(dir, ['rev-parse', 'HEAD'])
+      git(dir, ['checkout', '-q', '--detach', at])
+
+      expect(cmdIntegrate(ctx, 'det2', 'REQ-2026-031', IO_SILENT).merged).toBe(true)
+      expect(git(dir, ['rev-parse', 'HEAD'])).toBe(at)
+      expect(git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('HEAD')
     } finally {
       cleanup(dir)
     }

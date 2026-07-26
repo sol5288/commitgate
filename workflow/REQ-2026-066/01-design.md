@@ -244,6 +244,17 @@ r02까지의 ancestry 조건에서는 이 순서가 불가능했다 — 그것�
 - `approve`는 **`sealed` && 모든 member terminal**일 때만 허용한다.
 - `reopen`은 현재 상태를 바꾸는 것과 **별도로 append-only 이벤트**를 남긴다 — 상태만 갱신하면
   "승인이 있었다가 무효화됐다"는 사실이 사라진다.
+- 확인 문구는 **묶음마다 다르다**: `--confirm "<action> <slug>"`(예: `seal payment`). 고정 문구면
+  복사-붙여넣기 습관으로 **다른 묶음을 닫는** 사고가 난다. 앞뒤 공백만 허용하고 그 외는 거부한다.
+- 🔴 `seal`은 **member가 없는 묶음**을 닫지 않는다 — 닫을 내용이 없는데 닫으면 빈 묶음이 곧바로
+  `await-human`으로 가서 사람을 부른다.
+- 🔴 상태를 바꾸는 하위 명령(`create`·`begin`·`integrate`·`seal`·`approve`·`reopen`)은 **setup 완료
+  게이트**를 지난다(REQ-2026-062 DEC-6). `begin`은 `req:new` 위임으로 전이적으로 막히지만 나머지는
+  그 경로를 타지 않아, 여기서 막지 않으면 설정 없이 묶음을 만들고 통합할 수 있다. `status`는 읽기 전용이라 뺀다.
+- 🔴 `seal`/`approve`/`reopen`도 `integrate`와 같이 **이동 전 clean·merge 가드**를 보고 **원래 자리로
+  되돌린다**. 복원은 브랜치 이름이 아니라 **위치**를 기억한다(phase-3 r01 P1) — `rev-parse --abbrev-ref HEAD`
+  는 detached HEAD 에서 문자열 `"HEAD"` 를 주므로 그것으로 판단하면 detached 사용자가 **delivery 브랜치에
+  남는다**. detached 면 커밋 SHA 를 기억해 `checkout --detach <sha>` 로 돌아간다.
 
 ### DEC-9 — D2/D11과의 관계 (실측 확인)
 - **D11**(`req-doctor.ts`): `phase≠DONE`인데 `state.branch`가 `branchPrefix`로 시작 안 하면 FAIL.
@@ -255,6 +266,15 @@ r02까지의 ancestry 조건에서는 이 순서가 불가능했다 — 그것�
 
 ### DEC-10 — `stopGate: "merge"`
 enum에 값을 더하고, `req:next` 종단이 delivery 레코드를 읽어 판정한다.
+🔴 `merge`의 파생 `phaseCommit.autoApprove`는 `req`와 **같은 `low-only`**다(둘 다 phase는 자율 커밋).
+그래서 **역방향은 모호**하다 — legacy `phaseCommit`만 있는 설정은 보수적으로 `req`로 해소한다.
+사용자가 켠 적 없는 묶음 정지를 도구가 켜지 않는다. `merge`를 쓰려면 `stopGate`를 명시해야 한다.
+🔴 `req:next`가 delivery ref를 읽으려면 읽기 전용 allowlist에 `for-each-ref`·`show`가 있어야 한다
+(둘 다 무쓰기). allowlist를 넓히지 않고 try/catch로 감싸면 **조용히 항상 `null`**이 되어 게이트가 죽는다.
+🔴 **손상 레코드는 "묶음 없음"으로 흡수하지 않는다**(phase-3 r02 P1). 그렇게 하면 종단이 `DONE`이 되어
+묶음 정지 게이트가 조용히 사라진다. 이 REQ를 member로 **식별할 수 있으면** 손상이라도 `BLOCKED`로
+전파하고(fail-closed), 식별조차 안 되는 레코드만 건너뛴다 — 그래야 delivery를 쓰지 않는 사용자의
+정상 종단은 막지 않으면서 게이트 우회를 닫는다. 식별은 스키마 검증과 **분리된** 방어적 읽기다.
 🔴 **레코드는 delivery ref에서 읽는다**(DEC-3) — feature의 사본이 아니다.
 묶음이 없거나 `open`이면 종단은 `DONE`(다음 REQ를 열 수 있다), `sealed`+전부 terminal이면 `AWAIT_HUMAN`.
 

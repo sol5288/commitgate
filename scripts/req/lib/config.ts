@@ -48,18 +48,24 @@ export type PhaseCommitPolicy = 'never' | 'low-only'
  *
  * - `phase`: 매 phase 커밋 전에 사람 확인(현행 기본).
  * - `req`  : REQ 안의 LOW phase는 자율 커밋하고, 사람 확인을 **통합 직전 한 번**으로 모은다.
+ * - `merge`: 여러 REQ를 하나의 delivery set으로 묶고, 묶음 전체가 끝날 때까지 미룬다(REQ-2026-066).
  *
  * 🔴 **HIGH 위험 티켓은 어느 값에서도 매 phase 확인**이다. `"all"`류 값은 없다 — HIGH는 매 phase 신선한
  *    `user_commit_confirmed`를 요구하므로 자동화하면 livelock 또는 타임스탬프 위조가 된다
  *    (REQ-2026-019 폐기 사유).
- * 🔴 `"merge"`는 **아직 없다**. delivery set 없이는 "언제 멈출지"를 아무도 모르는 상태가 되므로,
- *    동작이 함께 착륙할 때 넣는다 — 스키마에 값만 먼저 넣으면 고를 수는 있는데 동작이 없는 거짓 UI다.
+ * 🔴 `"merge"`는 `commitgate delivery` **동작과 함께** 착륙했다(REQ-2026-066 p1~p3 동일 릴리스).
+ *    스키마에 값만 먼저 넣으면 고를 수는 있는데 동작이 없는 거짓 UI가 된다 — 그래서 미뤘던 값이다.
  */
-export type StopGate = 'phase' | 'req'
+export type StopGate = 'phase' | 'req' | 'merge'
 
 /** `stopGate` → 파생 `phaseCommit.autoApprove`. 두 축의 유일한 번역표(SSOT). */
-export const AUTO_APPROVE_OF: Record<StopGate, PhaseCommitPolicy> = { phase: 'never', req: 'low-only' }
-/** 역방향(legacy config에서 `stopGate` 역파생). */
+export const AUTO_APPROVE_OF: Record<StopGate, PhaseCommitPolicy> = { phase: 'never', req: 'low-only', merge: 'low-only' }
+/**
+ * 역방향(legacy config에서 `stopGate` 역파생).
+ * 🔴 `merge`는 `req`의 **상위 집합**이라(둘 다 phase는 자율 커밋) autoApprove 만으로는 구별되지 않는다.
+ *    그래서 legacy `phaseCommit`만 있는 설정은 **보수적으로 `req`**로 해소한다 — 묶음 정지를 마음대로
+ *    켜지 않는다. `merge`를 쓰려면 `stopGate`를 명시해야 한다.
+ */
 export const STOP_GATE_OF: Record<PhaseCommitPolicy, StopGate> = { never: 'phase', 'low-only': 'req' }
 
 export interface PhaseCommit {
@@ -230,7 +236,7 @@ export const CONFIG_SCHEMA = {
     lockfilePromptFull: { type: 'boolean' },
     // REQ-2026-063: 멈춤 위치. 🔴 enum은 **2값만** — `merge`는 delivery set 없이는 동작이 없어 거짓 UI가 된다.
     //    `null`을 넣지 않으므로 "비움" 입력은 기존 검증 경로가 자동으로 거부한다(전역 상속 개념이 없는 축).
-    stopGate: { type: 'string', enum: ['phase', 'req'] },
+    stopGate: { type: 'string', enum: ['phase', 'req', 'merge'] },
     // REQ-2026-062: setup 완료 마커. 🔴 `workflow/req.config.schema.json` 과 **동시에** 확장해야 한다 —
     // 한쪽만 고치면 소비자의 vendored 스키마가 신규 키를 additionalProperties:false 로 거부해 모든 명령이 죽는다.
     setup: {

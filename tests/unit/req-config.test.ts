@@ -555,12 +555,32 @@ describe('[P1] stopGate ⇄ phaseCommit — 두 축 해소(DEC-1~DEC-3)', () => 
     } finally { cleanup(d) }
   })
 
-  it('스키마 enum 은 2값뿐 — merge 는 아직 없다(동작 없는 선택지 금지, DEC-5)', () => {
+  /**
+   * 🔴 REQ-2026-066 p3: `merge`가 **동작(`commitgate delivery`)과 같은 릴리스로** 착륙하면서 3값이 됐다.
+   * "동작 없는 선택지 금지"(REQ-2026-063 DEC-5)는 그대로다 — 그래서 값만 먼저 열지 않고 여기까지 기다렸다.
+   */
+  it('스키마 enum 은 3값 — merge 는 delivery 동작과 함께 들어왔다', () => {
     const sg = (CONFIG_SCHEMA.properties as unknown as Record<string, { enum?: unknown[] }>).stopGate
-    expect(sg?.enum).toEqual(['phase', 'req'])
+    expect(sg?.enum).toEqual(['phase', 'req', 'merge'])
     const d = tmpRoot({ stopGate: 'merge' })
     try {
-      expect(() => loadConfig({ root: d })).toThrow(/스키마 위반/)
+      // merge 는 req 와 같은 autoApprove 로 파생된다(둘 다 phase 자율 커밋).
+      expect(loadConfig({ root: d }).phaseCommit.autoApprove).toBe('low-only')
+    } finally { cleanup(d) }
+    const bad = tmpRoot({ stopGate: 'always' })
+    try {
+      expect(() => loadConfig({ root: bad })).toThrow(/스키마 위반/)
+    } finally { cleanup(bad) }
+  })
+
+  /**
+   * 🔴 역방향은 모호하다: `merge`와 `req` 둘 다 `low-only` 다. legacy `phaseCommit` 만 있는 설정을
+   * `merge` 로 해소하면 사용자가 켠 적 없는 묶음 정지가 켜진다 — 보수적으로 `req` 다.
+   */
+  it('🔴 legacy phaseCommit(low-only) 은 merge 가 아니라 req 로 해소된다', () => {
+    const d = tmpRoot({ phaseCommit: { autoApprove: 'low-only' } })
+    try {
+      expect(loadConfig({ root: d }).stopGate).toBe('req')
     } finally { cleanup(d) }
   })
 })
