@@ -11,13 +11,15 @@
  * 🔴 **절대 blocking read에 들어가지 않는다.** TTY 판정을 **가장 먼저** 하고, 실패하면 질문을 하나도 던지지
  *    않은 채 즉시 실패한다. 들어가면 에이전트 세션이 그대로 얼어붙는다.
  *
- * phase-1(이 커밋) 범위: TTY 판정 + verb 골격. 질문·로그인·설정 쓰기는 phase-2/3에서 온다.
- * 이 phase는 **아무것도 쓰지 않는다**.
+ * 흐름은 `runSetup`의 ①~⑦(설계 DEC-10)이고, **쓰기는 ⑦ 한 곳뿐**이다.
  */
-import { resolve } from 'node:path'
+import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
+import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { createInterface } from 'node:readline/promises'
 import Ajv from 'ajv'
 import { CONFIG_SCHEMA, DEFAULTS, stripBom } from '../scripts/req/lib/config'
+import { createReviewerProbes, type ReviewerProbes } from '../scripts/req/lib/adapters'
 
 /**
  * TTY 판정 입력(주입 가능 — 테스트). `process.std*.isTTY`는 **비-TTY에서 `undefined`**이지 `false`가 아니므로
@@ -77,13 +79,6 @@ export const NON_TTY_MESSAGE = [
   '    그때만 예외적으로:  winpty npx commitgate setup',
 ].join('\n')
 
-/** phase-1 안내 — 질문·로그인·설정 쓰기는 phase-2/3에서 온다. 이 phase는 아무것도 쓰지 않는다. */
-export const PHASE1_INTERACTIVE_NOTICE = [
-  'commitgate setup — 대화형 환경을 확인했습니다.',
-  '리뷰 모델·추론강도 설정과 codex 로그인은 다음 단계에서 제공됩니다(REQ-2026-060 phase-2/3).',
-  '이 단계에서는 아무 파일도 변경하지 않았습니다.',
-].join('\n')
-
 // ─────────────────────────────────────────── 순수 코어 (phase-2) ──
 
 /**
@@ -118,6 +113,8 @@ export interface Question {
 
 export interface Prompter {
   ask(q: Question, hint: string): Promise<string>
+  /** readline 자원 정리. 없으면 no-op — 스크립트된 테스트 Prompter는 구현하지 않아도 된다. */
+  close?(): void
 }
 
 /** `CONFIG_SCHEMA`에서 해당 키의 서브스키마를 꺼낸다(검증 SSOT — DEC-4). 없으면 fail-closed. */
@@ -259,10 +256,21 @@ export interface Opts {
   dir: string
 }
 
-/** 부작용 주입 seam(테스트). 출력·TTY 상태를 밖에서 준다. */
+/** 설정 파일 IO 경계(주입 seam — 테스트에서 실제 파일 없이 구동). */
+export interface ConfigIo {
+  /** 기존 본문. 파일이 없으면 `null`. */
+  read(): string | null
+  /** 🔴 **유일한 쓰기 지점**(DEC-5·DEC-10 ⑦). 원자적으로 교체한다. */
+  write(text: string): void
+}
+
+/** 부작용 주입 seam(테스트). 출력·TTY 상태·IO·probe·prompter를 밖에서 준다. */
 export interface SetupDeps {
   streams: TtyStreams
   log: (msg: string) => void
+  io: ConfigIo
+  probes: ReviewerProbes
+  createPrompter: () => Prompter
 }
 
 /** 인자 파싱(fail-closed): 값 누락·알 수 없는 옵션은 즉시 throw. */
@@ -291,13 +299,113 @@ export class HelpRequested extends Error {
   }
 }
 
+/** 설정 파일 이름(대상 repo 루트 기준). */
+export const CONFIG_BASENAME = 'req.config.json'
+
 /**
- * setup 본체(phase-1). **TTY 가드가 가장 먼저**이고, 그 앞에는 아무 부작용도 없다 —
- * `deps.log`조차 호출되지 않는다(테스트가 이 성질을 단언한다).
+ * 원자적 교체(DEC-5). 같은 디렉터리에 temp를 쓰고 `rename`한다 — 같은 볼륨이라 rename이 원자적이고,
+ * 중간에 죽어도 **원본이 온전**하다. 실패 시 temp를 치운다(찌꺼기 금지).
  */
-export function runSetup(_opts: Opts, deps: SetupDeps): void {
+export function writeFileAtomic(path: string, content: string): void {
+  const tmp = `${path}.tmp-${process.pid}`
+  try {
+    writeFileSync(tmp, content, 'utf8')
+    renameSync(tmp, path)
+  } catch (err) {
+    try {
+      if (existsSync(tmp)) unlinkSync(tmp)
+    } catch {
+      // 정리 실패는 원래 오류를 가리지 않는다.
+    }
+    throw err
+  }
+}
+
+/** 실제 파일 IO. */
+export function createConfigIo(dir: string): ConfigIo {
+  const path = join(dir, CONFIG_BASENAME)
+  return {
+    read: () => (existsSync(path) ? readFileSync(path, 'utf8') : null),
+    write: (text) => writeFileAtomic(path, text),
+  }
+}
+
+/** 실제 대화형 Prompter(`node:readline/promises`). IO는 이 한 겹에만 있다(DEC-3). */
+export function createReadlinePrompter(): Prompter {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  return {
+    ask: async (q, hint) => rl.question(`\n${q.prompt}\n  ${hint}\n> `),
+    // 🔴 **반드시 노출한다.** 없으면 `runSetup`의 `finally`가 no-op이 되고, stdin에 붙은 readline 핸들이
+    //    열린 채 남아 **CLI 프로세스가 종료되지 않는다**(phase-3 r01 P1).
+    close: () => rl.close(),
+  }
+}
+
+/** 로그인 실패 시 메시지(수용기준 3·4 — 이 경로에서는 설정이 저장되지 않는다). */
+export function loginFailureMessage(detail: string): string {
+  return [
+    `codex 로그인을 확인하지 못했습니다: ${detail}`,
+    '설정을 저장하지 않았습니다 — req.config.json 은 변경되지 않았습니다.',
+    '터미널에서 `codex login` 을 마친 뒤 `npx commitgate setup` 을 다시 실행하세요.',
+  ].join('\n')
+}
+
+/**
+ * setup 본체(설계 DEC-10의 ①~⑦).
+ *
+ * 🔴 **TTY 가드가 가장 먼저**이고 그 앞에는 아무 부작용도 없다 — `deps.log`조차 호출되지 않는다.
+ * 🔴 **쓰기는 ⑦ 한 곳뿐**이다. 그 앞의 어떤 실패(설정 파싱·codex 미설치·질문 중단·로그인 실패·스키마 위반)도
+ *    `req.config.json`을 건드리지 않는다.
+ */
+export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
+  // ① TTY 판정 — 질문을 만들기 전에.
   if (!isInteractiveTty(deps.streams)) throw new Error(NON_TTY_MESSAGE)
-  deps.log(PHASE1_INTERACTIVE_NOTICE)
+
+  // ② 기존 설정 로드(손상이면 여기서 중단 — 덮어쓰지 않는다).
+  const existingText = deps.io.read()
+  const raw = parseConfigText(existingText)
+
+  // ③ codex 설치 확인 — 미설치면 로그인·설정 모두 의미가 없다.
+  const ver = deps.probes.version()
+  if (!ver.ok)
+    throw new Error(
+      `codex CLI 를 실행할 수 없습니다(${ver.detail}). 설치·PATH 를 확인한 뒤 다시 실행하세요 — 설정을 저장하지 않았습니다.`,
+    )
+  deps.log(`codex 확인: ${ver.version ?? '(버전 미상)'}`)
+
+  // ④ 질문(모델·effort). 현재 값이 기본 답변이다(DEC-11).
+  //    🔴 prompter 는 반드시 닫는다 — readline 이 열린 채면 프로세스가 끝나지 않는다.
+  const prompter = deps.createPrompter()
+  let patch: Partial<Record<SetupKey, string | null>>
+  try {
+    patch = await askAll(buildQuestions(raw), prompter, (m) => deps.log(`  ⚠️  ${m}`))
+  } finally {
+    prompter.close?.()
+  }
+
+  // ⑤ 로그인 — 이미 되어 있으면 건너뛴다. 아니면 실행하고 **재검증**한다(DEC-8·DEC-9).
+  const before = deps.probes.auth()
+  if (before.state === 'logged-in') {
+    deps.log(`codex 로그인 확인됨${before.detail ? `: ${before.detail}` : ''}`)
+  } else {
+    deps.log('codex 로그인이 필요합니다 — 브라우저 인증을 마치면 이어집니다.')
+    deps.probes.login()
+    const after = deps.probes.auth()
+    // 🔴 setup 에서는 `unknown`도 실패다 — 완료로 넘어가려면 "로그인 성공"이 확정이어야 한다(DEC-9).
+    if (after.state !== 'logged-in') throw new Error(loginFailureMessage(`${after.state}(${after.reason}) ${after.detail}`.trim()))
+    deps.log('codex 로그인 완료.')
+  }
+
+  // ⑥ 병합 + 스키마 재검증(실패면 throw — 쓰기 없음).
+  if (Object.keys(patch).length === 0) {
+    deps.log('변경된 설정이 없습니다 — req.config.json 을 건드리지 않았습니다.')
+    return
+  }
+  const merged = mergeConfigText(existingText, patch)
+
+  // ⑦ 유일한 쓰기.
+  deps.io.write(merged)
+  deps.log(`저장했습니다: ${join(opts.dir, CONFIG_BASENAME)} (${Object.keys(patch).join(', ')})`)
 }
 
 export function printHelp(): void {
@@ -319,13 +427,18 @@ export function printHelp(): void {
 `)
 }
 
-export function runCli(argv: string[], deps?: SetupDeps): void {
-  const d: SetupDeps = deps ?? {
-    streams: { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY },
-    log: (m) => console.log(m),
-  }
+export async function runCli(argv: string[], deps?: SetupDeps): Promise<void> {
   try {
-    runSetup(parseArgs(argv), d)
+    const opts = parseArgs(argv)
+    const d: SetupDeps =
+      deps ?? {
+        streams: { stdin: process.stdin.isTTY, stdout: process.stdout.isTTY },
+        log: (m) => console.log(m),
+        io: createConfigIo(opts.dir),
+        probes: createReviewerProbes(),
+        createPrompter: createReadlinePrompter,
+      }
+    await runSetup(opts, d)
   } catch (err) {
     if (err instanceof HelpRequested) {
       printHelp()

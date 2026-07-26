@@ -5,7 +5,6 @@ import {
   parseArgs,
   HelpRequested,
   NON_TTY_MESSAGE,
-  PHASE1_INTERACTIVE_NOTICE,
   SETUP_KEYS,
   NULL_SENTINEL,
   MAX_ANSWER_ATTEMPTS,
@@ -18,11 +17,17 @@ import {
   askAll,
   parseConfigText,
   mergeConfigText,
+  writeFileAtomic,
+  createReadlinePrompter,
   type SetupDeps,
   type Question,
   type Prompter,
 } from '../../bin/setup'
 import { CONFIG_SCHEMA, DEFAULTS } from '../../scripts/req/lib/config'
+import { classifyAuthOutput, type AuthProbeResult, type VersionProbeResult } from '../../scripts/req/lib/adapters'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 /**
  * REQ-2026-060 phase-1 — TTY 판정 + verb 골격(설계 DEC-1·DEC-2).
@@ -32,10 +37,58 @@ import { CONFIG_SCHEMA, DEFAULTS } from '../../scripts/req/lib/config'
  *    "throw 한다"뿐 아니라 **"throw 전에 부작용이 0건이다"**(log 미호출)까지 검증한다.
  */
 
-/** log 호출을 기록하는 deps. 부작용 0건 단언의 관측점. */
-function deps(stdin: boolean | undefined, stdout: boolean | undefined): SetupDeps & { logs: string[] } {
+/**
+ * 테스트 deps. 모든 부작용(로그·파일 IO·codex probe·프롬프트)을 기록/주입한다.
+ * 기본값은 "codex 설치됨 + 이미 로그인됨 + 모든 질문에 Enter" — 각 테스트가 필요한 축만 덮어쓴다.
+ */
+function deps(
+  stdin: boolean | undefined,
+  stdout: boolean | undefined,
+  over: Partial<{
+    existing: string | null
+    answers: string[]
+    version: VersionProbeResult
+    authSeq: AuthProbeResult[]
+    loginStatus: number | null
+  }> = {},
+): SetupDeps & { logs: string[]; writes: string[]; loginCalls: number; asked: Question[] } {
   const logs: string[] = []
-  return { streams: { stdin, stdout }, log: (m) => logs.push(m), logs }
+  const writes: string[] = []
+  const asked: Question[] = []
+  const authSeq = over.authSeq ?? [{ state: 'logged-in', reason: 'ok', detail: 'Logged in using ChatGPT' }]
+  let authIdx = 0
+  let loginCalls = 0
+  let answerIdx = 0
+  const answers = over.answers ?? ['', '']
+  const self = {
+    streams: { stdin, stdout },
+    log: (m: string) => void logs.push(m),
+    io: {
+      read: () => over.existing ?? null,
+      write: (t: string) => void writes.push(t),
+    },
+    probes: {
+      version: () => over.version ?? { ok: true, version: 'codex-cli 0.144.1', detail: 'codex-cli 0.144.1' },
+      auth: () => authSeq[Math.min(authIdx++, authSeq.length - 1)] as AuthProbeResult,
+      login: () => {
+        self.loginCalls = ++loginCalls
+        return { status: over.loginStatus ?? 0 }
+      },
+    },
+    createPrompter: (): Prompter => ({
+      ask: async (q: Question) => {
+        asked.push(q)
+        const a = answers[answerIdx++]
+        if (a === undefined) throw new Error('스크립트된 답변 소진')
+        return a
+      },
+    }),
+    logs,
+    writes,
+    loginCalls: 0,
+    asked,
+  }
+  return self
 }
 
 describe('[setup] isInteractiveTty — stdin·stdout 둘 다 true일 때만 대화형(DEC-2)', () => {
@@ -74,15 +127,18 @@ describe('[setup] isInteractiveTty — stdin·stdout 둘 다 true일 때만 대�
 })
 
 describe('[setup] runSetup — 비-TTY는 질문 없이 즉시 실패(DEC-1)', () => {
-  it('비-TTY: NON_TTY_MESSAGE로 throw', () => {
+  it('비-TTY: NON_TTY_MESSAGE로 reject', async () => {
     const d = deps(undefined, undefined)
-    expect(() => runSetup({ dir: '/tmp/x' }, d)).toThrow(NON_TTY_MESSAGE)
+    await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow(NON_TTY_MESSAGE)
   })
 
-  it('🔴 비-TTY: throw 전에 부작용 0건 — log가 한 번도 호출되지 않는다', () => {
+  it('🔴 비-TTY: 부작용 0건 — log·읽기·probe·질문·쓰기 모두 발생하지 않는다', async () => {
     const d = deps(undefined, undefined)
-    expect(() => runSetup({ dir: '/tmp/x' }, d)).toThrow()
+    await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow()
     expect(d.logs).toEqual([])
+    expect(d.writes).toEqual([])
+    expect(d.asked).toEqual([])
+    expect(d.loginCalls).toBe(0)
   })
 
   it('거부 메시지는 에이전트에게 "요청하라"를, 사람에게 통상 실행법을 지시한다', () => {
@@ -99,10 +155,10 @@ describe('[setup] runSetup — 비-TTY는 질문 없이 즉시 실패(DEC-1)', (
     expect(NON_TTY_MESSAGE).toContain('PowerShell·Git Bash 모두 그대로 동작')
   })
 
-  it('TTY: 안내만 출력하고 아무것도 쓰지 않는다(phase-1 범위)', () => {
+  it('TTY: 정상 진행한다(질문까지 도달)', async () => {
     const d = deps(true, true)
-    expect(() => runSetup({ dir: '/tmp/x' }, d)).not.toThrow()
-    expect(d.logs).toEqual([PHASE1_INTERACTIVE_NOTICE])
+    await expect(runSetup({ dir: '/tmp/x' }, d)).resolves.toBeUndefined()
+    expect(d.asked.map((q) => q.key)).toEqual(['reviewModel', 'reviewReasoningEffort'])
   })
 })
 
@@ -300,6 +356,176 @@ describe('[setup] parseConfigText — 손상된 설정을 덮어쓰지 않는다
   it('배열·스칼라 → throw', () => {
     expect(() => parseConfigText('[]')).toThrow('JSON 객체가 아닙니다')
     expect(() => parseConfigText('"x"')).toThrow('JSON 객체가 아닙니다')
+  })
+})
+
+// ─────────────────── phase-3: 로그인·원자적 쓰기 배선 (DEC-5·DEC-8·DEC-9·DEC-10) ──
+
+describe('[setup] classifyAuthOutput — stdout 기반 3분류(DEC-9)', () => {
+  it('실측 문자열: "Logged in using ChatGPT"(exit 0, stdout) → logged-in', () => {
+    expect(classifyAuthOutput(0, 'Logged in using ChatGPT\n', '')).toMatchObject({ state: 'logged-in', reason: 'ok' })
+  })
+
+  // 🔴 "Not logged in"은 "logged in"을 **포함**한다 — 부정 패턴을 먼저 보지 않으면 뒤집힌다.
+  for (const out of ['Not logged in', 'You are not logged in.', 'logged out', 'Not authenticated']) {
+    it(`부정 신호가 긍정보다 우선한다: ${JSON.stringify(out)} → logged-out`, () => {
+      expect(classifyAuthOutput(1, out, '').state).toBe('logged-out')
+    })
+  }
+
+  it('🔴 stderr에만 나와도 읽는다(codex는 stdout/stderr가 갈린다)', () => {
+    expect(classifyAuthOutput(1, '', 'Not logged in').state).toBe('logged-out')
+    expect(classifyAuthOutput(0, '', 'Logged in using ChatGPT').state).toBe('logged-in')
+  })
+
+  it('알아볼 수 없는 출력 → unknown(단정하지 않는다)', () => {
+    expect(classifyAuthOutput(0, 'some new format', '')).toMatchObject({ state: 'unknown', reason: 'unrecognized-output' })
+    expect(classifyAuthOutput(2, '', '')).toMatchObject({ state: 'unknown', reason: 'probe-failed' })
+  })
+})
+
+describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
+  const loggedOut: AuthProbeResult = { state: 'logged-out', reason: 'ok', detail: 'Not logged in' }
+  const loggedIn: AuthProbeResult = { state: 'logged-in', reason: 'ok', detail: 'Logged in using ChatGPT' }
+  const unknown: AuthProbeResult = { state: 'unknown', reason: 'unrecognized-output', detail: '???' }
+
+  it('이미 로그인돼 있으면 login을 실행하지 않는다(DEC-8)', async () => {
+    const d = deps(true, true, { answers: ['new-model', ''] })
+    await runSetup({ dir: '/tmp/x' }, d)
+    expect(d.loginCalls).toBe(0)
+    expect(d.writes).toHaveLength(1)
+  })
+
+  it('미로그인 → login 실행 후 재검증 성공 → 저장(수용기준 3)', async () => {
+    const d = deps(true, true, { answers: ['new-model', ''], authSeq: [loggedOut, loggedIn] })
+    await runSetup({ dir: '/tmp/x' }, d)
+    expect(d.loginCalls).toBe(1)
+    expect(JSON.parse(d.writes[0] as string)).toEqual({ reviewModel: 'new-model' })
+  })
+
+  it('🔴 로그인 실패 → throw + 설정 미변경(수용기준 4)', async () => {
+    const d = deps(true, true, { answers: ['new-model', ''], authSeq: [loggedOut, loggedOut] })
+    await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow('변경되지 않았습니다')
+    expect(d.writes).toEqual([])
+  })
+
+  it('🔴 재검증이 unknown이어도 실패로 처리한다(setup은 엄격 — DEC-9)', async () => {
+    const d = deps(true, true, { answers: ['new-model', ''], authSeq: [loggedOut, unknown] })
+    await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow()
+    expect(d.writes).toEqual([])
+  })
+
+  it('🔴 codex 미설치 → 질문·로그인·쓰기 모두 없음', async () => {
+    const d = deps(true, true, { version: { ok: false, version: null, detail: 'ENOENT' } })
+    await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow('codex CLI')
+    expect(d.asked).toEqual([])
+    expect(d.loginCalls).toBe(0)
+    expect(d.writes).toEqual([])
+  })
+
+  it('🔴 기존 설정이 손상됐으면 읽자마자 중단 — 덮어쓰지 않는다', async () => {
+    const d = deps(true, true, { existing: '{ broken' })
+    await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow('파싱 실패')
+    expect(d.writes).toEqual([])
+  })
+
+  it('모두 Enter(변경 없음) → 쓰기 0건(무의미한 diff를 만들지 않는다)', async () => {
+    const d = deps(true, true, { existing: '{\n  "branchPrefix": "feat/req-"\n}\n' })
+    await runSetup({ dir: '/tmp/x' }, d)
+    expect(d.writes).toEqual([])
+    expect(d.logs.some((l) => l.includes('변경된 설정이 없습니다'))).toBe(true)
+  })
+
+  it('기존 키를 보존하며 저장한다', async () => {
+    const d = deps(true, true, {
+      existing: JSON.stringify({ branchPrefix: 'feat/req-', reviewModel: 'old' }, null, 2),
+      answers: ['new-model', 'low'],
+    })
+    await runSetup({ dir: '/tmp/x' }, d)
+    expect(JSON.parse(d.writes[0] as string)).toEqual({
+      branchPrefix: 'feat/req-',
+      reviewModel: 'new-model',
+      reviewReasoningEffort: 'low',
+    })
+  })
+})
+
+describe('[setup] Prompter 수명 — 항상 닫는다(phase-3 r01 P1)', () => {
+  /**
+   * 🔴 `close()`가 없으면 stdin에 붙은 readline 핸들이 남아 **CLI가 종료되지 않는다.**
+   *    아래 두 단언이 그 계약의 양 끝이다: (1) 실제 구현이 close를 **노출**하는가,
+   *    (2) `runSetup`이 성공·실패 **양쪽에서** 부르는가.
+   */
+  it('실제 readline Prompter가 close()를 노출한다', () => {
+    const p = createReadlinePrompter()
+    try {
+      expect(typeof p.close).toBe('function')
+    } finally {
+      p.close?.()
+    }
+  })
+
+  /** close 호출을 세는 deps(정상 완료 경로). */
+  function countingDeps(answers: string[]) {
+    const base = deps(true, true, { answers })
+    let closes = 0
+    return {
+      d: { ...base, createPrompter: () => ({ ...base.createPrompter(), close: () => void closes++ }) },
+      closes: () => closes,
+    }
+  }
+
+  it('정상 완료에서 close가 호출된다', async () => {
+    const { d, closes } = countingDeps(['new-model', 'low'])
+    await runSetup({ dir: '/tmp/x' }, d)
+    expect(closes()).toBe(1)
+  })
+
+  it('🔴 질문 도중 실패해도 close가 호출된다(finally)', async () => {
+    const { d, closes } = countingDeps(['bad model', 'bad model', 'bad model'])
+    await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow('확정하지 못했습니다')
+    expect(closes()).toBe(1)
+  })
+})
+
+describe('[setup] writeFileAtomic — temp+rename, 실패 시 찌꺼기 없음(DEC-5)', () => {
+  it('새 파일 생성 후 내용 일치', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-setup-'))
+    try {
+      const p = join(dir, 'req.config.json')
+      writeFileAtomic(p, '{"a":1}\n')
+      expect(readFileSync(p, 'utf8')).toBe('{"a":1}\n')
+      expect(readdirSync(dir)).toEqual(['req.config.json'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+    }
+  })
+
+  it('🔴 기존 파일을 교체해도 temp 찌꺼기가 남지 않는다', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-setup-'))
+    try {
+      const p = join(dir, 'req.config.json')
+      writeFileSync(p, 'old\n', 'utf8')
+      writeFileAtomic(p, 'new\n')
+      expect(readFileSync(p, 'utf8')).toBe('new\n')
+      expect(readdirSync(dir)).toEqual(['req.config.json'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+    }
+  })
+
+  it('🔴 쓰기 실패 시 원본이 보존되고 temp가 정리된다', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-setup-'))
+    try {
+      const p = join(dir, 'req.config.json')
+      writeFileSync(p, 'original\n', 'utf8')
+      // 존재하지 않는 하위 디렉터리 경로 → writeFileSync 단계에서 실패.
+      expect(() => writeFileAtomic(join(dir, 'nope', 'x.json'), 'x')).toThrow()
+      expect(readFileSync(p, 'utf8')).toBe('original\n')
+      expect(readdirSync(dir)).toEqual(['req.config.json'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+    }
   })
 })
 

@@ -115,6 +115,101 @@ export function createGitAdapter(root: string, run: GitRunner = defaultGitRunner
   return { exec: (args) => run('git', args, { cwd: root, encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER }).replace(/\s+$/, '') }
 }
 
+// ──────────────────────────────────── Reviewer 가용성 probe (REQ-2026-060) ──
+
+/**
+ * 리뷰어 CLI 로그인 상태(설계 DEC-9). **3분류**다 — `unknown`을 `logged-out`에 합치면 출력 포맷이 바뀐 날
+ * 잘못된 단정을 하게 된다.
+ */
+export type ReviewerAuthState = 'logged-in' | 'logged-out' | 'unknown'
+
+/** 판정 원인(메시지 sniffing 대신 타입). */
+export type AuthProbeReason = 'ok' | 'not-installed' | 'probe-failed' | 'unrecognized-output'
+
+export interface AuthProbeResult {
+  state: ReviewerAuthState
+  reason: AuthProbeReason
+  /** 사람이 읽을 진단(원본 출력의 첫 줄 등). */
+  detail: string
+}
+
+export interface VersionProbeResult {
+  ok: boolean
+  /** 예: `codex-cli 0.144.1`. 실패면 null. */
+  version: string | null
+  detail: string
+}
+
+/** "로그인 안 됨" 신호. **긍정 패턴보다 먼저** 본다 — `Not logged in`은 `logged in`을 포함한다. */
+const LOGGED_OUT_RE = /not\s+logged\s+in|logged\s+out|not\s+authenticated|please\s+(run\s+)?.*login/i
+/** "로그인 됨" 신호. 실측: `Logged in using ChatGPT`(exit 0, **stdout**). */
+const LOGGED_IN_RE = /logged\s+in/i
+
+/**
+ * `codex login status` 출력 → 상태(순수·테스트 가능, 설계 DEC-9).
+ *
+ * 🔴 **stdout과 stderr를 함께 본다.** 이 저장소는 "stderr만 읽는데 codex는 에러를 stdout에 쓴다"로 이미
+ *    데인 적이 있다. 실측에서도 결과는 stdout이었다.
+ * 🔴 **exit code 단독으로 판정하지 않는다.** 로그아웃 상태의 exit code를 실측하지 못했기 때문이다
+ *    (로그아웃할 수 없었다). 그래서 텍스트를 먼저 보고, 알아볼 수 없으면 `unknown`으로 남긴다.
+ */
+export function classifyAuthOutput(status: number | null, stdout: string, stderr: string): AuthProbeResult {
+  const text = `${stdout}\n${stderr}`
+  const detail = (stdout.trim() || stderr.trim()).split('\n')[0]?.trim() ?? ''
+  if (LOGGED_OUT_RE.test(text)) return { state: 'logged-out', reason: 'ok', detail }
+  if (LOGGED_IN_RE.test(text)) return { state: 'logged-in', reason: 'ok', detail }
+  // 텍스트를 알아볼 수 없다. non-zero면 probe 자체가 실패했을 가능성이 크지만, 어느 쪽이든 **단정하지 않는다**.
+  return {
+    state: 'unknown',
+    reason: status === 0 ? 'unrecognized-output' : 'probe-failed',
+    detail: detail || `exit=${status ?? 'null'}`,
+  }
+}
+
+/** 리뷰어 CLI 가용성·인증 probe 묶음. spawn 주입으로 테스트 가능. */
+export interface ReviewerProbes {
+  version(): VersionProbeResult
+  auth(): AuthProbeResult
+  /**
+   * 🔴 **대화형 로그인**(설계 DEC-8). `stdio:'inherit'`로 사용자에게 터미널을 그대로 넘긴다.
+   *
+   * ⚠️ **맨 `codex login`만 실행한다.** `--with-api-key`/`--with-access-token`은 **쓰지 않는다** —
+   *    그 변형만이 비밀값을 stdin으로 받으며, commitgate가 이를 파이프하면 자격증명이 이 프로세스를
+   *    통과해 에러 메시지·로그로 샐 표면이 생긴다. 브라우저 OAuth는 값이 이 프로세스를 지나가지 않는다.
+   */
+  login(): { status: number | null }
+}
+
+export function createReviewerProbes(spawnStatus: StatusSpawn = safeSpawnSyncStatus, bin = 'codex'): ReviewerProbes {
+  return {
+    version() {
+      try {
+        const r = spawnStatus(bin, ['--version'])
+        const version = (r.stdout.trim() || r.stderr.trim()).split('\n')[0]?.trim() || null
+        if (r.status !== 0) return { ok: false, version: null, detail: `exit=${r.status ?? 'null'}` }
+        return { ok: true, version, detail: version ?? '' }
+      } catch (err) {
+        // spawn 자체 실패(ENOENT 등) = 미설치.
+        return { ok: false, version: null, detail: err instanceof Error ? err.message : String(err) }
+      }
+    },
+    auth() {
+      let r: { status: number | null; stdout: string; stderr: string }
+      try {
+        r = spawnStatus(bin, ['login', 'status'])
+      } catch (err) {
+        return { state: 'unknown', reason: 'not-installed', detail: err instanceof Error ? err.message : String(err) }
+      }
+      return classifyAuthOutput(r.status, r.stdout, r.stderr)
+    },
+    login() {
+      // stdio:'inherit' — 출력을 캡처하지 않고 사용자 터미널로 그대로 흘린다(브라우저 플로우 대기).
+      const r = spawnStatus(bin, ['login'], { stdio: 'inherit' })
+      return { status: r.status }
+    },
+  }
+}
+
 // ─────────────────────────────────────────────── Reviewer (codex) ──
 
 export interface ReviewRequest {
