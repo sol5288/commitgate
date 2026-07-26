@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-067-setup-interactive-ui",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa088-2416-7250-b282-1c67352927e9",
-  "review_base_sha": "049deaba1613a45649c8e17491b6a47524b0b4ab",
-  "review_diff_hash": "d44f05ca9ea6e99966460a92a15835c5c1cc59b6",
+  "codex_thread_id": "019fa093-5611-7b43-92f3-9d886e00f6b3",
+  "review_base_sha": "ca9accd54809e2d7ef825606b3d487fe8bbb921b",
+  "review_diff_hash": "e5d8025075944312d79f5eb7dc37d21e0d10745f",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "5c712c14e7429ac1f0d04264db61ef9325508de2e0634a8ac77984ab1ea8d5b3",
-  "current_phase": "phase-3-banner-docs",
+  "current_phase": "phase-4-polish",
   "phases": [
     {
       "id": "phase-1-select-core",
@@ -26,7 +26,7 @@
     },
     {
       "id": "phase-4-polish",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -109,16 +109,23 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-polish#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4-polish",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-4-polish",
     "outcome": "approved",
-    "compare_hash": "9b850010a266674f637002270affa2ed5debccd79d6330d045f4e3c131e5945d",
+    "compare_hash": "77f364c7946582c0674d8256322614bd00ddc7b1dd4695d67a9c8f32cfcc76ab",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T22:25:46.329Z",
+    "at": "2026-07-26T22:37:55.514Z",
     "findings": [],
     "elided_count": 0
   },
@@ -145,6 +152,12 @@
       "phase_id": "phase-3-banner-docs",
       "consumed_by_commit_sha": "448090bbb1e9fc2ea35f8aab2c9b74016b03b843",
       "approval_consumed_at": "2026-07-26T18:53:00.762Z"
+    },
+    {
+      "approved_tree": "e5d8025075944312d79f5eb7dc37d21e0d10745f",
+      "phase_id": "phase-4-polish",
+      "consumed_by_commit_sha": "62fbabb28bcc8188c7df554f877ac55ff2db7f02",
+      "approval_consumed_at": "2026-07-26T22:38:29.063Z"
     }
   ],
   "user_commit_confirmed": null,
