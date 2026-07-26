@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-067-setup-interactive-ui",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9fa0-9e18-7450-876c-b428c05bdd40",
-  "review_base_sha": "b5896f21d4f72ec42af34f6db727da95f190ccb0",
-  "review_diff_hash": "389d4a7db57de4a5d999ce962edbf35037238fd1",
+  "codex_thread_id": "019f9fa1-8566-74c2-b5f0-ddc051e73645",
+  "review_base_sha": "e4b5267d34ed8fab5993865b635d0806da476b82",
+  "review_diff_hash": "b73a1855900d1c05f15864d2f8dc6abcfada1279",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "1d887d4f9c55a1bb0e1ca974d89f53b16ae38116769d3d9a913c7d6312bf84c9",
-  "current_phase": "phase-1-select-core",
+  "current_phase": "phase-2-adapter",
   "phases": [
     {
       "id": "phase-1-select-core",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-adapter",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-banner-docs",
@@ -54,8 +54,8 @@
       "series_id": "phase:phase-2-adapter#1",
       "review_kind": "phase",
       "phase_id": "phase-2-adapter",
-      "attempts": 1,
-      "closed_reason": null
+      "attempts": 2,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#2",
@@ -66,13 +66,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-2-adapter",
     "outcome": "approved",
     "compare_hash": "63f138680050fdbbe82d46aef87300fc9fdb43a19a64e7ba91845be770b1e6a6",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T18:12:57.594Z",
+    "at": "2026-07-26T18:14:16.601Z",
     "findings": [],
     "elided_count": 0
   },
@@ -87,6 +87,12 @@
       "phase_id": "phase-1-select-core",
       "consumed_by_commit_sha": "530adb06d9f8103428e096b2de6b2185e1390043",
       "approval_consumed_at": "2026-07-26T17:41:06.580Z"
+    },
+    {
+      "approved_tree": "b73a1855900d1c05f15864d2f8dc6abcfada1279",
+      "phase_id": "phase-2-adapter",
+      "consumed_by_commit_sha": "877bc1288c7fc041b762f41920790a619590afff",
+      "approval_consumed_at": "2026-07-26T18:14:47.477Z"
     }
   ],
   "user_commit_confirmed": null,
