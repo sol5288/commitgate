@@ -48,6 +48,11 @@ export interface DeliveryMember {
   status: MemberStatus
   /** 이 member가 교체한 parent REQ id. 없으면 `null`. */
   successor_of: string | null
+  /**
+   * `begin`이 만든 feature 브랜치 이름(DEC-7). `integrate`는 **현재 checkout 위치가 아니라** 이 값을 쓴다 —
+   * 사용자가 다른 브랜치로 이탈해도 같은 결과가 나와야 한다(phase-2 r05 P1).
+   */
+  feature_ref: string | null
   integrated_at: string | null
   /** `superseded`일 때만 채워진다(DEC-5). */
   superseded_evidence: SupersededEvidence | null
@@ -90,7 +95,7 @@ export const OPTIONAL_RECORD_KEYS: readonly string[] = []
 /** member **필수** 키. */
 export const REQUIRED_MEMBER_KEYS = ['req_id', 'order', 'delivery_base_sha', 'status'] as const
 /** member **선택** 키 — 옛 레코드에 없어도 통과한다. */
-export const OPTIONAL_MEMBER_KEYS = ['successor_of', 'integrated_at', 'superseded_evidence'] as const
+export const OPTIONAL_MEMBER_KEYS = ['successor_of', 'feature_ref', 'integrated_at', 'superseded_evidence'] as const
 
 const STATES: readonly string[] = ['open', 'sealed', 'approved']
 const MEMBER_STATUSES: readonly string[] = ['active', 'integrated', 'superseded']
@@ -138,6 +143,8 @@ export function deliveryRecordProblems(raw: unknown): string[] {
     // 선택 키는 **있으면** 검증한다(없으면 통과).
     if ('successor_of' in m && m.successor_of !== null && typeof m.successor_of !== 'string')
       p.push(`members[${i}].successor_of는 null이거나 문자열`)
+    if ('feature_ref' in m && m.feature_ref !== null && typeof m.feature_ref !== 'string')
+      p.push(`members[${i}].feature_ref는 null이거나 문자열`)
     if ('integrated_at' in m && m.integrated_at !== null && typeof m.integrated_at !== 'string')
       p.push(`members[${i}].integrated_at은 null이거나 문자열`)
     if ('superseded_evidence' in m && m.superseded_evidence !== null && !isPlainObject(m.superseded_evidence))
@@ -273,12 +280,39 @@ export function canApprove(r: DeliveryRecord): CanBeginVerdict {
 
 /** integrate **위상** 전제(순수 — git 사실은 입력으로 받는다). 자격 검증은 별도(DEC-2b, phase-2). */
 export interface IntegrateTopologyFacts {
-  /** 레코드가 기억하는 base. */
+  /** 레코드가 기억하는 base(감사 정보 + 이력 선상 확인용). */
   memberBaseSha: string
   /** 현재 delivery HEAD. */
   deliveryHeadSha: string
-  /** delivery HEAD가 feature HEAD의 조상인가. */
-  deliveryIsAncestorOfFeature: boolean
+  /**
+   * 🔴 `merge-base(delivery, feature) .. delivery HEAD` 의 변경 경로가 **delivery 레코드 파일뿐**인가 —
+   * **무충돌의 실제 보장**이다(design r03).
+   *
+   * 내가 분기한 뒤 delivery에서 움직인 것이 레코드 파일밖에 없다면, 그 변경은 feature 쪽 코드와 겹칠 수
+   * 없으므로 병합이 코드 충돌을 낼 수 없다.
+   *
+   * 🔴 **왜 ancestry가 아닌가**: "delivery HEAD가 feature의 조상"은 이 성질의 **충분조건일 뿐**(변경이 아예
+   *    없는 경우)이고, **membership을 delivery에 기록하는 것과 양립 불가**했다 — member 레코드 커밋이
+   *    delivery HEAD를 feature 분기점 너머로 밀기 때문이다. 순서를 바꿔도 같고, 커밋이 분기점보다 앞서려면
+   *    REQ 번호를 `req:new` 이전에 알아야 하는데 채번은 `req:new`가 한다. 그래서 조건을 **정밀한 쪽**으로 바꿨다.
+   */
+  deliveryDivergedOnlyByRecord: boolean
+  /** 위 판정에 쓰인, 레코드 외 변경 경로(진단 메시지용). */
+  deliveryNonRecordPaths: readonly string[]
+  /**
+   * 기록된 base가 현재 delivery HEAD의 **조상(또는 동일)** 인가 — 같은 이력 선상인지 보는 정합성 검사.
+   * 🔴 **동일성을 요구하지 않는다**(design r02): `begin`이 member 레코드를 커밋하므로 delivery HEAD는
+   *    기록된 base보다 항상 앞선다. 이 검사는 손으로 고친 엉뚱한 base를 잡기 위한 것이다.
+   */
+  baseIsAncestorOfDeliveryHead: boolean
+  /**
+   * 🔴 `merge-base(delivery, feature) .. feature` 가 건드린 **delivery 레코드 경로**(design r07 P1).
+   *
+   * delivery 쪽만 보면 무충돌이 성립하지 않는다 — delivery는 member 등록으로 레코드를 바꾸고,
+   * feature가 분기 시점 사본을 편집하면 **정확히 그 파일에서** 병합 충돌이 난다.
+   * 사본은 판정 입력도 편집 대상도 아니므로(DEC-3), 편집됐다면 거부한다.
+   */
+  featureChangedRecordPaths: readonly string[]
   /** 워킹트리가 clean 한가. */
   worktreeClean: boolean
   /** 진행 중 merge/rebase가 없는가. */
@@ -295,12 +329,21 @@ export function integrateTopologyProblems(f: IntegrateTopologyFacts): string[] {
   const p: string[] = []
   if (!f.worktreeClean) p.push('워킹트리가 clean 하지 않습니다')
   if (!f.noMergeInProgress) p.push('진행 중인 merge/rebase가 있습니다')
-  if (f.memberBaseSha !== f.deliveryHeadSha)
+  if (!f.baseIsAncestorOfDeliveryHead)
     p.push(
-      `delivery HEAD가 등록 시점과 다릅니다(기록 ${f.memberBaseSha.slice(0, 8)} ≠ 현재 ${f.deliveryHeadSha.slice(0, 8)}) — 순차 진행 전제가 깨졌습니다`,
+      `기록된 base(${f.memberBaseSha.slice(0, 8)})가 현재 delivery HEAD(${f.deliveryHeadSha.slice(0, 8)})의 이력 선상에 없습니다 — 레코드가 다른 이력을 가리킵니다`,
     )
-  if (!f.deliveryIsAncestorOfFeature)
-    p.push('delivery HEAD가 feature의 조상이 아닙니다 — 자동 rebase·충돌 해결은 하지 않습니다(재검수 없는 코드 유입 방지)')
+  if (f.featureChangedRecordPaths.length)
+    p.push(
+      `feature 가 delivery 레코드를 수정했습니다(${f.featureChangedRecordPaths.join(', ')}) — ` +
+        '레코드의 정본은 delivery ref 입니다(feature 사본은 판정 입력이 아닙니다). ' +
+        '해당 경로를 분기 시점 상태로 되돌린 뒤 다시 시도하세요(삭제하지 마세요 — delete/modify 충돌이 납니다)',
+    )
+  if (!f.deliveryDivergedOnlyByRecord)
+    p.push(
+      `분기 이후 delivery에서 레코드 외 변경이 있었습니다(${f.deliveryNonRecordPaths.join(', ') || '경로 미상'}) — ` +
+        '자동 rebase·충돌 해결은 하지 않습니다(재검수 없는 코드 유입 방지)',
+    )
   return p
 }
 

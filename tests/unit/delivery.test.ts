@@ -45,6 +45,7 @@ function member(over: Partial<DeliveryMember> & { req_id: string; order: number 
     delivery_base_sha: 'd'.repeat(40),
     status: 'active',
     successor_of: null,
+    feature_ref: null,
     integrated_at: null,
     superseded_evidence: null,
     ...over,
@@ -280,8 +281,11 @@ describe('[delivery] canApprove — sealed && 전부 종결(DEC-8)', () => {
 describe('[delivery] integrateTopologyProblems — 위상 전제(DEC-2)', () => {
   const ok = {
     memberBaseSha: 'a'.repeat(40),
-    deliveryHeadSha: 'a'.repeat(40),
-    deliveryIsAncestorOfFeature: true,
+    deliveryHeadSha: 'b'.repeat(40),
+    deliveryDivergedOnlyByRecord: true,
+    deliveryNonRecordPaths: [],
+    featureChangedRecordPaths: [],
+    baseIsAncestorOfDeliveryHead: true,
     worktreeClean: true,
     noMergeInProgress: true,
   }
@@ -290,15 +294,50 @@ describe('[delivery] integrateTopologyProblems — 위상 전제(DEC-2)', () => 
     expect(integrateTopologyProblems(ok)).toEqual([])
   })
 
-  it('base 불일치 거부(순차 전제가 깨졌다)', () => {
-    expect(integrateTopologyProblems({ ...ok, deliveryHeadSha: 'b'.repeat(40) }).length).toBe(1)
+  /**
+   * 🔴 design r07 P1: delivery 쪽만 보면 무충돌이 아니다. delivery 는 member 등록으로 레코드를 바꾸고,
+   * feature 가 분기 시점 사본을 편집하면 **정확히 그 파일에서** 병합 충돌이 난다.
+   */
+  it('🔴 feature 가 delivery 레코드를 수정했으면 거부', () => {
+    const p = integrateTopologyProblems({ ...ok, featureChangedRecordPaths: ['workflow/delivery/payment.json'] })
+    expect(p.some((x) => x.includes('delivery 레코드를 수정'))).toBe(true)
+    // 삭제 유도 금지 — delete/modify 충돌이라 같은 문제다.
+    expect(p.some((x) => x.includes('삭제하지 마세요'))).toBe(true)
   })
 
-  // 🔴 자동 rebase·충돌 해결은 하지 않는다 — 충돌 해결은 재검수 없는 새 코드다.
-  it('🔴 조상이 아니면 거부하고 자동 해결을 시사하지 않는다', () => {
-    const p = integrateTopologyProblems({ ...ok, deliveryIsAncestorOfFeature: false })
+  /**
+   * 🔴 design r02 정정의 회귀 가드. 초안은 `base === delivery HEAD`를 요구했는데, `begin`이 member 레코드를
+   * delivery에 커밋해야 하므로 그 커밋이 delivery HEAD를 base 너머로 민다 — 동일성과 조상 관계는 **동시에
+   * 성립할 수 없었고**, 그 조건이 정상 경로를 막았다. 실측: base=c16a04b · delivery HEAD=274aa86 · ancestry=YES.
+   */
+  it('🔴 base와 delivery HEAD가 달라도, 이력 선상이면 통과한다(동일성을 요구하지 않는다)', () => {
+    expect(integrateTopologyProblems({ ...ok, memberBaseSha: 'a'.repeat(40), deliveryHeadSha: 'c'.repeat(40) })).toEqual([])
+  })
+
+  it('base가 delivery HEAD의 이력 선상에 없으면 거부(손으로 고친 레코드)', () => {
+    const p = integrateTopologyProblems({ ...ok, baseIsAncestorOfDeliveryHead: false })
     expect(p).toHaveLength(1)
+    expect(p[0]).toContain('이력 선상에 없습니다')
+  })
+
+  /**
+   * 🔴 design r03 회귀 가드 — 무충돌 보장의 실제 조건.
+   * 분기 이후 delivery에서 **레코드 외** 변경이 있었다면 코드가 움직였다는 뜻이고, 그때는 거부한다.
+   * (ancestry는 이 성질의 충분조건일 뿐이었고 membership 기록과 양립 불가였다.)
+   */
+  it('🔴 delivery에 레코드 외 변경이 있으면 거부하고 자동 해결을 시사하지 않는다', () => {
+    const p = integrateTopologyProblems({
+      ...ok,
+      deliveryDivergedOnlyByRecord: false,
+      deliveryNonRecordPaths: ['src/app.ts'],
+    })
+    expect(p).toHaveLength(1)
+    expect(p[0]).toContain('src/app.ts')
     expect(p[0]).toContain('자동 rebase·충돌 해결은 하지 않습니다')
+  })
+
+  it('레코드 파일만 움직였으면 통과한다(begin 이 member 를 기록한 정상 경로)', () => {
+    expect(integrateTopologyProblems({ ...ok, deliveryDivergedOnlyByRecord: true })).toEqual([])
   })
 
   it('dirty 트리·진행 중 merge 거부', () => {

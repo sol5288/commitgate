@@ -36,28 +36,36 @@ Exit: typecheck 0 · `npm test` green · 수용기준 3·8 충족 · Codex phase
 `tests/unit/delivery-verbs.test.ts` 신규. 코드 3파일.
 
 순서:
-1. 🔴 **첫 작업은 실측 spike**(설계 §미측정-1): 임시 repo에서 `git merge --no-ff --no-commit`이
-   fast-forward 가능 상황에 `MERGE_HEAD`를 세우는지, 그 상태에서 파일을 수정·`git add`하고 커밋하면
-   **하나의 merge commit**이 되는지 확인한다. 결과를 커밋 메시지에 남긴다.
+0. ✅ **spike 실측 완료**(설계 DEC-2 하단): ff 가능 상황에서 `--no-ff --no-commit`은 exit 0 ·
+   `MERGE_HEAD` 생성 · 레코드 수정분까지 부모 2개짜리 단일 커밋.
+1. 🔴 **phase-1의 `integrateTopologyProblems`를 r03 정정에 맞춘다** — base 동일성(r02에서 삭제)에 이어
+   **ancestry 조건도 교체**한다: `merge-base..deliveryHEAD` 변경 경로가 **레코드 파일뿐**인지 본다.
+   ancestry는 membership을 delivery에 기록하는 것과 양립 불가였다(그 커밋이 분기점 너머로 민다).
+   순수 함수와 단위 테스트를 함께 고치고, **레코드 외 경로가 섞이면 거부**하는 음성 테스트를 넣는다.
+2. 🔴 **`begin`이 member를 실제로 등록한다**(r02 P1): ① delivery 이동 → ② `req:new` 위임 →
+   ③ 확정된 REQ id로 member 등록·커밋 → ④ feature 복귀. r03 조건 덕분에 이 순서가 성립한다.
+   **정상 경로 end-to-end 테스트**(create → begin → integrate)를 넣는다 — r02에서 이 경로가 통째로 깨져 있었다.
 2. `create`/`begin`/`status` — delivery ref·레코드를 **직접 읽고** 도구가 브랜치를 이동한다(DEC-7).
    현재 위치에 의존하지 않으므로 수동 checkout 이탈이 불변식을 깨지 않는다.
-3. 🔴 **`integrate`의 첫 검증은 통합 자격**(DEC-2b) — 위상 검증보다 **앞**이다.
+4. 🔴 **`integrate`의 첫 검증은 통합 자격**(DEC-2b) — 위상 검증보다 **앞**이다.
    활성 member의 REQ가 feature ref에 **`dev-complete` close-proof + 커밋된 design 승인 증거**를 갖고,
    증거 무결성이 통과하며, **그 증거 이후의 코드 커밋이 없어야** 한다.
    이것이 없으면 `create`→`begin`→**미승인 변경 커밋**→`integrate`가 리뷰 게이트를 통째로 우회한다.
    `--force` 류 우회는 만들지 않는다.
-4. `integrate` 위상 단계 — DEC-2의 6단계. 🔴 기대 상태와 어긋나면 **write 0건 BLOCKED**,
+5. `integrate` 위상 단계 — DEC-2의 6단계. 🔴 기대 상태와 어긋나면 **write 0건 BLOCKED**,
    자동 rebase·충돌 해결 금지, 중간 실패는 `git merge --abort`.
-5. `begin --successor-of` — parent 종결 증거를 **feature ref 기준**으로 검증하고, delivery에
+6. `begin --successor-of` — parent 종결 증거를 **feature ref 기준**으로 검증하고, delivery에
    **정규화 사본**을 커밋한다(DEC-5). 🔴 **미승인 feature 변경은 delivery에 병합하지 않는다.**
-6. 레코드는 delivery ref에서만 읽는다(DEC-3). feature의 사본은 지우지 않는다 —
+7. 레코드는 delivery ref에서만 읽는다(DEC-3). feature의 사본은 지우지 않는다 —
    지우면 integrate가 delete/modify 충돌을 내 무충돌 불변식을 스스로 깬다.
-7. 테스트: 수용기준 1·2·4·5·6·7 — 실제 임시 git repo에서 구동.
+8. 테스트: 수용기준 1·2·4·5·6·7 — 실제 임시 git repo에서 구동.
    🔴 **필수 음성 테스트 2건**:
    ① `create`→`begin`→**미승인 변경 커밋**→`integrate`가 **거부**되고 delivery HEAD·레코드가
       **변하지 않는지**. 이 시나리오가 통과하면 리뷰 게이트가 뚫린 것이다.
    ② `seal` 후 `begin`이 **거부**되는지(그리고 `approve` 후에도) — 닫힌 묶음에 member가 추가되면
       "사용자가 닫는다"와 "닫힌 전체에 대해 정지"가 동시에 무너진다.
+   ③ **feature 브랜치에서 `create`** 해도 미승인 커밋이 base로 들어가지 않는지(phase-2 r01 P1).
+   ④ delivery에 **레코드 외 변경**이 있으면 `integrate`가 거부하는지(r03 조건의 음성 테스트).
 
 Exit: typecheck 0 · `npm test` green · spike 실측 기록 · Codex phase 리뷰 승인.
 

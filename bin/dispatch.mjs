@@ -27,6 +27,7 @@ export const VERB_MODULES = {
   quickstart: 'quickstart.ts',
   setup: 'setup.ts',
   check: 'check.ts',
+  delivery: 'delivery.ts',
   init: 'init.ts',
 }
 
