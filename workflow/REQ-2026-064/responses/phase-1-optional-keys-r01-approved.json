@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"87d63f00b04e419f8235692ebe9a215c8c957c6b","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"phase-1 변경을 커밋하고 phase-2(두 이벤트에 동일 원천의 감사 값을 기록)를 진행하세요.","observations":[]}
