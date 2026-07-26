@@ -1,0 +1,1 @@
+{"ticket_id":"REQ-2026-066","event":"migrated-complete","series_id":null,"resolution":null,"phase_inventory":["phase-1-model","phase-2-verbs","phase-3-gate"],"design_ref":"91f958b78a67f2524a1e8c6f79c9ee4a627a83a569e85241717ac1c904856b00","at":"2026-07-26T17:06:06.953Z","reconstructed":true,"evidence_basis":["workflow/REQ-2026-066/responses/approvals.jsonl"]}
