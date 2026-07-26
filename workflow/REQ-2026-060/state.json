@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-060-interactive-setup",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9c6a-fcc2-7fc0-8f17-53724b665730",
-  "review_base_sha": "d1c63bc55c796ddb04f3f64b97d0db83299e5d1b",
-  "review_diff_hash": "3ba988afed5180e7de1ef81d29cdc73058a36d55",
+  "codex_thread_id": "019f9c74-dc91-7a33-a7ce-57dd5c4e0290",
+  "review_base_sha": "3cffb7dd10d8f5e0ec5ebd7003e454242833ca4e",
+  "review_diff_hash": "3a40ee725e00188a5530f53962970d78f3021e41",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "338c5a584432f806e2f04c6cab008eeed4c62c7d964aa60da475f824f277fc68",
-  "current_phase": "phase-3-login-and-atomic-write",
+  "current_phase": "phase-4-docs-and-contract",
   "phases": [
     {
       "id": "phase-1-tty-detection-and-verb-skeleton",
@@ -26,7 +26,7 @@
     },
     {
       "id": "phase-4-docs-and-contract",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -60,6 +60,13 @@
       "phase_id": "phase-3-login-and-atomic-write",
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-docs-and-contract#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4-docs-and-contract",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -82,12 +89,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-3-login-and-atomic-write",
+    "phase_id": "phase-4-docs-and-contract",
     "outcome": "approved",
-    "compare_hash": "ca6f258722ca431faf675188e5f6be4d3e91c301d41a74d7e3e883626b20e277",
+    "compare_hash": "5d1d6bebd64625623d57643f26a14c50cebab8e8f2eeba8de2925d721fb07bd0",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T03:15:44.703Z",
+    "at": "2026-07-26T03:26:05.076Z",
     "findings": [],
     "elided_count": 0
   },
@@ -109,6 +116,12 @@
       "phase_id": "phase-3-login-and-atomic-write",
       "consumed_by_commit_sha": "37d1d46e4155c5fe0c92571721ae2e8f9977ee44",
       "approval_consumed_at": "2026-07-26T03:16:04.756Z"
+    },
+    {
+      "approved_tree": "3a40ee725e00188a5530f53962970d78f3021e41",
+      "phase_id": "phase-4-docs-and-contract",
+      "consumed_by_commit_sha": "dcbf3188b7429ff68da1437176d32c48a6a3cf2e",
+      "approval_consumed_at": "2026-07-26T03:26:23.257Z"
     }
   ],
   "user_commit_confirmed": null
