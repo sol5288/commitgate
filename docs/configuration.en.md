@@ -12,9 +12,28 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"high"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically, rounds 6–8 each require a human exception record bound to that series and round, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception. `hardCap ≤ 8`, `autoBudget ≤ hardCap` |
-| `phaseCommit` | `{ "autoApprove": "never" }` | Per-phase auto-commit policy. `never` (default) stops for a human before every phase commit (current behavior). `low-only` auto-commits Codex-approved phases of **LOW-risk** tickets without a human stop and moves the single human confirmation to just before the feature→main merge. HIGH-risk tickets still stop at every phase under any value (`userConfirmGate` backstop). There is no `"all"` value (it would livelock on HIGH) |
+| `stopGate` | `"phase"` | **Where a human stops** (preferred axis). `phase` = confirm before every phase commit; `req` = auto-commit LOW phases inside a REQ and gather the confirmation into one stop before integration. **HIGH-risk tickets stop at every phase under either value**, and integration (main merge) approval is always required |
+| `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "never" }` | Per-phase auto-commit policy. `never` (default) stops for a human before every phase commit (current behavior). `low-only` auto-commits Codex-approved phases of **LOW-risk** tickets without a human stop and moves the single human confirmation to just before the feature→main merge. HIGH-risk tickets still stop at every phase under any value (`userConfirmGate` backstop). There is no `"all"` value (it would livelock on HIGH) |
 
 Empty `branchPrefix` values and paths that escape the project root are rejected.
+
+### `stopGate` vs `phaseCommit`
+
+`stopGate` is the **semantic axis**; `phaseCommit.autoApprove` is its **deprecated alias**. The mapping is 1:1.
+
+| `stopGate` | `phaseCommit.autoApprove` |
+|---|---|
+| `phase` | `never` |
+| `req` | `low-only` |
+
+- Set **either one** and the other is derived. Configs that only use `phaseCommit` keep working unchanged.
+- If both are set and **contradict**, the config is rejected with an error naming both values, the expected
+  mapping, and how to fix it.
+- Choosing `stopGate` through `commitgate setup` **removes** the legacy `phaseCommit` key automatically
+  (a file where the two axes contradict would block every command afterwards).
+- 🔴 **`merge` does not exist yet.** "Run several REQs and stop only before the main merge" needs a model for
+  that grouping (a delivery set) to exist alongside it — exposing the value first would let you pick something
+  with no behaviour. It arrives together with that behaviour in a follow-up REQ.
 
 ## Interactive setup — `commitgate setup`
 

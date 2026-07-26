@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+- **멈춤 지점을 `stopGate` 한 축으로 고릅니다** (REQ-2026-063).
+
+  > 구현은 이 REQ의 phase-1~2에 커밋돼 있습니다 — `scripts/req/lib/config.ts`의 `StopGate`·`AUTO_APPROVE_OF`·`resolveStopAxes`와 `workflow/req.config.schema.json`(`34a629a`) · `bin/setup.ts`의 세 번째 질문과 legacy 정규화(`c5d3013`).
+
+  기존 `phaseCommit.autoApprove`(`never`/`low-only`)는 **구현 언어**라서 `commitgate setup`이 물어보기 어려운 형태였습니다. 사용자가 고르고 싶은 것은 **어디서 멈추는가**입니다. 이제 `stopGate`가 의미 축(`phase` = 매 phase 확인 · `req` = REQ 완료 시 한 번)이고 `phaseCommit`은 **deprecated alias**입니다.
+
+  **기존 설정은 그대로 동작합니다** — `phaseCommit`만 있으면 `stopGate`가 역파생됩니다. 둘 다 있고 모순이면 거부하되, 오류가 **두 값·기대 매핑·해결 방법**을 알려 줍니다. 🔴 충돌 판정은 **raw 키의 명시 여부** 기준입니다 — 해소값을 비교하면 `phaseCommit`이 부재해도 기본값으로 채워지므로 `stopGate`만 쓴 정상 설정이 오탐되어 **새 축을 아무도 못 쓰게** 됩니다.
+
+  🔴 `setup`에서 `stopGate`를 고르면 legacy `phaseCommit` 키를 **같은 쓰기에서 제거**합니다. 없으면 기존 `low-only` 프로젝트가 `phase`를 고르는 **정상 경로**에서 두 축이 모순인 파일이 만들어지고, 그 파일이 위 충돌 검사에 걸려 이후 모든 명령이 막힙니다.
+
+  **HIGH 위험 티켓은 어느 값에서도 매 phase 확인**하고 통합(main 병합) 승인도 그대로 필요합니다 — setup 화면과 문서가 이 사실을 명시합니다. **`merge` 값은 아직 없습니다**(그 묶음을 표현하는 delivery set이 함께 있어야 성립하므로 후속 REQ에서 동작과 함께 추가됩니다).
+
 - **setup을 마쳐야 워크플로가 시작됩니다 — 단, 기존 설치본은 그대로 동작합니다** (REQ-2026-062).
 
   > 구현은 이 REQ의 phase-1~3에 커밋돼 있습니다 — `scripts/req/lib/config.ts`의 `SetupMarker`·`CONFIG_SCHEMA.setup`과 `workflow/req.config.schema.json`(`b9fb58e`) · `scripts/req/lib/setup-gate.ts`의 `setupGateVerdict`/`resolveGateRoot`/`countValidTickets`(`cc1f84d`) · 워크플로 verb 7종 배선과 `req-doctor.ts`의 D24(`96e2a26`).
