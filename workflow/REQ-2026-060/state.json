@@ -3,15 +3,32 @@
   "branch": "feat/req-2026-060-interactive-setup",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9c27-832c-7e40-9cdb-3164a74ad0fb",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9c4a-e18a-7711-8393-af13122a7aca",
+  "review_base_sha": "b9631bf72cbcbe2d6ebc46b00235967b25487145",
+  "review_diff_hash": "fcecb23f6280be5ae4b9560afb542a87c620ac9f",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "338c5a584432f806e2f04c6cab008eeed4c62c7d964aa60da475f824f277fc68",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-tty-detection-and-verb-skeleton",
+  "phases": [
+    {
+      "id": "phase-1-tty-detection-and-verb-skeleton",
+      "approved": true
+    },
+    {
+      "id": "phase-2-pure-core",
+      "approved": false
+    },
+    {
+      "id": "phase-3-login-and-atomic-write",
+      "approved": false
+    },
+    {
+      "id": "phase-4-docs-and-contract",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -21,6 +38,13 @@
       "review_kind": "design",
       "phase_id": null,
       "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-tty-detection-and-verb-skeleton#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-tty-detection-and-verb-skeleton",
+      "attempts": 2,
       "closed_reason": "approved"
     }
   ],
@@ -43,14 +67,23 @@
     "design_hash": "338c5a584432f806e2f04c6cab008eeed4c62c7d964aa60da475f824f277fc68"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-tty-detection-and-verb-skeleton",
     "outcome": "approved",
-    "compare_hash": "f8cc1db4a56e71dd5a12b4314f0b2b2de4b269bdedbd5ab076e87733ab2b246a",
+    "compare_hash": "d05877a8aac926739c7f80c82463c7b33d38e72b4da091420f9be1eae295a805",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T02:02:24.078Z",
+    "at": "2026-07-26T02:40:47.098Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "fcecb23f6280be5ae4b9560afb542a87c620ac9f",
+      "phase_id": "phase-1-tty-detection-and-verb-skeleton",
+      "consumed_by_commit_sha": "558e673658b8190f6f13e0959c839e3b5d1dea6c",
+      "approval_consumed_at": "2026-07-26T02:41:22.452Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
