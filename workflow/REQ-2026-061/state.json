@@ -3,15 +3,24 @@
   "branch": "feat/req-2026-061-check-verb",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9c7f-258d-7cf0-8d89-293b43f065ae",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019f9c90-3eaf-7493-9fb8-bf914e2e514f",
+  "review_base_sha": "c2910d0aa4744be1d1f0d62ff64ada9c8b9acf95",
+  "review_diff_hash": "ac60784d72e17f6cb7470e44930302cf40253618",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "34c36e6d787866ecb6c5d0c8156af8d494d5d31aeb7549f14b71ac6fec36d89a",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-check-verb",
+  "phases": [
+    {
+      "id": "phase-1-check-verb",
+      "approved": true
+    },
+    {
+      "id": "phase-2-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -21,6 +30,13 @@
       "review_kind": "design",
       "phase_id": null,
       "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-check-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-check-verb",
+      "attempts": 2,
       "closed_reason": "approved"
     }
   ],
@@ -43,14 +59,23 @@
     "design_hash": "34c36e6d787866ecb6c5d0c8156af8d494d5d31aeb7549f14b71ac6fec36d89a"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-check-verb",
     "outcome": "approved",
-    "compare_hash": "00fc916067364fe60b646c36e5009ca793fb834d02108bb104611321feb2d323",
+    "compare_hash": "be6070e309f6abc68276bef774086a020113fb6bc92ceb863adbb06ba7157276",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T03:37:06.492Z",
+    "at": "2026-07-26T03:56:08.964Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "ac60784d72e17f6cb7470e44930302cf40253618",
+      "phase_id": "phase-1-check-verb",
+      "consumed_by_commit_sha": "7d35fe7b84fa00550fda8092f718d8c74f3a7814",
+      "approval_consumed_at": "2026-07-26T03:56:32.596Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
