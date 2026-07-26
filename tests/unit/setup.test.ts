@@ -61,7 +61,7 @@ function deps(
   let authIdx = 0
   let loginCalls = 0
   let answerIdx = 0
-  const answers = over.answers ?? ['', '']
+  const answers = over.answers ?? ['', '', '']
   const self = {
     streams: { stdin, stdout },
     log: (m: string) => void logs.push(m),
@@ -162,7 +162,7 @@ describe('[setup] runSetup — 비-TTY는 질문 없이 즉시 실패(DEC-1)', (
   it('TTY: 정상 진행한다(질문까지 도달)', async () => {
     const d = deps(true, true)
     await expect(runSetup({ dir: '/tmp/x' }, d)).resolves.toBeUndefined()
-    expect(d.asked.map((q) => q.key)).toEqual(['reviewModel', 'reviewReasoningEffort'])
+    expect(d.asked.map((q) => q.key)).toEqual(['reviewModel', 'reviewReasoningEffort', 'stopGate'])
   })
 })
 
@@ -212,9 +212,9 @@ function scripted(answers: string[]): Prompter & { asked: Question[] } {
   }
 }
 
-describe('[setup] DEC-4 — 질문은 2개로 명시하되 검증은 CONFIG_SCHEMA에서 온다', () => {
-  it('setup이 다루는 키는 모델·effort 둘뿐이다(스키마 전체를 묻지 않는다)', () => {
-    expect([...SETUP_KEYS]).toEqual(['reviewModel', 'reviewReasoningEffort'])
+describe('[setup] DEC-4 — 질문을 명시하고 검증은 CONFIG_SCHEMA에서 온다', () => {
+  it('setup이 다루는 키는 모델·effort·stopGate 셋뿐이다(스키마 전체를 묻지 않는다)', () => {
+    expect([...SETUP_KEYS]).toEqual(['reviewModel', 'reviewReasoningEffort', 'stopGate'])
   })
 
   it('🔴 검증 SSOT: subSchemaFor 는 CONFIG_SCHEMA 의 해당 서브스키마와 동일 객체를 돌려준다', () => {
@@ -261,10 +261,11 @@ describe('[setup] validateValue — 스키마 규칙이 그대로 적용된다',
 
 describe('[setup] buildQuestions — 현재값과 출처(파일/기본값)', () => {
   it('파일에 값이 있으면 그 값이 현재값이고 기본값 표시가 없다', () => {
-    const qs = buildQuestions({ reviewModel: 'my-model', reviewReasoningEffort: 'low' })
+    const qs = buildQuestions({ reviewModel: 'my-model', reviewReasoningEffort: 'low', stopGate: 'req' })
     expect(qs.map((q) => [q.key, q.current, q.currentIsDefault])).toEqual([
       ['reviewModel', 'my-model', false],
       ['reviewReasoningEffort', 'low', false],
+      ['stopGate', 'req', false],
     ])
   })
 
@@ -314,24 +315,24 @@ describe('[setup] interpretAnswer — 유지/비움/값', () => {
 
 describe('[setup] askAll — 스크립트된 Prompter로 전 경로 구동', () => {
   it('둘 다 Enter → 패치 없음(건드린 키 0개)', async () => {
-    const p = scripted(['', ''])
+    const p = scripted(['', '', ''])
     expect(await askAll(buildQuestions({}), p)).toEqual({})
-    expect(p.asked.map((q) => q.key)).toEqual(['reviewModel', 'reviewReasoningEffort'])
+    expect(p.asked.map((q) => q.key)).toEqual(['reviewModel', 'reviewReasoningEffort', 'stopGate'])
   })
 
   it('값 입력 → 패치에 담긴다', async () => {
-    const patch = await askAll(buildQuestions({}), scripted(['other-model', 'low']))
-    expect(patch).toEqual({ reviewModel: 'other-model', reviewReasoningEffort: 'low' })
+    const patch = await askAll(buildQuestions({}), scripted(['other-model', 'low', 'req']))
+    expect(patch).toEqual({ reviewModel: 'other-model', reviewReasoningEffort: 'low', stopGate: 'req' })
   })
 
   it('sentinel → null 패치(비움)', async () => {
-    const patch = await askAll(buildQuestions({}), scripted([NULL_SENTINEL, NULL_SENTINEL]))
+    const patch = await askAll(buildQuestions({}), scripted([NULL_SENTINEL, NULL_SENTINEL, '']))
     expect(patch).toEqual({ reviewModel: null, reviewReasoningEffort: null })
   })
 
   it('부적합 답변은 재질문되고, 다음 유효 답이 채택된다', async () => {
     const invalid: string[] = []
-    const p = scripted(['bad model', 'good-model', 'ultra', 'high'])
+    const p = scripted(['bad model', 'good-model', 'ultra', 'high', ''])
     const patch = await askAll(buildQuestions({}), p, (m) => invalid.push(m))
     expect(patch).toEqual({ reviewModel: 'good-model', reviewReasoningEffort: 'high' })
     expect(invalid).toHaveLength(2)
@@ -394,14 +395,14 @@ describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
   const unknown: AuthProbeResult = { state: 'unknown', reason: 'unrecognized-output', detail: '???' }
 
   it('이미 로그인돼 있으면 login을 실행하지 않는다(DEC-8)', async () => {
-    const d = deps(true, true, { answers: ['new-model', ''] })
+    const d = deps(true, true, { answers: ['new-model', '', ''] })
     await runSetup({ dir: '/tmp/x' }, d)
     expect(d.loginCalls).toBe(0)
     expect(d.writes).toHaveLength(1)
   })
 
   it('미로그인 → login 실행 후 재검증 성공 → 저장(수용기준 3)', async () => {
-    const d = deps(true, true, { answers: ['new-model', ''], authSeq: [loggedOut, loggedIn] })
+    const d = deps(true, true, { answers: ['new-model', '', ''], authSeq: [loggedOut, loggedIn] })
     await runSetup({ dir: '/tmp/x' }, d)
     expect(d.loginCalls).toBe(1)
     expect(JSON.parse(d.writes[0] as string)).toEqual({
@@ -411,13 +412,13 @@ describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
   })
 
   it('🔴 로그인 실패 → throw + 설정 미변경(수용기준 4)', async () => {
-    const d = deps(true, true, { answers: ['new-model', ''], authSeq: [loggedOut, loggedOut] })
+    const d = deps(true, true, { answers: ['new-model', '', ''], authSeq: [loggedOut, loggedOut] })
     await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow('변경되지 않았습니다')
     expect(d.writes).toEqual([])
   })
 
   it('🔴 재검증이 unknown이어도 실패로 처리한다(setup은 엄격 — DEC-9)', async () => {
-    const d = deps(true, true, { answers: ['new-model', ''], authSeq: [loggedOut, unknown] })
+    const d = deps(true, true, { answers: ['new-model', '', ''], authSeq: [loggedOut, unknown] })
     await expect(runSetup({ dir: '/tmp/x' }, d)).rejects.toThrow()
     expect(d.writes).toEqual([])
   })
@@ -460,7 +461,7 @@ describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
   })
 
   it('🔴 completedAt 은 주입된 실제 시계에서 온다(날조 금지 — REQ-2026-019 재발 방지)', async () => {
-    const d = deps(true, true, { answers: ['m1', ''], now: '2030-03-04T05:06:07.008Z', cgVersion: '1.2.3' })
+    const d = deps(true, true, { answers: ['m1', '', ''], now: '2030-03-04T05:06:07.008Z', cgVersion: '1.2.3' })
     await runSetup({ dir: '/tmp/x' }, d)
     expect(JSON.parse(d.writes[0] as string).setup).toEqual({
       completedVersion: '1.2.3',
@@ -470,14 +471,14 @@ describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
 
   it('마커가 담긴 설정도 스키마를 통과한다(하위호환)', async () => {
     const existing = JSON.stringify({ setup: { completedVersion: '0.0.1', completedAt: '2026-01-01T00:00:00Z' } })
-    const d = deps(true, true, { existing, answers: ['m2', ''] })
+    const d = deps(true, true, { existing, answers: ['m2', '', ''] })
     await expect(runSetup({ dir: '/tmp/x' }, d)).resolves.toBeUndefined()
   })
 
   it('기존 키를 보존하며 저장한다', async () => {
     const d = deps(true, true, {
       existing: JSON.stringify({ branchPrefix: 'feat/req-', reviewModel: 'old' }, null, 2),
-      answers: ['new-model', 'low'],
+      answers: ['new-model', 'low', ''],
     })
     await runSetup({ dir: '/tmp/x' }, d)
     expect(JSON.parse(d.writes[0] as string)).toEqual({
@@ -486,6 +487,93 @@ describe('[setup] runSetup ①~⑦ — 쓰기는 한 곳뿐(DEC-10)', () => {
       reviewReasoningEffort: 'low',
       setup: { completedVersion: '9.9.9-test', completedAt: '2026-07-26T00:00:00.000Z' },
     })
+  })
+})
+
+// ───────── REQ-2026-063: stopGate 질문 + legacy phaseCommit 정규화 (DEC-6·DEC-6b·DEC-7) ──
+
+describe('[setup] stopGate 질문', () => {
+  it('🔴 legacy phaseCommit 에서 현재값을 역파생한다(파일이 low-only인데 phase[기본값]이라 말하지 않는다)', () => {
+    const qs = buildQuestions({ phaseCommit: { autoApprove: 'low-only' } })
+    const sg = qs.find((q) => q.key === 'stopGate')
+    expect(sg?.current).toBe('req')
+    expect(sg?.currentIsDefault).toBe(false)
+  })
+
+  it('설정이 없으면 기본값 phase 로 표시된다', () => {
+    const sg = buildQuestions({}).find((q) => q.key === 'stopGate')
+    expect(sg?.current).toBe('phase')
+    expect(sg?.currentIsDefault).toBe(true)
+  })
+
+  it('선택지는 스키마 enum에서 온다(2값 — merge 없음)', () => {
+    expect(choicesFor('stopGate')).toEqual(['phase', 'req'])
+  })
+
+  /**
+   * 🔴 이 고지가 없으면 `req`를 고른 사용자가 "이제 전부 자동"이라고 오해하고,
+   * HIGH 티켓에서 멈출 때 도구가 고장 난 것으로 본다. 그 정지는 정책이다(REQ-2026-019 폐기 사유).
+   */
+  it('🔴 hint 가 HIGH 예외와 통합 승인 필요를 고지한다', () => {
+    const sg = buildQuestions({}).find((q) => q.key === 'stopGate') as Question
+    const h = hintFor(sg)
+    expect(h).toContain('HIGH')
+    expect(h).toContain('매 phase 확인')
+    expect(h).toContain('통합')
+  })
+
+  // stopGate 는 "전역 상속" 개념이 없다 — 비움 sentinel을 안내하지도, 허용하지도 않는다.
+  it('비움 sentinel 을 안내하지 않고 값으로도 거부한다(DEC-7)', () => {
+    const sg = buildQuestions({}).find((q) => q.key === 'stopGate') as Question
+    expect(hintFor(sg)).not.toContain('비움(전역 상속)')
+    expect(validateValue('stopGate', null).length).toBeGreaterThan(0)
+  })
+
+  it('enum 밖 값은 거부된다', () => {
+    expect(validateValue('stopGate', 'merge').length).toBeGreaterThan(0)
+    expect(validateValue('stopGate', 'req')).toEqual([])
+  })
+})
+
+describe('[setup] 🔴 legacy phaseCommit 정규화 — setup이 만든 파일이 게이트에 걸리지 않는다(DEC-6b)', () => {
+  const legacy = JSON.stringify({ branchPrefix: 'feat/req-', phaseCommit: { autoApprove: 'low-only' } }, null, 2)
+
+  /**
+   * 🔴 이 REQ의 필수 오라클. 정규화가 없으면:
+   *   기존 `low-only` 프로젝트 → setup에서 `phase` 선택 → merge가 미접촉 키를 보존해
+   *   `{stopGate:'phase', phaseCommit:{autoApprove:'low-only'}}` 기록 → config 충돌 검사가 거부 →
+   *   **이후 모든 명령이 죽는다.** 즉 setup의 정상 경로가 프로젝트를 벽돌로 만든다.
+   */
+  it('🔴 stopGate 를 기록하면 legacy phaseCommit 이 같은 쓰기에서 사라진다', async () => {
+    const d = deps(true, true, { existing: legacy, answers: ['', '', 'phase'] })
+    await runSetup({ dir: '/tmp/x' }, d)
+    const written = JSON.parse(d.writes[0] as string)
+    expect(written.stopGate).toBe('phase')
+    expect(Object.prototype.hasOwnProperty.call(written, 'phaseCommit')).toBe(false)
+    expect(written.branchPrefix).toBe('feat/req-') // 무관한 키는 보존
+  })
+
+  it('🔴 값이 일치해도 alias 를 남기지 않는다(한쪽만 손으로 고치면 같은 덫이 재발한다)', async () => {
+    const d = deps(true, true, { existing: legacy, answers: ['', '', 'req'] })
+    await runSetup({ dir: '/tmp/x' }, d)
+    const written = JSON.parse(d.writes[0] as string)
+    expect(written.stopGate).toBe('req')
+    expect(Object.prototype.hasOwnProperty.call(written, 'phaseCommit')).toBe(false)
+  })
+
+  it('stopGate 를 Enter로 유지하면 phaseCommit 도 그대로 둔다(건드린 키만 바꾼다)', async () => {
+    const d = deps(true, true, { existing: legacy, answers: ['new-model', '', ''] })
+    await runSetup({ dir: '/tmp/x' }, d)
+    const written = JSON.parse(d.writes[0] as string)
+    expect(written.phaseCommit).toEqual({ autoApprove: 'low-only' })
+    expect(Object.prototype.hasOwnProperty.call(written, 'stopGate')).toBe(false)
+  })
+
+  it('mergeConfigText 의 삭제는 패치와 같은 호출에서 처리된다(중간 상태 없음)', () => {
+    const out = mergeConfigText(legacy, { stopGate: 'phase' }, undefined, ['phaseCommit'])
+    const parsed = JSON.parse(out)
+    expect(parsed.stopGate).toBe('phase')
+    expect(Object.prototype.hasOwnProperty.call(parsed, 'phaseCommit')).toBe(false)
   })
 })
 
@@ -515,7 +603,7 @@ describe('[setup] Prompter 수명 — 항상 닫는다(phase-3 r01 P1)', () => {
   }
 
   it('정상 완료에서 close가 호출된다', async () => {
-    const { d, closes } = countingDeps(['new-model', 'low'])
+    const { d, closes } = countingDeps(['new-model', 'low', ''])
     await runSetup({ dir: '/tmp/x' }, d)
     expect(closes()).toBe(1)
   })

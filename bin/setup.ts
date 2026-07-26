@@ -18,7 +18,7 @@ import { resolve, join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline/promises'
 import Ajv from 'ajv'
-import { CONFIG_SCHEMA, DEFAULTS, stripBom, type SetupMarker } from '../scripts/req/lib/config'
+import { CONFIG_SCHEMA, DEFAULTS, stripBom, STOP_GATE_OF, type SetupMarker, type PhaseCommitPolicy } from '../scripts/req/lib/config'
 import { createReviewerProbes, type ReviewerProbes } from '../scripts/req/lib/adapters'
 
 /**
@@ -88,7 +88,7 @@ export const NON_TTY_MESSAGE = [
  *    묻게 되어 이 REQ의 범위(모델·effort)를 넘는다. 대신 **질문은 여기서 명시하고, 검증 규칙만 스키마에서
  *    가져온다**(`subSchemaFor`). 그래서 enum이 늘어도 질문이 자동으로 따라가고 스키마와 갈라지지 않는다.
  */
-export const SETUP_KEYS = ['reviewModel', 'reviewReasoningEffort'] as const
+export const SETUP_KEYS = ['reviewModel', 'reviewReasoningEffort', 'stopGate'] as const
 export type SetupKey = (typeof SETUP_KEYS)[number]
 
 /**
@@ -148,10 +148,16 @@ export function buildQuestions(raw: Record<string, unknown>): Question[] {
   const PROMPTS: Record<SetupKey, string> = {
     reviewModel: '리뷰 모델(codex `-c model=`)',
     reviewReasoningEffort: '리뷰 추론강도(codex `-c model_reasoning_effort=`)',
+    stopGate: '사람이 멈추는 지점',
   }
   return SETUP_KEYS.map((key) => {
-    const present = Object.prototype.hasOwnProperty.call(raw, key)
-    const v = present ? raw[key] : (DEFAULTS as Record<string, unknown>)[key]
+    // 🔴 `stopGate`는 legacy `phaseCommit`에서 **역파생**될 수 있다(REQ-2026-063 DEC-3). 그 경우를 무시하고
+    //    DEFAULTS를 보여 주면, 파일이 `low-only`인데 화면은 `phase [기본값]`이라고 말하는 거짓 표시가 된다.
+    const derived = key === 'stopGate' ? derivedStopGate(raw) : null
+    const present = Object.prototype.hasOwnProperty.call(raw, key) || derived !== null
+    const v = Object.prototype.hasOwnProperty.call(raw, key)
+      ? raw[key]
+      : (derived ?? (DEFAULTS as Record<string, unknown>)[key])
     return {
       key,
       prompt: PROMPTS[key],
@@ -162,12 +168,36 @@ export function buildQuestions(raw: Record<string, unknown>): Question[] {
   })
 }
 
+/** legacy `phaseCommit`에서 역파생한 `stopGate`. 그 키가 없으면 `null`. */
+function derivedStopGate(raw: Record<string, unknown>): string | null {
+  const pc = raw.phaseCommit
+  if (!pc || typeof pc !== 'object') return null
+  const a = (pc as { autoApprove?: unknown }).autoApprove
+  return typeof a === 'string' && a in STOP_GATE_OF ? STOP_GATE_OF[a as PhaseCommitPolicy] : null
+}
+
+/**
+ * 🔴 `stopGate` 질문에만 붙는 고지(REQ-2026-063 DEC-6).
+ *
+ * 이 문장이 없으면 `req`를 고른 사용자가 "이제 전부 자동"이라고 오해하고, HIGH 티켓에서 멈출 때
+ * 도구가 고장 난 것으로 본다. 그 정지는 정책이지 결함이 아니다(REQ-2026-019 폐기 사유).
+ */
+export const STOP_GATE_HIGH_NOTICE =
+  'HIGH 위험 티켓은 어느 값에서도 매 phase 확인합니다 · 통합(main 병합) 승인은 어느 값에서도 필요합니다'
+
 /** 질문 하나에 붙일 안내 문구(순수 — 프롬프트 렌더링의 SSOT). */
 export function hintFor(q: Question): string {
   const cur = q.current === null ? '(비움 — codex 전역 설정 상속)' : q.current
   const src = q.currentIsDefault ? ' [기본값]' : ''
   const choices = q.choices ? `\n  선택지: ${q.choices.join(' / ')}` : ''
-  return `현재: ${cur}${src}${choices}\n  Enter=유지 · '${NULL_SENTINEL}'=비움(전역 상속)`
+  // `stopGate`는 "전역 상속" 개념이 없다 — 비움 sentinel을 안내하지 않는다(스키마에 null이 없어 자동 거부된다).
+  // 대신 **HIGH 예외·통합 승인 필요**를 고지한다(REQ-2026-063 DEC-6): 이 문장이 없으면 `req`를 고른 사용자가
+  // "이제 전부 자동"이라고 오해하고, HIGH 티켓에서 멈출 때 도구가 고장 난 것으로 본다.
+  const tail =
+    q.key === 'stopGate'
+      ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}\n  Enter=유지`
+      : `\n  Enter=유지 · '${NULL_SENTINEL}'=비움(전역 상속)`
+  return `현재: ${cur}${src}${choices}${tail}`
 }
 
 /**
@@ -242,11 +272,15 @@ export function mergeConfigText(
   existingText: string | null,
   patch: Partial<Record<SetupKey, string | null>>,
   marker?: SetupMarker,
+  deleteKeys: readonly string[] = [],
 ): string {
   const base = parseConfigText(existingText)
   const merged: Record<string, unknown> = { ...base }
   for (const [k, v] of Object.entries(patch)) merged[k] = v
   if (marker) merged.setup = marker
+  // 🔴 삭제는 **같은 원자적 쓰기 안에서** 처리한다(REQ-2026-063 DEC-6b). 별도 쓰기로 나누면
+  //    중간 상태(두 축이 모순인 파일)가 디스크에 존재하고, 그 상태는 스스로 만든 게이트에 걸린다.
+  for (const k of deleteKeys) delete merged[k]
 
   const validate = ajv.compile(CONFIG_SCHEMA)
   if (!validate(merged)) {
@@ -433,7 +467,12 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
     deps.log('변경된 설정이 없습니다 — req.config.json 을 건드리지 않았습니다.')
     return
   }
-  const merged = mergeConfigText(existingText, patch, marker)
+  // 🔴 `stopGate`를 기록하면 legacy `phaseCommit`을 **같은 쓰기에서 지운다**(REQ-2026-063 DEC-6b).
+  //    지우지 않으면 기존 `low-only` 프로젝트에서 `phase`를 고른 **정상 경로**가
+  //    두 축이 모순인 파일을 만들고, 그 파일이 config 충돌 검사에 걸려 **이후 모든 명령이 죽는다.**
+  //    값이 마침 일치해도 지운다 — alias를 남기면 다음에 한쪽만 손으로 고쳤을 때 같은 덫이 재발한다.
+  const deleteKeys = patch.stopGate !== undefined ? ['phaseCommit'] : []
+  const merged = mergeConfigText(existingText, patch, marker, deleteKeys)
 
   // ⑦ 유일한 쓰기.
   deps.io.write(merged)
