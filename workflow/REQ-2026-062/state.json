@@ -3,16 +3,54 @@
   "branch": "feat/req-2026-062-setup-enforcement",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019f9c9e-c3aa-7000-9fc2-dfca1c3b2948",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "8f14a815bf83cf2adda1411049f4e0829a7b807e3d9cc14875204b6797f09548",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "349ca90bf93ed7ebccdadbda0a3708a1efa9ceea",
+    "design": "5fc4161cab52caffd91583957c53f3a85ac79419",
+    "plan": "16d274f7296a003574ad348caa0b502877e88b18"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-062/responses/design-r01-approved.json",
+    "response_sha256": "9141a7964a9473a734ddd7d0d657544be53c434ebf51dcc69c83e60d0427c01d",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "629fa7dd97ad289bfef998ca58db944d130f0893",
+    "codex_thread_id": "019f9c9e-c3aa-7000-9fc2-dfca1c3b2948",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-26T04:12:18.316Z",
+    "design_hash": "8f14a815bf83cf2adda1411049f4e0829a7b807e3d9cc14875204b6797f09548"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "0c03fa374cb97f74b65f55457fa81ca07e1f13c954d6ab3048eb1cfb9790a0d6",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-26T04:12:18.316Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
