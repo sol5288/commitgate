@@ -16,6 +16,10 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - Approval responses and evidence are kept under `workflow/REQ-.../responses/`.
 - Review attempts are recorded in a **committed append-only ledger** (`workflow/REQ-.../responses/review-ledger.jsonl`). Each attempt becomes two rows — `attempt-opened` **before** the external call and `attempt-closed` after the verdict — so an attempt with an `attempt-opened` but no `attempt-closed` is exactly a "budget was spent but the call never completed." Whether a human exception was consumed is recorded here too. The ledger is committed automatically on design approval and phase evidence finalization, and it **never stores prompt/response bodies** (hashes only — bodies live in the archives). If the ledger content is corrupt (e.g. a truncated JSONL line), the next review stops fail-closed before it starts.
 
+  Each row also carries the **review model, reasoning effort, and provider pinned for that call**. 🔴 These are *what CommitGate specified in the request*, not *what the reviewer actually ran* — the tool cannot know the latter and does not claim it. A `null` value means "not pinned (inherits the reviewer's global config)"; a **missing key** means the row predates these fields (before 0.9.11).
+
+  > **When extending the ledger schema**: add new keys as **optional** (`OPTIONAL_LEDGER_KEYS`). Growing the required-key list rejects **every already-committed ledger row** and blocks all reviews for that ticket. The contract has three parts — (1) past rows may omit new keys, (2) new rows **always** serialize the key even when the value is `null`, (3) if present, the value is strictly validated.
+
 In short: **approved changes pass, ambiguous changes stop.**
 
 ### What It Does *Not* Enforce

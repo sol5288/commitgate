@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+- **어느 모델이 승인했는지가 커밋 이력에 남습니다** (REQ-2026-064). 🔴 **이 항목이 위 `setup` 계열 변경(REQ-2026-060~063)의 릴리스 선행 조건입니다** — 모델 교체가 쉬워졌는데 감사 기록이 따라오지 않으면 "바꿀 수는 있는데 누가 승인했는지는 모르는" 창이 열립니다.
+
+  > 구현은 이 REQ의 phase-1~2에 커밋돼 있습니다 — `scripts/req/lib/review-ledger.ts`의 `OPTIONAL_LEDGER_KEYS`·검증 분리·직렬화 정규화(`08b009e`) · `scripts/req/review-codex.ts`의 `pinned`/`REVIEW_PROVIDER_ID` 단일 배선(`c4a4fdc`).
+
+  리뷰 호출의 **모델·추론강도·provider**가 커밋되는 원장(`review-ledger.jsonl`)의 `attempt-opened`·`attempt-closed` **양쪽**에 남습니다. 지금까지 이 값은 gitignore된 측정 로그(`.review-calls.jsonl`)에만 있어서 fresh clone에서는 알 수 없었습니다. 값은 호출부에서 **한 번** 읽어 두 기록에 같은 값으로 흘리므로 갈라지지 않습니다.
+
+  🔴 **정직성 경계**: 기록되는 것은 *CommitGate가 요청에 핀한 값*이지 *리뷰어가 실제로 실행한 모델*이 아닙니다. `null`은 "핀하지 않음(전역 상속)", **키 부재**는 이 필드 도입 이전 행입니다.
+
+  🔴 **선행 결함도 함께 고쳤습니다.** 원장은 허용 키와 필수 키가 **같은 배열**이라, 키를 하나 추가하는 순간 **이미 커밋된 모든 행이 "필수 키 누락"으로 거부**되고 그 티켓의 리뷰가 전부 막혔습니다(주석은 "릴리스 후 additive-only"라고 했지만 검증기가 그 additive를 허용하지 않았습니다). 이제 선택 키가 분리되어 있고, 계약 3항(과거 행은 부재 허용 · 새 행은 `null`이어도 키 유지 · 있으면 엄격 검증)이 테스트로 고정됩니다.
+
 - **멈춤 지점을 `stopGate` 한 축으로 고릅니다** (REQ-2026-063).
 
   > 구현은 이 REQ의 phase-1~2에 커밋돼 있습니다 — `scripts/req/lib/config.ts`의 `StopGate`·`AUTO_APPROVE_OF`·`resolveStopAxes`와 `workflow/req.config.schema.json`(`34a629a`) · `bin/setup.ts`의 세 번째 질문과 legacy 정규화(`c5d3013`).
