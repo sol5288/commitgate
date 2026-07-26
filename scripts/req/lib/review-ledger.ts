@@ -68,6 +68,18 @@ export interface LedgerRow {
   at: string
   /** 사후 복원한 기록인지. 원본과 구별할 수단이 없으면 재구성본이 원본으로 위장한다. */
   reconstructed: boolean
+
+  // ── optional(REQ-2026-064). **필수가 아니다** — 옛 커밋 원장에는 이 키들이 없다. ──
+  /**
+   * 🔴 **CommitGate가 이 요청에 핀한 모델**이지 **codex가 실제로 실행한 모델이 아니다.**
+   * `.review-calls.jsonl`의 같은 이름 필드와 동일한 경계다 — 우리가 모르는 것을 아는 척하지 않는다.
+   * `null` = 핀하지 않음(codex 전역 설정 상속). **키 부재** = 이 필드 도입 이전의 옛 행.
+   */
+  review_model?: string | null
+  /** 위와 동일 — 핀한 추론강도. `null` = 미핀. */
+  review_reasoning_effort?: string | null
+  /** 리뷰어 provider id. 현재 구현은 `codex` 하나지만, 늘어난 뒤 옛 행이 무엇이었는지 알 수 있게 지금 기록한다. */
+  review_provider?: string | null
 }
 
 /**
@@ -95,6 +107,20 @@ export const LEDGER_KEYS = [
   'reconstructed',
 ] as const
 
+/**
+ * **선택** 키(REQ-2026-064). 허용되지만 **필수가 아니다**.
+ *
+ * 🔴 이 분리가 이 REQ의 존재 이유다. 이전에는 허용 키와 필수 키가 같은 배열(`LEDGER_KEYS`)이라,
+ *    키를 하나 추가하는 순간 **이미 커밋된 모든 원장 행이 "필수 키 누락"으로 거부**되고 D5 fail-closed가
+ *    그 티켓의 리뷰를 전부 막았다. 0.9.10이 배포된 뒤라 야생에 옛 원장이 실재한다.
+ *
+ * 계약 3항:
+ *   1. **과거 행은 이 키들의 부재를 허용**한다(필수 목록에 넣지 않는다).
+ *   2. **새 행은 항상 직렬화**한다 — 값이 `null`이어도 키는 존재한다(`serializeLedgerRow`가 정규화).
+ *   3. **있으면 엄격 검증**한다 — 있는데 타입이 틀린 것은 손상이다.
+ */
+export const OPTIONAL_LEDGER_KEYS = ['review_model', 'review_reasoning_effort', 'review_provider'] as const
+
 const OUTCOMES: readonly string[] = ['approved', 'needs-fix', 'blocked', 'invalid']
 const EVENTS: readonly string[] = ['attempt-opened', 'attempt-closed']
 
@@ -102,6 +128,11 @@ const EVENTS: readonly string[] = ['attempt-opened', 'attempt-closed']
 export function serializeLedgerRow(row: LedgerRow): string {
   const o: Record<string, unknown> = {}
   for (const k of LEDGER_KEYS) o[k] = row[k]
+  // 🔴 optional 키는 `undefined`를 `null`로 정규화한다(REQ-2026-064 계약 2).
+  //    `JSON.stringify`는 값이 `undefined`인 키를 **출력에서 생략**하므로, 정규화 없이 넘기면
+  //    "새 행은 항상 키를 포함한다"가 조용히 깨진다 — 그러면 `null`(핀하지 않음)과
+  //    키 부재(이 필드 도입 이전의 옛 행)의 의미 차이가 사라진다.
+  for (const k of OPTIONAL_LEDGER_KEYS) o[k] = row[k] ?? null
   return `${JSON.stringify(o)}\n`
 }
 
@@ -134,10 +165,17 @@ export function ledgerRowProblems(raw: unknown): string[] {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['객체가 아님']
   const r = raw as Record<string, unknown>
 
-  const allowed = new Set<string>(LEDGER_KEYS)
+  // 허용 = 필수 ∪ 선택(오염 방어는 그대로 — 목록만 커진다). 필수 = LEDGER_KEYS 뿐.
+  const allowed = new Set<string>([...LEDGER_KEYS, ...OPTIONAL_LEDGER_KEYS])
   for (const k of Object.keys(r)) if (!allowed.has(k)) p.push(`알 수 없는 키: ${k}`)
+  // 🔴 **선택 키를 여기 넣지 않는다**(REQ-2026-064 계약 1). 넣으면 이미 커밋된 옛 원장이 전부 거부되고
+  //    D5 fail-closed가 그 티켓의 리뷰를 막는다 — 이 REQ가 막으려는 바로 그 사고다.
   for (const k of LEDGER_KEYS) if (!(k in r)) p.push(`필수 키 누락: ${k}`)
   if (p.length) return p
+
+  // 계약 3: **있으면** 엄격 검증(없으면 통과). 있는데 타입이 틀린 것은 손상이다.
+  for (const k of OPTIONAL_LEDGER_KEYS)
+    if (k in r && r[k] !== null && typeof r[k] !== 'string') p.push(`${k}는 null이거나 문자열`)
 
   if (typeof r.ticket_id !== 'string' || r.ticket_id === '') p.push('ticket_id가 비어 있음')
   if (typeof r.series_id !== 'string' || r.series_id === '') p.push('series_id가 비어 있음')

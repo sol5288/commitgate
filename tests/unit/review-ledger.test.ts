@@ -11,6 +11,7 @@ import {
   ledgerPath,
   unclosedAttempts,
   LEDGER_KEYS,
+  OPTIONAL_LEDGER_KEYS,
   LEDGER_BASENAME,
   type LedgerRow,
 } from '../../scripts/req/lib/review-ledger'
@@ -75,6 +76,10 @@ describe('[ledger] ① 직렬화 — 고정 키 순서 + 끝 개행', () => {
       'prompt_sha256',
       'at',
       'reconstructed',
+      // REQ-2026-064: optional 키도 **항상** 직렬화된다(값이 null이어도 키는 존재 — 계약 2).
+      'review_model',
+      'review_reasoning_effort',
+      'review_provider',
     ])
   })
 
@@ -102,7 +107,8 @@ describe('[ledger] ② round-trip', () => {
     const row = closed()
     const { rows, problems } = parseLedger(serializeLedgerRow(row))
     expect(problems).toEqual([])
-    expect(rows).toEqual([row])
+    // REQ-2026-064: 직렬화가 optional 키를 null로 채우므로, round-trip 결과는 그 키를 갖는다.
+    expect(rows).toEqual([{ ...row, review_model: null, review_reasoning_effort: null, review_provider: null }])
   })
 
   it('빈 줄은 무시한다', () => {
@@ -299,5 +305,116 @@ describe('[ledger] 소스 위생 — 제어문자 리터럴 없음', () => {
       return n < 9 || (n >= 11 && n <= 12) || (n >= 14 && n <= 31)
     })
     expect(bad).toEqual([])
+  })
+})
+
+// ───────────────── REQ-2026-064 phase-1: 하위호환 계약(선택 키 분리) ──
+
+describe('[P1] 원장 하위호환 계약 — 신규 키가 옛 행을 무효화하지 않는다(DEC-1)', () => {
+  /**
+   * 🔴 **손으로 고정한 리터럴**이다. `serializeLedgerRow`(SUT)로 "옛 행"을 만들면 tautology가 된다 —
+   * SUT가 무엇을 쓰든 테스트가 따라가므로 계약이 깨져도 통과한다(REQ-2026-031의 교훈).
+   * 아래는 신규 키가 **없는** 0.9.10 시절 행의 형태를 그대로 적은 것이다.
+   */
+  const LEGACY_ROW_LITERAL = {
+    ticket_id: 'REQ-2026-051',
+    series_id: 'design:-#1',
+    review_kind: 'design',
+    phase_id: null,
+    attempt: 1,
+    event: 'attempt-closed',
+    lifecycle: 'completed',
+    outcome: 'approved',
+    exception_consumed: false,
+    prompt_sha256: 'a'.repeat(64),
+    at: '2026-07-20T01:02:03.000Z',
+    reconstructed: false,
+  }
+
+  it('🔴 신규 키가 없는 옛 행이 그대로 통과한다(수용기준 1)', () => {
+    expect(ledgerRowProblems(LEGACY_ROW_LITERAL)).toEqual([])
+  })
+
+  it('선택 키는 필수 목록에 없다', () => {
+    for (const k of OPTIONAL_LEDGER_KEYS) expect((LEDGER_KEYS as readonly string[]).includes(k)).toBe(false)
+  })
+
+  it('선택 키가 있으면 허용된다(알 수 없는 키로 거부되지 않는다)', () => {
+    const withOptional = {
+      ...LEGACY_ROW_LITERAL,
+      review_model: 'gpt-5.6-terra',
+      review_reasoning_effort: 'high',
+      review_provider: 'codex',
+    }
+    expect(ledgerRowProblems(withOptional)).toEqual([])
+  })
+
+  it('선택 키가 null이어도 통과한다(핀하지 않음)', () => {
+    const nulls = { ...LEGACY_ROW_LITERAL, review_model: null, review_reasoning_effort: null, review_provider: null }
+    expect(ledgerRowProblems(nulls)).toEqual([])
+  })
+
+  // 계약 3: 있는데 틀린 것은 손상이다.
+  it('🔴 선택 키가 있는데 타입이 틀리면 거부한다(수용기준 3)', () => {
+    expect(ledgerRowProblems({ ...LEGACY_ROW_LITERAL, review_model: 42 }).length).toBeGreaterThan(0)
+    expect(ledgerRowProblems({ ...LEGACY_ROW_LITERAL, review_provider: { id: 'codex' } }).length).toBeGreaterThan(0)
+  })
+
+  it('알 수 없는 키는 여전히 거부한다(오염 방어 유지)', () => {
+    expect(ledgerRowProblems({ ...LEGACY_ROW_LITERAL, injected: 'x' })).toContain('알 수 없는 키: injected')
+  })
+
+  it('필수 키 누락은 여전히 거부한다', () => {
+    const { outcome: _drop, ...missing } = LEGACY_ROW_LITERAL
+    expect(ledgerRowProblems(missing)).toContain('필수 키 누락: outcome')
+  })
+})
+
+describe('[P1] 직렬화 — 새 행은 선택 키를 항상 담는다(DEC-2 · 계약 2)', () => {
+  const base: LedgerRow = {
+    ticket_id: 'REQ-2026-064',
+    series_id: 'phase:p1#1',
+    review_kind: 'phase',
+    phase_id: 'p1',
+    attempt: 1,
+    event: 'attempt-opened',
+    lifecycle: null,
+    outcome: null,
+    exception_consumed: false,
+    prompt_sha256: null,
+    at: '2026-07-26T00:00:00.000Z',
+    reconstructed: false,
+  }
+
+  /**
+   * 🔴 `JSON.stringify`는 값이 `undefined`인 키를 **출력에서 생략**한다. 정규화가 없으면
+   * "새 행은 항상 키를 포함한다"가 조용히 깨지고, `null`(미핀)과 키 부재(도입 이전)의 의미 차이가 사라진다.
+   */
+  it('🔴 값을 주지 않아도 선택 키가 null로 직렬화된다(undefined 생략 방지)', () => {
+    const parsed = JSON.parse(serializeLedgerRow(base))
+    for (const k of OPTIONAL_LEDGER_KEYS) {
+      expect(Object.prototype.hasOwnProperty.call(parsed, k)).toBe(true)
+      expect(parsed[k]).toBeNull()
+    }
+  })
+
+  it('값을 주면 그대로 담긴다', () => {
+    const parsed = JSON.parse(
+      serializeLedgerRow({ ...base, review_model: 'm', review_reasoning_effort: 'high', review_provider: 'codex' }),
+    )
+    expect(parsed.review_model).toBe('m')
+    expect(parsed.review_reasoning_effort).toBe('high')
+    expect(parsed.review_provider).toBe('codex')
+  })
+
+  it('직렬화 결과가 스스로의 검증을 통과한다(round-trip)', () => {
+    expect(ledgerRowProblems(JSON.parse(serializeLedgerRow(base)))).toEqual([])
+  })
+
+  // 🔴 신규 키가 멱등 판정에 끼면 같은 attempt가 다른 키로 접혀 중복 행이 생긴다.
+  it('🔴 자연키는 신규 키의 영향을 받지 않는다', () => {
+    const a = ledgerRowKey(base)
+    const b = ledgerRowKey({ ...base, review_model: 'other' } as LedgerRow)
+    expect(a).toBe(b)
   })
 })
