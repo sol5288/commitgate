@@ -139,3 +139,93 @@ export function eraseLines(n: number): string {
   if (n <= 0) return ''
   return `${ESC}[${n}A${ESC}[0J`
 }
+
+// ─────────────────────────────────────── raw mode 어댑터 (phase-2) ──
+
+/** 어댑터가 만지는 IO 표면. 테스트가 대체할 수 있도록 좁게 잡는다. */
+export interface SelectIo {
+  stdin: NodeJS.ReadStream
+  stdout: NodeJS.WriteStream
+}
+
+export class SelectCancelled extends Error {
+  constructor() {
+    super('선택이 취소되었습니다(Ctrl+C).')
+    this.name = 'SelectCancelled'
+  }
+}
+
+/**
+ * raw mode를 쓸 수 있는 stdin인가. 드문 플랫폼·환경에서는 `setRawMode`가 없다.
+ * 🔴 못 쓴다고 setup을 실패시키지 않는다(DEC-9) — 호출부가 자유 입력으로 되돌린다.
+ */
+export function canUseRawMode(stdin: NodeJS.ReadStream): boolean {
+  return typeof stdin.setRawMode === 'function' && stdin.isTTY === true
+}
+
+/**
+ * 방향키 단일 선택. 확정된 항목의 인덱스를 낸다.
+ *
+ * 🔴 **모든 종료 경로에서 raw mode를 되돌린다**(DEC-3). 되돌리지 못하면 사용자 터미널이
+ *    **에코 없는 상태로 남는다** — 정상 종료·예외·취소 전부 `finally`를 지난다.
+ *
+ * 🔴 raw mode에서는 Ctrl+C가 SIGINT를 만들지 않고 그냥 `\x03` 데이터로 온다. 그래서 기본 핸들러에
+ *    기댈 수 없고, 우리가 `cancel`로 받아 **정리한 뒤** 던진다.
+ */
+export function runSelect(items: readonly string[], initialIndex: number, io: SelectIo): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    let state: SelectState = { options: items, index: Math.min(Math.max(initialIndex, 0), Math.max(items.length - 1, 0)) }
+    let buffer = ''
+    let drawn = 0
+    const wasRaw = io.stdin.isRaw === true
+
+    const draw = (): void => {
+      // 지우기와 그리기가 **같은 줄 수**를 쓴다 — 어긋나면 화면이 겹치거나 지워진다.
+      if (drawn > 0) io.stdout.write(eraseLines(drawn))
+      const lines = renderSelect(state)
+      io.stdout.write(lines.join('\n') + '\n')
+      drawn = lines.length
+    }
+
+    const cleanup = (): void => {
+      io.stdin.removeListener('data', onData)
+      io.stdin.pause()
+      // 멱등: 이미 되돌렸어도 안전하다.
+      if (!wasRaw && typeof io.stdin.setRawMode === 'function') io.stdin.setRawMode(false)
+    }
+
+    function onData(chunk: Buffer | string): void {
+      buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+      const parsed = parseKeys(buffer)
+      buffer = parsed.rest
+      for (const key of parsed.keys) {
+        const out = applySelectKey(state, key)
+        if (out.kind === 'move') {
+          state = out.state
+          draw()
+        } else if (out.kind === 'accept') {
+          if (drawn > 0) io.stdout.write(eraseLines(drawn))
+          cleanup()
+          resolve(out.index)
+          return
+        } else if (out.kind === 'cancel') {
+          if (drawn > 0) io.stdout.write(eraseLines(drawn))
+          cleanup()
+          reject(new SelectCancelled())
+          return
+        }
+      }
+    }
+
+    try {
+      if (typeof io.stdin.setRawMode === 'function') io.stdin.setRawMode(true)
+      io.stdin.resume()
+      io.stdin.setEncoding('utf8')
+      io.stdin.on('data', onData)
+      draw()
+    } catch (err) {
+      cleanup()
+      reject(err instanceof Error ? err : new Error(String(err)))
+    }
+  })
+}

@@ -4,6 +4,9 @@ import {
   applySelectKey,
   renderSelect,
   eraseLines,
+  runSelect,
+  canUseRawMode,
+  SelectCancelled,
   type Key,
   type SelectState,
 } from '../../bin/select-prompt'
@@ -161,5 +164,111 @@ describe('[select] renderSelect · eraseLines — 순수 출력 생성', () => {
     expect(eraseLines(3)).toBe(`${ESC}[3A${ESC}[0J`)
     expect(eraseLines(0)).toBe('')
     expect(eraseLines(-1)).toBe('')
+  })
+})
+
+/**
+ * REQ-2026-067 phase-2 — raw mode 어댑터.
+ *
+ * 🔴 헤드라인: **모든 종료 경로에서 raw mode 를 되돌린다.** 되돌리지 못하면 사용자 터미널이
+ *    에코 없는 상태로 남는다 — 확정·취소 어느 쪽으로 끝나든 마찬가지다.
+ */
+describe('[select] runSelect — raw mode 어댑터', () => {
+  /** 최소 stdin/stdout 대역. 실제 TTY 없이 어댑터 계약만 본다. */
+  function fakeIo() {
+    const listeners: Array<(c: string) => void> = []
+    const rawCalls: boolean[] = []
+    let out = ''
+    const stdin = {
+      isTTY: true,
+      isRaw: false,
+      setRawMode(v: boolean) {
+        rawCalls.push(v)
+        this.isRaw = v
+        return this
+      },
+      resume() {
+        return this
+      },
+      pause() {
+        return this
+      },
+      setEncoding() {
+        return this
+      },
+      on(_e: string, fn: (c: string) => void) {
+        listeners.push(fn)
+        return this
+      },
+      removeListener(_e: string, fn: (c: string) => void) {
+        const i = listeners.indexOf(fn)
+        if (i >= 0) listeners.splice(i, 1)
+        return this
+      },
+    }
+    const stdout = {
+      write(s: string) {
+        out += s
+        return true
+      },
+    }
+    return {
+      io: { stdin, stdout } as never,
+      send: (chunk: string) => listeners.forEach((l) => l(chunk)),
+      rawCalls,
+      listeners,
+      get output() {
+        return out
+      },
+    }
+  }
+
+  it('↓ 두 번 + Enter 로 세 번째 항목이 확정된다', async () => {
+    const f = fakeIo()
+    const p = runSelect(['a', 'b', 'c'], 0, f.io)
+    f.send(DOWN)
+    f.send(DOWN)
+    f.send(CR)
+    expect(await p).toBe(2)
+  })
+
+  it('🔴 분할 도착한 방향키도 어댑터를 통과한다(버퍼 이어붙이기)', async () => {
+    const f = fakeIo()
+    const p = runSelect(['a', 'b'], 0, f.io)
+    f.send(ESC) // 아직 확정 못 함 — 여기서 취소되면 안 된다
+    f.send('[B')
+    f.send(CR)
+    expect(await p).toBe(1)
+  })
+
+  it('🔴 확정하면 raw mode 를 되돌리고 리스너를 뗀다', async () => {
+    const f = fakeIo()
+    const p = runSelect(['a'], 0, f.io)
+    f.send(CR)
+    await p
+    expect(f.rawCalls).toEqual([true, false])
+    expect(f.listeners).toHaveLength(0)
+  })
+
+  it('🔴 Ctrl+C 로 취소해도 raw mode 를 되돌린다(터미널이 먹통이 되면 안 된다)', async () => {
+    const f = fakeIo()
+    const p = runSelect(['a', 'b'], 0, f.io)
+    f.send(ETX)
+    await expect(p).rejects.toThrow(SelectCancelled)
+    expect(f.rawCalls).toEqual([true, false])
+    expect(f.listeners).toHaveLength(0)
+  })
+
+  it('초기 인덱스가 범위를 벗어나도 안전하게 잘린다', async () => {
+    const f = fakeIo()
+    const p = runSelect(['a', 'b'], 99, f.io)
+    f.send(CR)
+    expect(await p).toBe(1)
+  })
+
+  it('canUseRawMode 는 TTY 이면서 setRawMode 가 있을 때만 true', () => {
+    expect(canUseRawMode({ isTTY: true, setRawMode: () => {} } as never)).toBe(true)
+    expect(canUseRawMode({ isTTY: false, setRawMode: () => {} } as never)).toBe(false)
+    expect(canUseRawMode({ isTTY: true } as never)).toBe(false)
   })
 })

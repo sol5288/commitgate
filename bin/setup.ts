@@ -17,6 +17,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 
 import { resolve, join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline/promises'
+import { canUseRawMode, runSelect } from './select-prompt'
 import Ajv from 'ajv'
 import { CONFIG_SCHEMA, DEFAULTS, stripBom, STOP_GATE_OF, type SetupMarker, type PhaseCommitPolicy } from '../scripts/req/lib/config'
 import { createReviewerProbes, type ReviewerProbes } from '../scripts/req/lib/adapters'
@@ -135,6 +136,16 @@ export function validateValue(key: SetupKey, value: string | null): string[] {
   return (validate.errors ?? []).map((e) => `${e.message ?? 'invalid'}${e.params ? ` (${JSON.stringify(e.params)})` : ''}`)
 }
 
+/**
+ * 이 키가 **비움(`null`)을 받을 수 있는가** — 스키마가 근거다(REQ-2026-067 DEC-6).
+ *
+ * 🔴 화면(안내·선택 목록)과 검증이 **같은 근거**를 써야 한다. `q.key === 'stopGate'` 같은 하드코딩을
+ *    두 곳에 두면 갈라지고, 그러면 "비움" 항목을 보여 놓고 고르면 거부하는 화면이 나온다.
+ */
+export function allowsNullValue(key: SetupKey): boolean {
+  return validateValue(key, null).length === 0
+}
+
 /** 스키마의 enum에서 표시용 선택지를 뽑는다(`null` 제외 — 그건 `NULL_SENTINEL`로 표현된다). */
 export function choicesFor(key: SetupKey): readonly string[] | undefined {
   const sub = subSchemaFor(key)
@@ -193,11 +204,39 @@ export function hintFor(q: Question): string {
   // `stopGate`는 "전역 상속" 개념이 없다 — 비움 sentinel을 안내하지 않는다(스키마에 null이 없어 자동 거부된다).
   // 대신 **HIGH 예외·통합 승인 필요**를 고지한다(REQ-2026-063 DEC-6): 이 문장이 없으면 `req`를 고른 사용자가
   // "이제 전부 자동"이라고 오해하고, HIGH 티켓에서 멈출 때 도구가 고장 난 것으로 본다.
-  const tail =
-    q.key === 'stopGate'
-      ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}\n  Enter=유지`
-      : `\n  Enter=유지 · '${NULL_SENTINEL}'=비움(전역 상속)`
+  // 🔴 근거는 스키마 하나다(`allowsNullValue`) — 하드코딩을 두 곳에 두면 화면과 검증이 갈라진다.
+  const tail = !allowsNullValue(q.key)
+    ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}\n  Enter=유지`
+    : `\n  Enter=유지 · '${NULL_SENTINEL}'=비움(전역 상속)`
   return `현재: ${cur}${src}${choices}${tail}`
+}
+
+/** 선택 목록의 한 항목: 화면에 보이는 라벨과, 고르면 `ask`가 돌려줄 **원시 답 문자열**. */
+export interface SelectItem {
+  label: string
+  /** `interpretAnswer`가 해석할 값 — `''`=유지 · `NULL_SENTINEL`=비움 · 그 외=그 값. */
+  answer: string
+}
+
+/**
+ * enum 질문의 선택 목록(순수, DEC-6).
+ *
+ * 🔴 목록은 `[유지] + [비움?] + enum 값들`이다. 특수 답을 빼면 자유 입력에서 되던 일이
+ *    선택에서는 안 되는 **기능 후퇴**가 된다 — "유지"는 미기록이고 "비움"은 `null` 기록이라
+ *    어느 것도 enum 값으로 대체할 수 없다.
+ *
+ * 🔴 첫 항목이 **유지**다. 커서가 여기서 시작하므로 "Enter만 누르면 아무것도 안 바뀐다"는
+ *    기존 계약이 그대로 성립한다. 현재 값에 커서를 두면 Enter가 **명시 선택**이 되어
+ *    파일에 없던 키가 조용히 기록된다(DEC-5).
+ */
+export function buildSelectItems(q: Question): SelectItem[] {
+  const items: SelectItem[] = [
+    { label: `현재 값 유지 (${q.current === null ? '비움' : q.current}${q.currentIsDefault ? ' · 기본값' : ''})`, answer: '' },
+  ]
+  // 비움 항목은 **스키마가 null을 허용할 때만**(`hintFor`와 같은 근거).
+  if (allowsNullValue(q.key)) items.push({ label: `비움 — codex 전역 설정 상속`, answer: NULL_SENTINEL })
+  for (const c of q.choices ?? []) items.push({ label: c === q.current ? `${c}  (현재)` : c, answer: c })
+  return items
 }
 
 /**
@@ -391,13 +430,57 @@ export function createConfigIo(dir: string): ConfigIo {
 }
 
 /** 실제 대화형 Prompter(`node:readline/promises`). IO는 이 한 겹에만 있다(DEC-3). */
-export function createReadlinePrompter(): Prompter {
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
+/** `createReadlinePrompter`가 만지는 프로세스 표면(테스트 주입 seam). */
+export interface PrompterIo {
+  stdin: NodeJS.ReadStream
+  stdout: NodeJS.WriteStream
+  log: (msg: string) => void
+}
+
+/**
+ * 실제 대화형 Prompter. IO는 이 한 겹에만 있다(REQ-2026-060 DEC-3).
+ *
+ * 🔴 **readline 인터페이스는 자유 입력 질문마다 만들고 즉시 닫는다**(REQ-2026-067 phase-2 r01 P1).
+ *    오래 살려 두고 `pause()`만 하면 readline의 stdin 리스너가 **그대로 남아** raw 선택 위젯과
+ *    방향키를 함께 먹는다 — 위젯 출력 위에 readline이 프롬프트를 다시 그려 화면이 깨진다.
+ *    `pause()`는 흐름만 멈출 뿐 리스너를 떼지 않는다.
+ */
+export function createReadlinePrompter(io: PrompterIo = { stdin: process.stdin, stdout: process.stdout, log: (m) => console.log(m) }): Prompter {
+  let live: ReturnType<typeof createInterface> | null = null
+  const freeInput = async (text: string): Promise<string> => {
+    const rl = createInterface({ input: io.stdin, output: io.stdout })
+    live = rl
+    try {
+      return await rl.question(text)
+    } finally {
+      live = null
+      // 🔴 반드시 닫는다. 열린 채 남으면 stdin 핸들이 살아 **CLI 프로세스가 종료되지 않고**,
+      //    다음 선택 위젯과 입력을 나눠 갖는다.
+      rl.close()
+    }
+  }
   return {
-    ask: async (q, hint) => rl.question(`\n${q.prompt}\n  ${hint}\n> `),
-    // 🔴 **반드시 노출한다.** 없으면 `runSetup`의 `finally`가 no-op이 되고, stdin에 붙은 readline 핸들이
-    //    열린 채 남아 **CLI 프로세스가 종료되지 않는다**(phase-3 r01 P1).
-    close: () => rl.close(),
+    ask: async (q, hint) => {
+      const header = `\n${q.prompt}\n  ${hint}`
+      // 🔴 enum 질문만 방향키로 고른다(DEC-2). 자유 입력(리뷰 모델)은 그대로다.
+      //    확정값은 **문자열로** 반환되어 기존 해석·검증·저장 경로를 그대로 탄다.
+      if (q.choices && canUseRawMode(io.stdin)) {
+        const items = buildSelectItems(q)
+        io.log(`${header}\n  ↑/↓ 이동 · Enter 선택 · Ctrl+C 취소`)
+        const idx = await runSelect(items.map((it) => it.label), 0, { stdin: io.stdin, stdout: io.stdout })
+        const chosen = items[idx]
+        if (!chosen) throw new Error('선택 결과가 목록 범위를 벗어났습니다(내부 오류).')
+        io.log(`  선택: ${chosen.label}`)
+        return chosen.answer
+      }
+      // 🔴 raw mode를 못 쓰는 환경은 **자유 입력으로 되돌린다**(DEC-9) — 실패시키지 않는다.
+      return freeInput(`${header}\n> `)
+    },
+    // 🔴 안전망: 예외로 빠져나간 질문이 있어도 남은 인터페이스를 닫는다(멱등).
+    close: () => {
+      live?.close()
+      live = null
+    },
   }
 }
 

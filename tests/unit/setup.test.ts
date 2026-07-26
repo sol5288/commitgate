@@ -22,6 +22,8 @@ import {
   type SetupDeps,
   type Question,
   type Prompter,
+  buildSelectItems,
+  allowsNullValue,
 } from '../../bin/setup'
 import { CONFIG_SCHEMA, DEFAULTS } from '../../scripts/req/lib/config'
 import { classifyAuthOutput, type AuthProbeResult, type VersionProbeResult } from '../../scripts/req/lib/adapters'
@@ -715,5 +717,141 @@ describe('[setup] mergeConfigText — 건드린 키만, 나머지는 보존(DEC-
 
   it('빈 패치는 기존 내용을 정규화만 한다(내용 동등)', () => {
     expect(JSON.parse(mergeConfigText(existing, {}))).toEqual(JSON.parse(existing))
+  })
+})
+
+/**
+ * REQ-2026-067 phase-2 — enum 질문의 선택 목록(DEC-6).
+ *
+ * 🔴 이 그룹의 헤드라인: **첫 항목은 "유지"다.** 커서가 거기서 시작하므로 "Enter만 누르면 아무것도
+ *    안 바뀐다"는 기존 계약이 성립한다. 현재 값에 커서를 두면 Enter가 명시 선택이 되어
+ *    파일에 없던 키가 조용히 기록된다.
+ */
+describe('[setup] buildSelectItems — 선택 목록 구성', () => {
+  const q = (over: Partial<Question> = {}): Question => ({
+    key: 'stopGate',
+    prompt: '사람이 멈추는 지점',
+    current: 'phase',
+    currentIsDefault: true,
+    choices: ['phase', 'req', 'merge'],
+    ...over,
+  })
+
+  it('🔴 첫 항목은 유지이고 빈 문자열을 돌려준다(= 미기록)', () => {
+    const items = buildSelectItems(q())
+    expect(items[0]!.answer).toBe('')
+    expect(items[0]!.label).toContain('유지')
+  })
+
+  it('enum 값이 순서대로 뒤따르고 각자 자기 값을 돌려준다', () => {
+    const answers = buildSelectItems(q()).map((i) => i.answer)
+    expect(answers).toEqual(['', 'phase', 'req', 'merge'])
+  })
+
+  /** 🔴 화면과 검증이 같은 근거(`allowsNullValue`)를 써야 한다 — 갈라지면 보여 주고 거부하는 화면이 된다. */
+  it('🔴 null 을 받지 않는 키에는 비움 항목이 없다(stopGate)', () => {
+    expect(allowsNullValue('stopGate')).toBe(false)
+    expect(buildSelectItems(q()).some((i) => i.answer === NULL_SENTINEL)).toBe(false)
+  })
+
+  it('🔴 null 을 받는 키에는 비움 항목이 있다(reviewReasoningEffort)', () => {
+    expect(allowsNullValue('reviewReasoningEffort')).toBe(true)
+    const items = buildSelectItems(
+      q({ key: 'reviewReasoningEffort', current: 'high', choices: ['low', 'medium', 'high'] }),
+    )
+    expect(items[1]!.answer).toBe(NULL_SENTINEL)
+    expect(items.map((i) => i.answer)).toEqual(['', NULL_SENTINEL, 'low', 'medium', 'high'])
+  })
+
+  it('현재 값에 표시가 붙는다(고른 것과 구별)', () => {
+    const items = buildSelectItems(q({ current: 'req' }))
+    expect(items.find((i) => i.answer === 'req')!.label).toContain('현재')
+    expect(items.find((i) => i.answer === 'merge')!.label).toBe('merge')
+  })
+
+  /**
+   * 🔴 목록이 내는 답은 전부 기존 `interpretAnswer`가 이해하는 형태여야 한다 —
+   * 그래야 `Prompter`를 넓히지 않고도(DEC-2) 해석·검증·저장 경로가 그대로 돈다.
+   */
+  it('🔴 모든 항목의 답이 기존 해석 경로를 그대로 탄다', () => {
+    for (const key of ['stopGate', 'reviewReasoningEffort'] as const) {
+      const choices = choicesFor(key)!
+      for (const item of buildSelectItems(q({ key, current: choices[0]!, choices: [...choices] }))) {
+        const v = interpretAnswer(item.answer)
+        if (item.answer === '') expect(v).toBeUndefined() // 유지 = 패치 없음
+        else expect(validateValue(key, v as string | null)).toEqual([])
+      }
+    }
+  })
+})
+
+/**
+ * REQ-2026-067 phase-2 r01 P1 — readline 격리.
+ *
+ * 🔴 헤드라인: **자유 입력 질문이 끝나면 stdin 에 readline 리스너가 남아 있으면 안 된다.**
+ *    `rl.pause()`는 흐름만 멈출 뿐 리스너를 떼지 않아, 이어지는 raw 선택 위젯과 방향키를 함께 먹는다 —
+ *    위젯 출력 위에 readline 이 프롬프트를 다시 그려 화면이 깨진다.
+ */
+describe('[setup] createReadlinePrompter — raw 위젯과 readline 격리', () => {
+  /** 실제 readline 이 붙을 수 있는 최소 TTY 대역(Readable/Writable 기반). */
+  function ttyIo() {
+    const { Readable, Writable } = require('node:stream') as typeof import('node:stream')
+    const stdin = new Readable({ read() {} }) as unknown as NodeJS.ReadStream & { push(c: unknown): boolean }
+    Object.assign(stdin, {
+      isTTY: true,
+      isRaw: false,
+      setRawMode(v: boolean) {
+        ;(this as { isRaw: boolean }).isRaw = v
+        return this
+      },
+    })
+    let out = ''
+    const stdout = new Writable({
+      write(c: Buffer | string, _e: unknown, cb: () => void) {
+        out += String(c)
+        cb()
+      },
+    }) as unknown as NodeJS.WriteStream
+    const logs: string[] = []
+    return { stdin, stdout, log: (m: string) => logs.push(m), logs, get out() { return out } }
+  }
+
+  const freeQ: Question = { key: 'reviewModel', prompt: 'model', current: 'x', currentIsDefault: true }
+  const enumQ: Question = {
+    key: 'stopGate',
+    prompt: 'stop',
+    current: 'phase',
+    currentIsDefault: true,
+    choices: ['phase', 'req', 'merge'],
+  }
+
+  it('🔴 자유 입력이 끝나면 stdin 에 readline 리스너가 남지 않는다', async () => {
+    const io = ttyIo()
+    const p = createReadlinePrompter(io)
+    const answer = p.ask(freeQ, hintFor(freeQ))
+    io.stdin.push('gpt-x\n')
+    expect(await answer).toBe('gpt-x')
+    // readline 이 붙였던 리스너가 전부 떨어졌는가 — 이게 격리의 관측 가능한 정의다.
+    expect(io.stdin.listenerCount('data')).toBe(0)
+    expect(io.stdin.listenerCount('readable')).toBe(0)
+    p.close?.()
+  })
+
+  it('🔴 자유 입력 뒤 enum 선택에서 방향키를 위젯만 처리한다', async () => {
+    const io = ttyIo()
+    const p = createReadlinePrompter(io)
+    const first = p.ask(freeQ, hintFor(freeQ))
+    io.stdin.push('gpt-x\n')
+    await first
+
+    const second = p.ask(enumQ, hintFor(enumQ))
+    await new Promise((r) => setImmediate(r)) // 위젯이 리스너를 붙일 틈
+    // 위젯이 붙인 리스너 하나뿐이어야 한다 — readline 이 남아 있으면 2개가 된다.
+    expect(io.stdin.listenerCount('data')).toBe(1)
+    io.stdin.push(String.fromCharCode(27) + '[B') // ↓ → '유지' 다음 = 첫 enum 값
+    io.stdin.push(String.fromCharCode(13)) // Enter
+    expect(await second).toBe('phase')
+    expect(io.stdin.listenerCount('data')).toBe(0)
+    p.close?.()
   })
 })
