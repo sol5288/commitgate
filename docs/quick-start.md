@@ -13,11 +13,15 @@ npm install -D commitgate
 # 2) 프로젝트에 설정·계약·스키마와 req:* 스크립트를 깝니다:
 npx commitgate init
 
-codex --version
-codex login status
+# 3) 리뷰 모델·추론강도를 고르고 codex 로그인까지 마칩니다(대화형):
+npx commitgate setup
 ```
 
-> **왜 두 단계인가요?** CommitGate는 실행 코드를 프로젝트에 **복사하지 않습니다**. 1단계가 런타임을 `node_modules/commitgate`에 넣고, 2단계는 프로젝트에 **거버넌스 자산**(설정·계약·스키마·persona)과 `req:* = commitgate <verb>` 스크립트만 깝니다.
+> **3단계는 사람이 터미널에서 직접 실행합니다.** 대화형 전용이라 파이프·CI·에이전트 세션에서는 질문 없이 즉시 종료합니다 — 에이전트는 이 명령을 실행하지 않고 사용자에게 실행을 요청합니다.
+> 건너뛰어도 됩니다. 그러면 [설정](./configuration.md)의 기본값(`gpt-5.6-terra`/`high`)으로 동작하고, codex 로그인은 직접 `codex login`으로 해야 합니다. setup은 아무것도 강제하지 않습니다.
+> 설정을 바꿨다면 `req.config.json`이 dirty해지므로 아래 설치 커밋에 함께 담으세요.
+
+> **설치는 왜 두 단계인가요?** CommitGate는 실행 코드를 프로젝트에 **복사하지 않습니다**. 1단계가 런타임을 `node_modules/commitgate`에 넣고, 2단계는 프로젝트에 **거버넌스 자산**(설정·계약·스키마·persona)과 `req:* = commitgate <verb>` 스크립트만 깝니다.
 > 런타임 제거는 `npm uninstall -D commitgate` 한 번입니다. **업데이트는 아래 [업그레이드 (0.x)](./upgrade.md) 절을 따르세요** — 런타임(`node_modules`)은 `npm`으로 올리지만, 프로젝트에 깔린 vendored 자산(스키마·persona)은 `commitgate sync`로 따로 맞춰야 하고, 0.x 캐럿 범위(`^0.y`)는 minor를 자동으로 넘지 않습니다.
 > `init`은 `devDependencies.commitgate` 선언이 없으면 **중단**합니다 — `req:*`가 가리킬 런타임이 없기 때문입니다.
 

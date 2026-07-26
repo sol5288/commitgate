@@ -13,11 +13,15 @@ npm install -D commitgate
 # 2) Add config, contract, schemas, and the req:* scripts to your project:
 npx commitgate init
 
-codex --version
-codex login status
+# 3) Pick the review model and reasoning effort, and finish codex login (interactive):
+npx commitgate setup
 ```
 
-> **Why two steps?** CommitGate does **not** copy its runtime code into your project. Step 1 puts the runtime in `node_modules/commitgate`; step 2 adds only **governance assets** (config, contract, schemas, persona) plus `req:* = commitgate <verb>` scripts.
+> **Step 3 is run by a human at a terminal.** It is interactive-only, so in pipes, CI, or agent sessions it exits immediately without asking anything — agents do not run it, they ask you to.
+> You may skip it: the defaults from [Configuration](./configuration.en.md) (`gpt-5.6-terra`/`high`) apply, and you log in yourself with `codex login`. setup enforces nothing.
+> If you change settings, `req.config.json` becomes dirty — include it in the install commit below.
+
+> **Why is the install two steps?** CommitGate does **not** copy its runtime code into your project. Step 1 puts the runtime in `node_modules/commitgate`; step 2 adds only **governance assets** (config, contract, schemas, persona) plus `req:* = commitgate <verb>` scripts.
 > Removing the runtime is a single `npm uninstall -D commitgate`. **For updates, follow the [Upgrading (0.x)](./upgrade.en.md) section below** — the runtime (`node_modules`) is bumped with `npm`, but the vendored assets (schemas, persona) in your project must be re-synced separately with `commitgate sync`, and a 0.x caret range (`^0.y`) does not cross a minor automatically.
 > `init` **stops** if `devDependencies.commitgate` is not declared — there would be no runtime for `req:*` to point at.
 
