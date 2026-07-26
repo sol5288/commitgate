@@ -28,6 +28,14 @@ import { captureDesignBinding } from '../../scripts/req/review-codex'
 import type { WorkflowState } from '../../scripts/req/review-codex'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
 
+/**
+ * REQ-2026-062: 픽스처 repo는 **"setup을 마친 프로젝트"**를 나타낸다.
+ * 이 마커가 없으면 setup 게이트가 먼저 막아 이 파일이 검증하려는 다른 단언에 도달하지 못한다.
+ * (실제 `commitgate init` 설치본은 grandfather 신호를 4개 갖지만, 이 픽스처들은 최소 repo다.)
+ */
+const SETUP_OK = { setup: { completedVersion: '0.0.0-test', completedAt: '2026-01-01T00:00:00Z' } }
+
+
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 const HASH_A = 'a'.repeat(64)
@@ -643,7 +651,7 @@ describe('[req:next] no-write 회귀 — .git/index·objects·state.json 불변'
       git(['config', 'user.email', 't@t.t'])
       git(['config', 'user.name', 't'])
       writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
-      writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm' }))
+      writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm' }))
 
       const ticket = join(repo, 'workflow', 'REQ-2026-001')
       mkdirSync(ticket, { recursive: true })
@@ -1056,7 +1064,7 @@ describe('[REQ-2026-048] req:next main() 배선 — HEAD 기준 DONE 게이트',
     g(['config', 'user.email', 't@t.t'])
     g(['config', 'user.name', 't'])
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm' }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm' }))
     const ticket = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticket, { recursive: true })
     for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), '# doc\n')

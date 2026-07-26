@@ -66,6 +66,7 @@ export {
 } from './lib/evidence'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type PackageManager, type ResolvedConfig } from './lib/config'
 import { createGitAdapter, quietGitRunner, safeSpawnSync, type GitAdapter } from './lib/adapters'
+import { assertSetupComplete } from './lib/setup-gate'
 
 // git=GitAdapter 경유(D-017-3), 패키지매니저=config. runDoctor(pnpm/npm 실행)는 cwd=gitRoot 필요(비-git 호출). main()이 loadConfig 후 config.root로 설정.
 let gitRoot = packageRoot()
@@ -646,6 +647,8 @@ function designFinalize(args: {
 
 export function main(argv: string[] = process.argv.slice(2)): void {
   const opts = parseArgs(argv)
+  // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
+  assertSetupComplete({ root: opts.root })
   const cfg = loadConfig({ root: opts.root })
   gitRoot = cfg.root // runDoctor(pnpm/npm) cwd
   pkgManager = cfg.packageManager

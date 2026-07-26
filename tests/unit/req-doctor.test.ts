@@ -131,6 +131,29 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     expect(missing.find((c) => c.id === 'D23')?.msg).toContain('lockfile')
   })
 
+  it('D24(REQ-2026-062): setup 완료 게이트 — 마커=OK · grandfather/차단=WARN · 절대 FAIL 아님', () => {
+    // 미계산(2-arg) → OK
+    expect(lvl(runChecks(mk({})), 'D24')).toBe('OK')
+    // 마커 있음 → OK
+    expect(
+      lvl(runChecks(mk({ setupGate: { kind: 'pass', reason: 'marker', evidence: ['마커=있음'] } })), 'D24'),
+    ).toBe('OK')
+    // grandfather 통과 → WARN(언젠가 setup을 하라는 안내)
+    const gf = runChecks(mk({ setupGate: { kind: 'pass', reason: 'grandfathered', evidence: ['마커=없음'] } }))
+    expect(lvl(gf, 'D24')).toBe('WARN')
+    expect(gf.find((c) => c.id === 'D24')?.msg).toContain('commitgate setup')
+    // 차단 판정 → WARN (차단 자체는 verb preflight의 몫)
+    const blocked = runChecks(mk({ setupGate: { kind: 'block', message: 'x', evidence: ['마커=없음'] } }))
+    expect(lvl(blocked, 'D24')).toBe('WARN')
+
+    // 🔴 **WARN 상한**. FAIL로 승격되면 `req:commit`이 doctor를 하드 게이트로 spawn하므로
+    //    마커 없는 기존 설치본의 **모든 커밋이 벽돌**이 된다(D19~D23과 같은 근거).
+    for (const r of [gf, blocked]) expect(r.filter((c) => c.level === 'FAIL')).toEqual([])
+
+    // 에이전트가 직접 실행하지 않도록 "요청"을 지시한다(setup은 대화형 전용).
+    expect(blocked.find((c) => c.id === 'D24')?.msg).toContain('요청')
+  })
+
   it('unprotectedRepoRootScratch: ignore되면 제외 · tracked면 제외 · 둘 다 아니면 보고', () => {
     const p = 'workflow/.review-calls.jsonl'
     const ok = (args: string[]): string => {

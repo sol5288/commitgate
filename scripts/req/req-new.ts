@@ -20,6 +20,7 @@ import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { parseStatusZ, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isToolOutputScratch } from './lib/scratch'
 import { scanIntake, type IntakeTicketResult } from './lib/intake'
+import { assertSetupComplete } from './lib/setup-gate'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -174,6 +175,8 @@ export function parseArgs(argv: string[]): Opts {
 
 export function main(argv: string[] = process.argv.slice(2)): void {
   const o = parseArgs(argv)
+  // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
+  assertSetupComplete({ root: o.root })
   // ⚠️ loadConfig 이전이라 pm을 모른다 → pm-중립 bare 표기(DEFAULTS 폴백 금지, DEC-011-1).
   if (!o.slug) throw new Error('slug 필요 (예: req:new camera-hardfail --run)')
   validateSlug(o.slug)

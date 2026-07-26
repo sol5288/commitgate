@@ -29,6 +29,7 @@ import {
 } from './lib/evidence'
 import { parseCloseProof, appendCloseProofRow, closeProofPath } from './lib/close-proof'
 import { planMigrationClose, type MigrationFacts } from './lib/close-migrate'
+import { assertSetupComplete } from './lib/setup-gate'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 function git(args: string[]): string {
@@ -109,6 +110,8 @@ export function committedPlannedPhaseIds(stateText: string | null): string[] {
 
 export function main(argv: string[] = process.argv.slice(2)): void {
   const o = parseArgs(argv)
+  // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
+  assertSetupComplete({ root: o.root })
   if (!o.reqId) throw new Error('REQ 필요 (예: req:close 2026-049 --migrate)')
   if (!o.migrate) throw new Error('현재 --migrate 모드만 지원합니다 (예: req:close 2026-049 --migrate --run)')
   const cfg = loadConfig({ root: o.root })

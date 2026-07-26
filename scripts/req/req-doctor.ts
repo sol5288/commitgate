@@ -28,6 +28,7 @@ import {
   type Verdict,
   type ApprovalEvidence,
 } from './review-codex'
+import { setupGateVerdict, collectGateFacts, type GateVerdict } from './lib/setup-gate'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { missingQuickstartFiles } from '../../bin/quickstart'
@@ -109,6 +110,11 @@ export interface DoctorInputs {
   //   undefined = 미계산(2-arg/legacy) → OK. [] = 전부 보호됨 → OK. 비어있지 않음 → WARN.
   //   dev/dogfood(packageRootDiffers===false)면 D20/D21처럼 skip. optional이어야 테스트 base 리터럴이 안 깨진다.
   repoRootScratchUnprotected?: string[]
+  /**
+   * D24(REQ-2026-062): setup 완료 게이트 판정. `undefined` = 미계산(2-arg 경로).
+   * 🔴 이 값이 무엇이든 **WARN 상한**이다 — 차단은 doctor가 아니라 워크플로 verb의 preflight가 한다.
+   */
+  setupGate?: GateVerdict
   // D23(REQ-2026-056): frozen-lockfile 위생. 감지된 PM의 lockfile이 없거나 untracked면 재현 가능한 설치
   //   (`<pm> ci`/`--frozen-lockfile`)가 불가하다. undefined = 미계산(2-arg/legacy) → OK.
   //   'no-package-json'/'ok' → OK. 'missing'/'untracked' → **WARN**(FAIL 아님 — D19~D22 근거 동일).
@@ -533,7 +539,40 @@ export function runChecks(inp: DoctorInputs): Check[] {
     })
   }
 
+  // D24(REQ-2026-062): setup 완료 게이트 진단.
+  //
+  // 🔴 **level 상한은 WARN — 절대 FAIL이 아니다**(D19~D23과 동일 근거). `req:commit`이 doctor를 하드 게이트로
+  //    spawn하므로 FAIL이면 마커 없는 기존 설치본의 **모든 커밋이 벽돌**이 된다. 차단이 필요한 지점은
+  //    워크플로 verb의 preflight(`assertSetupComplete`)이고, 여기는 **그 사실을 보이게 하는 역할**만 한다.
+  //    실제로 grandfather 통과한 설치본은 막히지 않으므로, 이 WARN은 "언젠가 setup을 하라"는 안내다.
+  if (inp.setupGate === undefined) {
+    c.push({ id: 'D24', level: 'OK', msg: 'setup 완료 점검 불요(2-arg/미계산)' })
+  } else if (inp.setupGate.kind === 'pass' && inp.setupGate.reason === 'marker') {
+    c.push({ id: 'D24', level: 'OK', msg: `setup 완료 기록 있음 (${inp.setupGate.evidence.join(' · ')})` })
+  } else if (inp.setupGate.kind === 'pass') {
+    c.push({
+      id: 'D24',
+      level: 'WARN',
+      msg:
+        `setup 완료 기록이 없지만 기존 설치본으로 판정되어 통과했습니다(grandfathered) — ` +
+        `${inp.setupGate.evidence.join(' · ')}. 사용자에게 \`npx commitgate setup\` 실행을 요청하면 리뷰 모델·추론강도와 codex 로그인이 확정됩니다(대화형 전용).`,
+    })
+  } else {
+    c.push({
+      id: 'D24',
+      level: 'WARN',
+      msg:
+        `setup 완료 기록이 없습니다(${inp.setupGate.evidence.join(' · ')}) — 워크플로 명령(\`req:new\` 등)이 차단됩니다. ` +
+        '사용자에게 `npx commitgate setup` 실행을 요청하세요(대화형 전용이라 에이전트는 실행하지 않습니다).',
+    })
+  }
+
   return c
+}
+
+/** Windows 경로 구분자를 POSIX로. `setup-gate`는 repo-상대 경로를 `/` 기준으로 받는다. */
+function toPosix(p: string): string {
+  return p.split('\\').join('/')
 }
 
 /** D19 메시지용 라벨. */
@@ -817,6 +856,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
         return false
       }
     }),
+    // D24(REQ-2026-062): setup 완료 게이트. 게이트 전용 root 해소를 쓴다(config.root는 이미 확정돼 있으므로 명시 전달).
+    setupGate: setupGateVerdict(collectGateFacts(cfg.root, toPosix(relative(cfg.root, cfg.workflowDirAbs)))),
   }
 
   const checks = runChecks(inp)

@@ -14,6 +14,14 @@ import {
 } from '../../scripts/req/req-new'
 import { parseStatusZ, STATUS_Z_ARGS } from '../../scripts/req/lib/porcelain'
 
+/**
+ * REQ-2026-062: 픽스처 repo는 **"setup을 마친 프로젝트"**를 나타낸다.
+ * 이 마커가 없으면 setup 게이트가 먼저 막아 이 파일이 검증하려는 다른 단언에 도달하지 못한다.
+ * (실제 `commitgate init` 설치본은 grandfather 신호를 4개 갖지만, 이 픽스처들은 최소 repo다.)
+ */
+const SETUP_OK = { setup: { completedVersion: '0.0.0-test', completedAt: '2026-01-01T00:00:00Z' } }
+
+
 describe('req:new — slug 검증', () => {
   it('kebab-case 허용', () => {
     expect(() => validateSlug('camera-hardfail')).not.toThrow()
@@ -138,7 +146,7 @@ describe('req:new — 레거시 scratch만 허용하는 clean-tree 판정', () =
     git(dir, ['config', '--local', 'core.excludesFile', emptyGlobalExcludes])
     // 의도적으로 .gitignore를 만들지 않는다 — Phase 3의 레거시 코드 경로가 실제로 발화해야 한다.
     writeRel(dir, 'package.json', JSON.stringify({ name: 'x', version: '0.0.0' }) + '\n')
-    writeRel(dir, 'req.config.json', JSON.stringify({ packageManager: 'npm' }) + '\n')
+    writeRel(dir, 'req.config.json', JSON.stringify({ ...SETUP_OK, packageManager: 'npm' }) + '\n')
     git(dir, ['add', '--', 'package.json', 'req.config.json'])
     git(dir, ['commit', '-qm', 'base'])
     return dir
@@ -276,7 +284,7 @@ describe('req:new — 레거시 scratch만 허용하는 clean-tree 판정', () =
   it("실제 req:new --run은 ticketRoot='.'도 canonical Git 경로로 판정한다", () => {
     const dir = fixture()
     try {
-      writeRel(dir, 'req.config.json', JSON.stringify({ packageManager: 'npm', ticketRoot: '.' }) + '\n')
+      writeRel(dir, 'req.config.json', JSON.stringify({ ...SETUP_OK, packageManager: 'npm', ticketRoot: '.' }) + '\n')
       git(dir, ['add', '--', 'req.config.json'])
       git(dir, ['commit', '-qm', 'root ticket config'])
       const year = new Date().getFullYear()
@@ -314,7 +322,7 @@ describe('req:new — --successor-of lineage(REQ-2026-029)', () => {
     g(dir, ['config', '--local', 'user.email', 't@t.invalid']); g(dir, ['config', '--local', 'user.name', 'T'])
     g(dir, ['config', '--local', 'commit.gpgSign', 'false'])
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }) + '\n')
-    writeFileSync(join(dir, 'req.config.json'), JSON.stringify({ packageManager: 'npm' }) + '\n')
+    writeFileSync(join(dir, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm' }) + '\n')
     const parentDir = join(dir, 'workflow', 'REQ-2026-020')
     mkdirSync(parentDir, { recursive: true })
     const series = parentReplace

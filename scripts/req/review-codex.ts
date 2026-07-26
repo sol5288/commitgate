@@ -57,6 +57,7 @@ import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type Status
 import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
 // REQ-2026-057: 상태 직렬화 단일 지점 + durable checkpoint(leaf — 여기서 값으로 import해도 순환 없음).
 import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
+import { assertSetupComplete } from './lib/setup-gate'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -2090,6 +2091,8 @@ export function main(argv: string[] = process.argv.slice(2), opts2?: { reviewer?
 
 function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter }): void {
   const opts = parseArgs(argv)
+  // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
+  assertSetupComplete({ root: opts.root })
   const cfg = loadConfig({ root: opts.root })
   gitAdapter = createGitAdapter(cfg.root) // 모든 git 호출 cwd = config.root
   // REQ-2026-027 D3: 테스트 주입 seam(gitAdapter 선례). 미주입이면 기본 codex(프로덕션 불변).

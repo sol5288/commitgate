@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   setupGateVerdict,
   blockMessage,
@@ -24,6 +25,9 @@ import {
  *   2. **빈 `REQ-*` 디렉터리만으로는 grandfather 되지 않는다** — 복사된 껍데기로 신규 프로젝트가
  *      영구 면제받는 구멍을 막는다(수용기준 4).
  */
+
+/** 저장소 루트(tests/unit 기준 2단계 위). */
+const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '..', '..', '..')
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), 'cg-gate-'))
@@ -340,6 +344,76 @@ describe('[setup-gate] assertSetupComplete — 통합', () => {
   })
 
   it('collectGateFacts 가 세 축을 모두 채운다', () => {
+    const d = tmp()
+    try {
+      const f = collectGateFacts(d, 'workflow')
+      expect(f).toEqual({ hasMarker: false, validTickets: 0, installSignals: [] })
+    } finally {
+      cleanup(d)
+    }
+  })
+})
+
+/**
+ * phase-3 배선 가드(설계 DEC-6).
+ *
+ * 🔴 소스 텍스트를 검사하는 **구조 테스트**다. `main()`을 직접 돌리면 실제 repo IO·git이 필요해
+ * 단위 테스트로 성립하지 않는데, 정작 중요한 성질("게이트가 걸려 있는가 / 진단에는 안 걸려 있는가")은
+ * 배선의 **유무**다. 이 저장소의 SSOT 드리프트 가드와 같은 계열이다.
+ */
+describe('[setup-gate] verb 배선 — 변경 verb는 걸리고 진단 verb는 안 걸린다(DEC-6)', () => {
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), 'utf8')
+
+  const gated = [
+    'scripts/req/req-new.ts',
+    'scripts/req/req-next.ts',
+    'scripts/req/review-codex.ts',
+    'scripts/req/req-commit.ts',
+    'scripts/req/req-close.ts',
+    'scripts/req/req-reconstruct.ts',
+    'scripts/req/req-review-exception.ts',
+  ]
+  for (const f of gated) {
+    it(`게이트 적용: ${f}`, () => {
+      expect(read(f)).toContain('assertSetupComplete(')
+    })
+  }
+
+  // 🔴 수용기준 6: 막으면 **문제를 진단할 수단까지 사라진다**. 이 둘은 마커 없이도 동작해야 한다.
+  const ungated = ['scripts/req/req-doctor.ts', 'bin/check.ts']
+  for (const f of ungated) {
+    it(`🔴 진단은 막지 않는다: ${f}`, () => {
+      expect(read(f)).not.toContain('assertSetupComplete(')
+    })
+  }
+
+  // 유지보수·설정 verb는 setup 이전에 쓰이거나 setup 자체다.
+  const maintenance = ['bin/init.ts', 'bin/migrate.ts', 'bin/sync.ts', 'bin/uninstall.ts', 'bin/quickstart.ts', 'bin/setup.ts']
+  for (const f of maintenance) {
+    it(`유지보수·설정 verb는 막지 않는다: ${f}`, () => {
+      expect(read(f)).not.toContain('assertSetupComplete(')
+    })
+  }
+
+  it('🔴 게이트 호출은 parseArgs 직후 — 다른 IO·판정보다 먼저다', () => {
+    for (const f of gated) {
+      const src = read(f)
+      const gate = src.indexOf('assertSetupComplete(')
+      const load = src.indexOf('loadConfig(', gate === -1 ? 0 : gate)
+      expect(gate).toBeGreaterThan(-1)
+      // 같은 함수 안에서 loadConfig 가 뒤따른다면 게이트가 그보다 앞이어야 한다.
+      if (load > -1) expect(gate).toBeLessThan(load)
+    }
+  })
+})
+
+describe('[setup-gate] 이 저장소 자신(dogfood)', () => {
+  it('grandfather 로 통과한다 — 게이트 도입이 자기 워크플로를 막지 않는다', () => {
+    const v = setupGateVerdict(collectGateFacts(REPO_ROOT, 'workflow'))
+    expect(v.kind).toBe('pass')
+  })
+
+  it('임시 디렉터리 정리(자리표시)', () => {
     const d = tmp()
     try {
       const f = collectGateFacts(d, 'workflow')

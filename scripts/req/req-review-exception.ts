@@ -16,6 +16,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, packageRoot, type ReviewBudget } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
+import { assertSetupComplete } from './lib/setup-gate'
 import {
   loadState,
   writeState,
@@ -108,6 +109,8 @@ export function planReviewException(state: WorkflowState, kind: ReviewKind, phas
 
 export function main(argv: string[] = process.argv.slice(2)): void {
   const o = parseArgs(argv)
+  // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
+  assertSetupComplete({ root: o.root })
   if (!o.reqId) throw new Error('REQ 필요 (예: req:review-exception 2026-001 --kind design --method "…" --rationale-file r.md)')
   if (!o.kind) throw new Error('--kind design|phase 필요')
   if (o.kind === 'phase' && !o.phase) throw new Error('--kind phase는 --phase <id> 필요')

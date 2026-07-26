@@ -93,6 +93,14 @@ import { deriveBaseState, parseCloseProof } from '../../scripts/req/lib/close-pr
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 
 /**
+ * REQ-2026-062: 픽스처 repo는 **"setup을 마친 프로젝트"**를 나타낸다.
+ * 이 마커가 없으면 setup 게이트가 먼저 막아 이 파일이 검증하려는 다른 단언에 도달하지 못한다.
+ * (실제 `commitgate init` 설치본은 grandfather 신호를 4개 갖지만, 이 픽스처들은 최소 repo다.)
+ */
+const SETUP_OK = { setup: { completedVersion: '0.0.0-test', completedAt: '2026-01-01T00:00:00Z' } }
+
+
+/**
  * 테스트 편의: `--porcelain` 표기(`'R  old -> new'`)를 `StatusEntry`로 변환(REQ-2026-012).
  * `-z` 시맨틱(path=NEW, origPath=OLD)으로 맞춘다 — findUnstagedOrUntracked/isAllowedResponsesScratch가 이제 StatusEntry를 받는다.
  */
@@ -1979,7 +1987,7 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
       writeFileSync(join(repo, 'persona.md'), o.persona)
       reviewPersonaPath = 'persona.md'
     }
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath }))
     const ticketAbs = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticketAbs, { recursive: true })
     writeFileSync(join(repo, 'workflow', 'machine.schema.json'), SCHEMA_SRC) // --run 응답 검증용
@@ -2196,7 +2204,7 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
       writeFileSync(join(repo, 'persona.md'), o.persona)
       reviewPersonaPath = 'persona.md'
     }
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath }))
     const ticketAbs = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticketAbs, { recursive: true })
     writeFileSync(join(repo, 'workflow', 'machine.schema.json'), SCHEMA_SRC)
@@ -3433,7 +3441,7 @@ describe('REQ-2026-027 phase-1 — legacy fail-closed(main near-e2e)', () => {
     git(['config', 'user.name', 't'])
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
     // persona 비활성(temp repo엔 persona 파일이 없다) — 어차피 legacy throw가 먼저지만 config는 유효해야 한다.
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath: null }))
     const ticket = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticket, { recursive: true })
     for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n`)
@@ -3551,7 +3559,7 @@ describe('REQ-2026-027 phase-2 — attempt 배선(main near-e2e)', () => {
     mkdirSync(join(repo, 'workflow'), { recursive: true })
     const realSchema = readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')
     writeFileSync(join(repo, 'workflow', 'machine.schema.json'), realSchema)
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath: null }))
     const ticket = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticket, { recursive: true })
     for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
@@ -3676,7 +3684,7 @@ describe('REQ-2026-051 phase-2 — 원장 배선(main near-e2e)', () => {
     writeFileSync(join(repo, 'workflow', 'machine.schema.json'), realSchema)
     // 실제 설치본처럼 측정 로그(.review-calls.jsonl)를 무시한다 — 없으면 2회차 리뷰의 D10 preflight가 잡는다.
     writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n')
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath: null }))
     const ticket = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticket, { recursive: true })
     for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
@@ -3889,7 +3897,7 @@ describe('REQ-2026-051 phase-3 — 원장 내구화·ignore 가드(near-e2e)', (
     writeFileSync(join(repo, 'workflow', 'machine.schema.json'), readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'))
     // 실제 kit gitignore 템플릿을 설치한다 — ⑲가 이 규칙 아래에서 원장이 무시되지 않음을 검증한다.
     writeFileSync(join(repo, 'workflow', '.gitignore'), readFileSync(join(packageRoot(), 'templates', 'workflow.gitignore'), 'utf8'))
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath: null }))
     const ticket = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticket, { recursive: true })
     for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
@@ -3984,7 +3992,7 @@ describe('REQ-2026-052 phase-2 — pre-call durable checkpoint·semantic identit
     mkdirSync(join(repo, 'workflow'), { recursive: true })
     writeFileSync(join(repo, 'workflow', 'machine.schema.json'), readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'))
     writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n')
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath: null }))
     const ticket = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticket, { recursive: true })
     for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
@@ -4378,7 +4386,7 @@ describe('REQ-2026-028 phase-1 — 예산 게이트 강제(main near-e2e)', () =
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
     mkdirSync(join(repo, 'workflow'), { recursive: true })
     writeFileSync(join(repo, 'workflow', 'machine.schema.json'), readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'))
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath: null }))
     const ticket = join(repo, 'workflow', 'REQ-2026-001')
     mkdirSync(ticket, { recursive: true })
     for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
@@ -4626,7 +4634,7 @@ describe('[REQ-2026-052 addendum] 정상 phase-review 경로의 phase_design_ref
     const git = gitOf(repo)
     git(['init', '-q']); git(['config', 'user.email', 't@t.t']); git(['config', 'user.name', 't'])
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
-    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath: null }))
     // review-call 측정 로그는 실제 repo에서 gitignore된다(REVIEW_CALL_LOG_REL) — 없으면 untracked로 D10을 막는다.
     writeFileSync(join(repo, '.gitignore'), 'workflow/.review-calls.jsonl\n')
     const ticketAbs = join(repo, 'workflow', 'REQ-2026-001')

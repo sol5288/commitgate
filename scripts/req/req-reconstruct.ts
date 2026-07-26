@@ -22,6 +22,7 @@ import { verifyCommittedEvidenceIntegrity } from './lib/evidence'
 import { parseCloseProof, appendCloseProofRow, closeProofPath, type CloseProofRow } from './lib/close-proof'
 import { planReconstruction, type SuccessorEvidence, type ReconstructPlan } from './lib/reconstruct'
 import { listHeadTicketIds } from './lib/intake'
+import { assertSetupComplete } from './lib/setup-gate'
 import { isValidHumanResolution } from './review-codex'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -131,6 +132,8 @@ function renderPlan(reqId: string, plan: ReconstructPlan): string {
 
 export function main(argv: string[] = process.argv.slice(2)): void {
   const o = parseArgs(argv)
+  // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
+  assertSetupComplete({ root: o.root })
   if (!o.reqId) throw new Error('REQ 필요 (예: req:reconstruct 2026-029)')
   const cfg = loadConfig({ root: o.root })
   gitAdapter = createGitAdapter(cfg.root)

@@ -40,6 +40,7 @@ import {
   type LastReviewMarker,
 } from './review-codex'
 import type { ReviewBudget, PhaseCommitPolicy } from './lib/config'
+import { assertSetupComplete } from './lib/setup-gate'
 
 // ─────────────────────────────────────────────── 읽기 전용 git 경계 (D6-1) ──
 
@@ -770,6 +771,8 @@ export function renderAction(displayId: string, a: NextAction): string {
 
 export function main(argv: string[] = process.argv.slice(2)): void {
   const opts = parseArgs(argv)
+  // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
+  assertSetupComplete({ root: opts.root })
   const cfg = loadConfig({ root: opts.root })
   const roGit = createReadOnlyGit(createGitAdapter(cfg.root))
 
