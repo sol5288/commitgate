@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-067-setup-interactive-ui",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa0c0-c87d-7da1-b6b4-2839896d93a9",
-  "review_base_sha": "541c7f6103fc7eefaf5bc74cd8c4eb7da29e41c8",
-  "review_diff_hash": "bdfe8ae942a7002792250801fd116820dadabe41",
+  "codex_thread_id": "019fa0c1-a21a-7e02-b649-48080a79446f",
+  "review_base_sha": "3f508a55a8f32b90aa33f9588dd3f513d0688683",
+  "review_diff_hash": "4947154bf925925acba6304e85ad06c596432fa2",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "c8a3132587d758c648ae0d0e8dd00c6855d4d6e61f140ca24ad95c698714d3b9",
-  "current_phase": "phase-4-polish",
+  "current_phase": "phase-5-default-stopgate",
   "phases": [
     {
       "id": "phase-1-select-core",
@@ -30,7 +30,7 @@
     },
     {
       "id": "phase-5-default-stopgate",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -132,8 +132,8 @@
       "series_id": "phase:phase-5-default-stopgate#1",
       "review_kind": "phase",
       "phase_id": "phase-5-default-stopgate",
-      "attempts": 1,
-      "closed_reason": null
+      "attempts": 2,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#9",
@@ -144,13 +144,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-5-default-stopgate",
     "outcome": "approved",
     "compare_hash": "d3dfb2d7ec6bfb59649412d59172bb6d9f290268221df839de426acad44b0709",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T23:27:38.110Z",
+    "at": "2026-07-26T23:28:26.584Z",
     "findings": [],
     "elided_count": 0
   },
@@ -183,6 +183,12 @@
       "phase_id": "phase-4-polish",
       "consumed_by_commit_sha": "62fbabb28bcc8188c7df554f877ac55ff2db7f02",
       "approval_consumed_at": "2026-07-26T22:38:29.063Z"
+    },
+    {
+      "approved_tree": "4947154bf925925acba6304e85ad06c596432fa2",
+      "phase_id": "phase-5-default-stopgate",
+      "consumed_by_commit_sha": "4e40bd613f588040625de5c464530eb577cb3a7e",
+      "approval_consumed_at": "2026-07-26T23:28:53.235Z"
     }
   ],
   "user_commit_confirmed": null,
