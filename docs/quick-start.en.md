@@ -15,6 +15,9 @@ npx commitgate init
 
 # 3) Pick the review model and reasoning effort, and finish codex login (interactive):
 npx commitgate setup
+
+# You can verify readiness at any time (non-interactive, read-only):
+npx commitgate check
 ```
 
 > **Step 3 is run by a human at a terminal.** It is interactive-only, so in pipes, CI, or agent sessions it exits immediately without asking anything — agents do not run it, they ask you to.

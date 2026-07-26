@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+- **`commitgate check` — 설치 직후에도 쓸 수 있는 비대화형 진단** (REQ-2026-061).
+
+  > 구현은 이 REQ의 **phase-1(`7d35fe7`)에 이미 커밋**돼 있습니다 — `bin/check.ts`(`runChecks`/`renderJson`/`parseArgs`) · `bin/dispatch.mjs`의 `check` verb 등록 · `tests/unit/check.test.ts`(C1~C4·`--json`·`--dir` 검증). 이 항목은 그 동작을 문서화하는 phase-2입니다.
+
+  `setup`이 대화형 전용이 되면서 리뷰어 가용성 진단이 그 안에만 남았고, `req:doctor`는 **활성 티켓을 전제**하므로 설치 직후·CI·에이전트 사전 점검에는 쓸 수 없었습니다. `npx commitgate check`가 **티켓 없이도** `req.config.json` 유효성(C1) · 리뷰어 CLI 설치(C2) · 로그인(C3) · 모델·추론강도 고정 여부(C4)를 진단하고, `--json`으로 기계용 출력도 냅니다.
+
+  특히 `codex 종료 코드 1`로 죽는 리뷰는 `dispatched`로 분류되어 **예산까지 차감**하므로, 재시도 전에 `check`로 원인을 가리는 편이 쌉니다.
+
+  🔴 **읽기 전용이고 어떤 게이트에도 배선되지 않습니다.** 아무것도 고치지 않으며(`--fix` 없음), 로그인 실행은 대화형이 필요하므로 `setup`의 소관입니다. `req:commit`이 `req:doctor`를 하드 게이트로 spawn하는 것과 달리 `check`는 어디서도 spawn되지 않으므로, exit 1이 기존 워크플로를 새로 막지 않습니다. **`C3`가 판정 불가면 WARN이지 FAIL이 아닙니다** — probe는 진단이지 승인 무결성 게이트가 아니라서, codex가 출력 형식을 바꾼 날 진단이 곧 오탐 경보가 되면 안 됩니다.
+
 - **`commitgate setup` — 리뷰어 설정을 대화형으로 마칩니다** (REQ-2026-060). 지금까지 리뷰 모델·추론강도는 `req.config.json`을 손으로 열어 고쳐야 했고, **codex의 설치·로그인 여부를 확인하는 수단이 코드에 전혀 없었습니다** — 미로그인은 첫 리뷰 호출에서야 `codex 종료 코드 1`이라는 불투명한 형태로 드러났고, 그 시도는 `dispatched`로 분류되어 **리뷰 예산까지 차감**했습니다.
 
   `npx commitgate setup`이 모델·추론강도를 묻고 **`codex login`을 직접 실행한 뒤 결과를 재검증**합니다. 각 질문은 현재 값이 기본 답변이라 Enter로 유지되고, **건드린 키만** 기록합니다(고르지 않은 값이 고정되지 않도록). 저장은 같은 폴더 temp + rename의 **원자적 교체**이며, **로그인이 확인되지 않으면 아무것도 쓰지 않습니다**. 자격증명은 다루지 않습니다 — 비밀값을 stdin으로 받는 `codex login --with-api-key`/`--with-access-token`은 쓰지 않고 브라우저 플로우만 실행하며, 인증은 `~/.codex/`에 남습니다.

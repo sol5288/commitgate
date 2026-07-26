@@ -3,6 +3,21 @@
 **What happens if Codex CLI is missing?**
 The review command fails. It is not treated as approval.
 
+**A review dies with `codex exit code 1`. What now?**
+**Diagnose before retrying** — that failure counts as `dispatched` (the subprocess did start), so it
+**consumes review budget**.
+
+```sh
+npx commitgate check
+```
+
+`C2` (CLI installed) and `C3` (login) isolate the cause. If you are logged out, fix it with
+`npx commitgate setup` (interactive) or `codex login`. If `C3` is **WARN (undetermined)**, login is not
+being blocked — codex may simply have changed its `login status` output format, so retrying the review is fine.
+
+> `check` is **read-only**. It fixes nothing and is wired into no gate — a bad diagnosis never makes an
+> existing command start failing.
+
 **Can I edit code after approval and still commit?**
 No. If the staged tree changes after approval, CommitGate treats the approval as stale and requires review again.
 
