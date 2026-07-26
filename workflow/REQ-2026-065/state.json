@@ -3,16 +3,54 @@
   "branch": "feat/req-2026-065-review-auth-preflight",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019f9d2b-3b96-70c0-bc4f-e176d01127cf",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "be1cb8fea2cd574dc2d3b1b3d2791c78a4ed4e280c5814283d71aa1a2691fbc2",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "872011a985db170c4a8308510a701eaf548879d5",
+    "design": "90bc0f711cf75d8ce8d8a089b5e23d9574442616",
+    "plan": "506bed98772c96bdc40ba35efd9cd743c8c5fa24"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-065/responses/design-r01-approved.json",
+    "response_sha256": "89e5e476383136bae711b48488f564e76beba332e80be92e4a06e46a8b8084e1",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "2b14c70b8aae7a68198fc06ab0cdacd5fe41efaf",
+    "codex_thread_id": "019f9d2b-3b96-70c0-bc4f-e176d01127cf",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-26T06:45:15.605Z",
+    "design_hash": "be1cb8fea2cd574dc2d3b1b3d2791c78a4ed4e280c5814283d71aa1a2691fbc2"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "4015940761fe51d7941e512f3b9e529637ae21a2b013026efe05f4af877c6e70",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-26T06:45:15.605Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
