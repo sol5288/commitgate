@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-063-stopgate-axis",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019f9cf5-63d7-7912-baab-96702b479763",
-  "review_base_sha": "ab54e28bf6ea619fb982d446ebc827907a3b754d",
-  "review_diff_hash": "9e25bf4668a6131e1d20de37b304cd7aacc5e9ab",
+  "codex_thread_id": "019f9cff-0253-76b0-9b9d-1db48760a92d",
+  "review_base_sha": "ad2422c41b03e28052df48d97e0d0026c32554c5",
+  "review_diff_hash": "27e01d40c6130e675134a5e97470885f5092f4ef",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "4b539ad39d02227cb90ed6254f449f8b924f0f06b4a8d28b772f4df54ecf94e1",
-  "current_phase": "phase-1-axis",
+  "current_phase": "phase-2-setup-question",
   "phases": [
     {
       "id": "phase-1-axis",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-setup-question",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-docs",
@@ -42,16 +42,23 @@
       "phase_id": "phase-1-axis",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-setup-question#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-setup-question",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-axis",
+    "phase_id": "phase-2-setup-question",
     "outcome": "approved",
-    "compare_hash": "8e9ceff4f706272c46bb0d9352b1001b0e836aaf81cd246523b4aa73ac8ef5ed",
+    "compare_hash": "d71a92400fcff183060e08525e203afdc099da60503ff510397214f7cb97d58b",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T05:46:43.710Z",
+    "at": "2026-07-26T05:57:17.350Z",
     "findings": [],
     "elided_count": 0
   },
@@ -79,6 +86,12 @@
       "phase_id": "phase-1-axis",
       "consumed_by_commit_sha": "34a629a131ca6e7a2408fe3949165e8419112f13",
       "approval_consumed_at": "2026-07-26T05:47:10.775Z"
+    },
+    {
+      "approved_tree": "27e01d40c6130e675134a5e97470885f5092f4ef",
+      "phase_id": "phase-2-setup-question",
+      "consumed_by_commit_sha": "c5d301306fe034560e3e87f573454dabce2f53d2",
+      "approval_consumed_at": "2026-07-26T05:57:46.171Z"
     }
   ],
   "user_commit_confirmed": null
