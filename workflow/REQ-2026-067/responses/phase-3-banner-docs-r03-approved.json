@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"049deaba1613a45649c8e17491b6a47524b0b4ab","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"현재 staged 변경을 커밋한 뒤 다음 phase로 진행하세요.","observations":[]}
