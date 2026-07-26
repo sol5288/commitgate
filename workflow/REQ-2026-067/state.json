@@ -3,13 +3,13 @@
   "branch": "feat/req-2026-067-setup-interactive-ui",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa0a2-7f29-7340-b69c-3744a863f440",
-  "review_base_sha": "ca9accd54809e2d7ef825606b3d487fe8bbb921b",
-  "review_diff_hash": "e5d8025075944312d79f5eb7dc37d21e0d10745f",
+  "codex_thread_id": "019fa0c0-c87d-7da1-b6b4-2839896d93a9",
+  "review_base_sha": "541c7f6103fc7eefaf5bc74cd8c4eb7da29e41c8",
+  "review_diff_hash": "bdfe8ae942a7002792250801fd116820dadabe41",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "7f7b8cc5f32ee69d7246a8cbf7e96f24de2920bd9d6871ba72d555628850d9eb",
+  "design_approved_hash": "c8a3132587d758c648ae0d0e8dd00c6855d4d6e61f140ca24ad95c698714d3b9",
   "current_phase": "phase-4-polish",
   "phases": [
     {
@@ -127,23 +127,37 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-default-stopgate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-5-default-stopgate",
+      "attempts": 1,
+      "closed_reason": null
+    },
+    {
+      "series_id": "design:-#9",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "a60bb6c34ea88a4bb54b508aba9a15d8c273e12b995701d35878d459142f1e59",
+    "compare_hash": "d3dfb2d7ec6bfb59649412d59172bb6d9f290268221df839de426acad44b0709",
     "count": 1,
     "errors": [],
-    "at": "2026-07-26T22:54:29.671Z",
+    "at": "2026-07-26T23:27:38.110Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "5e6cd1aeef54a7ebaa09b2e41abdb866ef050b38",
     "design": "f3d01be196259923bddfd35319c9a28388780229",
-    "plan": "7b4b5d10f4161fd86dda59488713610a21f0d01d"
+    "plan": "5f4218cbd82e4f13bd260c3f777c836e85d12a36"
   },
   "consumed_approvals": [
     {
@@ -173,16 +187,16 @@
   ],
   "user_commit_confirmed": null,
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-067/responses/design-r11-approved.json",
-    "response_sha256": "6ff894197a36a678966b81274080d8f140f01d3d1bf3469f1c683ffc42b5e22f",
+    "response_path": "workflow/REQ-2026-067/responses/design-r12-approved.json",
+    "response_sha256": "450e0de5ea6c58fff0e5fff7372dfc91686f3750d8cc87d2b501218854ecf8fd",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "8e4357a8eb83f6ee6858c7de4b72292f15e58c32",
-    "codex_thread_id": "019fa0a2-7f29-7340-b69c-3744a863f440",
+    "review_base_sha": "530997cc73482726ab9c17a8770f5f0e9b995300",
+    "codex_thread_id": "019fa0c0-c87d-7da1-b6b4-2839896d93a9",
     "machine_schema_version": "1.1",
-    "status": "STEP_COMPLETE",
+    "status": "COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-07-26T22:54:29.671Z",
-    "design_hash": "7f7b8cc5f32ee69d7246a8cbf7e96f24de2920bd9d6871ba72d555628850d9eb"
+    "approved_at": "2026-07-26T23:27:38.110Z",
+    "design_hash": "c8a3132587d758c648ae0d0e8dd00c6855d4d6e61f140ca24ad95c698714d3b9"
   }
 }
