@@ -214,6 +214,21 @@ DEC-11로 메뉴 안내에서 조작법을 뺐는데, raw mode를 못 쓰는 환
 degrade**한다(DEC-9). 그 화면에 메뉴 안내를 그대로 내면 `Enter=유지`·`'-'=비움`을 알 길이 없어
 **조작법이 사라진 화면**이 된다. `freeInputHint(q)`를 따로 두고 degrade 경로와 "직접 입력"이 쓴다.
 
+### DEC-18 — 기본 멈춤 지점 `req` (phase-5, 사용자 지시)
+
+`DEFAULTS.stopGate`를 `phase` → `req`로 바꾼다.
+
+🔴 **안전 기본값을 완화하는 변경이다.** `phase`는 매 phase 커밋 전에 사람이 멈추는 가장 보수적인
+값이고, `req`는 **LOW 위험 phase를 사람 정지 없이 자동 커밋**한다. 값을 핀하지 않은 소비자는
+업그레이드만으로 정지 횟수가 줄어든다 — CHANGELOG에서 이 사실을 앞세운다.
+
+🔴 **`DEFAULTS.phaseCommit`도 함께 바꾼다.** 두 키는 `AUTO_APPROVE_OF`로 묶인 한 쌍이라, 한쪽만
+바꾸면 **두 키가 다 없는 정상 설정**이 `stopGate:'req'` + `autoApprove:'never'`라는 자기모순으로
+해소된다. 파생은 하드코딩하지 않고 `AUTO_APPROVE_OF`에서 가져온다.
+
+🔴 **HIGH 위험 티켓은 그대로 매 phase 확인**이다(`userConfirmGate` 백스톱). 기본값 완화가 그 축을
+건드리지 않는다는 것을 테스트로 고정한다 — 여기가 무너지면 HIGH 티켓이 무인 자동 커밋된다.
+
 ## Phase별 구현
 
 `02-plan.md` 참조.

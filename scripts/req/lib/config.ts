@@ -184,13 +184,18 @@ export const DEFAULTS = {
   // REQ-2026-028 A-2a: review 예산. autoBudget=자동 허용 회차, hardCap=절대 상한(9번째 차단 → 8).
   reviewBudget: { autoBudget: 5, hardCap: 8 } as ReviewBudget,
   // REQ-2026-037: phase 자동 커밋은 opt-in. 코어 기본 never = 현행(매 phase 정지) — 업그레이드로 완화되지 않는다.
-  phaseCommit: { autoApprove: 'never' } as PhaseCommit,
+  // 🔴 `stopGate`와 **한 쌍**이다(AUTO_APPROVE_OF). 한쪽만 바꾸면 두 키가 다 없는 정상 설정이
+  //    자기모순으로 해소된다 — 파생을 하드코딩하지 않고 표에서 가져온다(REQ-2026-067 DEC-18).
+  phaseCommit: { autoApprove: AUTO_APPROVE_OF['req'] } as PhaseCommit,
   // REQ-2026-056: lockfile 프롬프트 기본 요약(false). 전문이 필요하면 config에 true 명시(opt-in).
   lockfilePromptFull: false,
   // REQ-2026-062: setup 미완료가 기본. `as` 는 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
   setup: null as SetupMarker | null,
   // REQ-2026-063: 현행 기본(매 phase 정지) = phaseCommit.never 와 같은 값.
-  stopGate: 'phase' as StopGate,
+  // 🔴 기본 멈춤 지점 = req(REQ-2026-067 DEC-18, 사용자 지시). 이전 기본은 phase(매 phase 정지)였다.
+  //    **안전 기본값을 완화하는 변경**이다 — 값을 핀하지 않은 소비자는 LOW phase가 사람 정지 없이
+  //    자동 커밋된다. HIGH 위험 티켓은 어느 값에서도 매 phase 확인이다(userConfirmGate 백스톱).
+  stopGate: 'req' as StopGate,
 }
 
 /** ISO instant(UTC). `close-proof`의 `isValidIsoInstant`와 같은 형태를 스키마 수준에서 강제한다. */

@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- 🔴 **기본 멈춤 지점이 `phase` → `req`로 바뀝니다** (REQ-2026-067). **안전 기본값을 완화하는 변경입니다.**
+
+  `stopGate`를 **명시하지 않은** 프로젝트는 업그레이드만으로 **LOW 위험 phase가 사람 정지 없이 자동 커밋**됩니다. 사람 확인은 REQ가 끝날 때 한 번으로 모입니다. 매 phase 멈추던 기존 동작을 유지하려면 `req.config.json`에 `"stopGate": "phase"`를 명시하거나 `commitgate setup`에서 고르세요.
+
+  🔴 **HIGH 위험 티켓은 어느 값에서도 매 phase 확인합니다** — 이 변경이 그 축을 건드리지 않습니다(`req:commit`의 Gate B가 이중 백스톱). `risk_level`이 없거나 이상한 값이면 자동 커밋하지 않고 사람에게 갑니다.
+
 - 🔴 **기본 추론강도가 `high` → `medium`으로 바뀝니다** (REQ-2026-067).
 
   `reviewReasoningEffort`를 **명시하지 않은** 프로젝트는 리뷰가 얕아지고 그만큼 빨라·싸집니다. 기존처럼 깊게 쓰려면 `req.config.json`에 `"reviewReasoningEffort": "high"`를 명시하거나 `commitgate setup`에서 고르세요. 값을 이미 명시한 설정은 **영향이 없습니다**.

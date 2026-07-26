@@ -1197,3 +1197,42 @@ describe('[req:next] mentionsMember — 손상 레코드에서도 소속을 식�
     expect(mentionsMember(null, 'REQ-2026-001')).toBe(false)
   })
 })
+
+/**
+ * REQ-2026-067 DEC-18 — 기본 멈춤 지점이 `req`(= autoApprove `low-only`)가 되면서,
+ * **자동 커밋이 기본 경로**가 됐다. 그래서 그 옆의 안전 축이 그대로인지 여기서 고정한다.
+ *
+ * 🔴 헤드라인: **HIGH 위험 티켓은 기본값이 무엇이든 사람이 멈춘다.** 이 단언이 깨지면
+ *    HIGH 티켓이 무인 자동 커밋된다 — 기본값 완화가 건드려서는 안 되는 축이다.
+ */
+describe('[req:next] DEC-18 기본값 완화가 HIGH 백스톱을 건드리지 않는다', () => {
+  const alive = (risk: string) =>
+    baseInput({
+      state: baseState({ commit_allowed: true, risk_level: risk } as never),
+      hasStagedChanges: true,
+      phaseCommitAutoApprove: 'low-only',
+    })
+
+  it('LOW + low-only + staged → 자동 커밋(RUN)', () => {
+    expect(resolveNext(alive('LOW')).kind).toBe('RUN')
+  })
+
+  it('🔴 HIGH 는 low-only 여도 사람 확인(AWAIT_HUMAN)', () => {
+    const a = resolveNext(alive('HIGH'))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.approvalSentence).toBeDefined()
+  })
+
+  /** 🔴 "HIGH 가 아님"이 "자동 안전"을 뜻하지 않는다 — 누락·오타·손상은 전부 사람에게 간다. */
+  it('🔴 risk_level 이 없거나 이상하면 자동 커밋하지 않는다', () => {
+    for (const risk of ['MEDIUM', 'Low', '', 'unknown']) {
+      expect(resolveNext(alive(risk)).kind).toBe('AWAIT_HUMAN')
+    }
+    const missing = baseInput({
+      state: baseState({ commit_allowed: true } as never),
+      hasStagedChanges: true,
+      phaseCommitAutoApprove: 'low-only',
+    })
+    expect(resolveNext(missing).kind).toBe('AWAIT_HUMAN')
+  })
+})

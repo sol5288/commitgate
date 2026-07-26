@@ -518,9 +518,10 @@ describe('[setup] stopGate 질문', () => {
     expect(sg?.currentIsDefault).toBe(false)
   })
 
-  it('설정이 없으면 기본값 phase 로 표시된다', () => {
+  // 🔴 DEC-18: 기본 멈춤 지점이 phase → req 로 바뀌었다(사용자 지시 · 안전 기본값 완화).
+  it('설정이 없으면 기본값 req 로 표시된다', () => {
     const sg = buildQuestions({}).find((q) => q.key === 'stopGate')
-    expect(sg?.current).toBe('phase')
+    expect(sg?.current).toBe('req')
     expect(sg?.currentIsDefault).toBe(true)
   })
 

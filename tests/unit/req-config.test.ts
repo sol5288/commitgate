@@ -67,8 +67,10 @@ describe('[P1] DEFAULTS — 코어 기본값 계약', () => {
     expect(DEFAULTS.packageManager).toBe('pnpm')
     expect(DEFAULTS.granularityMaxFiles).toBe(8)
     expect(DEFAULTS.designDocs).toEqual({ requirement: '00-requirement.md', design: '01-design.md', plan: '02-plan.md' })
-    // REQ-2026-037: phase 자동 커밋은 opt-in — 코어 기본은 never(현행 동작 = 매 phase 정지).
-    expect(DEFAULTS.phaseCommit).toEqual({ autoApprove: 'never' })
+    // 🔴 REQ-2026-067 DEC-18: 기본이 low-only 로 바뀌었다(stopGate 기본이 req 가 되면서 한 쌍으로).
+    //    두 키는 AUTO_APPROVE_OF 로 묶여 있어 한쪽만 바꾸면 기본 설정이 자기모순이 된다.
+    expect(DEFAULTS.stopGate).toBe('req')
+    expect(DEFAULTS.phaseCommit).toEqual({ autoApprove: 'low-only' })
   })
 
   it('DEFAULTS.handoffPath의 정적 타입은 string | null 로 유지된다(직접 import 소비자 하위호환)', () => {
@@ -461,16 +463,25 @@ describe('REQ-2026-028 — reviewBudget 설정·범위 검증', () => {
  * `low-only`만 자동 커밋을 켠다. 정책 `"all"`은 존재하지 않는다(HIGH+Gate B livelock·위조 유인 → 비목표).
  */
 describe('REQ-2026-037 — phaseCommit.autoApprove 설정(opt-in)', () => {
-  it('미설정(부분 config) → 기본 never (무회귀)', () => {
+  // 🔴 DEC-18 로 기본이 low-only 가 됐다. `never` 를 쓰려면 **명시**해야 한다(아래 override 테스트).
+  it('미설정(부분 config) → 기본 low-only', () => {
     const dir = tmpRoot({})
     try {
-      expect(loadConfig({ root: dir }).phaseCommit).toEqual({ autoApprove: 'never' })
+      expect(loadConfig({ root: dir }).phaseCommit).toEqual({ autoApprove: 'low-only' })
     } finally { cleanup(dir) }
   })
-  it('req.config.json 파일 부재 → 기본 never', () => {
+  it('req.config.json 파일 부재 → 기본 low-only', () => {
     const dir = tmpRoot() // 파일 없음
     try {
-      expect(loadConfig({ root: dir }).phaseCommit.autoApprove).toBe('never')
+      expect(loadConfig({ root: dir }).phaseCommit.autoApprove).toBe('low-only')
+    } finally { cleanup(dir) }
+  })
+  it('🔴 never 는 여전히 명시로 선택할 수 있다(기본값 변경이 선택지를 없애지 않는다)', () => {
+    const dir = tmpRoot({ phaseCommit: { autoApprove: 'never' } })
+    try {
+      const cfg = loadConfig({ root: dir })
+      expect(cfg.phaseCommit.autoApprove).toBe('never')
+      expect(cfg.stopGate).toBe('phase')
     } finally { cleanup(dir) }
   })
   it('low-only override 반영', () => {
@@ -548,12 +559,14 @@ describe('[P1] stopGate ⇄ phaseCommit — 두 축 해소(DEC-1~DEC-3)', () => 
     } finally { cleanup(d) }
   })
 
-  it('설정이 없으면 기본 phase/never', () => {
+  // 🔴 REQ-2026-067 DEC-18: 기본 멈춤 지점이 phase → req 로 **의도적으로** 바뀌었다(사용자 지시).
+  //    안전 기본값 완화 — 핀하지 않은 소비자는 LOW phase 가 사람 정지 없이 자동 커밋된다.
+  it('설정이 없으면 기본 req/low-only', () => {
     const d = tmpRoot({})
     try {
       const cfg = loadConfig({ root: d })
-      expect(cfg.stopGate).toBe('phase')
-      expect(cfg.phaseCommit.autoApprove).toBe('never')
+      expect(cfg.stopGate).toBe('req')
+      expect(cfg.phaseCommit.autoApprove).toBe('low-only')
     } finally { cleanup(d) }
   })
 
