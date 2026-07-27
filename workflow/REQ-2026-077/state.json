@@ -3,13 +3,13 @@
   "branch": "feat/req-2026-077-macos-node18-hang-rca",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa417-18fb-7cd1-8e4b-38a81e723677",
+  "codex_thread_id": "019fa41a-2541-7a32-a4c6-6b34f02bc910",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "cb74225903bbb76774b87f604d1a4f215eb37adcdf0ce34df8c9ace2db9fd691",
+  "design_approved_hash": "dee79e62aa9d3d5b981d603df921c25217e3a5dfe4735ae5958272d79a42aff5",
   "current_phase": null,
   "phases": [
     {
@@ -31,35 +31,42 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "6a96177517071b7e56ce2340626ff2cf3766032498364e070cc2c469e6fc7070",
+    "compare_hash": "eaf2c7eb07c05f7653c9f5efa645440d8637d21492f8ca303b1658311cbed7b3",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T15:00:24.136Z",
+    "at": "2026-07-27T15:03:35.586Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "7b0bf5c1fd86bce8409154bc5e9f91e8d1c07b6b",
     "design": "75eea250815332e9f0bfb75f3005f237f87cf90d",
-    "plan": "03d496d296f125706769246867fd032dacd535d8"
+    "plan": "1d3519be170d3eb8372c520918d7054ac0bdb3b8"
   },
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-077/responses/design-r02-approved.json",
-    "response_sha256": "6cf1c92524fa4eff7b6b2f94c260f06af10accfeeb134108c7117d73100ba69c",
+    "response_path": "workflow/REQ-2026-077/responses/design-r04-approved.json",
+    "response_sha256": "e38462dac7afa16b17ab1c953802a9429cfdf1d1c34505974a963fbc8e986606",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "799cf1c73121879f0831a4d97ae0f36356199755",
-    "codex_thread_id": "019fa417-18fb-7cd1-8e4b-38a81e723677",
+    "review_base_sha": "7b38ab996de65cdf6e47b074c0a0c148cbddb9c8",
+    "codex_thread_id": "019fa41a-2541-7a32-a4c6-6b34f02bc910",
     "machine_schema_version": "1.1",
-    "status": "STEP_COMPLETE",
+    "status": "COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-07-27T15:00:24.136Z",
-    "design_hash": "cb74225903bbb76774b87f604d1a4f215eb37adcdf0ce34df8c9ace2db9fd691"
+    "approved_at": "2026-07-27T15:03:35.586Z",
+    "design_hash": "dee79e62aa9d3d5b981d603df921c25217e3a5dfe4735ae5958272d79a42aff5"
   }
 }
