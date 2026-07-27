@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"c2512bc3c724ca525ec8d737e18c0d9b5ed155d3","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"변경 설계를 기준으로 구현 phase를 진행하세요.","observations":[]}
