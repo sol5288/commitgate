@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"d49d4a18b746eebf415f406d2d838a612175129b","status":"COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계를 승인하고 Phase 1을 구현한 뒤, 로컬 검증과 CI 9잡 green을 확인해 phase 리뷰를 요청하세요.","observations":[]}
