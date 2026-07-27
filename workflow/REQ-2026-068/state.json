@@ -3,16 +3,59 @@
   "branch": "feat/req-2026-068-ci-fixture-cleanup",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa0e4-df9f-7920-8a72-7f4e0051c21d",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "1707f5710a261ff9f40142850465446b9a065e0b2d3fa62943cf32c6964ded8e",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-hermetic-maintenance",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "5406bac711a98204f4add185db5f171aa9717a1c",
+    "design": "c17de070d336779d1af917a97298136911b94ad0",
+    "plan": "384beab4407a160f252d19aaeeedf202773d969b"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-068/responses/design-r01-approved.json",
+    "response_sha256": "b2ec498c99ee6d89c52ce9bb25024c9c0150cc5062c43f25172447e76aeb61c8",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "17647da12018cc9bd1eedeb6d0bc368e671618de",
+    "codex_thread_id": "019fa0e4-df9f-7920-8a72-7f4e0051c21d",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-27T00:06:50.096Z",
+    "design_hash": "1707f5710a261ff9f40142850465446b9a065e0b2d3fa62943cf32c6964ded8e"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "29f84b20a8ac1e18a25f2252e31ee00b7275dd1a41dbc4e893707963d13d388e",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-27T00:06:50.096Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
