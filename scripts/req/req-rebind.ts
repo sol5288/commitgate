@@ -23,6 +23,9 @@ import { loadConfig } from './lib/config'
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { designHashFromManifest, parseManifestEntries, validateManifest, type RebindEntry } from './lib/evidence'
+import { closeProofPath } from './lib/close-proof'
+import { computeDevCompleteProof } from './req-commit'
+import { appendCloseProofRowToDisk, loadState, readPhases } from './review-codex'
 
 export interface Opts {
   reqId: string | null
@@ -152,6 +155,43 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   git.exec(['add', '--', manifestRel])
   git.exec(['commit', '-m', `chore(${reqId}): rebind ${o.phase} → 현재 설계`, '--', manifestRel])
   console.log(`[req:rebind] ✅ 재결속 기록 커밋 — ${o.phase}는 이제 현재 설계에 결속됩니다.`)
+
+  /**
+   * 🔴 재결속 **뒤에 완료를 다시 판정**한다(DEC-8).
+   *
+   * `dev-complete`는 `req:commit`의 evidence-finalize에서만 발행된다. 마지막 phase를 커밋한 뒤에
+   * 재결속하면 완료를 다시 볼 계기가 없고 부를 `req:commit`도 남아 있지 않다 —
+   * **결속만 고쳐지고 티켓은 그대로 막힌다**(이 REQ 자신에게 적용해 보고 발견했다).
+   *
+   * 🔴 판정·발행은 `req-commit`의 **정본을 재사용**한다. 직접 재구현하면 두 경로의 완료 판정이
+   *    갈라져 한쪽에서만 닫히는 티켓이 생긴다.
+   * 🔴 조건이 안 되면 **조용히 넘어간다** — 남은 phase가 있는 중간 재결속은 정상이고,
+   *    그때 실패로 만들면 정상 경로가 막힌다.
+   */
+  const state = loadState(join(cfg.workflowDirAbs, reqId))
+  const proof = computeDevCompleteProof({
+    ticketId: reqId,
+    phaseIds: readPhases(state).map((p) => p.id),
+    reviewKind: 'phase',
+    manifestContent: candidate,
+    nowIso: new Date().toISOString(),
+  })
+  if (!proof) {
+    console.log('[req:rebind] 아직 완료가 아닙니다 — 남은 phase를 마친 뒤 종결됩니다.')
+    return
+  }
+  const cpRel = closeProofPath(ticketRel)
+  const before = existsSync(join(cfg.root, cpRel)) ? readFileSync(join(cfg.root, cpRel), 'utf8') : ''
+  // 멱등: 이미 같은 행이 있으면 내용이 그대로다(내부에서 duplicate → no-op).
+  appendCloseProofRowToDisk(cfg.root, ticketRel, proof)
+  const after = existsSync(join(cfg.root, cpRel)) ? readFileSync(join(cfg.root, cpRel), 'utf8') : ''
+  if (after === before) {
+    console.log('[req:rebind] dev-complete가 이미 있습니다(멱등 — 커밋 없음).')
+    return
+  }
+  git.exec(['add', '--', cpRel])
+  git.exec(['commit', '-m', `chore(${reqId}): dev-complete — 재결속으로 완료`, '--', cpRel])
+  console.log(`[req:rebind] ✅ dev-complete 발행 — ${reqId} 종결. 이제 다음 REQ를 열 수 있습니다.`)
 }
 
 const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href

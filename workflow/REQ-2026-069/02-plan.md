@@ -56,5 +56,25 @@ Exit: typecheck 0 · `npm test` green · 수용기준 2·3·4·6 · Codex 승인
 
 Exit: `docs:lint` green · Codex 승인.
 
+## Phase 4 — 재결속 후 완료 재판정 (`phase-4-recheck-complete`)
+
+범위(DEC-8): `scripts/req/req-rebind.ts` · `tests/unit/rebind-verb.test.ts`. 코드 2파일.
+
+🔴 **이 phase의 근거는 자체 검증이다.** phase-1~3을 이 REQ 자신에게 적용해 보니 결속은 고쳐졌는데
+`ticket-close.jsonl`이 없고 `req:new`가 여전히 막혔다 — 해결하려던 문제가 그대로 남았다.
+로컬 2116 tests와 Codex 리뷰 5회가 이걸 잡지 못했다. 순수 모델과 verb는 각각 옳았고,
+**둘을 이은 뒤의 전체 흐름**에 구멍이 있었다.
+
+순서:
+1. 🔴 판정·발행은 `req-commit`의 **정본을 재사용**한다(`computeDevCompleteProof` + HEAD 재검증).
+   직접 재구현하면 두 경로의 완료 판정이 갈라져 한쪽에서만 닫히는 티켓이 생긴다.
+2. 재결속 커밋 **뒤에** 판정한다 — 매니페스트가 HEAD에 있어야 HEAD 재검증이 성립한다.
+3. 🔴 발행 조건이 안 되면 **조용히 넘어간다**. 남은 phase가 있는 중간 재결속은 정상이고,
+   그때 실패로 만들면 정상 경로가 막힌다.
+4. 테스트: 마지막 결속이 재결속으로 채워지면 close-proof가 생긴다 ·
+   남은 phase가 있으면 안 생긴다 · 이미 있으면 중복 발행하지 않는다(멱등).
+
+Exit: typecheck 0 · `npm test` green · **이 REQ 자신이 `dev-complete`로 종결** · Codex 승인.
+
 ## 완료
 - 게이트 해당분 · 사용자 main 통합(B1 사전 승인 — 반영 시 우회 사실·CI 사후 검증 보고).
