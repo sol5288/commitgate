@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"799cf1c73121879f0831a4d97ae0f36356199755","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"Phase 1을 구현하고, 수동 프로브의 실제 green 실행과 artifact 업로드를 검증한 뒤 phase 리뷰를 요청하세요.","observations":[]}
