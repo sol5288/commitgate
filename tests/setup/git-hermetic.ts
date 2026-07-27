@@ -41,8 +41,26 @@ export function scrubIdentityEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env
 }
 
-/** 전역 config 내용: identity는 주지 않되, **자동 추론을 거부**하게 만든다. */
-export const HERMETIC_GITCONFIG = '[user]\n\tuseConfigOnly = true\n'
+/**
+ * 전역 config 내용.
+ *
+ * 1. identity는 주지 않되 **자동 추론을 거부**하게 만든다(`user.useConfigOnly`).
+ * 2. 🔴 **auto 유지보수를 끈다**(REQ-2026-068 DEC-1). git은 커밋 뒤 유지보수를 **detached
+ *    프로세스**로 띄울 수 있고, 그 프로세스가 `.git/objects/pack/`에 쓰는 동안 픽스처 정리(`rmSync`)가
+ *    그 디렉터리를 지우려 하면 **`ENOTEMPTY`로 죽는다**. 실측: `main=b36dd58` CI에서 단언 2085건이
+ *    전부 통과했는데 macOS·node 20 한 job의 `afterEach` 정리에서만 실패했다.
+ *
+ *    🔴 **여기에 두는 이유**: 이 훅의 env 배선(`GIT_CONFIG_GLOBAL`)을 자식 `git`이 전부 상속하므로
+ *       처방이 **모든 픽스처에 자동 적용**된다. REQ-2026-059가 같은 처방을 만들고도 파일 하나에만
+ *       넣어서, 실 저장소를 만드는 나머지 20개 파일이 같은 결함을 안고 있었다 — 파일마다 손으로
+ *       넣는 방식은 빠뜨린다.
+ *    🔴 **두 키를 모두** 끈다: git 버전에 따라 자동 실행 경로가 `gc --auto`이거나
+ *       `maintenance run --auto`다. 하나만 끄면 다른 러너에서 같은 증상이 남는다.
+ *    ⚠️ 피시험 동작에는 영향이 없다 — 유지보수는 저장소 관리 기능이고, 검증 대상은 커밋 내용·인덱스·상태다.
+ *       repo-local 설정은 전역보다 우선하므로 이미 끄고 있는 픽스처와도 충돌하지 않는다.
+ */
+export const HERMETIC_GITCONFIG =
+  '[user]\n\tuseConfigOnly = true\n' + '[gc]\n\tauto = 0\n' + '[maintenance]\n\tauto = false\n'
 
 // 워커마다 고유 디렉터리 — 병렬 실행에서도 서로의 파일을 건드리지 않는다.
 const dir = mkdtempSync(join(tmpdir(), 'cg-gitcfg-'))

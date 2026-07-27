@@ -4768,7 +4768,11 @@ describe('[REQ-2026-052 addendum] 정상 phase-review 경로의 phase_design_ref
   const TICKET_REL = 'workflow/REQ-2026-001'
   const SCHEMA_SRC = readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8')
   const repos: string[] = []
-  afterEach(() => { while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true }) })
+  // 🔴 원인은 DEC-1(전역 auto 유지보수 차단)이 없앴다. 이건 파일시스템 지연에 대한 **얇은 보험**이다.
+  //    Node 의 재시도는 EBUSY·ENOTEMPTY·EPERM 에만 걸리므로 다른 오류는 그대로 드러난다.
+  afterEach(() => {
+    while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+  })
 
   const designVerdict = () => ({
     machine_schema_version: '1.1', review_base_sha: 'a'.repeat(40), status: 'COMPLETE',

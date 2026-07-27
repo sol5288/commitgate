@@ -108,3 +108,39 @@ describe('[REQ-2026-049] 테스트 환경 git hermetic', () => {
     }
   })
 })
+
+/**
+ * REQ-2026-068 — 픽스처 auto 유지보수 차단(DEC-1·DEC-3).
+ *
+ * 🔴 헤드라인: **실제 저장소에서 확인한다.** `HERMETIC_GITCONFIG` 문자열만 단언하면 우리가 쓴 것을
+ *    우리가 읽는 tautology 다 — env 배선(`GIT_CONFIG_GLOBAL`)이 끊겨도 통과한다.
+ *
+ * 왜 필요한가: git 은 커밋 뒤 유지보수를 detached 프로세스로 띄울 수 있고, 그 프로세스가
+ * `.git/objects/pack/` 에 쓰는 동안 픽스처 정리(`rmSync`)가 그 디렉터리를 지우려 하면 `ENOTEMPTY` 로
+ * 죽는다. 실측(main=b36dd58 CI): 단언 2085건이 전부 통과했는데 macOS·node 20 의 afterEach 에서만 실패.
+ */
+describe('[git-hermetic] auto 유지보수가 픽스처 저장소에서 꺼진다', () => {
+  it('🔴 실제 git init 한 저장소가 gc.auto=0 · maintenance.auto=false 를 본다', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-maint-'))
+    try {
+      const git = (args: string[]): string =>
+        execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim()
+      git(['init', '-q'])
+      expect(git(['config', '--get', 'gc.auto'])).toBe('0')
+      expect(git(['config', '--get', 'maintenance.auto'])).toBe('false')
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+    }
+  })
+
+  /** 🔴 두 키를 모두 끈다 — git 버전에 따라 자동 실행 경로가 gc/maintenance 로 갈린다. */
+  it('🔴 전역 config 에 두 키가 모두 있다', () => {
+    expect(HERMETIC_GITCONFIG).toContain('auto = 0')
+    expect(HERMETIC_GITCONFIG).toContain('auto = false')
+  })
+
+  /** 기존 identity 차단이 그대로인지 — 이 REQ 가 그 축을 건드리지 않았다는 회귀 가드. */
+  it('identity 자동 추론 거부가 유지된다', () => {
+    expect(HERMETIC_GITCONFIG).toContain('useConfigOnly = true')
+  })
+})
