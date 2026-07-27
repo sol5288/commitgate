@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-074-readme-restructure-scannable",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa375-9966-7ff2-9417-4be69dde913a",
-  "review_base_sha": "e6c6599ee35ce6abb5aec5631da93464c0266d34",
-  "review_diff_hash": "9878182536cb4b901d34a6670323427189d46fa0",
+  "codex_thread_id": "019fa395-5c01-7112-9591-a71016ec1051",
+  "review_base_sha": "d8604498b210b3e1693c7f7e8d137aece2f0247c",
+  "review_diff_hash": "d1f961ccff603f19760d4f92a43d336c3ddb68a5",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "cf971c805d2a9005a6dc4f1d9da18183e0f3b429a007f11588124eff098087e8",
-  "current_phase": "phase-1-readme-ko",
+  "current_phase": "phase-2-readme-en",
   "phases": [
     {
       "id": "phase-1-readme-ko",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-readme-en",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -36,6 +36,20 @@
       "series_id": "phase:phase-1-readme-ko#1",
       "review_kind": "phase",
       "phase_id": "phase-1-readme-ko",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-readme-en#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-readme-en",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-readme-en#2",
+      "review_kind": "phase",
+      "phase_id": "phase-2-readme-en",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -60,12 +74,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-readme-ko",
+    "phase_id": "phase-2-readme-en",
     "outcome": "approved",
-    "compare_hash": "dc4e99b1ea964a250603d80c977c65f1d5430970314099132ce23fb645a7c405",
+    "compare_hash": "f7dc36981f4e679609fc9186c8c39ac7a96a12ca592816ce6927c576f154cb8c",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T12:04:19.727Z",
+    "at": "2026-07-27T12:38:50.404Z",
     "findings": [],
     "elided_count": 0
   },
@@ -75,6 +89,12 @@
       "phase_id": "phase-1-readme-ko",
       "consumed_by_commit_sha": "0ad497da04c5112d6c9a81132f5df5b5b233da42",
       "approval_consumed_at": "2026-07-27T12:04:37.093Z"
+    },
+    {
+      "approved_tree": "d1f961ccff603f19760d4f92a43d336c3ddb68a5",
+      "phase_id": "phase-2-readme-en",
+      "consumed_by_commit_sha": "9749dfdba2f07761f4e09e2f4efb6d43811e7022",
+      "approval_consumed_at": "2026-07-27T12:39:05.267Z"
     }
   ],
   "user_commit_confirmed": null
