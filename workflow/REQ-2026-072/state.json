@@ -3,18 +3,18 @@
   "branch": "feat/req-2026-072-close-predicate-parity",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa301-bf4b-77b2-8fef-a4e4d73e7c2a",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fa313-ea39-7892-84d8-49afd7a2d2eb",
+  "review_base_sha": "2db947babb346d23b146c3a5dca32e807f52fc20",
+  "review_diff_hash": "0d7c2f1e230f462800207c43d830ac509b14128c",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "6129c85590f42b23e4c6c1825a7b1e114f9545fb930da0887c7ede1eebda4366",
-  "current_phase": null,
+  "current_phase": "phase-1-terminal-parity",
   "phases": [
     {
       "id": "phase-1-terminal-parity",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-rebind-reentry",
@@ -39,16 +39,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-terminal-parity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-terminal-parity",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-terminal-parity",
     "outcome": "approved",
-    "compare_hash": "3246cfd8845c37bd2ca503f66683ff2cc91d3cb80206b21ae4cd5e3b66f3639f",
+    "compare_hash": "7ad5f3a33e03b0f894e7ba08dfa20c8f93a2d037c1513739205f75f9cecab65f",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T09:57:45.937Z",
+    "at": "2026-07-27T10:17:52.444Z",
     "findings": [],
     "elided_count": 0
   },
@@ -69,5 +76,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-07-27T09:57:45.937Z",
     "design_hash": "6129c85590f42b23e4c6c1825a7b1e114f9545fb930da0887c7ede1eebda4366"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "0d7c2f1e230f462800207c43d830ac509b14128c",
+      "phase_id": "phase-1-terminal-parity",
+      "consumed_by_commit_sha": "cec853ac6fdd15485b0e847ee3ee2b1fa7824188",
+      "approval_consumed_at": "2026-07-27T10:18:20.472Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
