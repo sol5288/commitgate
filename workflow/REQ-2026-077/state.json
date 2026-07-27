@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-077-macos-node18-hang-rca",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa41a-87a8-7351-92b3-3e2041527b1e",
-  "review_base_sha": "1644544b8f4b492fca64a42e30e13a3bf0cc1872",
-  "review_diff_hash": "392a210a4833f7a3e33e193795590a662a300aa1",
+  "codex_thread_id": "019fa435-6a85-7331-84f3-53e6ea79d420",
+  "review_base_sha": "f6f9b018e15fd14aeed08238f8f073e3e5d57b5a",
+  "review_diff_hash": "738f0f11d5ce98afad4f95df4adcc4ec4fc97ac1",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "dee79e62aa9d3d5b981d603df921c25217e3a5dfe4735ae5958272d79a42aff5",
-  "current_phase": "phase-1-hang-probe",
+  "current_phase": "phase-2-findings",
   "phases": [
     {
       "id": "phase-1-hang-probe",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-findings",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -45,16 +45,23 @@
       "phase_id": "phase-1-hang-probe",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-findings#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-findings",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-hang-probe",
+    "phase_id": "phase-2-findings",
     "outcome": "approved",
-    "compare_hash": "eaf2c7eb07c05f7653c9f5efa645440d8637d21492f8ca303b1658311cbed7b3",
+    "compare_hash": "c7e7615a91206f8683a65d76c67724f90cb4c42deb8c71ef22cf64f8fea2cd39",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T15:04:32.748Z",
+    "at": "2026-07-27T15:33:42.257Z",
     "findings": [],
     "elided_count": 0
   },
@@ -82,6 +89,12 @@
       "phase_id": "phase-1-hang-probe",
       "consumed_by_commit_sha": "051dd66f0785b765bf2ce15fcf37e535aa739319",
       "approval_consumed_at": "2026-07-27T15:04:49.237Z"
+    },
+    {
+      "approved_tree": "738f0f11d5ce98afad4f95df4adcc4ec4fc97ac1",
+      "phase_id": "phase-2-findings",
+      "consumed_by_commit_sha": "ce1c924178a640a9db7ecdbdf44cf8e8f16682d5",
+      "approval_consumed_at": "2026-07-27T15:34:31.406Z"
     }
   ],
   "user_commit_confirmed": null
