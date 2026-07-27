@@ -156,6 +156,37 @@ approval rows are never rewritten, so "which design this phase was reviewed agai
 If the rebind fills in the **last** missing binding, `dev-complete` is issued right there and the ticket
 closes. If phases are still unapproved it just records the rebind and moves on — mid-run rebinds are normal.
 
+**If it was interrupted, just run it again.** A rebind is two commits (the rebind record, then
+`dev-complete`). When the second one fails, re-running treats "already rebound" as a **no-op rather than a
+failure** and re-runs the completion check. If the ticket scratch (`state.json`) is gone, the committed HEAD
+copy is used instead — and if that one has no phase plan, the command says it **could not judge completion**
+rather than claiming the ticket is unfinished.
+
+## The ticket is finished but `req:new` is still blocked
+
+If you add one more phase after `dev-complete` was already issued — and re-approve the design to do it —
+that completion proof **goes stale carrying the old `design_ref`**. The tool reads that ticket as unfinished
+and `req:new` blocks on it.
+
+The blocking message now prints the command that **actually applies** to that ticket.
+
+```text
+🔴 미종결 durable 티켓이 있어 새 REQ를 만들 수 없습니다(HEAD 커밋 증거 기준):
+  - REQ-2026-088: developing — 미종결 durable 티켓(developing) …
+      설계 재승인으로 앞선 phase의 결속이 끊겼습니다(2개) — 재결속하면 종결됩니다.
+      npx commitgate req:rebind REQ-2026-088 --phase phase-0 --confirm "rebind REQ-2026-088 phase-0" --run
+```
+
+- If **every** broken binding can be rebound, you get `req:rebind` as above. In that case `req:close
+  --migrate` **refuses and prints the same guidance** — routing around a live human-confirmed path with an
+  after-the-fact stamp would make "attested later" indistinguishable from "proved itself" in the audit trail.
+- If any of them has no `phase_design_ref` (approved before that field existed), rebinding cannot close the
+  ticket, so the guidance points at `req:close --migrate` — and that path does close it.
+
+> This state used to reject **all three** supported recovery commands (`--migrate` saw the stale completion
+> row and reported "already closed" while doing nothing). The cause was two different predicates for
+> "already closed"; they now share one function.
+
 **This is not `req:close --migrate`.** That one is an escape hatch for **legacy tickets** that cannot prove
 themselves, closed by an operator after the fact and recorded with `reconstructed: true`. Using it routinely
 would make every normal completion look like an after-the-fact attestation.
