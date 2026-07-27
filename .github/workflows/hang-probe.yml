@@ -1,0 +1,100 @@
+name: Hang probe (manual)
+
+# 🔴 조사 전용 워크플로다 — `macos-latest · node 18`에서 간헐적으로 나는 `npm test` 교착
+#    (REQ-2026-077)의 **재현과 증거 수집**을 위해 사람이 손으로 돌린다.
+#
+# 🔴 `push`·`pull_request` 트리거를 두지 않는다:
+#    - 조사용이 매 커밋마다 돌면 안 된다(러너 낭비).
+#    - 잡 이름이 branch protection의 required checks와 섞이면 안 된다(`ci.yml`과 분리).
+#
+# 이 워크플로의 핵심은 **워치독이 프로세스를 죽이기 전에 증거를 남기는 것**이다.
+# 2026-07-27에 두 번 교착했을 때, GitHub는 진행 중인 잡의 로그를 주지 않아
+# **원인을 보려면 잡을 죽여야 했다** — 진단하려면 증거를 없애야 하는 상태였다.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '테스트 대상 (빈 값 = 전체 스위트)'
+        required: false
+        default: 'tests/unit/init.test.ts'
+      watchdog_minutes:
+        description: '이 시간을 넘기면 교착으로 보고 증거를 수집한다'
+        required: false
+        default: '6'
+
+jobs:
+  probe:
+    name: probe ${{ matrix.run }} · macos · node 18
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      # 🔴 빈도를 센다(DEC-4). 빈도를 모르면 조치의 효과도 측정할 수 없다.
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    # 🔴 워치독(기본 6분)보다 넉넉히 크게 둔다 — 타임아웃이 먼저 걸리면 GitHub가 잡을 죽여
+    #    증거 수집 스텝이 아예 실행되지 않는다(그러면 이 워크플로의 존재 이유가 사라진다).
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+      - run: npm ci
+
+      - name: Run suite under watchdog
+        id: probe
+        env:
+          TARGET: ${{ inputs.target }}
+          WATCHDOG_MIN: ${{ inputs.watchdog_minutes }}
+        run: |
+          set -u
+          mkdir -p probe-evidence
+          echo "target='${TARGET}' watchdog=${WATCHDOG_MIN}m" | tee probe-evidence/params.txt
+
+          # 테스트를 백그라운드로 띄운다 — 워치독이 관찰할 수 있어야 한다.
+          npx vitest run --reporter=verbose ${TARGET} > probe-evidence/vitest.log 2>&1 &
+          TEST_PID=$!
+          echo "test pid: ${TEST_PID}" | tee -a probe-evidence/params.txt
+
+          DEADLINE=$(( WATCHDOG_MIN * 60 ))
+          ELAPSED=0
+          while kill -0 "${TEST_PID}" 2>/dev/null; do
+            if [ "${ELAPSED}" -ge "${DEADLINE}" ]; then
+              echo "HUNG=1" >> "$GITHUB_OUTPUT"
+              echo "::warning::watchdog fired after ${WATCHDOG_MIN}m — collecting evidence"
+
+              # 🔴 수집이 종료보다 **먼저**다. 순서가 반대면 오늘과 같은 상태(증거 없음)로 되돌아간다.
+              ps -ef > probe-evidence/ps.txt 2>&1 || true
+              # 살아 있는 node/esbuild 프로세스의 스택을 뜬다(`sample`은 macOS 내장).
+              for pid in $(pgrep -f 'node|esbuild' || true); do
+                echo "===== sample ${pid} =====" >> probe-evidence/sample.txt
+                sample "${pid}" 3 -mayDie >> probe-evidence/sample.txt 2>&1 || true
+              done
+              # 자식까지 확실히 정리한다.
+              pkill -f 'vitest|esbuild' 2>/dev/null || true
+              kill -9 "${TEST_PID}" 2>/dev/null || true
+              echo "watchdog: evidence collected, process killed" | tee -a probe-evidence/params.txt
+              exit 1
+            fi
+            sleep 10
+            ELAPSED=$(( ELAPSED + 10 ))
+          done
+
+          wait "${TEST_PID}"
+          RC=$?
+          echo "HUNG=0" >> "$GITHUB_OUTPUT"
+          echo "test exit=${RC} elapsed=${ELAPSED}s" | tee -a probe-evidence/params.txt
+          exit "${RC}"
+
+      # 🔴 `always()` — 교착(exit 1)이든 정상이든 증거가 올라와야 한다.
+      #    실패했을 때만 증거가 필요한데, 그때 업로드가 건너뛰어지면 아무 의미가 없다.
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-${{ matrix.run }}
+          path: probe-evidence/
+          # 🔴 수집물이 없으면 **조용히 경고로 끝나지 않고 실패**해야 한다.
+          # params.txt·vitest.log는 스텝 시작 직후 만들어지므로 정상 경로에서도 항상 존재한다.
+          if-no-files-found: error
