@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"e6c6599ee35ce6abb5aec5631da93464c0266d34","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"Commit the approved staged tree, then proceed to phase 2.","observations":[]}
