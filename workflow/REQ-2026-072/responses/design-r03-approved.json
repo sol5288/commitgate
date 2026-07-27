@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"1660985edb807cbb9ff57ddd9360ed4654bbf60e","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계 승인 후 Phase 1을 구현하고, 양방향 실측 결과를 phase 리뷰 요청에 포함하세요.","observations":[]}
