@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-071-stopgate-sole-authority",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa2ac-0aa5-7fd0-9e8f-83b422f13b60",
-  "review_base_sha": "8b7b92b2ab32f033ca8034f78b935cc045b0caae",
-  "review_diff_hash": "dbe9b53e311a838822d9214c0d800a6ee08f99c8",
+  "codex_thread_id": "019fa2b7-6466-7412-b066-8eeecbdd9e46",
+  "review_base_sha": "db675d80370e6de61d2665d8a27c4636e2074e78",
+  "review_diff_hash": "327afc5db17b11bf6d988e500c3b9fd8279d6404",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "fdc7d30ae1d03979e70a24d13e39c3afc5bfcc274d62a5d1e0a21770d93c775d",
-  "current_phase": "phase-3-terminal-wiring",
+  "current_phase": "phase-4-guidance-docs",
   "phases": [
     {
       "id": "phase-1-confirm-scope",
@@ -26,7 +26,7 @@
     },
     {
       "id": "phase-4-guidance-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -93,8 +93,8 @@
       "series_id": "phase:phase-4-guidance-docs#1",
       "review_kind": "phase",
       "phase_id": "phase-4-guidance-docs",
-      "attempts": 4,
-      "closed_reason": null
+      "attempts": 6,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#6",
@@ -112,13 +112,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-4-guidance-docs",
     "outcome": "approved",
-    "compare_hash": "7ede864f0ff0eba6a1a1afd7275a0e8e979f9d139330602babbb57083d74b430",
+    "compare_hash": "d107e08f19d9a2265db37468e2236456b8252ceedac189ecac27677a9394588a",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T08:23:50.153Z",
+    "at": "2026-07-27T08:36:43.004Z",
     "findings": [],
     "elided_count": 0
   },
@@ -145,6 +145,12 @@
       "phase_id": "phase-3-terminal-wiring",
       "consumed_by_commit_sha": "361cf56b337a7836c20a8831eb6778f6ab49d2f2",
       "approval_consumed_at": "2026-07-27T07:04:22.902Z"
+    },
+    {
+      "approved_tree": "327afc5db17b11bf6d988e500c3b9fd8279d6404",
+      "phase_id": "phase-4-guidance-docs",
+      "consumed_by_commit_sha": "11af1c8987d4fe0967a9cf8151c7485f68520611",
+      "approval_consumed_at": "2026-07-27T08:37:03.964Z"
     }
   ],
   "user_commit_confirmed": null,
@@ -160,5 +166,6 @@
     "commit_approved": "yes",
     "approved_at": "2026-07-27T08:23:50.153Z",
     "design_hash": "fdc7d30ae1d03979e70a24d13e39c3afc5bfcc274d62a5d1e0a21770d93c775d"
-  }
+  },
+  "review_exception_confirmed": null
 }
