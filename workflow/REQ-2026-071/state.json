@@ -3,16 +3,71 @@
   "branch": "feat/req-2026-071-stopgate-sole-authority",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa1ea-3941-7d01-9d73-e7957d7fa8ce",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "3ada657b95639e7623aa165957e997139e87cd32449591d10fd3247f2ff600e9",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-confirm-scope",
+      "approved": false
+    },
+    {
+      "id": "phase-2-confirm-verb",
+      "approved": false
+    },
+    {
+      "id": "phase-3-terminal-wiring",
+      "approved": false
+    },
+    {
+      "id": "phase-4-guidance-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "f80b9038e7b928cc9d53d835897879107d620aa8c6f70cf3f0d23d9b49160bf1",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-27T04:52:16.457Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "694d51be7e34467a22ea7c3fca87ef6c50053598",
+    "design": "7e7cda5ba7acc8bd141a4b798d8308b06141fd9b",
+    "plan": "f098ee96a4e2d5b077e2d813d6c90cda3a5bea66"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-071/responses/design-r04-approved.json",
+    "response_sha256": "7b363f4d27596093b1b8c68452b0cd63765025c2b4172098e14539e111139406",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "9de59a910f903332b177f8d563ebe042bd7283f3",
+    "codex_thread_id": "019fa1ea-3941-7d01-9d73-e7957d7fa8ce",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-27T04:52:16.457Z",
+    "design_hash": "3ada657b95639e7623aa165957e997139e87cd32449591d10fd3247f2ff600e9"
+  }
 }
