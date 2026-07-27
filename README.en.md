@@ -14,59 +14,72 @@
 
 ## What is CommitGate?
 
-AI coding agents can plan, implement, and test at remarkable speed. But when the same agent also reviews its own change, it can miss defects through the same assumptions and context that produced the code. The usual workaround is to copy the change into another model for a second opinion — which is tedious, and leaves **you** tracking which diff was reviewed and whether it changed afterwards.
+**Code an AI wrote only gets saved once a different AI has checked it.**
 
-CommitGate turns that handoff into a REQ workflow.
+Having an AI write your code gets you results fast. The question is **who checks them**. An AI reviewing its own work tends to repeat its own blind spots, and pasting the change into a second AI by hand is tedious — on top of that, *you* end up remembering how much was reviewed and whether the code changed again afterwards.
+
+CommitGate runs that back-and-forth for you. **Until the check passes, saving is blocked.**
 
 ```text
-      a requirement
-           │
-           ▼
-    ┌─────────────┐
-    │  builder AI │   design · implement · test
-    └──────┬──────┘
-           │ git add
-           ▼
-    ┌─────────────┐
-    │ staged tree │
-    └──────┬──────┘
-           │ req:review-codex
-           ▼
-    ┌──────────────────┐
-    │ Codex (Reviewer) │   findings (P1) → fix, go back up, review again
-    └──────┬───────────┘
-           │ approved
-           ▼
-    ┌──────────────────┐
-    │    req:commit    │   ◀── a human confirms at the AWAIT_HUMAN
-    └──────────────────┘       control point (commit · integrate · release)
-       commits that exact tree, and only that tree
+        you state a requirement
+               |
+               v
+  +--------------------+
+  |  code-writing AI   |   writes the change
+  +--------------------+
+               |
+               v
+  +--------------------+
+  |  reviewing AI      |   inspects that change
+  +--------------------+
+               |
+               v
+        anything to fix?  --- yes ---> go back up and rewrite
+               |
+              no (= approved)
+               |
+               v
+  +--------------------+
+  |  save (= commit)   |   only the approved change is saved
+  +--------------------+
+               |
+               v
+        any work left?  --- yes ---> go back up and rewrite
+               |
+              no
+               |
+               v
+  +--------------------+
+  |  human check       |   this is where you step in
+  +--------------------+       (wrap up · merge)
 ```
 
-**The point is not the arrows — it is the last box.** Only the **exact staged tree** that passed the human confirmation and the Codex approval gets committed; if a single line changes after approval, it is blocked as stale and re-reviewed.
+**What matters is not the loop but the promise at the end.** Only the **exact change** that passed the check is saved — if a single line moves after approval, that approval is treated as stale and **a fresh check is required**.
 
-| What you would otherwise track yourself | What CommitGate connects |
+By default **you are not stopped in the middle.** You confirm when a piece of work finishes and when results get merged. If you would rather look at every step yourself, you can set it that way — see [Where a human stops](#where-a-human-stops) below.
+
+| What you would otherwise track yourself | What CommitGate does instead |
 |---|---|
-| Copy a builder's change into another model for review | Send the current **staged tree** to the Codex Reviewer |
-| Check manually whether code changed after review | Bind the approved tree to the staged tree and require a new review when it moves |
-| Decide what to check before commit, push, or release | Let `req:next` compute the next action and human control point |
-| Step into every stage | Request an explicit approval only at an `AWAIT_HUMAN` control point |
+| Paste the change into another AI to get it reviewed | Hand the change you are about to save to the reviewing AI automatically |
+| Eyeball whether the code moved after the review | Bind the approved content to what you are about to save, and demand a re-check when they differ |
+| Decide what to verify before saving, sharing, or shipping | Let the tool compute the next action and the points where you confirm |
+| Step into every stage | Ask for approval only at the defined checkpoints |
 
 ## What it guarantees — and what it does not
 
 | Guaranteed | Not guaranteed |
 |---|---|
-| 🔒 Nothing is committed without an approved Codex review | Anything **after** the commit (merge, tag, publish are separate control points) |
-| 🔁 A staged change that moves after approval is re-reviewed | **Secrecy** of your staged content — there is no masking or filtering |
-| 🧯 When in doubt it fails closed — no-findings-but-unapproved responses, a missing or failing Codex CLI | **Hard enforcement** — no git hook is installed |
+| 🔒 **Nothing is committed without an approved Codex review** — until the reviewing AI passes it, saving is blocked | Anything **after** the save — merging, tagging, and publishing are each confirmed separately |
+| 🔁 If the change moves after approval, it **must be checked again** | **Secrecy** of the code you send — nothing is masked or filtered |
+| 🧯 **When in doubt it fails closed** — an answer with neither findings nor approval, a missing review tool, a failed run: all blocked | **Physically preventing** anything — a person who sets out to go around it still can |
 
-Two of those are spelled out here rather than left in a table cell. Read them before you start.
+The two below are not in the table. They are **things to read before you start**.
 
-> ⚠️ **Review sends your staged diff in full to an external service (Codex/OpenAI).** `req:review-codex` transmits the entire `git diff --cached`, and Codex reads your repository root under `--sandbox read-only`, so files outside the diff can be read too. There is **no** masking, filtering, or size cap — check the staged content for credentials, tokens, and personal data before running a review.
+> ⚠️ **Review sends your staged diff in full to an external service (Codex/OpenAI).** The change you are about to save goes out **whole, with nothing trimmed**. The reviewing AI can also read **other files in your project folder**, not just that change (read-only). There is **no** masking, filtering, or size limit — before running a check, make sure no passwords, API keys, or personal data are mixed in.
 >
-> ⚠️ **No git hook is installed — the gate can be bypassed.** Running `git commit` directly instead of `req:commit` bypasses the gate, the approval binding, and the evidence trail. Enforcement keeps a **cooperating agent on the contract's rails**; it is not a physical barrier against a human going around it.
+> ⚠️ **No git hook is installed — the gate can be bypassed.** Save without going through this tool and the check and the record are both skipped. CommitGate's power is in **keeping a cooperating AI inside the agreed procedure**, not in physically stopping a person who decides to go around it.
 
-For the full list, see **[Guarantees & limits](https://github.com/sol5288/commitgate/blob/main/docs/guarantees.en.md)**.
+For the full list of what is and is not guaranteed, see **[Guarantees & limits](https://github.com/sol5288/commitgate/blob/main/docs/guarantees.en.md)**.
 
 ## Prerequisites
 
