@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-071-stopgate-sole-authority",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa24b-6271-7752-8a42-d58ef321fd93",
-  "review_base_sha": "d27c25c6b3c0194e94a51f8cd4dddab9cbc08c05",
-  "review_diff_hash": "7919745facdc3d4cd5bf42089822df114bbbc9af",
+  "codex_thread_id": "019fa262-a32e-7090-aafd-e286ed1bab92",
+  "review_base_sha": "b14dcef8f639149555357dd45bfb272ed912a489",
+  "review_diff_hash": "8a05fb13a9d5ac1f7862470441b6444dae78475c",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "2a2b81b82ee25238c7ca6c5ca5083c983879ca091ec94f2b8fd3729700ac545a",
-  "current_phase": "phase-2-confirm-verb",
+  "current_phase": "phase-3-terminal-wiring",
   "phases": [
     {
       "id": "phase-1-confirm-scope",
@@ -22,7 +22,7 @@
     },
     {
       "id": "phase-3-terminal-wiring",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-4-guidance-docs",
@@ -72,8 +72,8 @@
       "series_id": "phase:phase-3-terminal-wiring#1",
       "review_kind": "phase",
       "phase_id": "phase-3-terminal-wiring",
-      "attempts": 1,
-      "closed_reason": null
+      "attempts": 5,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#4",
@@ -91,13 +91,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-3-terminal-wiring",
     "outcome": "approved",
-    "compare_hash": "11c18243f231bcb3dce9d67f9707d9f6f4a0e346d541588f48acaf7f826590ea",
+    "compare_hash": "385a309fc94078b9c9b0fc88e8401f4c3db4230967972d1ba7b41b90b2a1d038",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T06:38:34.166Z",
+    "at": "2026-07-27T07:04:02.418Z",
     "findings": [],
     "elided_count": 0
   },
@@ -118,6 +118,12 @@
       "phase_id": "phase-2-confirm-verb",
       "consumed_by_commit_sha": "f1f467f8962a0b7ee0abb4af08cf7c7d471a3f0b",
       "approval_consumed_at": "2026-07-27T05:54:03.166Z"
+    },
+    {
+      "approved_tree": "8a05fb13a9d5ac1f7862470441b6444dae78475c",
+      "phase_id": "phase-3-terminal-wiring",
+      "consumed_by_commit_sha": "361cf56b337a7836c20a8831eb6778f6ab49d2f2",
+      "approval_consumed_at": "2026-07-27T07:04:22.902Z"
     }
   ],
   "user_commit_confirmed": null,
