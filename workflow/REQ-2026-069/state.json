@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-069-design-rebinding-on-reapproval",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa188-54c3-74f1-83e8-d9e991892e4f",
-  "review_base_sha": "e8025fc3485ebb31205d7044e6df79835fee399d",
-  "review_diff_hash": "7a5460e4ac2fa688b321cdbe14dafaca01ce2390",
+  "codex_thread_id": "019fa188-cda6-7fd1-bcea-3e1fece1298b",
+  "review_base_sha": "f2f58c3c90e8bb2fe7a16e3c1d4482d3fa367a94",
+  "review_diff_hash": "183b40a362655b94a12d132b3865bd8a91bcddf6",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "db4778798c403c1fb12d69dcac2e091de466a6d33db19fad9f126a5cc8a9a8a9",
-  "current_phase": "phase-4-recheck-complete",
+  "current_phase": "phase-5-docs-recheck",
   "phases": [
     {
       "id": "phase-1-rebind-model",
@@ -30,7 +30,7 @@
     },
     {
       "id": "phase-5-docs-recheck",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -92,6 +92,13 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-docs-recheck#1",
+      "review_kind": "phase",
+      "phase_id": "phase-5-docs-recheck",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -100,13 +107,13 @@
     "plan": "7c2ba79fee7c4b50591b16908a32f800053ec7a4"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-5-docs-recheck",
     "outcome": "approved",
     "compare_hash": "80c9c2c9a60795bd4440959864d140fdd144c04c7cf75e4a451d91623c524e6c",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T03:05:11.766Z",
+    "at": "2026-07-27T03:05:56.355Z",
     "findings": [],
     "elided_count": 0
   },
@@ -134,6 +141,12 @@
       "phase_id": "phase-4-recheck-complete",
       "consumed_by_commit_sha": "2ef662702f0ebcc56849543ffbdf0a2f14fab7b9",
       "approval_consumed_at": "2026-07-27T03:03:29.199Z"
+    },
+    {
+      "approved_tree": "183b40a362655b94a12d132b3865bd8a91bcddf6",
+      "phase_id": "phase-5-docs-recheck",
+      "consumed_by_commit_sha": "0adde4fcddadaef2e91ceb51085470c1194b297d",
+      "approval_consumed_at": "2026-07-27T03:06:13.301Z"
     }
   ],
   "user_commit_confirmed": null,
