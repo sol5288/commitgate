@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-073-docs-setup-stopgate-refresh",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa34d-be80-7ba0-b2cf-04c6f81f5fcf",
-  "review_base_sha": "289b20155d5527c52fef82699386297606ceb03a",
-  "review_diff_hash": "7c94c4422f278170eb001075d12c7805b1f00eac",
+  "codex_thread_id": "019fa361-92d1-7f92-a12e-f08bca26aa26",
+  "review_base_sha": "f7eb9bf8218a2b6a268c219d62d26ab069225389",
+  "review_diff_hash": "a3f121459324d1e58315d7228a3ab1f8749a726a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "9b7a179690a67cf9e398834f6b1ac33ea38cb33860a9d4c53e526d490a228188",
-  "current_phase": "phase-2-readme",
+  "current_phase": "phase-3-guides",
   "phases": [
     {
       "id": "phase-1-false-guarantees",
@@ -22,7 +22,7 @@
     },
     {
       "id": "phase-3-guides",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -49,6 +49,13 @@
       "phase_id": "phase-2-readme",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-guides#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-guides",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -71,12 +78,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-readme",
+    "phase_id": "phase-3-guides",
     "outcome": "approved",
-    "compare_hash": "d31317af15ef26080bf81b63eafd93e4336013bf9f3f2f37b15f03e48803a3a8",
+    "compare_hash": "e67c3414b94fd9891028e52ff70d95828ee43945045cd2b12c78fbdc695cd024",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T11:20:35.514Z",
+    "at": "2026-07-27T11:42:24.638Z",
     "findings": [],
     "elided_count": 0
   },
@@ -92,6 +99,12 @@
       "phase_id": "phase-2-readme",
       "consumed_by_commit_sha": "bb9147326c1bfadc7949cf39588f06ed45f125b0",
       "approval_consumed_at": "2026-07-27T11:20:47.782Z"
+    },
+    {
+      "approved_tree": "a3f121459324d1e58315d7228a3ab1f8749a726a",
+      "phase_id": "phase-3-guides",
+      "consumed_by_commit_sha": "73b1c85e0238e80435d8127b46340bdc9a64741d",
+      "approval_consumed_at": "2026-07-27T11:42:40.807Z"
     }
   ],
   "user_commit_confirmed": null
