@@ -51,12 +51,17 @@ CommitGate는 이 교대 작업을 REQ 워크플로로 묶습니다. **개발 AI
 
 ## 3분 시작
 
-git 저장소이고 `package.json`이 있는 폴더에서 두 단계면 됩니다.
+git 저장소이고 `package.json`이 있는 폴더에서 세 단계면 됩니다.
 
 ```sh
 npm install -D commitgate     # 1) 런타임 설치 — 실행 코드가 node_modules/commitgate 에 들어옵니다
 npx commitgate init           # 2) 설정·계약·스키마 + req:* 스크립트를 프로젝트에 깝니다
+npx commitgate setup          # 3) 리뷰 모델·추론강도·멈춤 지점을 고르고 codex 로그인까지 (대화형)
 ```
+
+🔴 **3단계는 건너뛸 수 없습니다.** setup을 마치지 않으면 `req:new`를 비롯한 워크플로 명령이 막힙니다. **사람이 터미널에서 직접** 실행해야 합니다 — 대화형 전용이라 에이전트 세션·CI에서는 질문 없이 즉시 종료합니다.
+
+setup의 세 번째 질문이 **사람이 어디서 멈출지**(`stopGate`)를 정합니다. 기본값 `req`는 REQ 하나가 끝날 때 확인하고, `phase`는 매 phase마다, `merge`는 여러 REQ를 묶어 그 묶음이 끝날 때 확인합니다 — 상세는 **[워크플로](https://github.com/sol5288/commitgate/blob/main/docs/workflow.md)**의 "HIGH 위험 티켓의 사람 확인" 절에 있습니다.
 
 설치는 파일만 놓고 **커밋하지 않습니다.** `req:new`는 clean 워킹트리를 요구하므로 설치분을 먼저 커밋하세요 — 설치 출력의 `다음:` 안내가 stage할 정확한 경로를 알려 줍니다(`-A`/`.` 전체 stage는 쓰지 마세요). 준비물(Codex CLI 등)·경로 명시 stage·전체 첫 흐름은 **[Quick Start](https://github.com/sol5288/commitgate/blob/main/docs/quick-start.md)**.
 
@@ -108,6 +113,7 @@ req:new → 설계 리뷰 → 구현 → phase 리뷰 → 승인 → req:commit 
 | `npm run req:next -- <id>` | **다음 행동 계산** (읽기 전용) |
 | `npm run req:doctor -- <id>` | 게이트 상태 점검 |
 | `npm run req:commit -- <id> --run -m "..."` | 승인된 변경 커밋 |
+| `npm run req:confirm -- <id> --scope <s> --method "..." --run` | HIGH 위험 티켓의 사람 확인 기록 |
 
 `req:*`는 PATH 실행 파일이 아니라 `package.json` 스크립트입니다(npm은 인자 전달에 `--` 필요). 전체 명령과 `pnpm`/`yarn` 표기는 **[워크플로](https://github.com/sol5288/commitgate/blob/main/docs/workflow.md)**에 있습니다.
 

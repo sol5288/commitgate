@@ -51,12 +51,17 @@ For the full list of what is and is not guaranteed, see **[Guarantees & limits](
 
 ## Get started in 3 minutes
 
-From a folder that is a git repository with a `package.json`, two steps:
+From a folder that is a git repository with a `package.json`, three steps:
 
 ```sh
 npm install -D commitgate     # 1) install the runtime — the executable code lives in node_modules/commitgate
 npx commitgate init           # 2) add config, contract, schemas + the req:* scripts to your project
+npx commitgate setup          # 3) pick the review model, reasoning effort, and stop point; sign in to codex
 ```
+
+🔴 **Step 3 cannot be skipped.** Until setup completes, `req:new` and the other workflow commands are blocked. **A human runs it directly in a terminal** — it is interactive-only and exits immediately, without asking anything, in agent sessions and CI.
+
+Setup's third question decides **where a human stops** (`stopGate`). The default `req` confirms once per finished REQ; `phase` confirms before every phase; `merge` groups several REQs and confirms when the whole set is done — details in **[Workflow](https://github.com/sol5288/commitgate/blob/main/docs/workflow.en.md#human-confirmation-for-high-risk-tickets)**.
 
 Installation writes files but **does not commit** them. `req:new` requires a clean working tree, so commit the scaffold first — the installer's `다음:` (next steps) output prints the exact paths to stage (do not stage everything with `-A`/`.`). For prerequisites (Codex CLI, etc.), pathspec staging, and the full first flow, see **[Quick Start](https://github.com/sol5288/commitgate/blob/main/docs/quick-start.en.md)**.
 
@@ -108,6 +113,7 @@ For the loop details, the `kind` table, the reviewer persona, and delta re-revie
 | `npm run req:next -- <id>` | **Compute the next action** (read-only) |
 | `npm run req:doctor -- <id>` | Check gate status |
 | `npm run req:commit -- <id> --run -m "..."` | Commit the approved change |
+| `npm run req:confirm -- <id> --scope <s> --method "..." --run` | Record the human confirmation for a HIGH-risk ticket |
 
 `req:*` are `package.json` scripts, not PATH executables (npm needs `--` to pass arguments). The full command set and `pnpm`/`yarn` forms are in **[Workflow](https://github.com/sol5288/commitgate/blob/main/docs/workflow.en.md)**.
 
