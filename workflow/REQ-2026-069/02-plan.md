@@ -36,8 +36,11 @@ Exit: typecheck 0 · `npm test` green · 수용기준 1·5 · Codex 승인.
    현재 design_ref가 있는가(없으면 거부 — DEC-5).
 4. 확인 문구 검증 `rebind <REQ-id> <phase-id>`. 🔴 시각은 **실제 시계**.
 5. append + 커밋. 🔴 매니페스트는 **append-only** — 기존 행을 고치지 않는다.
-6. 🔴 verb 등록을 **두 곳**(`VERB_MODULES`·`STAGE_B_REQ_VERBS`)에 하고, dispatch 테스트로 고정한다.
-   한 곳만 하면 소비자 프로젝트에서 `npm run req:rebind`가 없다.
+6. 🔴 verb 등록은 `VERB_MODULES` **한 곳**이다 — `STAGE_B_REQ_VERBS`는 하드코딩 목록이 아니라
+   거기서 `req:` 접두를 필터해 **파생**된다(`bin/init.ts:189`, DEC-D3). 그래도 그 파생이 살아 있다는
+   것을 테스트로 고정한다: 파생이 끊기면 소비자 프로젝트에 `npm run req:rebind`가 없다.
+   **실측(2026-07-27)**: 임시 repo에 `commitgate`를 devDependency로 선언하고 `init`을 돌리니
+   `scripts.req:rebind`가 주입됐다(총 9개 req:* 스크립트). phase-2 r01의 반대 지적은 정적 오독이다.
 
 Exit: typecheck 0 · `npm test` green · 수용기준 2·3·4·6 · Codex 승인.
 

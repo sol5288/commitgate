@@ -21,6 +21,7 @@ export const VERB_MODULES = {
   'req:reconstruct': '../scripts/req/req-reconstruct.ts',
   'req:close': '../scripts/req/req-close.ts',
   'req:review-exception': '../scripts/req/req-review-exception.ts',
+  'req:rebind': '../scripts/req/req-rebind.ts',
   uninstall: 'uninstall.ts',
   migrate: 'migrate.ts',
   sync: 'sync.ts',
