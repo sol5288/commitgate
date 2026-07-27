@@ -186,6 +186,9 @@ export const REQ_SCRIPTS: Record<string, string> = {
  *    dispatch에 verb를 추가하면(예: `req:reconstruct`) 이 목록·init 주입·migrate·smoke가 **자동으로** 따라간다
  *    — 정합성 테스트(`dispatch req:* === STAGE_B_REQ_SCRIPTS 키`)와 tarball smoke가 누락을 CI에서 잡는다.
  */
+// 🔴 **하드코딩 목록이 아니다.** `VERB_MODULES`(bin/dispatch.mjs)에서 파생한다 — dispatch에 `req:*` verb를
+//    등록하면 여기·init 주입·migrate·smoke가 전부 자동으로 따라온다. 새 verb를 추가할 때 이 파일을 고칠
+//    일은 없다. (리뷰에서 "여기 추가되지 않았다"는 지적이 두 번 나왔다 — REQ-2026-069·071.)
 export const STAGE_B_REQ_VERBS: string[] = Object.keys(VERB_MODULES)
   .filter((v) => v.startsWith('req:'))
   .sort()
