@@ -3,18 +3,27 @@
   "branch": "feat/req-2026-073-docs-setup-stopgate-refresh",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa33a-c110-7313-b6a0-777fd94550b6",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fa344-bc91-7333-b2e8-e5ebd38e4053",
+  "review_base_sha": "9623a4a8e404b46e65e83182cf331536f29f2416",
+  "review_diff_hash": "46d1599cd645e1ee43a557d2088b22fa9d7070bf",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "9b7a179690a67cf9e398834f6b1ac33ea38cb33860a9d4c53e526d490a228188",
-  "current_phase": null,
+  "current_phase": "phase-1-false-guarantees",
   "phases": [
-    "phase-1-false-guarantees",
-    "phase-2-readme",
-    "phase-3-guides"
+    {
+      "id": "phase-1-false-guarantees",
+      "approved": true
+    },
+    {
+      "id": "phase-2-readme",
+      "approved": false
+    },
+    {
+      "id": "phase-3-guides",
+      "approved": false
+    }
   ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
@@ -24,6 +33,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-false-guarantees#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-false-guarantees",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -47,14 +63,23 @@
     "design_hash": "9b7a179690a67cf9e398834f6b1ac33ea38cb33860a9d4c53e526d490a228188"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-false-guarantees",
     "outcome": "approved",
-    "compare_hash": "96be1c8f4eb910c5c54a6291bf19ef0b0869068f37931f43970f3d8a41cedb41",
+    "compare_hash": "06e99a787ca93e78c7f6851093afa1167ec66288618fdd955432bda4f099989d",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T10:59:40.648Z",
+    "at": "2026-07-27T11:10:40.774Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "46d1599cd645e1ee43a557d2088b22fa9d7070bf",
+      "phase_id": "phase-1-false-guarantees",
+      "consumed_by_commit_sha": "807b53ab685d4bc0f2f218e6483ff7457dc1926d",
+      "approval_consumed_at": "2026-07-27T11:10:52.283Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
