@@ -3,16 +3,59 @@
   "branch": "feat/req-2026-075-suite-ci-latency",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa3cc-779a-7bf3-a276-571803cbc18d",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "fd902d871191b31b135be2dcd0c1c3aaef001441d428b9c2029f9bc925ec5479",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-bounded-parallel",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "1b5879c6b0383cdfacc8ec2a226590409cf999158baaeeb26ba1742f114cb0c2",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-27T13:39:56.208Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "1fa5caf92cf4a305aaa2459ed68fcc29fcf5fd29",
+    "design": "b6ffda2b644c0a8f4e800b6d38700fc58d572569",
+    "plan": "ca7a52f52d8dd5a70480f8464e243195483a2ff5"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-075/responses/design-r04-approved.json",
+    "response_sha256": "ee4f9b2cfe75135c71ab94fe5bf7b704edcebd3e7bf418a260e5af0179e6ec7e",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "d49d4a18b746eebf415f406d2d838a612175129b",
+    "codex_thread_id": "019fa3cc-779a-7bf3-a276-571803cbc18d",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-27T13:39:56.208Z",
+    "design_hash": "fd902d871191b31b135be2dcd0c1c3aaef001441d428b9c2029f9bc925ec5479"
+  }
 }
