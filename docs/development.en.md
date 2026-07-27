@@ -10,6 +10,19 @@ Current verification:
 - `npm test` runs the **whole suite**, and that is what the gate judges (we do not run only-changed tests —
   impact analysis lets through the regressions it failed to predict).
 
+### CI jobs have a 20-minute cap
+
+`timeout-minutes: 20` in `.github/workflows/ci.yml` cuts off a hung job (GitHub's default is **360 minutes**).
+
+🔴 **Why 20**: the measured longest job is windows at **7.0 minutes**. We set roughly 3× that — tightening it
+further means runner slowness or an npm registry hiccup **kills a healthy run and produces a false red**.
+A false red is worse than a hang, because people start ignoring red.
+
+🔴 **The second purpose is logs**: GitHub **will not give you the logs of a job that is still running**
+(`gh run view --job <id> --log` → "still in progress"). When `macos-latest · node 18` hung on 2026-07-27, seeing
+the cause required **killing the job** — diagnosing meant destroying the evidence. A timed-out job leaves its
+logs behind. Keep that in mind before raising the value.
+
 ### Tests run with bounded parallelism
 
 `maxWorkers: 2` in `vitest.config.ts` caps how many test files run at once.

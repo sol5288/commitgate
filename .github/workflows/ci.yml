@@ -20,6 +20,17 @@ jobs:
   build:
     name: ${{ matrix.os }} · node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
+    # 교착한 잡이 GitHub 기본값 360분(6시간)을 점유하지 않게 한다.
+    #
+    # 🔴 **왜 20분인가**: 실측 최장은 windows의 **7.0분**이다(2026-07-27). 그 약 3배로 둔다 —
+    #    더 조이면 러너 성능 변동·npm 레지스트리 지연으로 **정상 실행이 죽어 거짓 red**가 난다.
+    #    거짓 red는 지금 문제보다 나쁘다(사람이 red를 무시하기 시작한다).
+    #
+    # 🔴 **두 번째 목적은 로그다**: GitHub는 **진행 중인 잡의 로그를 주지 않는다**
+    #    (`gh run view --job <id> --log` → "still in progress"). 2026-07-27 macos node 18이
+    #    교착했을 때 원인을 보려고 잡을 **죽여야 했다** — 진단하려면 증거를 없애야 하는 상태였다.
+    #    타임아웃으로 종료되면 그 로그가 남는다. 값을 올리려면 이 사실을 함께 고려할 것.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
