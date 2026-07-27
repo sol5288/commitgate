@@ -3,13 +3,13 @@
   "branch": "feat/req-2026-071-stopgate-sole-authority",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa221-f2ef-72d3-a058-50e3cd0185d2",
-  "review_base_sha": "22ef683963b36167dfc72d9ac199b98474bc4fee",
-  "review_diff_hash": "2f108957c1d43e7a5643b70f74efe6edb1cf143f",
+  "codex_thread_id": "019fa249-fbe6-7831-8fae-26db13409478",
+  "review_base_sha": "d27c25c6b3c0194e94a51f8cd4dddab9cbc08c05",
+  "review_diff_hash": "7919745facdc3d4cd5bf42089822df114bbbc9af",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "18992f6757685d74e60a47fb25658f50fe67d6e9b7ccab2ef13a9831f5c2057b",
+  "design_approved_hash": "8b605c7905a95064de69ce1f945849889390f4228a027fe82558bb9a78455c47",
   "current_phase": "phase-2-confirm-verb",
   "phases": [
     {
@@ -67,22 +67,36 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-terminal-wiring#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-terminal-wiring",
+      "attempts": 1,
+      "closed_reason": null
+    },
+    {
+      "series_id": "design:-#4",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "phase",
-    "phase_id": "phase-2-confirm-verb",
+    "review_kind": "design",
+    "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "6a65619a8cb0c15a521d56fb549260b0f24d396504412fa5dddf54fc67b364bd",
+    "compare_hash": "02eb94a9d0e01df5b8d78a2bb68255fc6c08b01c9d76d530ba97cae79df4efe0",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T05:53:38.123Z",
+    "at": "2026-07-27T06:37:16.384Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "694d51be7e34467a22ea7c3fca87ef6c50053598",
-    "design": "7e7cda5ba7acc8bd141a4b798d8308b06141fd9b",
+    "design": "0eab017ba05c70e63782c57f35d620d458ccf91e",
     "plan": "a3c3d64b94311a688e8efa71435def0d8c2f7781"
   },
   "consumed_approvals": [
@@ -101,16 +115,16 @@
   ],
   "user_commit_confirmed": null,
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-071/responses/design-r07-approved.json",
-    "response_sha256": "7b7837678e69a4d827af6dc72bf41c30cc6f1b731f9541e01135525eadafbe67",
+    "response_path": "workflow/REQ-2026-071/responses/design-r08-approved.json",
+    "response_sha256": "bbc094864aa8aa7aae41052a6ddd3e3dda8f60c7221f3cf43f61c12c007fc622",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "936c22fb019de6058ca183c9efaa1ff0e03b1e53",
-    "codex_thread_id": "019fa221-3ab1-7390-8bf1-f6007a58aa35",
+    "review_base_sha": "bd2f981763627f2b32c4a90dcdf9cbaaac1abc61",
+    "codex_thread_id": "019fa249-fbe6-7831-8fae-26db13409478",
     "machine_schema_version": "1.1",
-    "status": "COMPLETE",
+    "status": "STEP_COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-07-27T05:52:26.867Z",
-    "design_hash": "18992f6757685d74e60a47fb25658f50fe67d6e9b7ccab2ef13a9831f5c2057b"
+    "approved_at": "2026-07-27T06:37:16.384Z",
+    "design_hash": "8b605c7905a95064de69ce1f945849889390f4228a027fe82558bb9a78455c47"
   }
 }
