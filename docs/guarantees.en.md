@@ -10,6 +10,8 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - If Codex CLI is missing or fails, the workflow fails instead of silently passing.
 - Review exit codes are outcome-based: `0` approved, `1` invalid/fail-closed, `2` blocked (no findings and no approval), `3` needs fix.
 - A no-findings/no-approval response is BLOCKED, not NEEDS_FIX, so agents must not loop on it.
+- A ticket with `risk_level: HIGH` **cannot pass the point `stopGate` designates without a human confirmation.** This is not a *per-commit* guarantee — under the default `req`, intermediate phases commit on Codex approval alone and the confirmation is required at **the commit that completes the REQ** (with `merge`, when the delivery set ends; with `phase`, at every phase). Each point accepts only a confirmation whose `scope` matches it **exactly** — a broader confirmation cannot pass a narrower point ([Workflow — Human confirmation for HIGH-risk tickets](./workflow.en.md#human-confirmation-for-high-risk-tickets)).
+- If `risk_level` is neither `LOW` nor `HIGH` (missing, typo, `MEDIUM`), nothing auto-commits — "undetermined" is not "allowed".
 - Re-review attempts are counted per open `(review_kind, phase_id)` review series. With the defaults `{ autoBudget: 5, hardCap: 8 }`, rounds 1–5 run automatically, rounds 6–8 each require a human exception record, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception — this prevents infinite re-review loops. An approval closes the series; if a human terminates an unconverged series with a `human-resolution`, automatic resumption for that key is stopped.
 - The reviewer returns every P1 it finds in a single call together in `findings[]` (batching). This avoids the serial one-finding-per-round flow that inflated review rounds — it does not lower the P1 bar; it just stops deferring already-known P1s to a later round.
 - During install, existing `cross-spawn` versions below the verified floor warn by default and fail with `--strict`.
@@ -29,6 +31,7 @@ So that you do not miscalculate where your real defenses are:
 - **This is not hard enforcement.** No git hook is installed, so running `git commit` directly instead of `req:commit` bypasses doctor, the approval binding, and the evidence trail. Your real defense for production is still CI and the deployment pipeline.
 - **It does not keep your staged content secret.** `req:review-codex` transmits the full `git diff --cached` to Codex (OpenAI), and codex reads the repository root under `--sandbox read-only`. There is no masking, scrubbing, or size cap. For payment or credential-bearing codebases, write a "inspect the staged diff before review" step into your contract (`AGENTS.md`).
 - **It does not guarantee anything after the commit.** Approval binds the staged tree at commit time; merge, tag, and publish are each separate control points.
+- 🔴 **The "confirm at every phase" backstop for HIGH-risk tickets is gone.** It used to be that a `HIGH` ticket required a human confirmation before every phase commit regardless of configuration; now **`stopGate` alone** decides where that confirmation happens — under the default `req`, intermediate phases of a HIGH ticket auto-commit on Codex approval alone. To review every change yourself, set `stopGate: "phase"`.
 
 ## Support scope
 

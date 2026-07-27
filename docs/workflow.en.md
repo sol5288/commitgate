@@ -197,7 +197,7 @@ would make every normal completion look like an after-the-fact attestation.
 
 ## Human confirmation for HIGH-risk tickets
 
-A ticket with `risk_level: HIGH` is never committed or integrated without a human confirmation.
+A ticket with `risk_level: HIGH` **cannot pass the point `stopGate` designates without a human confirmation.** That does **not** mean every commit is confirmed — only the point in the table below is.
 **Where that confirmation happens is decided by `stopGate`.**
 
 | `stopGate` | Confirmation point | Confirmation `scope` |

@@ -13,7 +13,7 @@ npm install -D commitgate
 # 2) Add config, contract, schemas, and the req:* scripts to your project:
 npx commitgate init
 
-# 3) Pick the review model and reasoning effort, and finish codex login (interactive):
+# 3) Pick the review model, reasoning effort, and stop point; finish codex login (interactive):
 npx commitgate setup
 
 # You can verify readiness at any time (non-interactive, read-only):
@@ -24,6 +24,22 @@ npx commitgate check
 > **A human runs it at a terminal.** It is interactive-only, so in pipes, CI, or agent sessions it exits immediately without asking anything — agents do not run it, they **ask you to**.
 > Projects already using CommitGate are **not blocked** (existing-install exemption — see [Configuration](./configuration.en.md#setup-completion-marker)).
 > setup changes `req.config.json`, so your working tree becomes dirty. Include it in the install commit below.
+
+### What setup asks
+
+It asks three questions. Each one is answered by **moving with ↑/↓ and confirming with Enter** (Ctrl+C cancels). The answers are written to `req.config.json`.
+
+| Question | Default | Choices |
+|---|---|---|
+| Review model (`reviewModel`) | `gpt-5.6-terra` | `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` · **type your own…** · empty (inherit codex global settings) |
+| Reasoning effort (`reviewReasoningEffort`) | `medium` | `none` · `minimal` · `low` · `medium` · `high` · `xhigh` · empty |
+| Stop point (`stopGate`) | `req` | `phase` · `req` · `merge` |
+
+- **Model** has a "type your own…" item because values outside the list are valid. The other two are schema enums, so you pick from the list only.
+- **Empty** does not clear the setting — it means *follow the codex global configuration*.
+- **Stop point** decides where a human confirms: `phase` = before every phase commit; `req` = at the commit that completes the REQ; `merge` = when the delivery set is done. The single source, including how `HIGH` risk is treated, is [Workflow — Human confirmation for HIGH-risk tickets](./workflow.en.md#human-confirmation-for-high-risk-tickets).
+- setup finishes by checking your **codex login** and signing you in if needed.
+- To change an answer later, run setup again or edit `req.config.json` directly.
 
 > **Why is the install two steps?** CommitGate does **not** copy its runtime code into your project. Step 1 puts the runtime in `node_modules/commitgate`; step 2 adds only **governance assets** (config, contract, schemas, persona) plus `req:* = commitgate <verb>` scripts.
 > Removing the runtime is a single `npm uninstall -D commitgate`. **For updates, follow the [Upgrading (0.x)](./upgrade.en.md) section below** — the runtime (`node_modules`) is bumped with `npm`, but the vendored assets (schemas, persona) in your project must be re-synced separately with `commitgate sync`, and a 0.x caret range (`^0.y`) does not cross a minor automatically.

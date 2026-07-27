@@ -191,7 +191,7 @@ npx commitgate req:rebind 2026-069 --phase phase-1-x --confirm "rebind REQ-2026-
 
 ## HIGH 위험 티켓의 사람 확인
 
-위험도가 `HIGH`인 티켓은 사람 확인 없이 커밋·통합되지 않습니다. **어디서 확인받는지는 `stopGate`가 정합니다.**
+위험도가 `HIGH`인 티켓은 **`stopGate`가 정한 지점을 사람 확인 없이 넘지 못합니다.** 커밋마다 확인받는다는 뜻이 **아닙니다** — 아래 표의 지점에서만 요구합니다.
 
 | `stopGate` | 확인 지점 | 확인 `scope` |
 |---|---|---|

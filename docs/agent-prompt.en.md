@@ -12,6 +12,17 @@
 
 > **On a fresh install, `CLAUDE.md` and `AGENTS.md` open with a self-sufficient Quick Start** (clarify the four-box requirement → `req:new` → the `req:next` loop). Because these are always-loaded channels, the agent picks the correct first action on the first request without reading the full contract. An existing `CLAUDE.md`/`AGENTS.md` is preserved, so the block is not injected there — **to backfill an existing file, run `npx commitgate quickstart --apply`** (inserts only the managed block, preserves the rest, idempotent).
 
+## Commands an agent does not run
+
+Two commands belong to **the human**. An agent does not run them — it **asks you to**.
+
+| Command | Why it is yours |
+|---|---|
+| `npx commitgate setup` | It is **interactive-only**. In pipes, CI, or agent sessions it exits immediately without asking anything, so an agent running it produces nothing but a failure. It picks the review model, reasoning effort, and stop point, and finishes codex login. |
+| `npm run req:confirm -- <id> --scope <s> --method "..." --run` | It records **your judgement**. The timestamp is read from the real clock, so it cannot be fabricated by hand-editing, and what you write in `--method` — the grounds on which you approved — is the content of the audit record. |
+
+On a fresh install, workflow commands such as `req:new` are **blocked** until setup completes. An agent that hits that state must not try to work around it; it should ask you to run setup.
+
 Just give the agent a requirement.
 
 ```text

@@ -49,6 +49,19 @@ export const STALE_CLAIMS: readonly { text: string; why: string }[] = [
     text: 'it would livelock on HIGH',
     why: 'no longer the reason there is no "all" value (configuration.en.md)',
   },
+  /**
+   * 🔴 이 두 건은 **이 REQ가 쓰다가 리뷰에서 걸린 문장**이다(phase-3 r01 P1).
+   *    "커밋·통합되지 않는다"는 커밋 단위 보장으로 읽히는데, 기본값 `req`에서 HIGH 티켓의
+   *    중간 phase는 Codex 승인만으로 커밋된다 — 고치려던 것과 **같은 종류의 과잉 약속**이었다.
+   */
+  {
+    text: '사람 확인 없이 커밋·통합되지 않습니다',
+    why: '커밋 단위 보장으로 읽히는 과잉 약속 — 확인은 stopGate 지점에서만 요구된다',
+  },
+  {
+    text: 'never committed or integrated without a human confirmation',
+    why: 'reads as a per-commit guarantee — confirmation is required only at the stopGate point',
+  },
 ]
 
 /** 검사 대상: 저장소 루트의 README 2종 + `docs/*.md` 전부. */

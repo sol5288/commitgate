@@ -25,6 +25,22 @@ npx commitgate check
 > 이미 CommitGate를 쓰던 프로젝트는 **막히지 않습니다**(기존 설치본 예외 — [설정](./configuration.md#setup-완료-마커) 참조).
 > setup은 `req.config.json`을 바꾸므로 워킹트리가 dirty해집니다. 아래 설치 커밋에 함께 담으세요.
 
+### setup이 묻는 것
+
+세 가지를 묻고, 각 질문은 **↑/↓로 고르고 Enter로 확정**합니다(Ctrl+C 취소). 값은 `req.config.json`에 기록됩니다.
+
+| 질문 | 기본값 | 선택지 |
+|---|---|---|
+| 리뷰 모델 (`reviewModel`) | `gpt-5.6-terra` | `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` · **직접 입력…** · 비움(codex 전역 설정 상속) |
+| 추론강도 (`reviewReasoningEffort`) | `medium` | `none` · `minimal` · `low` · `medium` · `high` · `xhigh` · 비움 |
+| 멈춤 지점 (`stopGate`) | `req` | `phase` · `req` · `merge` |
+
+- **모델**은 목록에 없는 값을 쓸 수 있어 "직접 입력…" 항목이 있습니다. 나머지 두 질문은 스키마 enum이라 목록에서만 고릅니다.
+- **비움**은 값을 지우는 것이 아니라 *codex 전역 설정을 따르겠다*는 뜻입니다.
+- **멈춤 지점**이 사람 확인 위치를 정합니다 — `phase`=매 phase 커밋 전 · `req`=REQ를 완성시키는 커밋 · `merge`=묶음(delivery set) 종료. 위험도 `HIGH` 취급을 포함한 정본은 [워크플로 — HIGH 위험 티켓의 사람 확인](./workflow.md#high-위험-티켓의-사람-확인)입니다.
+- setup은 마지막에 **codex 로그인 상태**를 확인하고, 필요하면 로그인까지 진행합니다.
+- 값을 나중에 바꾸려면 setup을 다시 실행하거나 `req.config.json`을 직접 고치면 됩니다.
+
 > **설치는 왜 두 단계인가요?** CommitGate는 실행 코드를 프로젝트에 **복사하지 않습니다**. 1단계가 런타임을 `node_modules/commitgate`에 넣고, 2단계는 프로젝트에 **거버넌스 자산**(설정·계약·스키마·persona)과 `req:* = commitgate <verb>` 스크립트만 깝니다.
 > 런타임 제거는 `npm uninstall -D commitgate` 한 번입니다. **업데이트는 아래 [업그레이드 (0.x)](./upgrade.md) 절을 따르세요** — 런타임(`node_modules`)은 `npm`으로 올리지만, 프로젝트에 깔린 vendored 자산(스키마·persona)은 `commitgate sync`로 따로 맞춰야 하고, 0.x 캐럿 범위(`^0.y`)는 minor를 자동으로 넘지 않습니다.
 > `init`은 `devDependencies.commitgate` 선언이 없으면 **중단**합니다 — `req:*`가 가리킬 런타임이 없기 때문입니다.
