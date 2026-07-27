@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"5ba36c9b0b25931630ef306d79da577b4ba5df08","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"No blocking issue found in the staged documentation-only diff; proceed with the next workflow step.","observations":[]}
