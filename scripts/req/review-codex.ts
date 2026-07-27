@@ -1496,10 +1496,39 @@ export function resolvePhaseTarget(
 ): { ok: boolean; phaseId: string | null; error?: string } {
   if (kind !== 'phase') return { ok: true, phaseId: null }
   // 레거시 판정은 **raw 배열 길이**로 — readPhases(필터) 길이로 하면 malformed 비-빈 phases[]가 레거시로 강등되어
-  // --phase 없이 phase 승인되는 우회가 생긴다(Codex P2). 진짜 빈 배열/부재만 레거시 하위호환.
+  // --phase 없이 phase 승인되는 우회가 생긴다(Codex P2). 진짜 빈 배열/부재만 아래 분기로 간다.
   const raw = (state as { phases?: unknown }).phases
   const rawLen = Array.isArray(raw) ? raw.length : 0
-  if (rawLen === 0) return { ok: true, phaseId: null } // 레거시(빈 배열/부재)
+  if (rawLen === 0) {
+    /**
+     * 🔴 **빈 배열 = 레거시가 아니다**(REQ-2026-070 DEC-1). `req:new`는 **모든 새 티켓**을 `phases: []`로
+     *    초기화하고 분해는 사람이 채운다 — 길이만 보면 신규 티켓이 전부 레거시로 오인된다.
+     *    구별 신호는 `req:new`가 새 티켓에 찍는 `review_series_model_version`이다(REQ-2026-027).
+     */
+    const isLegacy = (state as { review_series_model_version?: unknown }).review_series_model_version === undefined
+    if (!isLegacy)
+      return {
+        ok: false,
+        phaseId: null,
+        /**
+         * 🔴 이 조합은 **커밋 가능한 승인을 만들 수 없다**: 커밋 경로가 `validPhaseIds = readPhases(state)`로
+         *    검증하는데 `phases[]`가 비면 그 목록도 비어 어떤 phase 행도 매니페스트 검증을 통과하지 못한다.
+         *    막지 않으면 **호출은 나가고 예산은 쓰이고 승인은 못 쓴다**(REQ-2026-067에서 실제로 1회 낭비).
+         */
+        error:
+          'state.json의 phases[]가 비어 있어 phase 리뷰를 할 수 없습니다(승인해도 커밋할 수 없습니다). ' +
+          '02-plan.md의 phase 분해를 state.json의 phases[]에 채운 뒤 다시 실행하세요.',
+      }
+    // 진짜 레거시(추적 필드 부재). 🔴 그래도 `--phase`를 **조용히 버리지 않는다**(DEC-3) —
+    //    무시하면 사용자가 자기가 지정한 phase에 승인이 붙었다고 잘못 믿는다.
+    if (phaseOpt)
+      return {
+        ok: false,
+        phaseId: null,
+        error: `--phase "${phaseOpt}" 를 반영할 수 없습니다(이 티켓은 phases[] 추적을 쓰지 않는 레거시입니다). --phase 없이 실행하세요.`,
+      }
+    return { ok: true, phaseId: null }
+  }
   if (!phaseOpt) return { ok: false, phaseId: null, error: 'phases[]가 정의된 티켓은 --phase <id> 필수(대상 모호)' }
   const ids = readPhases(state).map((p) => p.id)
   if (!ids.includes(phaseOpt))

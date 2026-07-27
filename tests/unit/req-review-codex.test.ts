@@ -575,8 +575,51 @@ describe('req:review-codex — phase 대상 해소(resolvePhaseTarget)', () => {
       phaseId: null,
     })
   })
+  /**
+   * 🔴 REQ-2026-070: **레거시는 빈 배열이 아니라 `review_series_model_version` 부재로 판정한다.**
+   *    `withPhases`는 그 필드를 주지 않으므로 레거시다 — 이 무회귀 단언이 그 경로를 지킨다.
+   */
   it('phases[] 비어있음(레거시) → ok, phaseId=null(하위호환)', () => {
     expect(resolvePhaseTarget(withPhases([]), 'phase', null)).toEqual({ ok: true, phaseId: null })
+  })
+
+  /** `req:new`가 새 티켓에 찍는 추적 필드. 이게 있으면 빈 배열은 "아직 분해 안 됨"이지 레거시가 아니다. */
+  const newModel = (phases: { id: string; approved: boolean }[]): WorkflowState =>
+    ({ id: 'REQ', phase: 'IMPLEMENT', phases, review_series_model_version: 1 }) as unknown as WorkflowState
+
+  /**
+   * 🔴 헤드라인. 이 조합은 **커밋 가능한 승인을 만들 수 없다** — 커밋 경로가 `validPhaseIds = readPhases(state)`
+   *    로 검증하는데 `phases[]`가 비면 그 목록도 비어 어떤 phase 행도 통과하지 못한다.
+   *    막지 않으면 호출은 나가고 예산은 쓰이고 승인은 못 쓴다(REQ-2026-067에서 실제로 1회 낭비).
+   */
+  it('🔴 신규 모델 + 빈 phases[] + kind=phase → FAIL(호출 전 차단)', () => {
+    const r = resolvePhaseTarget(newModel([]), 'phase', null)
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('phases[]')
+  })
+
+  it('🔴 거부 메시지가 고칠 방법을 말한다', () => {
+    const r = resolvePhaseTarget(newModel([]), 'phase', 'p1')
+    expect(r.error).toContain('02-plan.md')
+    expect(r.error).toContain('채운 뒤')
+  })
+
+  /** 🔴 무시하면 사용자가 자기가 지정한 phase 에 승인이 붙었다고 잘못 믿는다. */
+  it('🔴 레거시라도 --phase 를 조용히 버리지 않는다', () => {
+    const r = resolvePhaseTarget(withPhases([]), 'phase', 'p1')
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('--phase')
+  })
+
+  it('신규 모델이라도 phases[] 가 채워지면 정상 경로다', () => {
+    expect(resolvePhaseTarget(newModel([{ id: 'p1', approved: false }]), 'phase', 'p1')).toEqual({
+      ok: true,
+      phaseId: 'p1',
+    })
+  })
+
+  it('kind=design 은 신규 모델·빈 배열에서도 통과한다(설계 리뷰가 먼저다)', () => {
+    expect(resolvePhaseTarget(newModel([]), 'design', null)).toEqual({ ok: true, phaseId: null })
   })
   it('phases[] 있는데 --phase 누락 → FAIL(대상 모호)', () => {
     expect(resolvePhaseTarget(withPhases([{ id: 'p1', approved: false }]), 'phase', null).ok).toBe(false)
