@@ -3,18 +3,18 @@
   "branch": "feat/req-2026-077-macos-node18-hang-rca",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa41a-2541-7a32-a4c6-6b34f02bc910",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fa41a-87a8-7351-92b3-3e2041527b1e",
+  "review_base_sha": "1644544b8f4b492fca64a42e30e13a3bf0cc1872",
+  "review_diff_hash": "392a210a4833f7a3e33e193795590a662a300aa1",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "dee79e62aa9d3d5b981d603df921c25217e3a5dfe4735ae5958272d79a42aff5",
-  "current_phase": null,
+  "current_phase": "phase-1-hang-probe",
   "phases": [
     {
       "id": "phase-1-hang-probe",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-findings",
@@ -38,16 +38,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-hang-probe#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-hang-probe",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-hang-probe",
     "outcome": "approved",
     "compare_hash": "eaf2c7eb07c05f7653c9f5efa645440d8637d21492f8ca303b1658311cbed7b3",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T15:03:35.586Z",
+    "at": "2026-07-27T15:04:32.748Z",
     "findings": [],
     "elided_count": 0
   },
@@ -68,5 +75,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-07-27T15:03:35.586Z",
     "design_hash": "dee79e62aa9d3d5b981d603df921c25217e3a5dfe4735ae5958272d79a42aff5"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "392a210a4833f7a3e33e193795590a662a300aa1",
+      "phase_id": "phase-1-hang-probe",
+      "consumed_by_commit_sha": "051dd66f0785b765bf2ce15fcf37e535aa739319",
+      "approval_consumed_at": "2026-07-27T15:04:49.237Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
