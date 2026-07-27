@@ -3,18 +3,18 @@
   "branch": "feat/req-2026-078-readme-plain-language",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa439-eef0-78a1-aed7-34fd426c488c",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fa43c-9c7e-7a72-8dc2-0d141aea074f",
+  "review_base_sha": "b5cd72d15c395d576880363b26583301847c0c87",
+  "review_diff_hash": "1c195533c116d04a6fb10c1a0007dcfa478cbda1",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "39a2b03c61be0df316de580023b390d9453e082e7106a7f6cff527f31ff70fb9",
-  "current_phase": null,
+  "current_phase": "phase-1-readme-ko",
   "phases": [
     {
       "id": "phase-1-readme-ko",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-readme-en",
@@ -29,6 +29,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-readme-ko#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-readme-ko",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -52,14 +59,23 @@
     "design_hash": "39a2b03c61be0df316de580023b390d9453e082e7106a7f6cff527f31ff70fb9"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-readme-ko",
     "outcome": "approved",
-    "compare_hash": "4294862d81ccde9bf46319b890f0b6a83af8faf8b7aa9098be1384213f3ee4ae",
+    "compare_hash": "54098194271d8fa3db3acdcd276e3a06ef5f400090345df0e5f79675a0e5492b",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T15:38:50.854Z",
+    "at": "2026-07-27T15:41:45.759Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "1c195533c116d04a6fb10c1a0007dcfa478cbda1",
+      "phase_id": "phase-1-readme-ko",
+      "consumed_by_commit_sha": "87f16828bd998b79e6ecbb4444e2be014fc69fd1",
+      "approval_consumed_at": "2026-07-27T15:42:06.039Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
