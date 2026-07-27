@@ -115,6 +115,32 @@ the next REQ); sealed with every member terminal → `AWAIT_HUMAN`. `integrate` 
 right after the transition they cause — someone who seals after the last `integrate` has no reason to call
 `req:next` again.
 
+## When the design was re-approved — `req:rebind`
+
+When a review raises a P1 you usually edit the design documents, which triggers a **design re-approval**.
+Each one changes `design_hash`, and **phases approved earlier stay bound to the old hash**. The completion
+proof (`dev-complete`) is only issued when every phase is bound to the current design, so in that state
+**the ticket never closes and you cannot open the next REQ.**
+
+```sh
+# see the plan only — which phase is bound to an old hash
+npx commitgate req:rebind 2026-069 --phase phase-1-x
+# rebind (confirmation sentence required)
+npx commitgate req:rebind 2026-069 --phase phase-1-x --confirm "rebind REQ-2026-069 phase-1-x" --run
+```
+
+🔴 **This command does not make the judgement for you.** Whether a design change invalidates that phase's
+review is something the tool cannot know — a human answers with the confirmation sentence, and that fact is
+**appended** to `approvals.jsonl` for the audit trail (who, when, from which hash to which). The original
+approval rows are never rewritten, so "which design this phase was reviewed against" is still recorded.
+
+**This is not `req:close --migrate`.** That one is an escape hatch for **legacy tickets** that cannot prove
+themselves, closed by an operator after the fact and recorded with `reconstructed: true`. Using it routinely
+would make every normal completion look like an after-the-fact attestation.
+
+> **Measured**: REQ-2026-066 and 067 each re-approved the design 4 times and could not close; REQ-2026-068,
+> with zero re-approvals, closed itself with `dev-complete`. The only difference was the re-approval count.
+
 ## Command Cheat Sheet
 
 | Command | Purpose |
@@ -135,6 +161,7 @@ right after the transition they cause — someone who seals after the last `inte
 | `npm run req:review-codex -- <id> --kind phase --phase <p> --run` | Review the implementation |
 | `npm run req:doctor -- <id>` | Check gate status |
 | `npm run req:commit -- <id> --run -m "message"` | Commit approved changes |
+| `npm run req:rebind -- <id> --phase <p> --confirm "<sentence>" --run` | Rebind an earlier phase to the current design after a re-approval (see above) |
 
 `req:*` are **`package.json` scripts**, not executables on your PATH. npm needs the `--` separator to pass arguments.
 

@@ -113,6 +113,31 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 열 수 있다), 닫혔고 모든 member가 종결됐으면 `AWAIT_HUMAN`. 같은 판정을 `integrate`와 `seal`도
 전이 직후에 냅니다 — 마지막 `integrate` 뒤에 `seal` 한 사용자는 `req:next`를 다시 부를 이유가 없기 때문입니다.
 
+## 설계를 다시 승인했다면 — `req:rebind`
+
+리뷰가 P1을 내면 설계 문서를 고치게 되고, 그러면 **설계 재승인**이 걸립니다. 그때마다 `design_hash`가
+바뀌고 **앞서 승인된 phase는 옛 해시에 묶인 채** 남습니다. 완료 증거(`dev-complete`)는 모든 phase가
+현재 설계에 결속돼야 발행되므로, 그 상태에서는 **티켓이 종결되지 않고 다음 REQ도 열리지 않습니다.**
+
+```sh
+# 어느 phase가 옛 해시에 묶였는지 계획만 보기
+npx commitgate req:rebind 2026-069 --phase phase-1-x
+# 재결속(확인 문구 필요)
+npx commitgate req:rebind 2026-069 --phase phase-1-x --confirm "rebind REQ-2026-069 phase-1-x" --run
+```
+
+🔴 **이 명령은 판단을 대신하지 않습니다.** "이 설계 변경이 그 phase의 검수를 무효화하는가"는 도구가
+알 수 없습니다 — 사람이 확인 문구로 답하고, 그 사실이 `approvals.jsonl`에 **append**되어 감사에 남습니다
+(누가·언제·어느 해시에서 어느 해시로). 기존 승인 행은 고치지 않으므로 "원래 어느 설계로 검토됐는가"도
+그대로 남습니다.
+
+**`req:close --migrate`와 다릅니다.** 그건 자기증명이 불가능한 **레거시 티켓**을 운영자가 사후 확인해
+종결하는 escape hatch이고 `reconstructed: true`로 기록됩니다. 정상 흐름에서 매번 그것을 쓰면 기록이
+"사후 확인"으로 남아 자기증명 종결과 구별되지 않습니다.
+
+> **실측**: REQ-2026-066·067은 설계를 각각 4회 재승인해 종결이 막혔고, 재승인이 0회인 REQ-2026-068은
+> 그대로 `dev-complete`로 자가 종결했습니다. 차이는 재승인 횟수뿐입니다.
+
 ## 명령어 요약
 
 | 명령 | 용도 |
@@ -133,6 +158,7 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 | `npm run req:review-codex -- <id> --kind phase --phase <p> --run` | 구현 리뷰 |
 | `npm run req:doctor -- <id>` | 게이트 상태 확인 |
 | `npm run req:commit -- <id> --run -m "message"` | 승인된 변경 커밋 |
+| `npm run req:rebind -- <id> --phase <p> --confirm "<문구>" --run` | 설계 재승인 뒤 앞선 phase를 현재 설계에 재결속 (위 참조) |
 
 `req:*`는 PATH에 잡히는 실행 파일이 아니라 **`package.json` 스크립트**입니다. npm은 인자 전달에 `--` 구분자가 필요합니다.
 
