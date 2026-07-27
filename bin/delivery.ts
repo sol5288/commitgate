@@ -15,11 +15,14 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { loadConfig } from '../scripts/req/lib/config'
+import { loadConfig, type StopGate } from '../scripts/req/lib/config'
 import { createGitAdapter, safeSpawnSyncStatus, type GitAdapter } from '../scripts/req/lib/adapters'
 import { closeProofPath, parseCloseProof } from '../scripts/req/lib/close-proof'
 import { createHash } from 'node:crypto'
 import {
+  userConfirmProblem,
+  effectiveConfirmScope,
+  type UserCommitConfirmed,
   validateManifest,
   designHashFromManifest,
   evidencedPhaseIdsFromManifest,
@@ -124,13 +127,15 @@ export interface Ctx {
   root: string
   ticketRoot: string
   git: GitAdapter
+  /** 🔴 HIGH 확인을 **어느 지점에서** 요구하는지 정한다(REQ-2026-071). `merge`일 때만 delivery 확인이 필요하다. */
+  stopGate: StopGate
 }
 
 export function makeCtx(rootOpt: string | null): Ctx {
   const cfg = loadConfig({ root: rootOpt })
   const git = createGitAdapter(cfg.root)
   const ticketRoot = cfg.ticketRoot
-  return { root: cfg.root, ticketRoot, git }
+  return { root: cfg.root, ticketRoot, git, stopGate: cfg.stopGate }
 }
 
 /** ref가 존재하는가. */
@@ -249,6 +254,14 @@ export interface EligibilityFacts {
    */
   integrityProblems: string[]
   /**
+   * 🔴 **HIGH 확인**(REQ-2026-071 DEC-4). `stopGate:'merge'`에서 HIGH REQ 의 사람 확인은 phase 커밋이
+   * 아니라 **여기**서 요구된다 — 그것이 그 값이 정한 정지 지점이다.
+   *
+   * 🔴 `scope`는 **정확히 `delivery`**여야 한다. 좁은 확인(`phase`·`req`)은 묶음을 덮지 않는다 —
+   *    범위는 크기 순서가 아니라 "무엇을 승인했는가"에 대한 진술이다.
+   */
+  highConfirmProblem: string | null
+  /**
    * 🔴 **provenance**(phase-2 r04 P1-d). phase 승인 행의 `approved_tree`가 feature 이력에 실제로 존재하는가.
    * 없으면 승인 이후 **history rewrite**(amend/rebase)로 코드가 바뀐 것이다 — 증거 이후 커밋만 보는
    * 검사로는 잡히지 않는다(증거 커밋은 그대로 두고 그 **앞**을 고치면 되기 때문).
@@ -293,6 +306,8 @@ export function integrateEligibilityProblems(f: EligibilityFacts): string[] {
       `승인된 트리가 feature 이력에 없습니다(${f.unknownApprovedTrees.map((x) => x.slice(0, 8)).join(', ')}) — ` +
         '승인 이후 이력이 다시 쓰인 것으로 보입니다(amend/rebase). 재리뷰가 필요합니다',
     )
+  if (f.highConfirmProblem)
+    p.push(`HIGH 위험 REQ 의 사람 확인이 없습니다: ${f.highConfirmProblem}`)
   if (f.postEvidenceCodeCommits.length) {
     const shown = f.postEvidenceCodeCommits.slice(0, 5).join(', ')
     const more = f.postEvidenceCodeCommits.length - 5
@@ -362,6 +377,7 @@ export function collectEligibility(ctx: Ctx, featureRef: string, reqId: string):
     postEvidenceCodeCommits: [],
     integrityProblems: [],
     unknownApprovedTrees: [],
+    highConfirmProblem: null,
   }
   const text = readAtRef(ctx, featureRef, cpRel)
   if (text === null) return empty
@@ -458,6 +474,35 @@ export function collectEligibility(ctx: Ctx, featureRef: string, reqId: string):
       )
   }
 
+  /**
+   * 🔴 HIGH 확인(REQ-2026-071 DEC-4). `feature ref 의 커밋된 state.json`을 본다 — 워킹트리가 아니다.
+   *    다른 자격 검사와 같은 근거(HEAD-committed 증거)를 써야 한다.
+   */
+  const highConfirmProblem = (() => {
+    /**
+     * 🔴 **`merge`일 때만 요구한다**(phase-3 r01 P1). 다른 값에서는 확인이 **이미 다른 지점에서** 끝났다:
+     *    `phase`는 매 커밋에서 받고 소비되며(그래서 여기 도달 시 값이 `null`이다), `req`는 REQ를
+     *    완성시키는 커밋에서 받고 소비된다. 그때도 여기서 요구하면 **정상 종결한 HIGH REQ가 영구 거부**된다.
+     *    stopGate가 정한 정지 지점은 하나여야 한다는 것이 이 REQ의 요구사항이다.
+     */
+    if (ctx.stopGate !== 'merge') return null
+    const stateText = readAtRef(ctx, featureRef, `${ticketRel}/state.json`)
+    if (stateText === null) return 'feature ref 에 state.json 이 없습니다'
+    let st: { risk_level?: unknown; user_commit_confirmed?: unknown }
+    try {
+      st = JSON.parse(stateText) as typeof st
+    } catch {
+      return 'state.json 파싱 실패'
+    }
+    if (st.risk_level !== 'HIGH') return null // HIGH 가 아니면 요구하지 않는다
+    const problem = userConfirmProblem(st.user_commit_confirmed)
+    if (problem) return `${problem} — npx commitgate req:confirm ${reqId} --scope delivery --method "<승인 문장>" --run`
+    const scope = effectiveConfirmScope(st.user_commit_confirmed as UserCommitConfirmed | null)
+    if (scope !== 'delivery')
+      return `scope="${scope}" 는 묶음을 덮지 않습니다(scope="delivery" 필요) — 범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술입니다`
+    return null
+  })()
+
   return {
     hasDevComplete: true,
     evidenceReadable: true,
@@ -467,6 +512,7 @@ export function collectEligibility(ctx: Ctx, featureRef: string, reqId: string):
     postEvidenceCodeCommits: post,
     integrityProblems,
     unknownApprovedTrees,
+    highConfirmProblem,
   }
 }
 

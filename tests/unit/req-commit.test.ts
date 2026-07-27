@@ -10,6 +10,7 @@ import {
   userConfirmGate,
   userConfirmProblem,
   consumeState,
+  wouldCompleteReq,
   evidencePreflight,
   recoveryClassify,
   recoveryCoreValid,
@@ -1354,5 +1355,81 @@ describe('[REQ-2026-071] consumeState — 범위가 닫힐 때만 소비한다',
   it('🔴 넓은 scope 는 커밋으로 소비되지 않는다', () => {
     expect(consume(conf('req'))).not.toBeNull()
     expect(consume(conf('delivery'))).not.toBeNull()
+  })
+})
+
+/**
+ * REQ-2026-071 phase-3 — 완료 판정(`wouldCompleteReq`)은 **한 곳**이다.
+ *
+ * 🔴 DRY-RUN·LIVE·복구가 같은 계산을 써야 한다. 미리보기가 보수적으로 true 를 쓰면 중간 phase 에서
+ *    "확인이 필요하다"고 잘못 표시해, 미리보기 계약과 실제 정지 지점이 어긋난다(phase-3 r01 P1).
+ */
+describe('[REQ-2026-071] wouldCompleteReq — 완료 판정 단일 지점', () => {
+  const D = '1'.repeat(64)
+  const T = 'workflow/REQ-2026-001'
+  const iso = '2026-07-27T00:00:00.000Z'
+  const design = JSON.stringify({
+    kind: 'design', phase_id: null,
+    response_path: `${T}/responses/design-r01-approved.json`,
+    response_sha256: 'a'.repeat(64), review_base_sha: 'b'.repeat(40), design_hash: D,
+    approved_at: iso, consumed_at: iso, consumed_by_commit_sha: 'd'.repeat(40), user_commit_confirmed: null,
+  })
+  const phase = (pid: string) => JSON.stringify({
+    kind: 'phase', phase_id: pid,
+    response_path: `${T}/responses/${pid}-r01-approved.json`,
+    response_sha256: 'a'.repeat(64), review_base_sha: 'b'.repeat(40), approved_tree: 'c'.repeat(40),
+    phase_design_ref: D, approved_at: iso, consumed_at: iso,
+    consumed_by_commit_sha: 'd'.repeat(40), user_commit_confirmed: null,
+  })
+  const doc = (...rows: string[]) => rows.join('\n') + '\n'
+
+  it('🔴 중간 phase 는 완료가 아니다', () => {
+    const r = wouldCompleteReq({
+      phaseIds: ['p1', 'p2'],
+      manifestContent: doc(design),
+      pending: { phaseId: 'p1', designRef: D },
+    })
+    expect(r.complete).toBe(false)
+  })
+
+  it('🔴 마지막 phase 는 완료다(pending 포함해서 판정)', () => {
+    const r = wouldCompleteReq({
+      phaseIds: ['p1', 'p2'],
+      manifestContent: doc(design, phase('p1')),
+      pending: { phaseId: 'p2', designRef: D },
+    })
+    expect(r.complete).toBe(true)
+    expect(r.designRef).toBe(D)
+  })
+
+  it('pending 의 결속이 현재 design 과 다르면 산입하지 않는다', () => {
+    const r = wouldCompleteReq({
+      phaseIds: ['p1'],
+      manifestContent: doc(design),
+      pending: { phaseId: 'p1', designRef: '9'.repeat(64) },
+    })
+    expect(r.complete).toBe(false)
+  })
+
+  it('design 승인이 없으면 완료가 아니다', () => {
+    expect(wouldCompleteReq({ phaseIds: ['p1'], manifestContent: '' }).complete).toBe(false)
+  })
+
+  it('phases[] 가 비면 완료가 아니다', () => {
+    expect(wouldCompleteReq({ phaseIds: [], manifestContent: doc(design) }).complete).toBe(false)
+  })
+
+  /**
+   * 🔴 복구 경로(멱등 skip)의 오라클(phase-3 r02 P1). 엔트리가 **이미 매니페스트에 있는** 상태에서
+   *    `pending` 없이도 완료로 판정돼야 한다 — 아니면 이미 REQ 를 닫은 `scope:'req'` 확인이
+   *    소비되지 않고 다음 REQ 까지 따라간다.
+   */
+  it('🔴 엔트리가 이미 있으면 pending 없이도 완료로 판정한다(복구 경로)', () => {
+    const r = wouldCompleteReq({ phaseIds: ['p1', 'p2'], manifestContent: doc(design, phase('p1'), phase('p2')) })
+    expect(r.complete).toBe(true)
+  })
+
+  it('복구 경로에서도 남은 phase 가 있으면 완료가 아니다', () => {
+    expect(wouldCompleteReq({ phaseIds: ['p1', 'p2'], manifestContent: doc(design, phase('p1')) }).complete).toBe(false)
   })
 })

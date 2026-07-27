@@ -157,7 +157,10 @@ export function userConfirmGate(
  * 승인 소비(D-016-9, 순수). **evidence 커밋 성공 후 마지막**에만 호출.
  * commit_allowed=false · approved_diff_hash=null · consumed_approvals[] append · user_commit_confirmed 초기화 · approval_evidence 핀 제거.
  */
-export function consumeState(state: WorkflowState, opts: { sourceCommitSha: string; consumedAt: string }): WorkflowState {
+export function consumeState(
+  state: WorkflowState,
+  opts: { sourceCommitSha: string; consumedAt: string; completesReq?: boolean },
+): WorkflowState {
   const rawPrev = (state as { consumed_approvals?: unknown }).consumed_approvals
   const prev = Array.isArray(rawPrev) ? rawPrev : []
   const entry = {
@@ -176,7 +179,10 @@ export function consumeState(state: WorkflowState, opts: { sourceCommitSha: stri
    * 매 phase 확인이 되고, 확인 지점을 옮긴다는 이 REQ가 무의미해진다.
    * (`req`는 `dev-complete` 발행 시, `delivery`는 `delivery approve`에서 소비한다 — phase-3.)
    */
-  const keepConfirm = effectiveConfirmScope(state.user_commit_confirmed as UserCommitConfirmed | null) !== 'phase'
+  const scope = effectiveConfirmScope(state.user_commit_confirmed as UserCommitConfirmed | null)
+  // 🔴 `req` scope 는 **REQ 가 닫힐 때**(dev-complete 발행) 소비한다 — 그 커밋이 곧 범위의 끝이다.
+  //    `delivery` scope 는 묶음이 닫힐 때(`delivery approve`)까지 남는다.
+  const keepConfirm = scope === 'delivery' || (scope === 'req' && !opts.completesReq)
   return {
     ...rest,
     commit_allowed: false,
@@ -615,6 +621,9 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     phaseId: ctx.ev.phase_id ?? null,
     responseSha256: ctx.ev.response_sha256,
   })
+  // 🔴 이 커밋이 REQ 를 닫았는지 — `scope:'req'` 확인의 소비 시점(DEC-6). 멱등 skip 경로에서는 false 다
+  //    (이미 finalize 된 커밋이 닫았다면 그때 소비됐다).
+  let devCompleteEmitted = false
   if (!already) {
     const entry = buildManifestEntry(ctx.ev, {
       consumedAt: new Date().toISOString(),
@@ -636,6 +645,9 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     // 🔴 REQ-2026-052 phase-3a: 이 커밋이 **마지막 phase**를 완료시키면 self-verifying dev-complete proof를
     //    **같은 durable 커밋**에 발행한다(DEC-B3). 아니면 발행 안 함. newContent(이 phase 엔트리 포함)로 판정.
     const devCompleteAdd = emitDevCompleteIfLastPhase(ctx, newContent)
+    // 🔴 이 커밋이 REQ 를 닫았는가 — `scope:'req'` 확인의 소비 시점이다(DEC-6).
+    //    발행 결과를 그대로 쓰므로 별도 판정이 생기지 않는다.
+    devCompleteEmitted = devCompleteAdd.length > 0
     git(['add', ...archivePaths, `${ctx.ticketRel}/responses/approvals.jsonl`, ...ledgerAdd, ...devCompleteAdd])
     const choreLeak = stagedNames().filter((p) => !p.startsWith(`${ctx.ticketRel}/responses/`))
     if (choreLeak.length) throw new Error(`evidence 커밋에 responses 외 staged 금지(코드/state 누수): ${choreLeak.join(', ')}`)
@@ -644,9 +656,26 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     if (devCompleteAdd.length) verifyDevCompleteAtHead(ctx)
   } else {
     console.log('[req:commit] evidence 이미 finalize됨(멱등 skip) — 소비만 수행')
+    /**
+     * 🔴 복구 경로에서도 **완료 여부를 다시 판정**한다(phase-3 r02 P1).
+     *
+     * evidence·dev-complete 커밋 직후, 소비 checkpoint 전에 중단됐다가 `--finalize`로 복구하면 이 분기로
+     * 온다. 여기서 `devCompleteEmitted`를 `false`로 두면 이미 REQ를 닫은 `scope:'req'` 확인이
+     * **소비되지 않고 남아** 다음 REQ까지 따라간다 — "REQ 종료 커밋에서 소비한다"는 계약이 깨진다.
+     *
+     * 이미 엔트리가 매니페스트에 있으므로 `pending` 없이 그대로 판정한다(같은 함수를 공유).
+     */
+    devCompleteEmitted = wouldCompleteReq({
+      phaseIds: ctx.validPhaseIds,
+      manifestContent: headManifest,
+    }).complete
   }
   // 소비(마지막) — commit_allowed=false·approved_diff_hash=null·pending 마커 제거.
-  const consumed = consumeState(ctx.state, { sourceCommitSha: ctx.sourceSha, consumedAt: new Date().toISOString() })
+  const consumed = consumeState(ctx.state, {
+    sourceCommitSha: ctx.sourceSha,
+    consumedAt: new Date().toISOString(),
+    completesReq: devCompleteEmitted,
+  })
   writeState(ctx.ticketDir, consumed)
 
   // ── REQ-2026-057: 소비 상태 durable checkpoint ──
@@ -732,9 +761,31 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const ev = (state.approval_evidence as ApprovalEvidence | undefined) ?? null
   const validPhaseIds = readPhases(state).map((p) => p.id)
 
+  /**
+   * 🔴 이 커밋이 REQ 를 완성시키는가 — **DRY-RUN·LIVE·복구가 같은 계산을 쓴다**(phase-3 r01 P1).
+   *    미리보기가 보수적으로 `true` 를 쓰면 중간 phase 에서 "확인이 필요하다"고 **잘못** 표시해,
+   *    미리보기 계약과 실제 정지 지점이 어긋난다.
+   *    판정은 `wouldCompleteReq` 하나를 공유하므로 `dev-complete` 발행과도 갈라지지 않는다.
+   */
+  const computeCompletesReq = (st: WorkflowState, evidence: ApprovalEvidence | null): boolean => {
+    if (cfg.stopGate !== 'req' || st.risk_level !== 'HIGH') return false
+    const pendingPhase = typeof st.current_phase === 'string' ? st.current_phase : null
+    if (!pendingPhase) return false
+    const existing = existsSync(manifestPath) ? readFileSync(manifestPath, 'utf8') : ''
+    const pendingRef =
+      evidence && typeof (evidence as { phase_design_ref?: unknown }).phase_design_ref === 'string'
+        ? (evidence as { phase_design_ref: string }).phase_design_ref
+        : null
+    return wouldCompleteReq({
+      phaseIds: validPhaseIds,
+      manifestContent: existing,
+      pending: { phaseId: pendingPhase, designRef: pendingRef },
+    }).complete
+  }
+
   // ── DRY-RUN(부작용 없음): 게이트/계획 미리보기 ──
   if (!run) {
-    const gate = userConfirmGate(state)
+    const gate = userConfirmGate(state, cfg.stopGate, computeCompletesReq(state, ev))
     const mode = finalizeDesign ? 'finalize-design' : finalize ? 'finalize(복구)' : '정상'
     console.log(`[req:commit] DRY-RUN (모드=${mode}; 실제 실행은 --run)`)
     console.log(`  ticket=${ticketRel} commit_allowed=${String(state.commit_allowed)} risk=${String(state.risk_level)}`)
@@ -811,7 +862,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     if (!ev) throw new Error('approval_evidence 없음') // rc.valid가 보장하나 TS narrowing
     // doctor --finalize: D9를 source 커밋 tree로 교체(우회 아님), 나머지 검사 정상.
     runDoctor([...doctorArgs, '--finalize'])
-    const gate = userConfirmGate(fstate)
+    // 복구 경로도 **같은 계산**을 쓴다 — 중간 phase 복구에서 불필요한 확인을 요구하지 않는다.
+    const gate = userConfirmGate(fstate, cfg.stopGate, computeCompletesReq(fstate, ev))
     if (gate.blocked) throw new Error(gate.reason)
     finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state: fstate, ev, archiveNames, validPhaseIds, sourceSha, rootForClose: cfg.root })
     console.log(`[req:commit] ✅ finalize 복구 완료 — source=${sourceSha.slice(0, 8)} · evidence/consume 복구`)
@@ -823,11 +875,11 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   // 1) doctor 게이트(fail-closed)
   runDoctor(doctorArgs)
-  // 2) HIGH 사람확인 게이트
-  //    🔴 **배선은 phase-3에서 한다**(phase-1 r01 P1). 지금 `stopGate`를 넘기면 `req`/`merge` 사용자에게
-  //       "req:confirm 으로 기록하라"는 메시지가 나오는데 **그 명령이 아직 없다**(phase-2에서 만든다) —
-  //       마지막 phase 에서 막히고 빠져나갈 길이 없다. 그때까지는 현행(매 phase 차단)이 안전한 기본값이다.
-  const gate = userConfirmGate(state)
+  // 2) HIGH 사람확인 게이트 — 차단 지점은 `stopGate`가 정한다(REQ-2026-071 DEC-1·DEC-2).
+  //    🔴 `req`는 **이 커밋이 REQ를 완성시킬 때만** 막는다. 중간 phase를 막으면 REQ 종료 지점에
+  //       도달할 수 없다(설계 r01 P1). 판정은 `wouldCompleteReq` 하나를 공유해 `dev-complete` 발행과
+  //       갈라지지 않는다 — 갈라지면 "게이트는 막는데 proof는 안 나오는" 상태가 생긴다.
+  const gate = userConfirmGate(state, cfg.stopGate, computeCompletesReq(state, ev))
   if (gate.blocked) throw new Error(gate.reason)
   // 3) 전제: 승인 존재 + staged tree == approved_diff_hash + staged=코드만(state/responses 금지)
   if (state.commit_allowed !== true) throw new Error('commit_allowed=true 아님 — 승인된 phase 없음(req:review-codex 승인 필요)')

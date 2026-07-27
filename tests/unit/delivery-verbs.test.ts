@@ -128,7 +128,7 @@ function git(dir: string, args: string[]): string {
 }
 
 /** 최소 CommitGate repo(설정·티켓 루트·setup 마커). */
-function setupRepo(): string {
+function setupRepo(stopGate?: 'phase' | 'req' | 'merge'): string {
   const dir = mkdtempSync(join(tmpdir(), 'cg-delivery-'))
   git(dir, ['init', '-q', '-b', 'main', '.'])
   git(dir, ['config', 'user.email', 't@t'])
@@ -138,6 +138,7 @@ function setupRepo(): string {
     join(dir, 'req.config.json'),
     JSON.stringify({
       packageManager: 'npm',
+      ...(stopGate ? { stopGate } : {}),
       setup: { completedVersion: '0.0.0-test', completedAt: '2026-01-01T00:00:00Z' },
     }),
     'utf8',
@@ -156,13 +157,21 @@ function featureBranchOf(reqId: string): string {
 }
 
 /** feature 브랜치에 티켓 + (옵션) dev-complete close-proof 를 만든다. */
-function makeFeature(dir: string, reqId: string, opts: { devComplete: boolean; extraCodeCommit?: boolean }): string {
+function makeFeature(
+  dir: string,
+  reqId: string,
+  opts: { devComplete: boolean; extraCodeCommit?: boolean; high?: boolean; confirm?: unknown },
+): string {
   const branch = featureBranchOf(reqId)
   git(dir, ['checkout', '-qb', branch])
   const ticket = join(dir, 'workflow', reqId)
   mkdirSync(join(ticket, 'responses'), { recursive: true })
   // `phases: []` 는 실물과 같다 — 스캐폴드 이후 state.json 은 재커밋되지 않아 HEAD 에서는 항상 빈 배열이다.
-  writeFileSync(join(ticket, 'state.json'), JSON.stringify({ id: reqId, phases: [] }), 'utf8')
+  writeFileSync(
+    join(ticket, 'state.json'),
+    JSON.stringify({ id: reqId, phases: [], ...(opts.high ? { risk_level: 'HIGH', user_commit_confirmed: opts.confirm ?? null } : {}) }),
+    'utf8',
+  )
   writeFileSync(join(dir, 'src.txt'), 'feature work\n', 'utf8')
   git(dir, ['add', '-A'])
   git(dir, ['commit', '-qm', `feat(${reqId}): work`])
@@ -180,7 +189,12 @@ function makeFeature(dir: string, reqId: string, opts: { devComplete: boolean; e
  * 🔴 순서가 계약이다 — feature를 먼저 만들면 이후 delivery 커밋 때문에 delivery가 조상이 아니게 되고,
  *    그 상태는 순차 불변식 위반이라 integrate가 (정당하게) 거부한다.
  */
-function addMemberAndBranch(dir: string, slug: string, reqId: string, opts: { devComplete: boolean; extraCodeCommit?: boolean }): string {
+function addMemberAndBranch(
+  dir: string,
+  slug: string,
+  reqId: string,
+  opts: { devComplete: boolean; extraCodeCommit?: boolean; high?: boolean; confirm?: unknown },
+): string {
   git(dir, ['checkout', '-q', deliveryBranchName(slug)])
   const rel = deliveryRecordPath('workflow', slug)
   const rec = JSON.parse(git(dir, ['show', `${deliveryBranchName(slug)}:${rel}`]))
@@ -259,6 +273,7 @@ describe('[delivery] 🔴 통합 자격 — 미승인 변경은 통합되지 않
     postEvidenceCodeCommits: [] as string[],
     integrityProblems: [] as string[],
     unknownApprovedTrees: [] as string[],
+    highConfirmProblem: null as string | null,
   }
 
   it('완료·정합·무추가면 통과', () => {
@@ -302,6 +317,15 @@ describe('[delivery] 🔴 통합 자격 — 미승인 변경은 통합되지 않
   })
 
   // 🔴 r04 P1-d: 증거 **이후**만 보면 승인 이전 커밋을 amend/rebase 해 미검수 코드를 넣는 우회가 남는다.
+  /**
+   * 🔴 REQ-2026-071 DEC-4: `stopGate:'merge'` 에서 HIGH REQ 의 사람 확인은 phase 커밋이 아니라
+   *    **여기**서 요구된다 — 그것이 그 값이 정한 정지 지점이다.
+   */
+  it('🔴 HIGH REQ 의 사람 확인이 없으면 거부', () => {
+    const p = integrateEligibilityProblems({ ...okFacts, highConfirmProblem: '기록 없음' })
+    expect(p.some((x) => x.includes('사람 확인'))).toBe(true)
+  })
+
   it('🔴 승인 트리가 feature 이력에 없으면 거부(history rewrite)', () => {
     const p = integrateEligibilityProblems({ ...okFacts, unknownApprovedTrees: ['f'.repeat(40)] })
     expect(p.some((x) => x.includes('이력이 다시 쓰인'))).toBe(true)
@@ -894,4 +918,99 @@ describe('[delivery] detached HEAD 에서도 원래 자리로 되돌린다', () 
       cleanup(dir)
     }
   })
+})
+
+/**
+ * REQ-2026-071 phase-3 — `stopGate:'merge'` 의 HIGH 확인은 **여기**서 요구된다(DEC-4).
+ *
+ * 🔴 phase 커밋을 막지 않는 대신 묶음 통합에서 막는다 — 그것이 `merge` 가 정한 정지 지점이다.
+ *    확인이 없으면 delivery HEAD 가 움직이지 않는다.
+ */
+describe('[delivery] HIGH REQ 의 사람 확인(REQ-2026-071)', () => {
+  const confirm = (scope: string) => ({
+    confirmed: true,
+    method: '사용자 확인',
+    confirmed_at: '2026-07-27T00:00:00.000Z',
+    scope,
+  })
+
+  it('🔴 HIGH member + 확인 없음 → integrate 거부 · delivery HEAD 불변', () => {
+    const dir = setupRepo('merge')
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'hi', IO_SILENT)
+      addMemberAndBranch(dir, 'hi', 'REQ-2026-040', { devComplete: true, high: true })
+      const before = git(dir, ['rev-parse', deliveryBranchName('hi')])
+      expect(collectEligibility(ctx, featureBranchOf('REQ-2026-040'), 'REQ-2026-040').highConfirmProblem).not.toBeNull()
+      expect(() => cmdIntegrate(ctx, 'hi', 'REQ-2026-040', IO_SILENT)).toThrow('통합 자격 미충족')
+      expect(git(dir, ['rev-parse', deliveryBranchName('hi')])).toBe(before)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** 🔴 좁은 확인은 묶음을 덮지 않는다 — 범위는 크기 순서가 아니라 무엇을 승인했는지의 진술이다. */
+  it('🔴 scope:phase / scope:req 확인으로는 통과하지 못한다', () => {
+    for (const scope of ['phase', 'req']) {
+      const dir = setupRepo('merge')
+      try {
+        const ctx = ctxFor(dir)
+        cmdCreate(ctx, 'hi', IO_SILENT)
+        addMemberAndBranch(dir, 'hi', 'REQ-2026-041', { devComplete: true, high: true, confirm: confirm(scope) })
+        const facts = collectEligibility(ctx, featureBranchOf('REQ-2026-041'), 'REQ-2026-041')
+        expect(facts.highConfirmProblem).toContain('delivery')
+        expect(() => cmdIntegrate(ctx, 'hi', 'REQ-2026-041', IO_SILENT)).toThrow('통합 자격 미충족')
+      } finally {
+        cleanup(dir)
+      }
+    }
+  })
+
+  it('scope:delivery 확인이 있으면 통합된다', () => {
+    const dir = setupRepo('merge')
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'hi', IO_SILENT)
+      addMemberAndBranch(dir, 'hi', 'REQ-2026-042', { devComplete: true, high: true, confirm: confirm('delivery') })
+      expect(collectEligibility(ctx, featureBranchOf('REQ-2026-042'), 'REQ-2026-042').highConfirmProblem).toBeNull()
+      expect(cmdIntegrate(ctx, 'hi', 'REQ-2026-042', IO_SILENT).merged).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** HIGH 가 아니면 확인을 요구하지 않는다(무회귀). */
+  it('LOW REQ 는 확인을 요구하지 않는다', () => {
+    const dir = setupRepo('merge')
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'lo', IO_SILENT)
+      addMemberAndBranch(dir, 'lo', 'REQ-2026-043', { devComplete: true })
+      expect(collectEligibility(ctx, featureBranchOf('REQ-2026-043'), 'REQ-2026-043').highConfirmProblem).toBeNull()
+    } finally {
+      cleanup(dir)
+    }
+  })
+})
+
+/**
+ * 🔴 phase-3 r01 P1 회귀 가드: `merge` 가 **아닌** 설정에서는 delivery 확인을 요구하지 않는다.
+ *    요구하면 `phase`·`req` 로 정상 종결한 HIGH REQ 가 integrate 에서 **영구 거부**된다 —
+ *    그 값들에서는 확인이 이미 다른 지점에서 끝났고 소비까지 됐다.
+ */
+describe('[delivery] 🔴 stopGate 가 merge 가 아니면 delivery 확인을 요구하지 않는다', () => {
+  for (const sg of ['phase', 'req'] as const) {
+    it(`stopGate:'${sg}' + HIGH + 확인 없음 → integrate 통과`, () => {
+      const dir = setupRepo(sg)
+      try {
+        const ctx = ctxFor(dir)
+        cmdCreate(ctx, 'ng', IO_SILENT)
+        addMemberAndBranch(dir, 'ng', 'REQ-2026-044', { devComplete: true, high: true })
+        expect(collectEligibility(ctx, featureBranchOf('REQ-2026-044'), 'REQ-2026-044').highConfirmProblem).toBeNull()
+        expect(cmdIntegrate(ctx, 'ng', 'REQ-2026-044', IO_SILENT).merged).toBe(true)
+      } finally {
+        cleanup(dir)
+      }
+    })
+  }
 })

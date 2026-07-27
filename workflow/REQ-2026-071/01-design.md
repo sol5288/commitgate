@@ -79,6 +79,11 @@ userConfirmGate(state, stopGate, completesReq) → { blocked, reason? }
 | `req` | `req` | HIGH + `completesReq` + `scope:'req'` 확인 없음 → 차단 |
 | `merge` | `delivery` | 커밋에서는 차단 안 함 — `delivery integrate` 자격에서 요구 |
 
+🔴 **`merge`가 아닌 설정에서는 `delivery integrate`가 확인을 요구하지 않는다**(phase-3 r01 P1).
+`phase`는 매 커밋에서 받고 **소비**되며, `req`는 REQ를 완성시키는 커밋에서 받고 소비된다 —
+그때도 integrate에서 또 요구하면 **정상 종결한 HIGH REQ가 영구 거부**된다.
+정지 지점은 `stopGate`가 정한 **하나**여야 한다는 것이 이 REQ의 요구사항이다.
+
 🔴 함수를 지우지 않는 이유: `phase`를 고른 사용자에게 이 차단이 **정본**이다.
 
 ### DEC-4b — 🔴 scope는 **순서가 아니라 진술**이다 — 정확히 일치해야 한다 (r03 P1)
@@ -120,7 +125,7 @@ userConfirmGate(state, stopGate, completesReq) → { blocked, reason? }
 | 파일 | 변경 |
 |---|---|
 | `scripts/req/lib/evidence.ts` | `UserCommitConfirmed.scope?` |
-| `scripts/req/req-commit.ts` | `userConfirmGate(state, stopGate)` · `consumeState`의 조건부 소비 |
+| `scripts/req/req-commit.ts` | `userConfirmGate(state, stopGate, completesReq)` · `consumeState`의 조건부 소비 |
 | `scripts/req/req-next.ts` | HIGH일 때의 안내를 `stopGate`에 맞춘다 |
 | 테스트 · docs 한/영 · CHANGELOG | |
 
