@@ -3,18 +3,18 @@
   "branch": "feat/req-2026-068-ci-fixture-cleanup",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa0e4-df9f-7920-8a72-7f4e0051c21d",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fa0ef-3e05-7e72-adc0-a950e8f1e0a1",
+  "review_base_sha": "fe525d5a0db5e8c9bb3a4274f59cb82f26ccf19d",
+  "review_diff_hash": "e6700c1c3916f07e68dddbea2efa978defc44c39",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "1707f5710a261ff9f40142850465446b9a065e0b2d3fa62943cf32c6964ded8e",
-  "current_phase": null,
+  "current_phase": "phase-1-hermetic-maintenance",
   "phases": [
     {
       "id": "phase-1-hermetic-maintenance",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -25,6 +25,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-hermetic-maintenance#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-hermetic-maintenance",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -48,14 +55,23 @@
     "design_hash": "1707f5710a261ff9f40142850465446b9a065e0b2d3fa62943cf32c6964ded8e"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-hermetic-maintenance",
     "outcome": "approved",
-    "compare_hash": "29f84b20a8ac1e18a25f2252e31ee00b7275dd1a41dbc4e893707963d13d388e",
+    "compare_hash": "0ae5d326b9112a774e02235b168fcdb80fae69eebaacb1d89f7cd40d9f8ea04d",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T00:06:50.096Z",
+    "at": "2026-07-27T00:18:24.551Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "e6700c1c3916f07e68dddbea2efa978defc44c39",
+      "phase_id": "phase-1-hermetic-maintenance",
+      "consumed_by_commit_sha": "3ff51bbff3ab23e191e4cfe50ac76124883b9300",
+      "approval_consumed_at": "2026-07-27T00:18:50.979Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
