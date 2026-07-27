@@ -68,6 +68,29 @@ export interface UserCommitConfirmed {
   method: string
   confirmed_at: string
   note?: string
+  /**
+   * 🔴 **무엇을 승인했는가**(REQ-2026-071 DEC-5). `stopGate`가 정한 지점의 확인임을 기록에 남긴다.
+   *
+   * 🔴 **크기 순서가 아니라 진술이다**(DEC-4b). 각 게이트는 자기 scope와 **정확히 일치**하는 확인만
+   *    유효로 본다 — "넓으면 통과"로 두면 `stopGate:'phase'`에서 `req` 확인 하나가 이후 모든 phase를
+   *    무확인으로 통과시켜, 그 값이 보장하려던 "매 phase 신선한 확인"이 정상 경로로 사라진다.
+   *
+   * **선택 필드**다: 부재는 **가장 좁은 `phase`**로 읽는다(하위호환 — 넓게 읽으면 과거 확인이
+   * 의도보다 많은 것을 덮는다).
+   */
+  scope?: ConfirmScope
+}
+
+/** 사람 확인이 덮는 범위(REQ-2026-071). `stopGate`의 세 값과 1:1로 대응한다. */
+export type ConfirmScope = 'phase' | 'req' | 'delivery'
+
+/** `stopGate` → 그 값이 요구하는 확인 scope(SSOT). 두 축이 갈라지지 않도록 표 하나로 둔다. */
+export const REQUIRED_CONFIRM_SCOPE = { phase: 'phase', req: 'req', merge: 'delivery' } as const
+
+/** 확인의 실효 scope. 🔴 부재는 가장 좁은 `phase`(하위호환). */
+export function effectiveConfirmScope(c: UserCommitConfirmed | null | undefined): ConfirmScope {
+  const s = c?.scope
+  return s === 'req' || s === 'delivery' ? s : 'phase'
 }
 
 /**
@@ -285,6 +308,11 @@ export function userConfirmProblem(ucc: unknown): string | null {
   if (c.confirmed !== true) return 'confirmed=true 아님'
   if (typeof c.method !== 'string' || !c.method.trim()) return 'method(공백 아닌 문자열) 필요'
   if (!isValidIsoInstant(c.confirmed_at)) return 'confirmed_at(ISO) 필요'
+  // scope는 선택 필드지만, **있으면** 유효 값이어야 한다 — 오타가 조용히 `phase`로 읽히면
+  // 사용자는 넓게 승인했다고 믿는데 게이트는 좁게 본다(그 반대도 마찬가지로 위험하다).
+  const sc = (ucc as { scope?: unknown }).scope
+  if (sc !== undefined && sc !== 'phase' && sc !== 'req' && sc !== 'delivery')
+    return `scope 비유효: ${String(sc)}(phase|req|delivery)`
   return null
 }
 

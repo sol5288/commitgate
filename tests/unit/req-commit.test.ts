@@ -1259,3 +1259,100 @@ describe('[REQ-2026-057] finalize 후 완주 상태 durable checkpoint', () => {
     }
   })
 })
+
+/**
+ * REQ-2026-071 phase-1 — 확인 범위(`scope`)와 `stopGate`별 차단 지점.
+ *
+ * 🔴 헤드라인 둘:
+ *   1. **`stopGate:'phase'` 는 현행과 완전히 동일하다** — 이 값을 고른 사용자에게 매 phase 차단이 정본이다.
+ *   2. **넓은 scope 가 phase 게이트를 우회하지 못한다** — 넓은 확인은 커밋마다 소비되지 않으므로,
+ *      한 번 통과시키면 이후 모든 phase 가 무확인으로 진행된다(설계 r03 P1).
+ */
+describe('[REQ-2026-071] userConfirmGate — stopGate 가 차단 지점을 정한다', () => {
+  const st = (over: Partial<WorkflowState>): WorkflowState => ({ id: 'X', phase: 'P', ...over }) as WorkflowState
+  const ok = (scope?: 'phase' | 'req' | 'delivery') => ({
+    confirmed: true,
+    method: '사용자 확인',
+    confirmed_at: '2026-07-27T00:00:00.000Z',
+    ...(scope ? { scope } : {}),
+  })
+
+  it('LOW 는 어떤 stopGate 에서도 막지 않는다', () => {
+    for (const sg of ['phase', 'req', 'merge'] as const)
+      expect(userConfirmGate(st({ risk_level: 'LOW' }), sg, true).blocked).toBe(false)
+  })
+
+  /** 🔴 헤드라인 1 — 무회귀. */
+  it('🔴 phase: HIGH + 확인 없음 → 차단(현행 무회귀)', () => {
+    expect(userConfirmGate(st({ risk_level: 'HIGH' }), 'phase').blocked).toBe(true)
+  })
+
+  it('phase: HIGH + scope:phase 확인 → 통과', () => {
+    expect(userConfirmGate(st({ risk_level: 'HIGH', user_commit_confirmed: ok('phase') }), 'phase').blocked).toBe(false)
+  })
+
+  it('scope 부재 확인은 phase 로 읽는다(하위호환)', () => {
+    expect(userConfirmGate(st({ risk_level: 'HIGH', user_commit_confirmed: ok() }), 'phase').blocked).toBe(false)
+  })
+
+  /** 🔴 헤드라인 2 — 이걸 허용하면 phase 값이 보장하려던 것이 정상 경로로 사라진다. */
+  it('🔴 phase: 넓은 scope(req) 확인으로 우회할 수 없다', () => {
+    const g = userConfirmGate(st({ risk_level: 'HIGH', user_commit_confirmed: ok('req') }), 'phase')
+    expect(g.blocked).toBe(true)
+    expect(g.reason).toContain('범위 불일치')
+  })
+
+  it('🔴 req: 좁은 scope(phase) 확인도 통하지 않는다(정확 일치)', () => {
+    expect(userConfirmGate(st({ risk_level: 'HIGH', user_commit_confirmed: ok('phase') }), 'req', true).blocked).toBe(true)
+  })
+
+  /** 🔴 중간 phase 를 막으면 REQ 종료 지점에 도달할 수 없다(설계 r01 P1). */
+  it('🔴 req: 중간 phase 는 막지 않는다', () => {
+    expect(userConfirmGate(st({ risk_level: 'HIGH' }), 'req', false).blocked).toBe(false)
+  })
+
+  it('🔴 req: REQ 를 완성시키는 커밋은 확인 없이 막힌다', () => {
+    expect(userConfirmGate(st({ risk_level: 'HIGH' }), 'req', true).blocked).toBe(true)
+  })
+
+  it('req: 완성 커밋 + scope:req 확인 → 통과', () => {
+    expect(userConfirmGate(st({ risk_level: 'HIGH', user_commit_confirmed: ok('req') }), 'req', true).blocked).toBe(false)
+  })
+
+  /** merge 는 커밋이 아니라 delivery integrate 자격에서 요구한다(phase-3). */
+  it('merge: 커밋에서는 막지 않는다', () => {
+    expect(userConfirmGate(st({ risk_level: 'HIGH' }), 'merge', true).blocked).toBe(false)
+  })
+
+  it('차단 메시지가 기록 방법(req:confirm)을 알려 준다', () => {
+    const g = userConfirmGate(st({ risk_level: 'HIGH' }), 'phase')
+    expect(g.reason).toContain('req:confirm')
+    expect(g.reason).toContain('--scope phase')
+  })
+})
+
+describe('[REQ-2026-071] consumeState — 범위가 닫힐 때만 소비한다', () => {
+  const st = (over: Partial<WorkflowState>): WorkflowState => ({ id: 'X', phase: 'P', ...over }) as WorkflowState
+  const conf = (scope?: 'phase' | 'req' | 'delivery') => ({
+    confirmed: true,
+    method: 'm',
+    confirmed_at: '2026-07-27T00:00:00.000Z',
+    ...(scope ? { scope } : {}),
+  })
+  const consume = (ucc: unknown) =>
+    consumeState(st({ user_commit_confirmed: ucc as never }), {
+      sourceCommitSha: 'a'.repeat(40),
+      consumedAt: '2026-07-27T00:00:00.000Z',
+    }).user_commit_confirmed
+
+  it('scope:phase 는 커밋마다 소비된다(현행 무회귀)', () => {
+    expect(consume(conf('phase'))).toBeNull()
+    expect(consume(conf())).toBeNull() // 부재 = phase
+  })
+
+  /** 🔴 커밋마다 지우면 첫 커밋에서 사라져 결국 매 phase 확인이 된다 — 이 REQ 가 무의미해진다. */
+  it('🔴 넓은 scope 는 커밋으로 소비되지 않는다', () => {
+    expect(consume(conf('req'))).not.toBeNull()
+    expect(consume(conf('delivery'))).not.toBeNull()
+  })
+})

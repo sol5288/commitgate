@@ -29,6 +29,8 @@ import { isArchiveFileName } from './lib/scratch'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { LEDGER_BASENAME } from './lib/review-ledger'
 import { CLOSE_PROOF_BASENAME, parseCloseProof, deriveBaseState } from './lib/close-proof'
+import { REQUIRED_CONFIRM_SCOPE, effectiveConfirmScope } from './lib/evidence'
+import type { StopGate } from './lib/config'
 import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
 // REQ-2026-048 phase-1: 매니페스트 모델·검증과 그 보조 술어는 leaf `lib/evidence.ts`가 정본.
 // 여기서 **재수출**해 기존 import 경로(`from './req-commit'`)를 쓰던 호출부·테스트를 그대로 둔다.
@@ -103,14 +105,52 @@ const PREFLIGHT_PLACEHOLDER_ISO = '2000-01-01T00:00:00.000Z'
 /**
  * HIGH 사람확인 게이트(D-016-8, 순수). HIGH인데 유효한 `user_commit_confirmed`(confirmed=true·method·ISO confirmed_at)가 없으면 차단.
  */
-export function userConfirmGate(state: WorkflowState): { blocked: boolean; reason?: string } {
+export function userConfirmGate(
+  state: WorkflowState,
+  stopGate: StopGate = 'phase',
+  completesReq = false,
+): { blocked: boolean; reason?: string } {
   if (state.risk_level !== 'HIGH') return { blocked: false }
+
+  /**
+   * 🔴 차단 지점은 `stopGate`가 정한다(REQ-2026-071 DEC-1·DEC-2).
+   *
+   * | stopGate | 차단 |
+   * |---|---|
+   * | `phase`  | 매 커밋(현행 그대로) |
+   * | `req`    | **이 커밋이 REQ를 완성시킬 때만** — 그 커밋이 `dev-complete`를 발행하므로 도구가 막을 수 있다 |
+   * | `merge`  | 커밋에서는 안 막는다 — `delivery integrate` 자격이 요구한다 |
+   *
+   * 🔴 `req`에서 중간 phase를 막으면 **REQ 종료에 도달할 수 없다**(설계 r01 P1).
+   */
+  if (stopGate === 'merge') return { blocked: false }
+  if (stopGate === 'req' && !completesReq) return { blocked: false }
+
+  const required = REQUIRED_CONFIRM_SCOPE[stopGate]
   const problem = userConfirmProblem(state.user_commit_confirmed)
-  if (!problem) return { blocked: false }
-  return {
-    blocked: true,
-    reason: `HIGH risk: user_commit_confirmed ${problem} — req:commit 차단(감사 기록이며 위조불가 증명 아님; 가장 강한 보장=사용자가 직접 실행).`,
-  }
+  if (problem)
+    return {
+      blocked: true,
+      reason:
+        `HIGH risk: user_commit_confirmed ${problem} — req:commit 차단(감사 기록이며 위조불가 증명 아님; 가장 강한 보장=사용자가 직접 실행). ` +
+        `기록: npx commitgate req:confirm <REQ> --scope ${required} --method "<승인 문장>" --run`,
+    }
+  /**
+   * 🔴 scope는 **크기 순서가 아니라 진술**이다(DEC-4b) — 정확히 일치해야 한다.
+   *    "넓으면 통과"로 두면 `stopGate:'phase'`에서 `req` 확인 하나가 이후 모든 phase를 무확인으로
+   *    통과시켜(넓은 scope는 커밋마다 소비되지 않으므로), 그 값이 보장하려던 "매 phase 신선한 확인"이
+   *    **정상 경로로** 사라진다.
+   */
+  const got = effectiveConfirmScope(state.user_commit_confirmed as UserCommitConfirmed | null)
+  if (got !== required)
+    return {
+      blocked: true,
+      reason:
+        `HIGH risk: 확인 범위 불일치 — stopGate="${stopGate}"는 scope="${required}" 확인을 요구하는데 기록된 것은 "${got}"입니다. ` +
+        `범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술이라 정확히 일치해야 합니다. ` +
+        `기록: npx commitgate req:confirm <REQ> --scope ${required} --method "<승인 문장>" --run`,
+    }
+  return { blocked: false }
 }
 
 /**
@@ -128,12 +168,21 @@ export function consumeState(state: WorkflowState, opts: { sourceCommitSha: stri
   }
   // approval_evidence(현재 pending 승인 핀) + pending_evidence_for(복구 마커)는 소비와 함께 제거(다음 리뷰가 재부착).
   const { approval_evidence: _consumed, pending_evidence_for: _pending, ...rest } = state
+  /**
+   * 🔴 확인 소비는 **그 범위가 닫힐 때**다(REQ-2026-071 DEC-6).
+   *
+   * `scope:'phase'`는 커밋마다 소비한다(현행 — 매 phase 신선한 확인이 그 값의 계약이다).
+   * 더 넓은 scope(`req`·`delivery`)는 **남긴다** — 커밋마다 지우면 첫 커밋에서 사라져 결국
+   * 매 phase 확인이 되고, 확인 지점을 옮긴다는 이 REQ가 무의미해진다.
+   * (`req`는 `dev-complete` 발행 시, `delivery`는 `delivery approve`에서 소비한다 — phase-3.)
+   */
+  const keepConfirm = effectiveConfirmScope(state.user_commit_confirmed as UserCommitConfirmed | null) !== 'phase'
   return {
     ...rest,
     commit_allowed: false,
     approved_diff_hash: null,
     consumed_approvals: [...prev, entry],
-    user_commit_confirmed: null,
+    user_commit_confirmed: keepConfirm ? state.user_commit_confirmed : null,
   }
 }
 
@@ -403,6 +452,26 @@ export { parseManifestEntries, evidencedPhaseIdsFromManifest, designHashFromMani
  * @returns 발행할 dev-complete `CloseProofRow` 또는 null(마지막 phase 아님/미분해/design).
  * @throws design_ref(커밋된 design 승인)가 없으면 — 마지막 phase인데 design 증거가 없다(fail-closed).
  */
+/**
+ * 🔴 **완료 판정의 단일 지점**(REQ-2026-071 phase-1). `computeDevCompleteProof`와 HIGH 게이트가
+ *    같은 함수를 쓴다 — 두 곳에 두면 "게이트는 막는데 proof는 안 나오는"(혹은 반대) 상태가 생긴다.
+ *
+ * @param pending 이 커밋이 추가할 phase(아직 매니페스트에 없다). 없으면 현재 매니페스트만 본다.
+ */
+export function wouldCompleteReq(args: {
+  phaseIds: readonly string[]
+  manifestContent: string
+  pending?: { phaseId: string; designRef: string | null } | null
+}): { complete: boolean; designRef: string | null; inventory: string[] } {
+  const inventory = [...new Set(args.phaseIds)].sort()
+  const designRef = designHashFromManifest(args.manifestContent)
+  if (inventory.length === 0 || !designRef) return { complete: false, designRef, inventory }
+  const evidenced = new Set(evidencedPhaseIdsFromManifest(args.manifestContent, designRef))
+  // pending phase 는 **현재 design 에 결속될 때만** 산입한다 — 결속이 다르면 어차피 완료가 아니다.
+  if (args.pending && args.pending.designRef === designRef) evidenced.add(args.pending.phaseId)
+  return { complete: inventory.every((id) => evidenced.has(id)), designRef, inventory }
+}
+
 export function computeDevCompleteProof(args: {
   ticketId: string
   phaseIds: readonly string[]
@@ -417,8 +486,8 @@ export function computeDevCompleteProof(args: {
   if (!designRef) throw new Error('dev-complete 발행 전 검증 실패: 커밋된 design 승인(design_hash)이 없다')
   // 🔴 DEC-B5: **design-bound** 완전성 — 각 inventory phase가 **현재 design_ref에 결속된** 증거를 가져야 마지막
   //    phase다. 단순 phase_id 존재로는 부족(D1 검토분이 D2 완료에 새는 P1). 결속 없는(레거시) 행은 불산입.
-  const evidenced = new Set(evidencedPhaseIdsFromManifest(args.manifestContent, designRef))
-  if (!inventory.every((id) => evidenced.has(id))) return null // 아직 (design-bound) 마지막 phase 아님(㊱·㊺·㊻)
+  // 🔴 판정은 `wouldCompleteReq` 하나를 쓴다 — HIGH 게이트가 같은 함수를 보므로 갈라지지 않는다.
+  if (!wouldCompleteReq({ phaseIds: args.phaseIds, manifestContent: args.manifestContent }).complete) return null
   return {
     ticket_id: args.ticketId,
     event: 'dev-complete',
@@ -755,6 +824,9 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   // 1) doctor 게이트(fail-closed)
   runDoctor(doctorArgs)
   // 2) HIGH 사람확인 게이트
+  //    🔴 **배선은 phase-3에서 한다**(phase-1 r01 P1). 지금 `stopGate`를 넘기면 `req`/`merge` 사용자에게
+  //       "req:confirm 으로 기록하라"는 메시지가 나오는데 **그 명령이 아직 없다**(phase-2에서 만든다) —
+  //       마지막 phase 에서 막히고 빠져나갈 길이 없다. 그때까지는 현행(매 phase 차단)이 안전한 기본값이다.
   const gate = userConfirmGate(state)
   if (gate.blocked) throw new Error(gate.reason)
   // 3) 전제: 승인 존재 + staged tree == approved_diff_hash + staged=코드만(state/responses 금지)
