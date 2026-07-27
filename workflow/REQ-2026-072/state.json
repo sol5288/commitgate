@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-072-close-predicate-parity",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa322-683a-70c2-93c3-9b0c1e86149a",
-  "review_base_sha": "413e20235a1f63ccf850b88b3c53a7847ff803d8",
-  "review_diff_hash": "58afae291ae0e5e2938c766e5a132cb7ea01319a",
+  "codex_thread_id": "019fa32e-568c-7b40-bb59-155c58c0a279",
+  "review_base_sha": "5f2e6aabbaea0f030b6d68b53def2784f5c35fea",
+  "review_diff_hash": "25bc2fc8d71365f4d755ff6381e0810f573f6f76",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "6129c85590f42b23e4c6c1825a7b1e114f9545fb930da0887c7ede1eebda4366",
-  "current_phase": "phase-2-rebind-reentry",
+  "current_phase": "phase-3-intake-guidance",
   "phases": [
     {
       "id": "phase-1-terminal-parity",
@@ -22,7 +22,7 @@
     },
     {
       "id": "phase-3-intake-guidance",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-4-docs",
@@ -53,16 +53,23 @@
       "phase_id": "phase-2-rebind-reentry",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-intake-guidance#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-intake-guidance",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-rebind-reentry",
+    "phase_id": "phase-3-intake-guidance",
     "outcome": "approved",
-    "compare_hash": "866aa1eb5c0fe9d5fba6b62b91259c67050f4218c9551d978e0cd005648a52e4",
+    "compare_hash": "6023d89e5aacbb1f5a82812112bec89452e025e13e9b11c113c7247be3393ba0",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T10:33:21.154Z",
+    "at": "2026-07-27T10:46:20.214Z",
     "findings": [],
     "elided_count": 0
   },
@@ -96,6 +103,12 @@
       "phase_id": "phase-2-rebind-reentry",
       "consumed_by_commit_sha": "15391a588312df428463d9043f05583ca374543c",
       "approval_consumed_at": "2026-07-27T10:33:46.521Z"
+    },
+    {
+      "approved_tree": "25bc2fc8d71365f4d755ff6381e0810f573f6f76",
+      "phase_id": "phase-3-intake-guidance",
+      "consumed_by_commit_sha": "523a7f5640da0c8a984aa27f92e76796277ed7ca",
+      "approval_consumed_at": "2026-07-27T10:46:34.968Z"
     }
   ],
   "user_commit_confirmed": null
