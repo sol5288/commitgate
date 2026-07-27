@@ -115,6 +115,25 @@ the next REQ); sealed with every member terminal → `AWAIT_HUMAN`. `integrate` 
 right after the transition they cause — someone who seals after the last `integrate` has no reason to call
 `req:next` again.
 
+## You fill in the phase breakdown yourself
+
+`req:new` leaves `phases[]` in `state.json` as an **empty array**. Break the work into phases in
+`02-plan.md`, then list those ids in `phases[]` before running a phase review.
+
+```jsonc
+"phases": [
+  { "id": "phase-1-model", "approved": false },
+  { "id": "phase-2-verb",  "approved": false }
+]
+```
+
+🔴 **A `--kind phase` review is refused until you do.** An approval produced in that state cannot be
+committed — the commit path uses `phases[]` as the list of valid ids, so with an empty list no phase
+approval passes. This used to surface only at `req:commit`, **after a paid review call was spent.**
+
+> Older tickets (from before `phases[]` tracking) still work. Passing `--phase` to one is **rejected rather
+> than silently ignored** — being ignored would leave you believing the approval was bound to the phase you named.
+
 ## When the design was re-approved — `req:rebind`
 
 When a review raises a P1 you usually edit the design documents, which triggers a **design re-approval**.

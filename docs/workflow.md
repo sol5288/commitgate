@@ -113,6 +113,25 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 열 수 있다), 닫혔고 모든 member가 종결됐으면 `AWAIT_HUMAN`. 같은 판정을 `integrate`와 `seal`도
 전이 직후에 냅니다 — 마지막 `integrate` 뒤에 `seal` 한 사용자는 `req:next`를 다시 부를 이유가 없기 때문입니다.
 
+## phase 분해는 사람이 채웁니다
+
+`req:new`는 티켓을 만들 때 `state.json`의 `phases[]`를 **빈 배열로** 둡니다. `02-plan.md`에 phase를
+분해한 뒤 그 id들을 `phases[]`에 채워야 phase 리뷰가 돕니다.
+
+```jsonc
+"phases": [
+  { "id": "phase-1-model", "approved": false },
+  { "id": "phase-2-verb",  "approved": false }
+]
+```
+
+🔴 **채우기 전에 `--kind phase`로 리뷰하면 거부됩니다.** 그 상태에서는 승인이 나와도 커밋할 수 없기
+때문입니다 — 커밋 경로가 `phases[]`를 유효 id 목록으로 쓰므로, 비어 있으면 어떤 phase 승인도 통과하지
+못합니다. 예전에는 이 실패가 `req:commit` 시점까지 미뤄져 **유료 리뷰 호출 1회를 버렸습니다.**
+
+> 예전 티켓(`phases[]` 추적 이전)은 그대로 동작합니다. 다만 그런 티켓에 `--phase`를 주면
+> **조용히 무시되지 않고 거부**됩니다 — 무시되면 자기가 지정한 phase에 승인이 붙었다고 잘못 믿게 됩니다.
+
 ## 설계를 다시 승인했다면 — `req:rebind`
 
 리뷰가 P1을 내면 설계 문서를 고치게 되고, 그러면 **설계 재승인**이 걸립니다. 그때마다 `design_hash`가
