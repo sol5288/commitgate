@@ -27,6 +27,7 @@ import {
   evidencedPhaseIdsFromManifest,
   designHashFromManifest,
   splitUnboundPhases,
+  plannedPhaseIdsFromState,
 } from './lib/evidence'
 import { parseCloseProof, appendCloseProofRow, closeProofPath } from './lib/close-proof'
 import { planMigrationClose, type MigrationFacts } from './lib/close-migrate'
@@ -93,21 +94,12 @@ export function isAncestor(root: string, a: string, b: string): boolean {
   throw new Error(`git merge-base --is-ancestor 실패(status=${res.status ?? 'null'}): ${res.stderr.trim()}`)
 }
 
-/** HEAD state.json 본문에서 커밋된 phase 계획 id(`phases[].id`)를 뽑는다(파싱 불가·부재 → []). r02 P1 완료성 기준. */
-export function committedPlannedPhaseIds(stateText: string | null): string[] {
-  if (!stateText) return []
-  let raw: unknown
-  try {
-    raw = JSON.parse(stateText)
-  } catch {
-    return []
-  }
-  const phases = (raw as { phases?: unknown }).phases
-  if (!Array.isArray(phases)) return []
-  return phases
-    .map((p) => (p && typeof p === 'object' ? (p as { id?: unknown }).id : undefined))
-    .filter((id): id is string => typeof id === 'string' && id.length > 0)
-}
+/**
+ * HEAD state.json 본문에서 커밋된 phase 계획 id(`phases[].id`)를 뽑는다(파싱 불가·부재 → []). r02 P1 완료성 기준.
+ * 🔴 REQ-2026-072: 구현은 `lib/evidence`(정본)로 옮겼다 — `req:rebind`의 완료 재판정이 같은 파서를 쓴다.
+ *    기존 이름은 호출부·테스트 호환을 위해 유지한다.
+ */
+export const committedPlannedPhaseIds = plannedPhaseIdsFromState
 
 export function main(argv: string[] = process.argv.slice(2)): void {
   const o = parseArgs(argv)

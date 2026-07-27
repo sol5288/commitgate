@@ -96,6 +96,11 @@ export interface StaleTicketSpec {
   newPhases: string[]
   /** close proof에 낡은 `dev-complete` 행을 넣을지(false면 "한 번도 발행되지 않은" 인접 사례). */
   staleDevComplete: boolean
+  /**
+   * 커밋되는 `state.json`의 `phases[]`를 강제로 바꾼다(기본: 모든 phase). `[]`를 주면 스캐폴드 이후
+   * state가 갱신되지 않은 티켓 — 완료 재판정의 inventory 원천이 비는 경우를 만든다(DEC-4).
+   */
+  plannedPhasesOverride?: string[]
 }
 
 /**
@@ -107,7 +112,7 @@ export function commitStaleTicket(repo: string, spec: StaleTicketSpec): string {
   const dir = join(repo, ticketRel)
   mkdirSync(join(dir, 'responses'), { recursive: true })
 
-  const plannedPhases = [...spec.oldPhases.map((p) => p.pid), ...spec.newPhases]
+  const plannedPhases = spec.plannedPhasesOverride ?? [...spec.oldPhases.map((p) => p.pid), ...spec.newPhases]
   writeFileSync(
     join(dir, 'state.json'),
     JSON.stringify({

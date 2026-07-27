@@ -22,7 +22,7 @@ import { pathToFileURL } from 'node:url'
 import { loadConfig } from './lib/config'
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
-import { designHashFromManifest, parseManifestEntries, validateManifest, type RebindEntry } from './lib/evidence'
+import { designHashFromManifest, parseManifestEntries, plannedPhaseIdsFromState, validateManifest, type RebindEntry } from './lib/evidence'
 import { closeProofPath, rebindConfirmSentence } from './lib/close-proof'
 import { computeDevCompleteProof } from './req-commit'
 import { appendCloseProofRowToDisk, loadState, readPhases } from './review-codex'
@@ -65,9 +65,19 @@ export function confirmSentence(reqId: string, phaseId: string): string {
   return rebindConfirmSentence(reqId, phaseId)
 }
 
+/**
+ * 재결속 계획(REQ-2026-072 DEC-3).
+ *
+ * 🔴 `noop`이 `refuse`와 **구별되는 것이 이 타입의 존재 이유**다. 예전에는 "이미 재결속됨"도 throw라,
+ *    rebind 행은 커밋됐는데 뒤이은 `dev-complete` 발행이 실패한 티켓은 **재실행이 완료 재판정에
+ *    도달하지 못해** 같은 교착에 다시 갇혔다(두 커밋짜리 절차의 재진입 불가).
+ */
 export type RebindPlan =
-  | { ok: true; from: string; to: string }
-  | { ok: false; reason: string; hint: string }
+  | { kind: 'rebind'; from: string; to: string }
+  /** 쓸 것이 없다(이미 결속·이미 재결속) — **실패가 아니다.** 완료 재판정은 그대로 수행한다. */
+  | { kind: 'noop'; reason: string }
+  /** 자격 미달 — fail-closed. */
+  | { kind: 'refuse'; reason: string; hint: string }
 
 /**
  * 재결속 자격 판정(순수 — 매니페스트 본문만 본다).
@@ -77,23 +87,23 @@ export type RebindPlan =
  */
 export function planRebind(manifest: string, phaseId: string): RebindPlan {
   const to = designHashFromManifest(manifest)
-  if (!to) return { ok: false, reason: '커밋된 design 승인이 없습니다', hint: '먼저 설계 리뷰를 통과시키세요' }
+  if (!to) return { kind: 'refuse', reason: '커밋된 design 승인이 없습니다', hint: '먼저 설계 리뷰를 통과시키세요' }
   const rows = parseManifestEntries(manifest)
   const target = rows.find((e) => e.kind === 'phase' && e.phase_id === phaseId)
-  if (!target) return { ok: false, reason: `phase 승인 행이 없습니다: ${phaseId}`, hint: '먼저 그 phase의 리뷰를 통과시키세요' }
+  if (!target) return { kind: 'refuse', reason: `phase 승인 행이 없습니다: ${phaseId}`, hint: '먼저 그 phase의 리뷰를 통과시키세요' }
   const from = target.phase_design_ref
   if (typeof from !== 'string' || from.length === 0)
     return {
-      ok: false,
+      kind: 'refuse',
       reason: `${phaseId}에 phase_design_ref가 없습니다(이 필드 도입 이전 승인)`,
       hint: '재결속 대상이 아닙니다 — 레거시 티켓은 req:close --migrate를 쓰세요',
     }
-  if (from === to)
-    return { ok: false, reason: `${phaseId}는 이미 현재 설계에 결속돼 있습니다`, hint: '재결속할 것이 없습니다' }
+  // 🔴 아래 둘은 **자격 미달이 아니라 "쓸 것이 없음"**이다(DEC-3). 완료 재판정까지는 진행해야 한다.
+  if (from === to) return { kind: 'noop', reason: `${phaseId}는 이미 현재 설계에 결속돼 있습니다` }
   // 같은 재결속이 이미 있으면 중복 행을 남기지 않는다.
   const already = rows.some((e) => e.kind === 'rebind' && e.phase_id === phaseId && e.to_design_ref === to)
-  if (already) return { ok: false, reason: `${phaseId}는 이미 재결속돼 있습니다`, hint: '추가 작업이 필요하지 않습니다' }
-  return { ok: true, from, to }
+  if (already) return { kind: 'noop', reason: `${phaseId}는 이미 재결속돼 있습니다` }
+  return { kind: 'rebind', from, to }
 }
 
 export function main(argv: string[] = process.argv.slice(2)): void {
@@ -112,7 +122,22 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const manifest = readFileSync(manifestAbs, 'utf8')
 
   const plan = planRebind(manifest, o.phase)
-  if (!plan.ok) throw new Error(`${reqId} 재결속 불가: ${plan.reason}\n  → ${plan.hint}`)
+  if (plan.kind === 'refuse') throw new Error(`${reqId} 재결속 불가: ${plan.reason}\n  → ${plan.hint}`)
+
+  const git = createGitAdapter(cfg.root)
+
+  if (plan.kind === 'noop') {
+    // 🔴 REQ-2026-072 DEC-3: **실패가 아니다.** 쓸 것만 없고, 완료 재판정은 그대로 수행한다 —
+    //    중단된 재결속(행은 커밋됐는데 dev-complete 발행이 실패)의 재실행이 여기서 막히면
+    //    티켓은 영영 닫히지 않는다.
+    console.log(`[req:rebind] ${reqId} ${o.phase}: ${plan.reason} — 재결속 쓰기 없음.`)
+    if (!o.run) {
+      console.log('[req:rebind] DRY-RUN — write 없음. `--run`으로 실행하면 완료 여부를 다시 판정합니다.')
+      return
+    }
+    recheckCompletion({ cfg, reqId, ticketRel, manifestContent: manifest, git })
+    return
+  }
 
   console.log(
     `[req:rebind] ${reqId} ${o.phase}: ${plan.from.slice(0, 12)} → ${plan.to.slice(0, 12)}`,
@@ -153,47 +178,96 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   if (problems.length) throw new Error(`재결속 후 매니페스트 검증 실패: ${problems.slice(0, 3).join('; ')}`)
 
   writeFileSync(manifestAbs, candidate, 'utf8')
-  const git = createGitAdapter(cfg.root)
   git.exec(['add', '--', manifestRel])
   git.exec(['commit', '-m', `chore(${reqId}): rebind ${o.phase} → 현재 설계`, '--', manifestRel])
   console.log(`[req:rebind] ✅ 재결속 기록 커밋 — ${o.phase}는 이제 현재 설계에 결속됩니다.`)
 
-  /**
-   * 🔴 재결속 **뒤에 완료를 다시 판정**한다(DEC-8).
-   *
-   * `dev-complete`는 `req:commit`의 evidence-finalize에서만 발행된다. 마지막 phase를 커밋한 뒤에
-   * 재결속하면 완료를 다시 볼 계기가 없고 부를 `req:commit`도 남아 있지 않다 —
-   * **결속만 고쳐지고 티켓은 그대로 막힌다**(이 REQ 자신에게 적용해 보고 발견했다).
-   *
-   * 🔴 판정·발행은 `req-commit`의 **정본을 재사용**한다. 직접 재구현하면 두 경로의 완료 판정이
-   *    갈라져 한쪽에서만 닫히는 티켓이 생긴다.
-   * 🔴 조건이 안 되면 **조용히 넘어간다** — 남은 phase가 있는 중간 재결속은 정상이고,
-   *    그때 실패로 만들면 정상 경로가 막힌다.
-   */
-  const state = loadState(join(cfg.workflowDirAbs, reqId))
+  recheckCompletion({ cfg, reqId, ticketRel, manifestContent: candidate, git })
+}
+
+/**
+ * 완료 재판정의 **inventory 원천**(REQ-2026-072 DEC-4). 워킹 `state.json` 우선, 없으면 HEAD 커밋본.
+ *
+ * 🔴 워킹을 우선하는 이유: `req:commit`의 완료 판정과 **같은 원천**이어야 두 경로가 갈라지지 않는다.
+ * 🔴 HEAD로 대체하는 이유: 티켓 스크래치가 사라진 저장소에서 `loadState`가 throw하면, 재결속은 됐는데
+ *    종결은 못 하는 상태에 갇힌다(이 REQ가 고치는 재진입 불가의 두 번째 창).
+ */
+function phaseIdsForCompletion(args: {
+  cfg: { root: string; workflowDirAbs: string }
+  reqId: string
+  ticketRel: string
+  git: { exec: (a: string[]) => string }
+}): { ids: string[]; source: 'working' | 'head' } {
+  const workingDir = join(args.cfg.workflowDirAbs, args.reqId)
+  if (existsSync(join(workingDir, 'state.json')))
+    return { ids: readPhases(loadState(workingDir)).map((p) => p.id), source: 'working' }
+  let headText: string | null = null
+  try {
+    headText = args.git.exec(['show', `HEAD:${args.ticketRel}/state.json`])
+  } catch {
+    headText = null
+  }
+  if (headText === null)
+    throw new Error(
+      `${args.reqId}: state.json이 워킹트리에도 HEAD에도 없어 완료를 판정할 수 없습니다(재결속 기록은 커밋됨).\n` +
+        `  → 티켓 디렉터리를 복구한 뒤 다시 실행하십시오.`,
+    )
+  return { ids: plannedPhaseIdsFromState(headText), source: 'head' }
+}
+
+/**
+ * 🔴 재결속 **뒤에 완료를 다시 판정**한다(REQ-2026-069 DEC-8).
+ *
+ * `dev-complete`는 `req:commit`의 evidence-finalize에서만 발행된다. 마지막 phase를 커밋한 뒤에
+ * 재결속하면 완료를 다시 볼 계기가 없고 부를 `req:commit`도 남아 있지 않다 —
+ * **결속만 고쳐지고 티켓은 그대로 막힌다.**
+ *
+ * 🔴 판정·발행은 `req-commit`의 **정본을 재사용**한다. 직접 재구현하면 두 경로의 완료 판정이
+ *    갈라져 한쪽에서만 닫히는 티켓이 생긴다.
+ * 🔴 조건이 안 되면 **조용히 넘어간다** — 남은 phase가 있는 중간 재결속은 정상이고,
+ *    그때 실패로 만들면 정상 경로가 막힌다.
+ */
+function recheckCompletion(args: {
+  cfg: { root: string; workflowDirAbs: string }
+  reqId: string
+  ticketRel: string
+  manifestContent: string
+  git: { exec: (a: string[]) => string }
+}): void {
+  const { ids, source } = phaseIdsForCompletion(args)
+  // 🔴 DEC-4: HEAD로 대체했는데 계획이 비어 있으면 **판정을 하지 않았다는 사실을 말한다.**
+  //    빈 inventory는 `computeDevCompleteProof`가 null을 내므로, 조용히 넘어가면 사용자는
+  //    "아직 완료가 아니다"라는 틀린 안내를 받는다(스캐폴드 이후 state가 커밋되지 않은 티켓).
+  if (source === 'head' && ids.length === 0) {
+    console.warn(
+      `[req:rebind] ⚠️ 완료 여부를 판정하지 못했습니다 — 워킹 state.json이 없고 HEAD의 state.json에 phase 계획이 비어 있습니다.\n` +
+        `   재결속 기록은 커밋됐습니다. 티켓의 state.json(phases[])을 복구한 뒤 이 명령을 다시 실행하십시오.`,
+    )
+    return
+  }
   const proof = computeDevCompleteProof({
-    ticketId: reqId,
-    phaseIds: readPhases(state).map((p) => p.id),
+    ticketId: args.reqId,
+    phaseIds: ids,
     reviewKind: 'phase',
-    manifestContent: candidate,
+    manifestContent: args.manifestContent,
     nowIso: new Date().toISOString(),
   })
   if (!proof) {
     console.log('[req:rebind] 아직 완료가 아닙니다 — 남은 phase를 마친 뒤 종결됩니다.')
     return
   }
-  const cpRel = closeProofPath(ticketRel)
-  const before = existsSync(join(cfg.root, cpRel)) ? readFileSync(join(cfg.root, cpRel), 'utf8') : ''
+  const cpRel = closeProofPath(args.ticketRel)
+  const before = existsSync(join(args.cfg.root, cpRel)) ? readFileSync(join(args.cfg.root, cpRel), 'utf8') : ''
   // 멱등: 이미 같은 행이 있으면 내용이 그대로다(내부에서 duplicate → no-op).
-  appendCloseProofRowToDisk(cfg.root, ticketRel, proof)
-  const after = existsSync(join(cfg.root, cpRel)) ? readFileSync(join(cfg.root, cpRel), 'utf8') : ''
+  appendCloseProofRowToDisk(args.cfg.root, args.ticketRel, proof)
+  const after = existsSync(join(args.cfg.root, cpRel)) ? readFileSync(join(args.cfg.root, cpRel), 'utf8') : ''
   if (after === before) {
     console.log('[req:rebind] dev-complete가 이미 있습니다(멱등 — 커밋 없음).')
     return
   }
-  git.exec(['add', '--', cpRel])
-  git.exec(['commit', '-m', `chore(${reqId}): dev-complete — 재결속으로 완료`, '--', cpRel])
-  console.log(`[req:rebind] ✅ dev-complete 발행 — ${reqId} 종결. 이제 다음 REQ를 열 수 있습니다.`)
+  args.git.exec(['add', '--', cpRel])
+  args.git.exec(['commit', '-m', `chore(${args.reqId}): dev-complete — 재결속으로 완료`, '--', cpRel])
+  console.log(`[req:rebind] ✅ dev-complete 발행 — ${args.reqId} 종결. 이제 다음 REQ를 열 수 있습니다.`)
 }
 
 const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href

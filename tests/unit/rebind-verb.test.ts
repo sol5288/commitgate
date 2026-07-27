@@ -89,40 +89,44 @@ describe('[req:rebind] confirmSentence — 대상마다 다르다', () => {
 describe('[req:rebind] planRebind — 자격 판정(순수)', () => {
   it('옛 해시에 묶인 phase 는 재결속 대상이다', () => {
     const m = lines(designRow(D1), phaseRow('p1', D1), designRow(D2))
-    expect(planRebind(m, 'p1')).toEqual({ ok: true, from: D1, to: D2 })
+    expect(planRebind(m, 'p1')).toEqual({ kind: 'rebind', from: D1, to: D2 })
   })
 
-  it('이미 현재 설계에 결속됐으면 거부(불필요한 행을 남기지 않는다)', () => {
+  /**
+   * 🔴 REQ-2026-072: "쓸 것이 없다"는 **실패가 아니라 no-op**이다. 예전에는 이 둘이 throw라,
+   *    rebind 행은 커밋됐는데 dev-complete 발행이 실패한 티켓의 재실행이 완료 재판정에 닿지 못했다.
+   */
+  it('이미 현재 설계에 결속됐으면 no-op(불필요한 행을 남기지 않는다 · 거부는 아니다)', () => {
     const m = lines(designRow(D2), phaseRow('p1', D2))
     const r = planRebind(m, 'p1')
-    expect(r.ok).toBe(false)
-    expect(r.ok === false && r.reason).toContain('이미 현재 설계')
+    expect(r.kind).toBe('noop')
+    expect(r.kind === 'noop' && r.reason).toContain('이미 현재 설계')
   })
 
-  it('이미 재결속됐으면 거부(중복 행 금지)', () => {
+  it('🔴 이미 재결속됐으면 no-op — 재실행이 완료 재판정에 도달해야 한다(중복 행은 여전히 금지)', () => {
     const m = lines(designRow(D1), phaseRow('p1', D1), designRow(D2), rebindRow('p1', D1, D2))
     const r = planRebind(m, 'p1')
-    expect(r.ok).toBe(false)
-    expect(r.ok === false && r.reason).toContain('이미 재결속')
+    expect(r.kind).toBe('noop')
+    expect(r.kind === 'noop' && r.reason).toContain('이미 재결속')
   })
 
   it('대상 phase 승인 행이 없으면 거부', () => {
-    expect(planRebind(lines(designRow(D2)), 'p1').ok).toBe(false)
+    expect(planRebind(lines(designRow(D2)), 'p1').kind).toBe('refuse')
   })
 
   /** 🔴 승인된 설계가 없으면 묶을 대상이 없다 — 승인되지 않은 설계로 phase 를 묶으면 안 된다. */
   it('🔴 커밋된 design 승인이 없으면 거부', () => {
     const r = planRebind(lines(phaseRow('p1', D1)), 'p1')
-    expect(r.ok).toBe(false)
-    expect(r.ok === false && r.reason).toContain('design 승인')
+    expect(r.kind).toBe('refuse')
+    expect(r.kind === 'refuse' && r.reason).toContain('design 승인')
   })
 
   /** phase_design_ref 자체가 없는 레거시 승인은 재결속 대상이 아니다 — 무엇에서 옮기는지 알 수 없다. */
   it('phase_design_ref 가 없는 레거시 승인은 거부하고 --migrate 를 가리킨다', () => {
     const m = lines(designRow(D2), phaseRow('p1'))
     const r = planRebind(m, 'p1')
-    expect(r.ok).toBe(false)
-    expect(r.ok === false && r.hint).toContain('migrate')
+    expect(r.kind).toBe('refuse')
+    expect(r.kind === 'refuse' && r.hint).toContain('migrate')
   })
 })
 

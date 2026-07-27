@@ -552,6 +552,28 @@ export function evidencedPhaseIdsFromManifest(content: string, designRef?: strin
     .map((e) => e.phase_id as string)
 }
 
+/**
+ * state.json 본문에서 **phase 계획 id**(`phases[].id`)를 뽑는다(파싱 불가·부재 → `[]`).
+ *
+ * 🔴 REQ-2026-072: `req:close`(커밋된 계획으로 부분 완료를 거른다)와 `req:rebind`(완료 재판정의
+ *    inventory 원천)가 **같은 파서**를 쓴다. 명령끼리 서로를 import하지 않도록 매니페스트·state 모델의
+ *    정본인 이 leaf에 둔다(REQ-2026-052 phase-3b가 매니페스트 파서를 옮긴 것과 같은 이유).
+ */
+export function plannedPhaseIdsFromState(stateText: string | null): string[] {
+  if (!stateText) return []
+  let raw: unknown
+  try {
+    raw = JSON.parse(stateText)
+  } catch {
+    return []
+  }
+  const phases = (raw as { phases?: unknown }).phases
+  if (!Array.isArray(phases)) return []
+  return phases
+    .map((p) => (p && typeof p === 'object' ? (p as { id?: unknown }).id : undefined))
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+}
+
 /** 미결속 phase의 분류(REQ-2026-072 DEC-2·DEC-5). `unbound = rebindable ∪ legacy`(서로소·정렬). */
 export interface UnboundPhaseSplit {
   /** 증거는 있으나 현재 design_ref에 결속되지 않은 phase id. */
