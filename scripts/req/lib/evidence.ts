@@ -134,7 +134,65 @@ const MANIFEST_KEYS = new Set([
   'consumed_by_commit_sha',
   'user_commit_confirmed',
   'archive_inventory', // REQ-2026-048 DEC-2(선택 — 부재해도 유효)
+  // REQ-2026-069 DEC-7: rebind 행 전용. 🔴 design/phase 행에 나타나면 아래 kind 격리 검사가 거부한다 —
+  //    여기 추가하는 것은 '어느 행에서든 허용'이 아니라 '매니페스트 어휘에 존재'라는 뜻이다.
+  'from_design_ref',
+  'to_design_ref',
+  'confirmation',
+  'confirmed_at',
 ])
+
+/**
+ * 🔴 **phase 재결속 기록**(REQ-2026-069 DEC-1). 승인 행이 아니라 **결속 기록**이다.
+ *
+ * 설계가 재승인되면 `design_hash`가 바뀌고, 앞서 승인된 phase는 **옛 해시에 묶인 채** 남는다.
+ * `dev-complete`는 모든 phase가 현재 design_ref에 결속돼야 발행되므로 티켓이 종결되지 않는다
+ * (실측: REQ-2026-066·067은 설계 4회 재승인으로 막혔고, 재승인이 0회인 068은 자가 종결했다).
+ *
+ * 🔴 **기존 phase 행을 고치지 않고 새 행을 append 한다.** `phase_design_ref`를 덮어쓰면
+ *    "이 phase가 원래 어느 설계로 검토됐는가"가 사라지고, 재결속이 있었다는 사실 자체가 증발한다.
+ *    승인 증거는 append-only여야 감사가 성립한다.
+ *
+ * 🔴 이 판단은 **사람의 것**이다 — "이 설계 변경이 그 phase의 검수를 무효화하는가"는 도구가
+ *    알 수 없다. 그래서 확인 문구와 실제 시각을 함께 남긴다(지어낸 시각은 REQ-2026-019 폐기 사유).
+ */
+export interface RebindEntry {
+  kind: 'rebind'
+  phase_id: string
+  /** 재결속 **전** 해시 — 그 phase의 실제 `phase_design_ref`와 일치해야 한다(아무 해시나 받으면 없던 승인을 지어낸다). */
+  from_design_ref: string
+  /** 재결속 **후** 해시 — 매니페스트의 현재 design_ref여야 한다(DEC-5). */
+  to_design_ref: string
+  /** 사람이 입력한 확인 문구. */
+  confirmation: string
+  /** 🔴 **실제 시계**에서 읽은 확인 시각. */
+  confirmed_at: string
+}
+
+/** rebind 전용 키(kind 격리 — design/phase 행에는 금지). */
+const REBIND_ONLY_KEYS = ['from_design_ref', 'to_design_ref', 'confirmation', 'confirmed_at'] as const
+
+/**
+ * rebind 행 검증(순수, REQ-2026-069 DEC-7). 승인 행과 **다른 규칙**을 쓴다 — 이건 리뷰 결과가 아니라
+ * 결속 기록이라 `response_path`·`response_sha256`·`approved_at` 같은 승인 필드가 없다.
+ */
+function rebindRowProblems(e: Record<string, unknown>, ln: number): string[] {
+  const p: string[] = []
+  if (typeof e.phase_id !== 'string' || e.phase_id.length === 0) p.push(`line ${ln}: rebind phase_id 필요`)
+  for (const k of ['from_design_ref', 'to_design_ref'] as const) {
+    const v = e[k]
+    if (typeof v !== 'string' || !SHA256_RE.test(v)) p.push(`line ${ln}: rebind ${k} 형식 오류(64hex)`)
+  }
+  // 🔴 같은 해시로의 재결속은 의미가 없다 — 불필요한 행을 남기지 않는다.
+  if (typeof e.from_design_ref === 'string' && e.from_design_ref === e.to_design_ref)
+    p.push(`line ${ln}: rebind from/to 동일 — 재결속할 것이 없음`)
+  if (typeof e.confirmation !== 'string' || e.confirmation.trim() === '') p.push(`line ${ln}: rebind confirmation 필요`)
+  if (!isValidIsoInstant(e.confirmed_at)) p.push(`line ${ln}: rebind confirmed_at ISO 오류`)
+  // 승인 행 전용 필드가 섞이면 거부(kind 격리의 반대 방향).
+  for (const k of ['response_path', 'response_sha256', 'approved_tree', 'design_hash', 'phase_design_ref', 'archive_inventory'])
+    if (k in e) p.push(`line ${ln}: rebind 행에 승인 전용 필드: ${k}`)
+  return p
+}
 
 /**
  * 이 승인의 아카이브 인벤토리 산출(순수 — sha 계산은 주입).
@@ -305,7 +363,18 @@ export function validateManifest(content: string, opts: { ticketRel: string; val
     // 예상 외 extra field 금지(주입 차단).
     for (const k of Object.keys(e)) if (!MANIFEST_KEYS.has(k)) problems.push(`line ${ln}: 예상 외 필드: ${k}`)
     const kind = e.kind
-    if (kind !== 'phase' && kind !== 'design') problems.push(`line ${ln}: kind 비유효: ${String(kind)}`)
+    if (kind !== 'phase' && kind !== 'design' && kind !== 'rebind')
+      problems.push(`line ${ln}: kind 비유효: ${String(kind)}`)
+
+    // 🔴 REQ-2026-069: rebind 행은 **승인 행이 아니다** — 별도 규칙으로 검증하고 아래 승인 검사는 건너뛴다.
+    //    승인 행의 검사(response_path·sha256·approved_at …)를 그대로 적용하면 없는 필드로 전부 실패한다.
+    if (kind === 'rebind') {
+      problems.push(...rebindRowProblems(e, ln))
+      continue
+    }
+    // 🔴 kind 격리: rebind 전용 키가 design/phase 행에 나타나면 거부한다. `MANIFEST_KEYS`에 넣은 것은
+    //    '매니페스트 어휘에 존재'라는 뜻이지 '어느 행에서든 허용'이 아니다.
+    for (const k of REBIND_ONLY_KEYS) if (k in e) problems.push(`line ${ln}: ${kind} 행에 rebind 전용 필드: ${k}`)
     // 공통: 경로 confinement, sha/OID/ISO 형식.
     const respPath = typeof e.response_path === 'string' ? e.response_path : ''
     if (!isConfinedArchivePath(respPath, opts.ticketRel)) problems.push(`line ${ln}: response_path 비confined: ${respPath}`)
@@ -427,9 +496,31 @@ export function parseManifestEntries(content: string): Array<Record<string, unkn
  *   `designRef` 미지정(하위호환)이면 결속 무관 전량(옛 동작) — 신규 완료 경로는 항상 designRef를 준다.
  */
 export function evidencedPhaseIdsFromManifest(content: string, designRef?: string | null): string[] {
-  return parseManifestEntries(content)
-    .filter((e) => e.kind === 'phase' && typeof e.phase_id === 'string')
-    .filter((e) => (designRef == null ? true : e.phase_design_ref === designRef))
+  const rows = parseManifestEntries(content)
+  const phases = rows.filter((e) => e.kind === 'phase' && typeof e.phase_id === 'string')
+  if (designRef == null) return phases.map((e) => e.phase_id as string)
+
+  /**
+   * 🔴 재결속 산입 규칙(REQ-2026-069 DEC-4). **결속 또는 유효 재결속**.
+   *
+   * 유효 재결속의 조건 셋을 모두 본다:
+   *   ① `to_design_ref` == 조회 대상 designRef
+   *   ② `from_design_ref` == 그 phase 행의 **실제** `phase_design_ref`
+   *   ③ 대상 phase 행이 실제로 존재
+   *
+   * 🔴 ②가 없으면 아무 해시에서나 재결속됐다고 주장할 수 있다 — **없던 승인을 지어내는** 경로가 된다.
+   */
+  const rebound = new Set<string>()
+  for (const r of rows) {
+    if (r.kind !== 'rebind') continue
+    const pid = r.phase_id
+    if (typeof pid !== 'string' || (r as { to_design_ref?: unknown }).to_design_ref !== designRef) continue
+    const from = (r as { from_design_ref?: unknown }).from_design_ref
+    const target = phases.find((e) => e.phase_id === pid)
+    if (target && target.phase_design_ref === from) rebound.add(pid)
+  }
+  return phases
+    .filter((e) => e.phase_design_ref === designRef || rebound.has(e.phase_id as string))
     .map((e) => e.phase_id as string)
 }
 

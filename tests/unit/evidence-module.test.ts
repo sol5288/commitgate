@@ -11,6 +11,7 @@ import {
   isConfinedArchivePath,
   buildManifestEntry,
   validateManifest,
+  evidencedPhaseIdsFromManifest,
   verifyPhaseArchives,
   serializeManifestLine,
   durableDesignEvidence,
@@ -819,5 +820,131 @@ describe('[REQ-2026-049] 워킹 트리만 고치고 HEAD는 손상 → 여전히
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+/**
+ * REQ-2026-069 phase-1 — phase 재결속(rebind).
+ *
+ * 🔴 헤드라인 둘:
+ *   1. **rebind 행이 없는 매니페스트의 검증 결과가 한 글자도 바뀌지 않는다** — 새 어휘가 기존 행을
+ *      "예상 외 필드"로 만들면 이미 커밋된 모든 티켓이 무효화된다(REQ-2026-064 가 원장에서 겪은 함정).
+ *   2. **`from_design_ref` 가 실제 결속과 다르면 산입하지 않는다** — 아무 해시에서나 재결속됐다고
+ *      주장할 수 있으면 **없던 승인을 지어내는** 경로가 된다.
+ */
+describe('[evidence] rebind 행 — 재결속 모델(REQ-2026-069)', () => {
+  const D1 = '1'.repeat(64)
+  const D2 = '2'.repeat(64)
+  const TICKET = 'workflow/REQ-2026-001'
+  const iso = '2026-07-27T00:00:00.000Z'
+
+  const phaseRow = (pid: string, designRef?: string) =>
+    JSON.stringify({
+      kind: 'phase',
+      phase_id: pid,
+      response_path: `${TICKET}/responses/${pid}-r01-approved.json`,
+      response_sha256: 'a'.repeat(64),
+      review_base_sha: 'b'.repeat(40),
+      approved_tree: 'c'.repeat(40),
+      ...(designRef ? { phase_design_ref: designRef } : {}),
+      approved_at: iso,
+      consumed_at: iso,
+      consumed_by_commit_sha: 'd'.repeat(40),
+      user_commit_confirmed: null,
+    })
+
+  const designRow = (h: string) =>
+    JSON.stringify({
+      kind: 'design',
+      phase_id: null,
+      response_path: `${TICKET}/responses/design-r01-approved.json`,
+      response_sha256: 'a'.repeat(64),
+      review_base_sha: 'b'.repeat(40),
+      design_hash: h,
+      approved_at: iso,
+      consumed_at: iso,
+      consumed_by_commit_sha: 'd'.repeat(40),
+      user_commit_confirmed: null,
+    })
+
+  const rebindRow = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      kind: 'rebind',
+      phase_id: 'p1',
+      from_design_ref: D1,
+      to_design_ref: D2,
+      confirmation: 'rebind REQ-2026-001 p1',
+      confirmed_at: iso,
+      ...over,
+    })
+
+  const lines = (...rows: string[]) => rows.join('\n') + '\n'
+
+  /** 🔴 헤드라인 1 — 기존 매니페스트 무회귀. */
+  it('🔴 rebind 행이 없는 매니페스트는 검증 결과가 그대로다', () => {
+    const content = lines(designRow(D1), phaseRow('p1', D1))
+    expect(validateManifest(content, { ticketRel: TICKET, validPhaseIds: ['p1'] })).toEqual([])
+  })
+
+  it('재결속 전에는 옛 해시 phase 가 산입되지 않는다', () => {
+    const content = lines(designRow(D1), phaseRow('p1', D1), designRow(D2))
+    expect(evidencedPhaseIdsFromManifest(content, D2)).toEqual([])
+  })
+
+  it('재결속 후에는 산입된다', () => {
+    const content = lines(designRow(D1), phaseRow('p1', D1), designRow(D2), rebindRow())
+    expect(evidencedPhaseIdsFromManifest(content, D2)).toEqual(['p1'])
+  })
+
+  /** 🔴 헤드라인 2 — 이게 없으면 없던 승인을 지어낼 수 있다. */
+  it('🔴 from_design_ref 가 실제 결속과 다르면 산입하지 않는다', () => {
+    const wrongFrom = rebindRow({ from_design_ref: '9'.repeat(64) })
+    const content = lines(designRow(D1), phaseRow('p1', D1), designRow(D2), wrongFrom)
+    expect(evidencedPhaseIdsFromManifest(content, D2)).toEqual([])
+  })
+
+  it('🔴 대상 phase 행이 없으면 산입하지 않는다', () => {
+    const content = lines(designRow(D2), rebindRow())
+    expect(evidencedPhaseIdsFromManifest(content, D2)).toEqual([])
+  })
+
+  it('🔴 to_design_ref 가 조회 대상과 다르면 산입하지 않는다', () => {
+    const content = lines(designRow(D1), phaseRow('p1', D1), designRow(D2), rebindRow({ to_design_ref: '8'.repeat(64) }))
+    expect(evidencedPhaseIdsFromManifest(content, D2)).toEqual([])
+  })
+
+  it('designRef 미지정(레거시 경로)은 그대로 전부 낸다', () => {
+    const content = lines(phaseRow('p1', D1), phaseRow('p2'))
+    expect(evidencedPhaseIdsFromManifest(content).sort()).toEqual(['p1', 'p2'])
+  })
+
+  describe('행 검증', () => {
+    const check = (row: string) => validateManifest(lines(designRow(D2), phaseRow('p1', D1), row), { ticketRel: TICKET, validPhaseIds: ['p1'] })
+
+    it('정상 rebind 행은 통과', () => {
+      expect(check(rebindRow())).toEqual([])
+    })
+
+    it('from == to 는 거부(재결속할 것이 없다)', () => {
+      expect(check(rebindRow({ from_design_ref: D2 })).some((p) => p.includes('동일'))).toBe(true)
+    })
+
+    it('해시 형식·확인 문구·시각을 검증한다', () => {
+      expect(check(rebindRow({ from_design_ref: 'nope' })).some((p) => p.includes('64hex'))).toBe(true)
+      expect(check(rebindRow({ confirmation: '  ' })).some((p) => p.includes('confirmation'))).toBe(true)
+      expect(check(rebindRow({ confirmed_at: '2026-99-99T00:00:00Z' })).some((p) => p.includes('confirmed_at'))).toBe(true)
+    })
+
+    /** 🔴 kind 격리 — 두 방향 모두. */
+    it('🔴 승인 행에 rebind 전용 필드가 있으면 거부', () => {
+      const polluted = JSON.parse(phaseRow('p1', D1))
+      polluted.to_design_ref = D2
+      const problems = validateManifest(lines(designRow(D2), JSON.stringify(polluted)), { ticketRel: TICKET, validPhaseIds: ['p1'] })
+      expect(problems.some((p) => p.includes('rebind 전용 필드'))).toBe(true)
+    })
+
+    it('🔴 rebind 행에 승인 전용 필드가 있으면 거부', () => {
+      expect(check(rebindRow({ design_hash: D2 })).some((p) => p.includes('승인 전용 필드'))).toBe(true)
+    })
   })
 })
