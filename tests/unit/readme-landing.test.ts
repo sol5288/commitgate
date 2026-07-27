@@ -46,8 +46,15 @@ describe('[REQ-2026-042] 랜딩 README — docs 절대 URL (D5-b)', () => {
   })
 })
 
-/** 각 needle은 README.md에 **바이트 그대로** 있어야 한다 — 이 테스트가 안전문구의 정본이다. */
-const HEADING = '## 3분 시작'
+/**
+ * 각 needle은 README.md에 **바이트 그대로** 있어야 한다 — 이 테스트가 안전문구의 정본이다.
+ *
+ * 🔴 경계 헤딩은 **설치를 시작하는 지점**이다(이름이 아니라 그 역할이 불변식이다).
+ *    REQ-2026-074에서 랜딩을 재구성하며 헤딩 이름이 `3분 시작` → `3분 설치`로 바뀌었고,
+ *    이 상수만 따라 옮겼다 — 4문구도, "설치 전에 읽힌다"는 순서도 그대로다.
+ *    (재구성 후 `## 준비물`이 앞에 생겼지만 그것도 안전문구 **뒤**라 불변식은 더 강해졌다.)
+ */
+const HEADING = '## 3분 설치'
 const SAFETY_KO = [
   { id: '① 리뷰 없인 커밋 불가', needle: 'Codex 리뷰 승인 없이는 커밋되지 않습니다' },
   { id: '② staged diff 외부 전송', needle: 'staged diff 전문을 외부(Codex·OpenAI)로 전송합니다' },
@@ -56,7 +63,7 @@ const SAFETY_KO = [
 ] as const
 
 /** 영문 랜딩의 안전 4문구·헤딩. needle은 README.en.md에 **바이트 그대로** 있어야 한다. */
-const HEADING_EN = '## Get started in 3 minutes'
+const HEADING_EN = '## Install in 3 minutes'
 const SAFETY_EN = [
   { id: '① no commit without review', needle: 'Nothing is committed without an approved Codex review' },
   { id: '② staged diff off-machine', needle: 'sends your staged diff in full to an external service' },
