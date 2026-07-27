@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-072-close-predicate-parity",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa313-ea39-7892-84d8-49afd7a2d2eb",
-  "review_base_sha": "2db947babb346d23b146c3a5dca32e807f52fc20",
-  "review_diff_hash": "0d7c2f1e230f462800207c43d830ac509b14128c",
+  "codex_thread_id": "019fa322-683a-70c2-93c3-9b0c1e86149a",
+  "review_base_sha": "413e20235a1f63ccf850b88b3c53a7847ff803d8",
+  "review_diff_hash": "58afae291ae0e5e2938c766e5a132cb7ea01319a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "6129c85590f42b23e4c6c1825a7b1e114f9545fb930da0887c7ede1eebda4366",
-  "current_phase": "phase-1-terminal-parity",
+  "current_phase": "phase-2-rebind-reentry",
   "phases": [
     {
       "id": "phase-1-terminal-parity",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-rebind-reentry",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-intake-guidance",
@@ -46,16 +46,23 @@
       "phase_id": "phase-1-terminal-parity",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-rebind-reentry#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-rebind-reentry",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-terminal-parity",
+    "phase_id": "phase-2-rebind-reentry",
     "outcome": "approved",
-    "compare_hash": "7ad5f3a33e03b0f894e7ba08dfa20c8f93a2d037c1513739205f75f9cecab65f",
+    "compare_hash": "866aa1eb5c0fe9d5fba6b62b91259c67050f4218c9551d978e0cd005648a52e4",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T10:17:52.444Z",
+    "at": "2026-07-27T10:33:21.154Z",
     "findings": [],
     "elided_count": 0
   },
@@ -83,6 +90,12 @@
       "phase_id": "phase-1-terminal-parity",
       "consumed_by_commit_sha": "cec853ac6fdd15485b0e847ee3ee2b1fa7824188",
       "approval_consumed_at": "2026-07-27T10:18:20.472Z"
+    },
+    {
+      "approved_tree": "58afae291ae0e5e2938c766e5a132cb7ea01319a",
+      "phase_id": "phase-2-rebind-reentry",
+      "consumed_by_commit_sha": "15391a588312df428463d9043f05583ca374543c",
+      "approval_consumed_at": "2026-07-27T10:33:46.521Z"
     }
   ],
   "user_commit_confirmed": null
