@@ -17,6 +17,7 @@
  *
  * 사용: req:next <REQ-id> [--json] [--root <path>] [--ticket <dir>]   (저장소 패키지매니저의 실행 형식으로)
  */
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, buildScriptInvocation, type PackageManager } from './lib/config'
@@ -26,6 +27,8 @@ import { createEvidencePorts } from './lib/evidence-ports'
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { reviewScratchPaths } from './lib/scratch'
 import { deliveryGateVerdict, deliveryRecordProblems, type DeliveryRecord } from './lib/delivery'
+import { REQUIRED_CONFIRM_SCOPE } from './lib/evidence'
+import { wouldCompleteReq } from './req-commit'
 import { computeReviewSemanticIdentity } from './lib/review-target'
 import {
   loadState,
@@ -187,6 +190,13 @@ export interface NextInput {
    *    이유가 없어 여기서만 내면 게이트를 영영 못 본다.
    */
   deliveryGate?: { slug: string; kind: 'continue' | 'await-human' | 'corrupt'; detail: string } | null
+  /**
+   * REQ-2026-071: 이 커밋이 REQ를 **완성시키는가**. `main()`이 `wouldCompleteReq`로 계산해 채운다.
+   *
+   * 🔴 `stopGate:'req'`의 HIGH 확인은 **그 커밋에서만** 요구되므로, 안내도 그때만 내야 한다.
+   *    모든 phase에서 안내하면 화면이 실제 게이트보다 넓게 말한다.
+   */
+  completesReq?: boolean
 }
 
 /** `consumed_approvals[]`에서 phase_id를 안전하게 읽는다. */
@@ -568,8 +578,31 @@ export function resolveNext(input: NextInput): NextAction {
     // REQ-2026-037: opt-in 자동 커밋. **fail-closed** — `risk_level==='LOW'` 정확 일치 AND 정책 low-only AND
     // staged 존재일 때만 RUN(자동 커밋). "HIGH가 아님"이 "자동 안전"을 의미하지 않는다: 누락·`'Low'` 오타·
     // 손상·HIGH는 전부 else(AWAIT_HUMAN)로 떨어지고, HIGH는 req-commit의 Gate B가 이중 백스톱.
+    /**
+     * 🔴 REQ-2026-071: **정지 지점은 `stopGate`가 단독으로 정한다.** HIGH 라는 이유로 빈도가 바뀌지 않는다.
+     *
+     * 그래서 HIGH 도 **게이트가 실제로 막는 지점이 아니면** 자동 커밋한다 — `req`의 중간 phase,
+     * `merge`의 모든 phase 커밋이 그렇다. 확인은 사라지지 않고 종결 지점(REQ 완성 커밋 ·
+     * `delivery integrate`)에서 요구된다.
+     *
+     * ⚠️ 이것은 REQ-2026-037의 "HIGH는 어느 값에서도 매 phase 정지"를 **의도적으로 완화**한 것이다
+     *    (사용자 지시). 다만 fail-closed 축은 그대로다 — `risk_level`이 `LOW`도 `HIGH`도 아니면
+     *    (누락·`'Low'` 오타·`MEDIUM`·손상) **자동 커밋하지 않는다.** "HIGH가 아님"이 "자동 안전"을
+     *    뜻하지 않는다는 규칙은 살아 있다.
+     */
+    const stopGateNow = input.stopGate ?? 'phase'
+    /**
+     * 🔴 `completesReq`가 **판정되지 않은 경우**(`undefined`)는 자동 커밋하지 않는다(phase-4 r03 P1).
+     *    예: 마지막 phase 승인 뒤 `current_phase`가 비었는데 staged가 남은 재호출 —
+     *    그때 `false`로 읽으면 **필요한 확인 없이 HIGH 가 자동 커밋된다.**
+     *    "완성이 아니다"와 "모른다"는 다르다. 모르면 사람에게 간다.
+     */
+    const gateBlocksHere =
+      state.risk_level === 'HIGH' &&
+      (stopGateNow === 'phase' || (stopGateNow === 'req' && input.completesReq !== false))
+    const riskKnown = state.risk_level === 'LOW' || state.risk_level === 'HIGH'
     const autoCommit =
-      input.phaseCommitAutoApprove === 'low-only' && state.risk_level === 'LOW' && input.hasStagedChanges
+      input.phaseCommitAutoApprove === 'low-only' && riskKnown && !gateBlocksHere && input.hasStagedChanges
     if (autoCommit)
       return {
         kind: 'RUN',
@@ -587,6 +620,31 @@ export function resolveNext(input: NextInput): NextAction {
         controlPoint: 'req:commit --finalize --run 직전',
         approvalSentence: 'req:commit --finalize --run 승인',
       }
+    /**
+     * 🔴 HIGH 티켓은 **`stopGate`가 정한 지점**의 확인을 요구한다(REQ-2026-071 DEC-5).
+     *    그 확인을 기록하는 명령까지 알려 준다 — 예전에는 `state.json` 손편집뿐이었고,
+     *    그것이 REQ-2026-019가 폐기된 표면(시각 날조)과 같다.
+     */
+    /**
+     * 🔴 안내는 **실제로 막히는 지점에서만** 낸다(phase-4 r01 P1). `req`는 REQ를 완성시키는 커밋에서만
+     *    막고 `merge`는 커밋을 아예 막지 않는데, 모든 phase에서 확인을 안내하면 **문서가 약속한 정지
+     *    지점과 화면이 어긋난다** — 사용자는 첫 phase에서 "남은 변경 전부를 미리 승인하라"는 말을 듣는다.
+     */
+    if (gateBlocksHere) {
+      const scope = REQUIRED_CONFIRM_SCOPE[stopGateNow]
+      const reqArg = targetArgs(target).join(' ')
+      return {
+        kind: 'AWAIT_HUMAN',
+        detail:
+          scope === 'phase'
+            ? 'HIGH 위험 phase 승인이 살아 있다. 이 커밋에 대한 사람 확인이 필요하다.'
+            : `HIGH 위험 티켓이다. stopGate="${input.stopGate}" 는 scope="${scope}" 확인을 요구한다 — ` +
+              '🔴 그 범위의 **아직 작성되지 않은 변경까지 미리 승인**하는 것이다.',
+        command: buildScriptInvocation(pm, 'req:confirm', [reqArg, '--scope', scope, '--method', '"<승인 문장>"', '--run']).join(' '),
+        controlPoint: `HIGH 사람 확인(scope=${scope})`,
+        approvalSentence: `req:confirm --scope ${scope} 승인`,
+      }
+    }
     return {
       kind: 'AWAIT_HUMAN',
       detail: 'phase 승인이 살아 있다. 커밋 전 사람 확인이 필요하다.',
@@ -944,6 +1002,24 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // 묶음이 없는 것과 구분되지 않지만, 어느 쪽이든 "묶음 정지 대상 아님"이라 판정은 같다.
     stopGate: cfg.stopGate,
     deliveryGate: cfg.stopGate === 'merge' ? readDeliveryGate(cfg.ticketRoot, state.id, roGit) : null,
+    // REQ-2026-071: HIGH + stopGate:'req' 일 때만 필요한 계산 — 그 외에는 안내가 이 값을 보지 않는다.
+    completesReq:
+      cfg.stopGate === 'req' && state.risk_level === 'HIGH'
+        ? (() => {
+            const mfAbs = join(ticketDir, 'responses', 'approvals.jsonl')
+            const pending = typeof state.current_phase === 'string' ? state.current_phase : null
+            // 🔴 대상 phase 를 모르면 **판정하지 않는다**(`undefined`) — `false` 로 내리면 호출부가
+            //    "완성이 아니다"로 읽어 확인 없이 자동 커밋한다(phase-4 r03 P1).
+            if (!pending) return undefined
+            const ev = (state as { approval_evidence?: { phase_design_ref?: unknown } }).approval_evidence
+            const ref = typeof ev?.phase_design_ref === 'string' ? ev.phase_design_ref : null
+            return wouldCompleteReq({
+              phaseIds: readPhases(state).map((p) => p.id),
+              manifestContent: existsSync(mfAbs) ? readFileSync(mfAbs, 'utf8') : '',
+              pending: { phaseId: pending, designRef: ref },
+            }).complete
+          })()
+        : false,
     // REQ-2026-048 DEC-4: marker와 증거 모두 **HEAD blob**에서 읽는다(워킹 캐시 신뢰 금지).
     designEvidenceDurability: (() => {
       const ports = createEvidencePorts(cfg.root, `${ticketRel}/responses`)

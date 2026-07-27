@@ -916,11 +916,85 @@ describe('REQ-2026-037 — phaseCommit 자동 커밋 분기(commit_allowed=true)
     expect(a.approvalSentence).toBeUndefined() // 자동 = 사람 정지 아님
   })
 
+  /**
+   * 🔴 HIGH 는 여전히 자동 커밋되지 않는다(무회귀). 다만 REQ-2026-071 로 **안내 문구가 바뀌었다** —
+   *    이제 `stopGate` 가 요구하는 scope 의 `req:confirm` 을 가리킨다. 예전에는 확인을 기록하는 도구
+   *    경로가 없어 `state.json` 손편집뿐이었고, 그것이 REQ-2026-019 폐기 사유(시각 날조)와 같은 표면이다.
+   */
   it('HIGH 유지: low-only + risk=HIGH + staged → AWAIT_HUMAN(정책 무관, LOW만 자동)', () => {
     const a = resolveNext(baseInput({ state: approved({ risk_level: 'HIGH' }), phaseCommitAutoApprove: 'low-only', hasStagedChanges: true }))
     expect(a.kind).toBe('AWAIT_HUMAN')
-    expect(a.controlPoint).toBe('req:commit --run 직전')
-    expect(a.approvalSentence).toBe('req:commit --run 승인')
+    expect(a.controlPoint).toContain('HIGH 사람 확인')
+    expect(a.command).toContain('req:confirm')
+  })
+
+  /** 🔴 넓은 범위는 "아직 작성되지 않은 변경까지 미리 승인"임을 안내가 말해야 한다. */
+  const highAt = (over: Partial<NextInput>) =>
+    resolveNext(
+      baseInput({
+        state: approved({ risk_level: 'HIGH' }),
+        phaseCommitAutoApprove: 'low-only',
+        hasStagedChanges: true,
+        ...over,
+      }),
+    )
+
+  it('🔴 stopGate:req + REQ 를 완성시키는 커밋 → scope=req 확인을 안내하고 그 뜻을 말한다', () => {
+    const a = highAt({ stopGate: 'req', completesReq: true })
+    expect(a.command).toContain('--scope req')
+    expect(a.detail).toContain('아직 작성되지 않은 변경')
+  })
+
+  /**
+   * 🔴 phase-4 r01 P1: 안내는 **실제로 막히는 지점에서만** 나와야 한다. 모든 phase 에서 안내하면
+   *    문서가 약속한 정지 지점과 화면이 어긋나고, 사용자는 첫 phase 에서 "남은 변경 전부를 미리
+   *    승인하라"는 말을 듣는다.
+   */
+  /**
+   * 🔴 정지 지점은 `stopGate` 가 단독으로 정한다 — HIGH 라는 이유로 빈도가 바뀌지 않는다.
+   *    중간 phase 는 게이트가 막지 않으므로 **자동 커밋**이고, 확인은 REQ 완성 커밋에서 요구된다.
+   */
+  it('🔴 stopGate:req + 중간 phase → 자동 커밋(RUN), 확인 안내 없음', () => {
+    const a = highAt({ stopGate: 'req', completesReq: false })
+    expect(a.kind).toBe('RUN')
+    expect(a.command ?? '').not.toContain('req:confirm')
+  })
+
+  /** `merge` 는 커밋을 아예 막지 않는다 — 확인은 `delivery integrate` 에서 요구된다. */
+  it('🔴 stopGate:merge + HIGH → 자동 커밋(RUN), 확인 안내 없음', () => {
+    const a = highAt({ stopGate: 'merge' })
+    expect(a.kind).toBe('RUN')
+    expect(a.command ?? '').not.toContain('req:confirm')
+  })
+
+  /**
+   * 🔴 phase-4 r03 P1: **"완성이 아니다"와 "모른다"는 다르다.** 마지막 phase 승인 뒤 `current_phase` 가
+   *    비었는데 staged 가 남은 재호출에서 `completesReq` 를 `false` 로 읽으면, 필요한 확인 없이
+   *    HIGH 가 자동 커밋된다. 모르면 사람에게 간다.
+   */
+  it('🔴 stopGate:req + completesReq 미판정(undefined) → 자동 커밋하지 않는다', () => {
+    const a = highAt({ stopGate: 'req', completesReq: undefined })
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.command ?? '').toContain('req:confirm')
+  })
+
+  /**
+   * 🔴 fail-closed 축은 살아 있다 — "HIGH 가 아님"이 "자동 안전"을 뜻하지 않는다.
+   *    risk_level 이 LOW 도 HIGH 도 아니면 어떤 stopGate 에서도 자동 커밋하지 않는다.
+   */
+  it('🔴 risk_level 이 누락·오타·MEDIUM 이면 stopGate 와 무관하게 자동 커밋하지 않는다', () => {
+    for (const sg of ['req', 'merge'] as const)
+      for (const risk of [undefined, 'Low', 'MEDIUM', '']) {
+        const a = resolveNext(
+          baseInput({
+            state: approved({ risk_level: risk as never }),
+            phaseCommitAutoApprove: 'low-only',
+            hasStagedChanges: true,
+            stopGate: sg,
+          }),
+        )
+        expect(a.kind).toBe('AWAIT_HUMAN')
+      }
   })
 
   it('fail-closed: risk_level 누락/오타/MEDIUM은 자동 아님(→ AWAIT_HUMAN)', () => {

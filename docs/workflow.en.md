@@ -163,6 +163,39 @@ would make every normal completion look like an after-the-fact attestation.
 > **Measured**: REQ-2026-066 and 067 each re-approved the design 4 times and could not close; REQ-2026-068,
 > with zero re-approvals, closed itself with `dev-complete`. The only difference was the re-approval count.
 
+## Human confirmation for HIGH-risk tickets
+
+A ticket with `risk_level: HIGH` is never committed or integrated without a human confirmation.
+**Where that confirmation happens is decided by `stopGate`.**
+
+| `stopGate` | Confirmation point | Confirmation `scope` |
+|---|---|---|
+| `phase` | before every phase commit | `phase` |
+| `req` | **the commit that completes the REQ** | `req` |
+| `merge` | `delivery integrate` | `delivery` |
+
+```sh
+npx commitgate req:confirm 2026-071 --scope req --method "<what you based the approval on>" --run
+```
+
+🔴 **`req` and `delivery` scopes pre-approve changes that do not exist yet.** `--scope req` means
+"every remaining phase of this REQ"; `--scope delivery` means "every remaining REQ in this set".
+If you want to see each change before approving it, use `stopGate: "phase"`.
+
+🔴 **Scope is a statement, not a size ordering.** Each point accepts only a confirmation whose `scope`
+**matches exactly** — a wider confirmation cannot satisfy a narrower point. Otherwise a single
+confirmation would erase the "fresh confirmation per phase" that `phase` exists to guarantee.
+
+🔴 Under `req` and `merge`, HIGH tickets also **auto-commit intermediate phases** — `stopGate` alone decides
+where you stop. If `risk_level` is neither `LOW` nor `HIGH` (missing, typo, `MEDIUM`), nothing auto-commits
+under any value.
+
+A confirmation is **consumed when its scope closes**: `phase` at every commit, `req` when `dev-complete`
+is issued, `delivery` at `delivery approve`. Once consumed, the next scope needs a new confirmation.
+
+> The timestamp is read from the **real clock**. Before this command you had to hand-edit `state.json`,
+> and that let the timestamp be fabricated.
+
 ## Command Cheat Sheet
 
 | Command | Purpose |
@@ -184,6 +217,7 @@ would make every normal completion look like an after-the-fact attestation.
 | `npm run req:doctor -- <id>` | Check gate status |
 | `npm run req:commit -- <id> --run -m "message"` | Commit approved changes |
 | `npm run req:rebind -- <id> --phase <p> --confirm "<sentence>" --run` | Rebind an earlier phase to the current design after a re-approval (see above) |
+| `npm run req:confirm -- <id> --scope <s> --method "<sentence>" --run` | Record the human confirmation for a HIGH-risk ticket (see above) |
 
 `req:*` are **`package.json` scripts**, not executables on your PATH. npm needs the `--` separator to pass arguments.
 

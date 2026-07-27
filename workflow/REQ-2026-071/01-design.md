@@ -64,6 +64,9 @@ npx commitgate req:confirm <REQ> --scope phase|req|delivery --method "<승인 �
 
 - 🔴 시각은 **실제 시계**에서 읽는다 — 손기록을 대체하는 것이 이 명령의 존재 이유다.
 - 🔴 `scope`는 현재 `stopGate`가 요구하는 것과 **정확히 일치**해야 한다(DEC-4b).
+  **다르면 기록을 거부한다**(설계 r05 P1) — 경고만 하면 사용자는 성공·checkpoint 를 받고서 나중에
+  종결 지점에서 막힌다. 그 사이 기록은 아무것도 통과시키지 못하는 쓸모없는 커밋이다.
+  "설정을 곧 바꿀 것"이라면 설정을 **먼저** 바꾸면 된다.
 - 🔴 넓은 scope는 **아직 없는 변경까지 미리 승인**한다 — 명령이 그 사실을 출력에 명시한다.
 - state 변경이므로 setup 게이트를 지나고, checkpoint 커밋을 남긴다.
 
@@ -110,6 +113,38 @@ userConfirmGate(state, stopGate, completesReq) → { blocked, reason? }
 
 `scope:'phase'`는 커밋마다(현행). `'delivery'`는 `delivery approve`에서. 
 🔴 중간에 소비하면 남은 변경이 확인 없이 진행된다.
+
+### DEC-8 — 🔴 HIGH 도 **게이트가 막지 않는 지점에서는 자동 커밋**한다 (phase-4 r02 P1)
+
+`req:next`의 `autoCommit` 조건이 `risk_level === 'LOW'`를 요구해, HIGH 는 `stopGate`와 무관하게
+매 phase 멈췄다 — **"오로지 stopGate 에 따라"라는 요구사항과 정면으로 어긋난다.**
+
+그래서 HIGH 도 **게이트가 실제로 막는 지점이 아니면** 자동 커밋한다: `req`의 중간 phase,
+`merge`의 모든 phase 커밋. 확인은 사라지지 않고 종결 지점에서 요구된다.
+
+⚠️ 이것은 REQ-2026-037의 "HIGH는 어느 값에서도 매 phase 정지"를 **의도적으로 완화**한 것이다.
+   문서·CHANGELOG가 그 사실을 앞세운다.
+
+🔴 **"완성이 아니다"와 "모른다"는 다르다**(phase-4 r03 P1). 대상 phase 를 알 수 없어 완성 여부를
+   판정하지 못하면(예: 마지막 phase 승인 뒤 `current_phase`가 빈 재호출) **자동 커밋하지 않는다.**
+   `false`로 내려 읽으면 필요한 확인 없이 HIGH 가 커밋된다.
+
+🔴 **fail-closed 축은 그대로다**: `risk_level`이 `LOW`도 `HIGH`도 아니면(누락·`'Low'` 오타·
+`MEDIUM`·손상) **어떤 `stopGate`에서도 자동 커밋하지 않는다.** "HIGH가 아님"이 "자동 안전"을
+뜻하지 않는다는 규칙은 살아 있다.
+
+### DEC-6b — 🔴 **기록과 소비는 다른 명령이 한다** (설계 r06 P1)
+
+`req:confirm`은 확인을 `state.json`에 쓰고 **state checkpoint 커밋**을 남긴다. 그 커밋은 상태를
+내구화할 뿐 **소비하지 않는다** — 소비는 `consumeState`가 하고, 그것을 부르는 곳은
+`req:commit`의 evidence-finalize **한 곳뿐**이다(`req-commit.ts` 단일 호출처, 실측 확인).
+
+즉 순서는 `req:confirm`(기록·checkpoint) → `req:commit`(게이트 통과 → 커밋 → 소비)이고,
+checkpoint 가 방금 기록한 확인을 지우지 않는다.
+
+🔴 이 사실을 계약으로 적는 이유: "커밋마다 소비"라는 문장만 보면 **checkpoint 커밋도 소비하는
+것처럼 읽힌다.** 실제로 그렇게 만들면 `scope:'phase'` 확인은 기록되자마자 사라져 **`phase` 값이
+영영 통과할 수 없게 된다.** 소비 지점은 evidence-finalize 하나로 유지한다.
 
 ### DEC-7 — 🔴 `risk_level` fail-closed는 그대로 (수용기준 5)
 

@@ -112,10 +112,19 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
   const required = REQUIRED_CONFIRM_SCOPE[cfg.stopGate]
   deps.log(`[req:confirm] ${reqId} · risk=${String(state.risk_level)} · stopGate="${cfg.stopGate}"(요구 scope="${required}")`)
   deps.log(`  ${scopeMeaning(o.scope)}`)
-  // 🔴 불일치를 **거부하지 않고 경고**한다: 설정을 바꿀 예정이거나 미리 기록해 두는 정상 사용이 있다.
-  //    게이트가 어차피 정확 일치만 통과시키므로, 여기서 막으면 기록조차 못 하게 될 뿐이다.
+  /**
+   * 🔴 **불일치를 거부한다**(설계 r05 P1). 경고만 하면 사용자는 성공·checkpoint 를 받고서 나중에
+   *    종결 지점에서 막힌다 — 그 사이의 기록은 아무것도 통과시키지 못하는 쓸모없는 커밋이다.
+   *    "설정을 곧 바꿀 것"이라면 설정을 **먼저** 바꾸면 된다.
+   */
   if (o.scope !== required)
-    deps.log(`  ⚠️ 현재 stopGate 는 scope="${required}" 를 요구합니다 — 이 기록으로는 게이트를 통과하지 못합니다.`)
+    throw new Error(
+      [
+        `현재 stopGate="${cfg.stopGate}" 는 scope="${required}" 확인을 요구합니다(받은 값: "${o.scope}").`,
+        '  범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술이라, 다른 범위의 기록은 게이트를 통과하지 못합니다.',
+        '  이 값으로 기록하려면 먼저 req.config.json 의 stopGate 를 바꾸세요.',
+      ].join('\n'),
+    )
 
   if (!o.run) {
     deps.log('[req:confirm] DRY-RUN — write 없음(--run 시 기록).')

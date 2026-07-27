@@ -1433,3 +1433,28 @@ describe('[REQ-2026-071] wouldCompleteReq — 완료 판정 단일 지점', () =
     expect(wouldCompleteReq({ phaseIds: ['p1', 'p2'], manifestContent: doc(design, phase('p1')) }).complete).toBe(false)
   })
 })
+
+/**
+ * 🔴 설계 r06 P1 회귀 가드: **기록과 소비는 다른 명령이 한다**(DEC-6b).
+ *
+ * `req:confirm` 은 확인을 쓰고 state checkpoint 를 남기지만 **소비하지 않는다** — 소비는
+ * `consumeState` 가 하고, 그 호출처는 `req:commit` 의 evidence-finalize 한 곳뿐이다.
+ * checkpoint 가 소비하면 `scope:'phase'` 확인이 기록되자마자 사라져 `phase` 값이 영영 통과할 수 없다.
+ */
+describe('[REQ-2026-071] 확인 기록은 커밋 전까지 살아 있다', () => {
+  const st2 = (over: Partial<WorkflowState>): WorkflowState => ({ id: 'X', phase: 'P', ...over }) as WorkflowState
+  const conf = { confirmed: true, method: 'm', confirmed_at: '2026-07-27T00:00:00.000Z', scope: 'phase' as const }
+
+  it('🔴 기록 직후 상태는 게이트를 통과한다(소비되지 않았다)', () => {
+    const recorded = st2({ risk_level: 'HIGH', user_commit_confirmed: conf })
+    expect(userConfirmGate(recorded, 'phase').blocked).toBe(false)
+  })
+
+  it('🔴 소비는 커밋(consumeState)에서만 일어난다', () => {
+    const recorded = st2({ risk_level: 'HIGH', user_commit_confirmed: conf })
+    const after = consumeState(recorded, { sourceCommitSha: 'a'.repeat(40), consumedAt: '2026-07-27T00:00:00.000Z' })
+    expect(after.user_commit_confirmed).toBeNull()
+    // 그리고 그 다음 phase 는 다시 요구한다.
+    expect(userConfirmGate(after, 'phase').blocked).toBe(true)
+  })
+})

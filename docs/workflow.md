@@ -160,6 +160,38 @@ npx commitgate req:rebind 2026-069 --phase phase-1-x --confirm "rebind REQ-2026-
 > **실측**: REQ-2026-066·067은 설계를 각각 4회 재승인해 종결이 막혔고, 재승인이 0회인 REQ-2026-068은
 > 그대로 `dev-complete`로 자가 종결했습니다. 차이는 재승인 횟수뿐입니다.
 
+## HIGH 위험 티켓의 사람 확인
+
+위험도가 `HIGH`인 티켓은 사람 확인 없이 커밋·통합되지 않습니다. **어디서 확인받는지는 `stopGate`가 정합니다.**
+
+| `stopGate` | 확인 지점 | 확인 `scope` |
+|---|---|---|
+| `phase` | 매 phase 커밋 전 | `phase` |
+| `req` | **REQ를 완성시키는 커밋** | `req` |
+| `merge` | `delivery integrate` | `delivery` |
+
+```sh
+npx commitgate req:confirm 2026-071 --scope req --method "<무엇을 근거로 승인했는지>" --run
+```
+
+🔴 **`req`·`delivery` 범위는 아직 작성되지 않은 변경까지 미리 승인합니다.** `--scope req`는
+"이 REQ의 남은 phase 전부"를, `--scope delivery`는 "이 묶음의 남은 REQ 전부"를 승인한다는 뜻입니다.
+매 변경을 보고 승인하고 싶다면 `stopGate: "phase"`를 쓰세요.
+
+🔴 **범위는 크기 순서가 아니라 진술입니다.** 각 지점은 자기 `scope`와 **정확히 일치**하는 확인만
+받습니다 — 넓은 확인으로 좁은 지점을 통과할 수 없습니다. 그러면 `phase`가 보장하려던
+"매 phase 새 확인"이 확인 한 번으로 사라지기 때문입니다.
+
+🔴 HIGH 티켓도 `req`·`merge` 에서는 **중간 phase 가 자동 커밋**됩니다 — 정지 지점을 `stopGate` 가 단독으로
+정하기 때문입니다. 단 `risk_level` 이 `LOW` 도 `HIGH` 도 아니면(누락·오타·`MEDIUM`) 어떤 값에서도
+자동 커밋하지 않습니다.
+
+확인은 **그 범위가 닫힐 때 소비**됩니다: `phase`는 커밋마다, `req`는 `dev-complete` 발행 시,
+`delivery`는 `delivery approve`에서. 소비되면 다음 범위는 새 확인을 요구합니다.
+
+> 시각은 **실제 시계**에서 읽습니다. 이 명령이 있기 전에는 `state.json`을 손으로 편집해야 했고,
+> 그 방식은 타임스탬프를 지어낼 수 있었습니다.
+
 ## 명령어 요약
 
 | 명령 | 용도 |
@@ -181,6 +213,7 @@ npx commitgate req:rebind 2026-069 --phase phase-1-x --confirm "rebind REQ-2026-
 | `npm run req:doctor -- <id>` | 게이트 상태 확인 |
 | `npm run req:commit -- <id> --run -m "message"` | 승인된 변경 커밋 |
 | `npm run req:rebind -- <id> --phase <p> --confirm "<문구>" --run` | 설계 재승인 뒤 앞선 phase를 현재 설계에 재결속 (위 참조) |
+| `npm run req:confirm -- <id> --scope <s> --method "<문구>" --run` | HIGH 위험 티켓의 사람 확인 기록 (위 참조) |
 
 `req:*`는 PATH에 잡히는 실행 파일이 아니라 **`package.json` 스크립트**입니다. npm은 인자 전달에 `--` 구분자가 필요합니다.
 

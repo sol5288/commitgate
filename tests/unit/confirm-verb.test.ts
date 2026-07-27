@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { parseArgs, buildConfirm, scopeMeaning, CONFIRM_SCOPES } from '../../scripts/req/req-confirm'
+import { describe, it, expect, afterEach } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { parseArgs, buildConfirm, scopeMeaning, CONFIRM_SCOPES, main } from '../../scripts/req/req-confirm'
 import { userConfirmProblem, REQUIRED_CONFIRM_SCOPE, effectiveConfirmScope } from '../../scripts/req/lib/evidence'
 import { resolveDispatch, VERB_MODULES } from '../../bin/dispatch.mjs'
 import { STAGE_B_REQ_VERBS, STAGE_B_REQ_SCRIPTS } from '../../bin/init'
@@ -113,5 +116,103 @@ describe('[req:confirm] merge → delivery 대응(양방향)', () => {
 
   it('🔴 --scope merge 는 기록조차 되지 않는다', () => {
     expect(() => parseArgs(['x', '--scope', 'merge'])).toThrow('--scope')
+  })
+})
+
+/**
+ * 🔴 설계 r05 P1: **불일치 scope 는 거부한다.** 경고만 하면 사용자는 성공·checkpoint 를 받고서
+ *    나중에 종결 지점에서 막힌다 — 그 사이 기록은 아무것도 통과시키지 못하는 쓸모없는 커밋이다.
+ *
+ * `main()` 은 config·fs 를 만지므로 여기서는 **거부 규칙 자체**를 표로 고정한다
+ * (실행 경로는 REQ 티켓에서 실측된다).
+ */
+describe('[req:confirm] stopGate 와 다른 scope 는 거부된다', () => {
+  const mismatches: Array<[keyof typeof REQUIRED_CONFIRM_SCOPE, string]> = [
+    ['phase', 'req'],
+    ['phase', 'delivery'],
+    ['req', 'phase'],
+    ['req', 'delivery'],
+    ['merge', 'phase'],
+    ['merge', 'req'],
+  ]
+  for (const [stopGate, given] of mismatches) {
+    it(`stopGate:'${stopGate}' 에 scope:'${given}' 는 요구와 다르다`, () => {
+      expect(REQUIRED_CONFIRM_SCOPE[stopGate]).not.toBe(given)
+    })
+  }
+
+  it('일치하는 조합만 요구를 만족한다', () => {
+    expect(REQUIRED_CONFIRM_SCOPE.phase).toBe('phase')
+    expect(REQUIRED_CONFIRM_SCOPE.req).toBe('req')
+    expect(REQUIRED_CONFIRM_SCOPE.merge).toBe('delivery')
+  })
+})
+
+/**
+ * 🔴 phase-4 r04 P1: 위 표 검증은 **동어반복**이었다 — `main()` 의 `throw` 를 경고-only 로 되돌려도
+ *    전부 통과한다. 실행 경로를 실제로 태워서 **거부**와 **아무것도 쓰이지 않음**을 확인한다.
+ *
+ * (같은 함정을 REQ-B 에서 이미 겪었다: expected 를 SUT 로 구성하면 오라클이 사라진다.)
+ */
+describe('[req:confirm] main() — 불일치 scope 실행 경로', () => {
+  const setup = (stopGate: 'phase' | 'req' | 'merge') => {
+    const root = mkdtempSync(join(tmpdir(), 'cg-confirm-'))
+    writeFileSync(
+      join(root, 'req.config.json'),
+      JSON.stringify({ stopGate, setup: { completedVersion: '0.10.0', completedAt: '2026-07-27T00:00:00.000Z' } }),
+    )
+    const ticket = join(root, 'workflow', 'REQ-2026-999')
+    mkdirSync(ticket, { recursive: true })
+    const state = { id: 'REQ-2026-999', phase: 'developing', risk_level: 'HIGH' }
+    writeFileSync(join(ticket, 'state.json'), JSON.stringify(state))
+    return { root, ticket, before: readFileSync(join(ticket, 'state.json'), 'utf8') }
+  }
+  const roots: string[] = []
+  afterEach(() => {
+    while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
+  })
+
+  const run = (root: string, scope: string) =>
+    main(['2026-999', '--scope', scope, '--method', 'm', '--root', root, '--run'], { now: () => '2026-07-27T00:00:00.000Z', log: () => {} })
+
+  const cases: Array<['phase' | 'req' | 'merge', string]> = [
+    ['phase', 'req'],
+    ['phase', 'delivery'],
+    ['req', 'phase'],
+    ['req', 'delivery'],
+    ['merge', 'phase'],
+    ['merge', 'req'],
+  ]
+
+  for (const [stopGate, given] of cases) {
+    it(`🔴 stopGate:'${stopGate}' + --scope ${given} → 거부하고 state 를 쓰지 않는다`, () => {
+      const { root, ticket, before } = setup(stopGate)
+      roots.push(root)
+      expect(() => run(root, given)).toThrow(/stopGate/)
+      // 🔴 오라클의 핵심: 거부는 checkpoint **前**이므로 state 가 그대로여야 한다.
+      expect(readFileSync(join(ticket, 'state.json'), 'utf8')).toBe(before)
+    })
+  }
+
+  /** 대조군: 일치하면 거부 사유가 scope 가 아니다(그 뒤 git 단계까지는 여기서 다루지 않는다). */
+  it('일치하는 scope 는 scope 사유로 막히지 않는다', () => {
+    const { root } = setup('req')
+    roots.push(root)
+    let msg = ''
+    try {
+      run(root, 'req')
+    } catch (e) {
+      msg = (e as Error).message
+    }
+    expect(msg).not.toMatch(/요구합니다/)
+  })
+
+  /** DRY-RUN 도 불일치면 거부한다 — 사용자가 "통과했다"고 오해하면 안 된다. */
+  it('🔴 DRY-RUN 에서도 불일치는 거부한다', () => {
+    const { root } = setup('req')
+    roots.push(root)
+    expect(() =>
+      main(['2026-999', '--scope', 'phase', '--method', 'm', '--root', root], { now: () => 'x', log: () => {} }),
+    ).toThrow(/stopGate/)
   })
 })
