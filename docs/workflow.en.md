@@ -27,12 +27,13 @@ Use `--json` for machine-readable output. It is **read-only** and changes no sta
 
 Repeat this loop without stopping and it drives design → Codex review → implementation → re-review → commit. You only confirm at `AWAIT_HUMAN`.
 
-> **Per-phase auto-commit (opt-in).** By default the loop stops at `AWAIT_HUMAN` before every phase commit. Set
-> `"phaseCommit": { "autoApprove": "low-only" }` in `req.config.json` and Codex-approved phases of **LOW-risk**
-> tickets commit without a human stop (`req:next` issues `req:commit --run` as a RUN), moving the single human
-> confirmation to just **before the feature→main merge** (the terminal becomes `AWAIT_HUMAN` (integration) instead
-> of `DONE`). **HIGH-risk tickets still stop at every phase** regardless of the policy. The Codex review gate is
-> unchanged either way — only the *human stop* on LOW phases is removed.
+> **Where a human stops is decided by `stopGate` alone.** Under the default `req`, phases inside a REQ commit
+> without a human stop (`req:next` issues `req:commit --run` as a RUN), and the human confirmation is gathered at
+> **the commit that completes the REQ** and **before integration** (the terminal becomes `AWAIT_HUMAN` (integration)
+> instead of `DONE`). To stop at every phase, use `stopGate: "phase"`.
+> The per-value confirmation points and how `HIGH` risk is treated are defined in
+> [Human confirmation for HIGH-risk tickets](#human-confirmation-for-high-risk-tickets) below — that section is the
+> single source. The Codex review gate is unchanged under every value — `stopGate` only moves the *human stop*.
 
 ## The reviewer persona is injected by the tool
 

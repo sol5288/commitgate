@@ -12,8 +12,8 @@
 | `reviewModel` | `"gpt-5.6-terra"` | codex 리뷰 모델(`-c model=`로 고정). `null`이면 codex 전역 설정을 상속 |
 | `reviewReasoningEffort` | `"medium"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | 열린 `(review_kind, phase_id)` review series의 재리뷰 시도 예산. 기본값 기준 1~5회차는 자동, 6~8회차는 회차마다 그 series·회차에 바인딩된 사람 예외 기록이 있어야 진행, `hardCap` 회를 이미 소진하면 그 다음 시도(9회차부터)는 예외가 있어도 차단. `hardCap ≤ 8`·`autoBudget ≤ hardCap` |
-| `stopGate` | `"req"` | **사람이 멈추는 지점**(권장 축). `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 LOW phase는 자율 커밋하고 확인을 통합 직전 한 번으로 모음 · `merge`=여러 REQ를 delivery set으로 묶어 **묶음 전체가 끝날 때까지** 미룸. **HIGH 위험 티켓은 어느 값에서도 매 phase 확인**하고, 통합(main 병합) 승인도 어느 값에서나 필요합니다 |
-| `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | phase 자동 커밋 정책. **`low-only`가 기본**이며 **LOW 위험** 티켓의 Codex 승인 phase를 사람 정지 없이 자동 커밋하고 사람 확인을 feature→main 병합 직전 한 번으로 모은다. `never`를 **명시하면** 매 phase 커밋 전에 사람이 확인한다. HIGH 티켓은 어느 값에서도 매 phase 확인(`userConfirmGate` 백스톱). `"all"` 같은 값은 없다(HIGH livelock 방지) |
+| `stopGate` | `"req"` | **사람이 멈추는 지점을 단독으로 정합니다**(권장 축). `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 phase는 자율 커밋하고 확인을 **REQ를 완성시키는 커밋**으로 모음 · `merge`=여러 REQ를 delivery set으로 묶어 **묶음 전체가 끝날 때까지** 미룸. 위험도(`HIGH`)를 포함한 확인 지점 상세는 [워크플로 — HIGH 위험 티켓의 사람 확인](workflow.md#high-위험-티켓의-사람-확인)이 정본입니다. 통합(main 병합) 승인은 어느 값에서나 필요합니다 |
+| `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | phase 자동 커밋 정책. **`low-only`가 기본**이며 Codex 승인 phase를 사람 정지 없이 자동 커밋하고 사람 확인을 뒤로 모은다. `never`를 **명시하면** 매 phase 커밋 전에 사람이 확인한다. `"all"` 같은 값은 없다 — 의미 축은 `stopGate`이고, alias에 값을 늘리면 두 축이 또 갈라진다 |
 
 빈 `branchPrefix`나 프로젝트 밖으로 나가는 경로는 거부됩니다.
 

@@ -27,11 +27,11 @@ npm run req:next -- 2026-002
 
 이 루프를 끊지 말고 반복하면 설계 → Codex 리뷰 → 구현 → 재리뷰 → 커밋이 진행됩니다. 사용자는 `AWAIT_HUMAN`에서만 확인하면 됩니다.
 
-> **phase 자동 커밋(opt-in).** 기본값은 매 phase 커밋 전에 `AWAIT_HUMAN`으로 멈춥니다. `req.config.json`에
-> `"phaseCommit": { "autoApprove": "low-only" }`를 두면, **LOW 위험** 티켓의 Codex 승인 phase는 사람 정지 없이
-> 자동 커밋되고(`req:next`가 `req:commit --run`을 RUN으로 지시), 사람 확인은 **feature→main 병합 직전 한 번**으로
-> 모입니다(종단이 `DONE` 대신 `AWAIT_HUMAN`(통합)). **HIGH 티켓은 정책과 무관하게 매 phase 확인**을 유지합니다.
-> 이때도 Codex 리뷰 게이트는 그대로입니다 — 제거되는 것은 LOW phase의 *사람 정지*뿐입니다.
+> **사람이 어디서 멈추는지는 `stopGate` 하나가 정합니다.** 기본값 `req`에서는 REQ 안의 phase가 사람 정지 없이
+> 자동 커밋되고(`req:next`가 `req:commit --run`을 RUN으로 지시), 사람 확인은 **REQ를 완성시키는 커밋**과
+> **통합 직전**으로 모입니다(종단이 `DONE` 대신 `AWAIT_HUMAN`(통합)). 매 phase 멈추려면 `stopGate: "phase"`입니다.
+> 값별 확인 지점과 위험도(`HIGH`)의 취급은 아래 [HIGH 위험 티켓의 사람 확인](#high-위험-티켓의-사람-확인)이 정본입니다.
+> 어느 값에서도 **Codex 리뷰 게이트는 그대로**입니다 — `stopGate`가 옮기는 것은 *사람 정지*뿐입니다.
 
 ## 리뷰어 페르소나는 도구가 주입합니다
 
