@@ -76,5 +76,19 @@ Exit: `docs:lint` green · Codex 승인.
 
 Exit: typecheck 0 · `npm test` green · **이 REQ 자신이 `dev-complete`로 종결** · Codex 승인.
 
+## Phase 5 — DEC-8 동작 문서화 (`phase-5-docs-recheck`)
+
+범위: docs 한/영 · CHANGELOG. 🔴 **phase-3의 문서가 DEC-8로 불완전해졌다** — `req:rebind`가
+완료를 재판정한다는 사실이 문서에 없다. phase-3을 그대로 재결속하면 **틀린 문서를 현재 설계에
+결속**하는 셈이라, 재결속이 아니라 문서 수정이 맞다.
+
+순서:
+1. 재결속이 마지막 결속을 채우면 `dev-complete`를 발행한다는 것 · 남은 phase가 있으면 기록만
+   남긴다는 것을 한/영 문서와 CHANGELOG에 적는다.
+2. 🔴 **이 phase 이후로는 설계를 바꾸지 않는다** — 바꾸면 앞선 phase가 또 밀린다.
+   남은 재결속은 이 phase 커밋 뒤 한 번에 한다.
+
+Exit: `docs:lint` green · Codex 승인.
+
 ## 완료
 - 게이트 해당분 · 사용자 main 통합(B1 사전 승인 — 반영 시 우회 사실·CI 사후 검증 보고).

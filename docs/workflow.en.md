@@ -134,6 +134,9 @@ review is something the tool cannot know — a human answers with the confirmati
 **appended** to `approvals.jsonl` for the audit trail (who, when, from which hash to which). The original
 approval rows are never rewritten, so "which design this phase was reviewed against" is still recorded.
 
+If the rebind fills in the **last** missing binding, `dev-complete` is issued right there and the ticket
+closes. If phases are still unapproved it just records the rebind and moves on — mid-run rebinds are normal.
+
 **This is not `req:close --migrate`.** That one is an escape hatch for **legacy tickets** that cannot prove
 themselves, closed by an operator after the fact and recorded with `reconstructed: true`. Using it routinely
 would make every normal completion look like an after-the-fact attestation.
