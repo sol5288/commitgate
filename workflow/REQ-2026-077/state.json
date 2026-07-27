@@ -3,16 +3,63 @@
   "branch": "feat/req-2026-077-macos-node18-hang-rca",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa417-18fb-7cd1-8e4b-38a81e723677",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "cb74225903bbb76774b87f604d1a4f215eb37adcdf0ce34df8c9ace2db9fd691",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-hang-probe",
+      "approved": false
+    },
+    {
+      "id": "phase-2-findings",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "6a96177517071b7e56ce2340626ff2cf3766032498364e070cc2c469e6fc7070",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-27T15:00:24.136Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "7b0bf5c1fd86bce8409154bc5e9f91e8d1c07b6b",
+    "design": "75eea250815332e9f0bfb75f3005f237f87cf90d",
+    "plan": "03d496d296f125706769246867fd032dacd535d8"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-077/responses/design-r02-approved.json",
+    "response_sha256": "6cf1c92524fa4eff7b6b2f94c260f06af10accfeeb134108c7117d73100ba69c",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "799cf1c73121879f0831a4d97ae0f36356199755",
+    "codex_thread_id": "019fa417-18fb-7cd1-8e4b-38a81e723677",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-27T15:00:24.136Z",
+    "design_hash": "cb74225903bbb76774b87f604d1a4f215eb37adcdf0ce34df8c9ace2db9fd691"
+  }
 }
