@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-071-stopgate-sole-authority",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa221-3ab1-7390-8bf1-f6007a58aa35",
-  "review_base_sha": "ead6ba624cf4f72c2967f65e64470ef048f4a8c5",
-  "review_diff_hash": "977e9f0eee96f8ad18669a94d6f11bfbae389801",
+  "codex_thread_id": "019fa221-f2ef-72d3-a058-50e3cd0185d2",
+  "review_base_sha": "22ef683963b36167dfc72d9ac199b98474bc4fee",
+  "review_diff_hash": "2f108957c1d43e7a5643b70f74efe6edb1cf143f",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "18992f6757685d74e60a47fb25658f50fe67d6e9b7ccab2ef13a9831f5c2057b",
-  "current_phase": "phase-1-confirm-scope",
+  "current_phase": "phase-2-confirm-verb",
   "phases": [
     {
       "id": "phase-1-confirm-scope",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-confirm-verb",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-terminal-wiring",
@@ -58,8 +58,8 @@
       "series_id": "phase:phase-2-confirm-verb#1",
       "review_kind": "phase",
       "phase_id": "phase-2-confirm-verb",
-      "attempts": 1,
-      "closed_reason": null
+      "attempts": 2,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#3",
@@ -70,13 +70,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-2-confirm-verb",
     "outcome": "approved",
     "compare_hash": "6a65619a8cb0c15a521d56fb549260b0f24d396504412fa5dddf54fc67b364bd",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T05:52:26.867Z",
+    "at": "2026-07-27T05:53:38.123Z",
     "findings": [],
     "elided_count": 0
   },
@@ -91,6 +91,12 @@
       "phase_id": "phase-1-confirm-scope",
       "consumed_by_commit_sha": "adfb770ceabaf499da109f2e8fa2edc7a0dd73f1",
       "approval_consumed_at": "2026-07-27T05:22:34.578Z"
+    },
+    {
+      "approved_tree": "2f108957c1d43e7a5643b70f74efe6edb1cf143f",
+      "phase_id": "phase-2-confirm-verb",
+      "consumed_by_commit_sha": "f1f467f8962a0b7ee0abb4af08cf7c7d471a3f0b",
+      "approval_consumed_at": "2026-07-27T05:54:03.166Z"
     }
   ],
   "user_commit_confirmed": null,
