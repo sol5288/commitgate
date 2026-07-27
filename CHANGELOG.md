@@ -2,7 +2,7 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.11.0 (2026-07-27)
 
 - **테스트 스위트가 507초에서 310초로 줄었습니다** (REQ-2026-075).
 
