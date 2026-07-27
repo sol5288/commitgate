@@ -17,6 +17,7 @@ import {
   baseStateBlocksIntake,
   isReconstructed,
   parseCloseProof,
+  recoveryGuidance,
   type CloseBaseState,
   type CloseProofRow,
 } from './close-proof'
@@ -26,6 +27,7 @@ import {
   validateManifest,
   evidencedPhaseIdsFromManifest,
   designHashFromManifest,
+  splitUnboundPhases,
 } from './evidence'
 import { parseLedger } from './review-ledger'
 import { createEvidencePorts } from './evidence-ports'
@@ -41,6 +43,12 @@ export interface IntakeTicketResult {
   reason: string
   /** `reconstructed` 오버레이(표시용 — 게이트 판정엔 영향 없음). */
   reconstructed: boolean
+  /**
+   * 🔴 **적용 가능한** 복구 안내(REQ-2026-072 DEC-5). 차단된 티켓에만 채워진다.
+   *    `req:close --migrate`의 거부 문구와 **같은 생성기**(`recoveryGuidance`)를 쓴다 — 한쪽이 권한
+   *    명령을 다른 쪽이 거부하는 상태(이 REQ가 고치는 결함)가 다시 생기지 않게.
+   */
+  hints: string[]
 }
 
 export interface IntakeFacts {
@@ -61,6 +69,10 @@ export interface IntakeFacts {
   committedDesignRef: string | null
   /** **design-bound**(현재 committed design_ref에 결속된) phase evidence의 phase id. */
   evidencedPhaseIds: string[]
+  /** 결속 무관 **전량**의 phase evidence id — 미결속 phase를 알아내는 분모(REQ-2026-072 DEC-5). */
+  evidencedPhaseIdsAll: string[]
+  /** 미결속 중 `phase_design_ref`가 있어 `req:rebind` 대상인 phase id(`splitUnboundPhases`). */
+  rebindablePhaseIds: string[]
 }
 
 /**
@@ -70,16 +82,16 @@ export function classifyIntake(facts: IntakeFacts): IntakeTicketResult {
   const head = { ticketId: facts.ticketId, ticketRel: facts.ticketRel }
   // legacy(durability marker 없음)는 차단하지 않고 표시만(DEC-C·요구).
   if (!facts.durabilityRequired)
-    return { ...head, baseState: 'legacy', verdict: 'legacy', reason: 'legacy 티켓(durability marker 없음) — 표시만, 차단 안 함', reconstructed: false }
+    return { ...head, baseState: 'legacy', verdict: 'legacy', reason: 'legacy 티켓(durability marker 없음) — 표시만, 차단 안 함', reconstructed: false, hints: [] }
   // 🔴 pass 조건(dev-complete/series-terminal)이 읽는 아티팩트가 손상됐으면 통과 금지(fail-closed).
   if (facts.manifestText !== null && facts.manifestProblems.length)
-    return { ...head, baseState: 'corrupt', verdict: 'block', reason: `HEAD approvals.jsonl 손상 — 통과 불가(fail-closed): ${facts.manifestProblems.slice(0, 3).join('; ')}`, reconstructed: false }
+    return { ...head, baseState: 'corrupt', verdict: 'block', reason: `HEAD approvals.jsonl 손상 — 통과 불가(fail-closed): ${facts.manifestProblems.slice(0, 3).join('; ')}`, reconstructed: false, hints: [] }
   if (facts.closeParsed.problems.length)
-    return { ...head, baseState: 'corrupt', verdict: 'block', reason: `HEAD ticket-close.jsonl 손상 — 통과 불가(fail-closed): ${facts.closeParsed.problems.slice(0, 3).join('; ')}`, reconstructed: false }
+    return { ...head, baseState: 'corrupt', verdict: 'block', reason: `HEAD ticket-close.jsonl 손상 — 통과 불가(fail-closed): ${facts.closeParsed.problems.slice(0, 3).join('; ')}`, reconstructed: false, hints: [] }
   // 🔴 DEC-B6·B7: committed 증거(design·phase archive) blob 부재/변조도 통과 조건이 읽는 증거의 손상 →
   //    corrupt block(dev-complete·series-terminal 위장 차단). design 행이 없는 미완 티켓은 손상 대상 아님(불완전≠손상).
   if (facts.evidenceIntegrityProblems.length)
-    return { ...head, baseState: 'corrupt', verdict: 'block', reason: `committed 증거 손상 — 통과 불가(fail-closed): ${facts.evidenceIntegrityProblems.slice(0, 3).join('; ')}`, reconstructed: false }
+    return { ...head, baseState: 'corrupt', verdict: 'block', reason: `committed 증거 손상 — 통과 불가(fail-closed): ${facts.evidenceIntegrityProblems.slice(0, 3).join('; ')}`, reconstructed: false, hints: [] }
   const state = deriveBaseState({
     durabilityRequired: true,
     closeProofRows: facts.closeParsed.rows,
@@ -103,7 +115,29 @@ export function classifyIntake(facts: IntakeFacts): IntakeTicketResult {
           state === 'migrated-complete'
           ? '개발 완료(마이그레이션 종결·migrated-complete)'
           : String(state)
-  return { ...head, baseState: state, verdict: blocked ? 'block' : 'pass', reason, reconstructed: isReconstructed(facts.closeParsed.rows) }
+  return {
+    ...head,
+    baseState: state,
+    verdict: blocked ? 'block' : 'pass',
+    reason,
+    reconstructed: isReconstructed(facts.closeParsed.rows),
+    // 🔴 REQ-2026-072 DEC-5: 차단된 티켓에만, **적용 가능한** 복구 경로를 붙인다. 결속이 끊긴 phase가
+    //    없으면(=이 축의 문제가 아니면) 빈 배열이라 기존 문구가 그대로 남는다.
+    hints: blocked ? recoveryHints(facts) : [],
+  }
+}
+
+/**
+ * 차단 티켓의 복구 안내(순수). `req:close --migrate`의 거부 문구와 **같은 생성기**를 쓴다 —
+ * 두 곳이 각자 문구를 만들면 한쪽이 권한 명령을 다른 쪽이 거부하는 상태로 다시 갈라진다.
+ *
+ * 🔴 "미결속"만 보고 `req:rebind`를 권하지 않는다: `phase_design_ref` 없는 phase에 rebind를 권하면
+ *    사용자는 복사해 실행하고 거부당한다 — 막다른 길을 하나 더 만드는 것이다(design-r01 P1).
+ */
+function recoveryHints(facts: IntakeFacts): string[] {
+  const bound = new Set(facts.evidencedPhaseIds)
+  const unbound = facts.evidencedPhaseIdsAll.filter((id) => !bound.has(id))
+  return recoveryGuidance({ ticketId: facts.ticketId, unboundPhaseIds: unbound, rebindablePhaseIds: facts.rebindablePhaseIds }).lines
 }
 
 /**
@@ -113,7 +147,7 @@ export function scanTicketIntake(root: string, ticketRel: string, ticketId: stri
   const ports = createEvidencePorts(root, `${ticketRel}/responses`)
   const durabilityRequired = isDurabilityRequired(ports.headText(`${ticketRel}/state.json`))
   if (!durabilityRequired)
-    return classifyIntake({ ticketId, ticketRel, durabilityRequired: false, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [] })
+    return classifyIntake({ ticketId, ticketRel, durabilityRequired: false, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [], evidencedPhaseIdsAll: [], rebindablePhaseIds: [] })
   const manifestText = ports.headText(`${ticketRel}/responses/approvals.jsonl`)
   const closeText = ports.headText(`${ticketRel}/responses/ticket-close.jsonl`)
   const ledgerText = ports.headText(`${ticketRel}/responses/review-ledger.jsonl`)
@@ -126,10 +160,13 @@ export function scanTicketIntake(root: string, ticketRel: string, ticketId: stri
   const ledgerHasApprovedClose = ledgerParsed.rows.some((r) => r.event === 'attempt-closed' && r.outcome === 'approved')
   const committedDesignRef = manifestText ? designHashFromManifest(manifestText) : null
   const evidencedPhaseIds = manifestText ? evidencedPhaseIdsFromManifest(manifestText, committedDesignRef) : []
+  // 🔴 REQ-2026-072 DEC-5: 복구 안내용 사실. `req:close --migrate`와 **같은 helper**로 계산한다(새 IO 없음 —
+  //    이미 읽은 HEAD 매니페스트만 본다).
+  const rebindablePhaseIds = manifestText ? splitUnboundPhases(manifestText, committedDesignRef).rebindable : []
   // 🔴 DEC-B7: committed 증거(design+phase) 무결성 종합 — intake·req:commit 공유 모듈. designEvidenceComplete로
   //    needs-recovery 판정 입력(committedEvidenceComplete)을 같은 조회에서 얻는다(중복 조회 없음).
   const integrity = verifyCommittedEvidenceIntegrity({ ticketRel, manifestText, ports })
-  return classifyIntake({ ticketId, ticketRel, durabilityRequired: true, manifestText, manifestProblems, closeParsed, evidenceIntegrityProblems: integrity.problems, ledgerHasApprovedClose, committedEvidenceComplete: integrity.designEvidenceComplete, committedDesignRef, evidencedPhaseIds })
+  return classifyIntake({ ticketId, ticketRel, durabilityRequired: true, manifestText, manifestProblems, closeParsed, evidenceIntegrityProblems: integrity.problems, ledgerHasApprovedClose, committedEvidenceComplete: integrity.designEvidenceComplete, committedDesignRef, evidencedPhaseIds, evidencedPhaseIdsAll: manifestPhaseIds, rebindablePhaseIds })
 }
 
 /**

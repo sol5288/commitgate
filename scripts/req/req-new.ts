@@ -83,7 +83,12 @@ export function renderIntakeSummary(tickets: readonly IntakeTicketResult[]): str
   const lines: string[] = []
   if (blocked.length) {
     lines.push('🔴 미종결 durable 티켓이 있어 새 REQ를 만들 수 없습니다(HEAD 커밋 증거 기준):')
-    for (const t of blocked) lines.push(`  - ${t.ticketId}: ${t.baseState} — ${t.reason}`)
+    for (const t of blocked) {
+      lines.push(`  - ${t.ticketId}: ${t.baseState} — ${t.reason}`)
+      // 🔴 REQ-2026-072 DEC-5: 그 티켓 상태에 **실제로 적용 가능한** 명령만 붙는다. 예전에는 이 자리에
+      //    일반 안내만 있어, 설계 재승인으로 갇힌 티켓의 사용자가 실패하는 명령을 차례로 시도했다.
+      for (const hint of t.hints) lines.push(`      ${hint}`)
+    }
     lines.push('  → 위 티켓을 완료(모든 phase 커밋)·종결하거나 복구한 뒤 다시 시도하세요.')
     lines.push('    복구가 필요하면 `req:commit <REQ> --finalize --run`(승인 tree==HEAD tree인 미완 evidence 내구화) 등을 사용합니다.')
   }

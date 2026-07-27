@@ -395,11 +395,11 @@ describe('[REQ-2026-052 phase-3b] req:new intake gate — HEAD durable 증거만
     // reconstructed:true인 dev-complete → 여전히 pass. reconstructed:true인 developing → 여전히 block.
     const recon = (rows: CloseProofRow[]) => rows.map((r) => ({ ...r, reconstructed: true, evidence_basis: ['x'] }))
     const dc: CloseProofRow = { ticket_id: 'R', event: 'dev-complete', series_id: null, resolution: null, phase_inventory: ['p1'], design_ref: D2, at: ISO, reconstructed: false, evidence_basis: null }
-    const passRec = classifyIntake({ ticketId: 'R', ticketRel: 'workflow/R', durabilityRequired: true, manifestText: '{}', manifestProblems: [], closeParsed: { rows: recon([dc]), problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: true, committedDesignRef: D2, evidencedPhaseIds: ['p1'] })
+    const passRec = classifyIntake({ ticketId: 'R', ticketRel: 'workflow/R', durabilityRequired: true, manifestText: '{}', manifestProblems: [], closeParsed: { rows: recon([dc]), problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: true, committedDesignRef: D2, evidencedPhaseIds: ['p1'], evidencedPhaseIdsAll: ['p1'], rebindablePhaseIds: [] })
     expect(passRec.baseState).toBe('dev-complete')
     expect(passRec.verdict).toBe('pass')
     expect(passRec.reconstructed).toBe(true)
-    const blockRec = classifyIntake({ ticketId: 'R', ticketRel: 'workflow/R', durabilityRequired: true, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [] })
+    const blockRec = classifyIntake({ ticketId: 'R', ticketRel: 'workflow/R', durabilityRequired: true, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [], evidencedPhaseIdsAll: [], rebindablePhaseIds: [] })
     expect(blockRec.baseState).toBe('developing')
     expect(blockRec.verdict).toBe('block')
   })
