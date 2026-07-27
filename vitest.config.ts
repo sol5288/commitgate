@@ -11,8 +11,18 @@ export default defineConfig({
     // 커밋해야 한다 — 전역에 기대면 로컬은 통과하고 CI(전역 identity 없는 러너)에서만 터진다.
     setupFiles: ['tests/setup/git-hermetic.ts'],
     // REQ-2026-044: init/uninstall/migrate 테스트는 임시 repo에서 `commitgate` 프로세스를 스폰한다.
-    // 전체 스위트를 파일 병렬로 돌리면 이 스폰들이 겹쳐, 리소스가 빠듯한 러너(CI macos·node18·로컬 Windows)에서
-    // `npm test`가 hang한다(어서션 실패가 아니라 교착). 파일을 **직렬** 실행해 그 hang을 제거한다 — 약간 느리지만 결정적.
-    fileParallelism: false,
+    // 그때 파일 병렬을 **기본값(= CPU 코어 수만큼 동시)**으로 두면 스폰들이 겹쳐, 리소스가 빠듯한
+    // 러너(CI macos·node18·로컬 Windows)에서 `npm test`가 hang한다(어서션 실패가 아니라 교착).
+    //
+    // REQ-2026-075: 그 해결이 `fileParallelism: false`(병렬 0)였는데, **그 사이의 값**이 시도되지 않았다.
+    // hang 조건은 `동시 워커 수 × 워커당 스폰`이고 **워커 상한이 그 곱을 묶는다.**
+    // GitHub 러너는 4 vCPU이므로 그 **절반**에서 멈춘다 — 코어 수에 닿으면 위 hang 조건으로 되돌아간다.
+    //
+    // 실측(2026-07-27 · 로컬 12코어 win32 · 47파일 2237 tests):
+    //   fileParallelism:false  507초 · maxWorkers:2  310초(1.64×) — 둘 다 pass, hang 없음.
+    //
+    // 🔴 되돌리려면 이 두 줄을 지우고 `fileParallelism: false`로 복귀하면 현행 동작과 정확히 같아진다.
+    maxWorkers: 2,
+    minWorkers: 1,
   },
 })
