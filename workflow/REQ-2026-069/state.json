@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-069-design-rebinding-on-reapproval",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa17a-422d-7332-80b2-f288377aeb2a",
-  "review_base_sha": "3d38e5ff052c3cd183719f83e0e2209652b5b2e9",
-  "review_diff_hash": "7750a91a83126d8d07a27a69173e29dc222b7ba6",
+  "codex_thread_id": "019fa186-221e-7323-bb7a-5628cf3ec7ab",
+  "review_base_sha": "e8025fc3485ebb31205d7044e6df79835fee399d",
+  "review_diff_hash": "7a5460e4ac2fa688b321cdbe14dafaca01ce2390",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "232244e4bd658c49e6c59da7d871cbda9b62ec45c7385eb1a422f66e0a652435",
-  "current_phase": "phase-3-docs",
+  "current_phase": "phase-4-recheck-complete",
   "phases": [
     {
       "id": "phase-1-rebind-model",
@@ -26,7 +26,7 @@
     },
     {
       "id": "phase-4-recheck-complete",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -74,6 +74,13 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-recheck-complete#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4-recheck-complete",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -82,13 +89,13 @@
     "plan": "76440a231bac9debd7a29a7efdef1cee0c176e17"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-4-recheck-complete",
     "outcome": "approved",
-    "compare_hash": "f88cce362ab6019049fc6ff811b7a7414e6c590fda89a577b4938fe93e50df54",
-    "count": 1,
+    "compare_hash": "3225dbcd27507c902e3122bdfcbf31c67cab139bcd35d22ec6cd4b0226b8c6fd",
+    "count": 2,
     "errors": [],
-    "at": "2026-07-27T02:50:25.889Z",
+    "at": "2026-07-27T03:03:10.204Z",
     "findings": [],
     "elided_count": 0
   },
@@ -110,6 +117,12 @@
       "phase_id": "phase-3-docs",
       "consumed_by_commit_sha": "9442b71043ae342cbd2c89fe5697eb1e622d23f4",
       "approval_consumed_at": "2026-07-27T02:41:27.983Z"
+    },
+    {
+      "approved_tree": "7a5460e4ac2fa688b321cdbe14dafaca01ce2390",
+      "phase_id": "phase-4-recheck-complete",
+      "consumed_by_commit_sha": "2ef662702f0ebcc56849543ffbdf0a2f14fab7b9",
+      "approval_consumed_at": "2026-07-27T03:03:29.199Z"
     }
   ],
   "user_commit_confirmed": null,
