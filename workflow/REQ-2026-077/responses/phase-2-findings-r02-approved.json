@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"f6f9b018e15fd14aeed08238f8f073e3e5d57b5a","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"Staged 변경을 커밋하고, 후속 REQ에서 vitest 업그레이드 후 동일 조건의 프로브를 31회 이상 실행해 검증하세요.","observations":[]}
