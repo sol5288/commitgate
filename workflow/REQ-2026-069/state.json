@@ -3,16 +3,67 @@
   "branch": "feat/req-2026-069-design-rebinding-on-reapproval",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa137-6da6-73d0-973c-84a6a0662bc1",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "90d3fb8d9b99116ebc8b210e8f94f59cd8a7dd68a62f4b0e4a6179c86ef52ec3",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-rebind-model",
+      "approved": false
+    },
+    {
+      "id": "phase-2-rebind-verb",
+      "approved": false
+    },
+    {
+      "id": "phase-3-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "73ec18e612e420b287fe7160ffe79113e23bfd59",
+    "design": "dd05844ada80251e0329c1c47fa0c85891c8134f",
+    "plan": "af84edd44942b1230ac2ce6549995a36688c0762"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-069/responses/design-r01-approved.json",
+    "response_sha256": "b3d4fe9dfd0cf1022d1f85455e81f27158d6c7e7310093772dbd18e0943ab0e0",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "462a9b0b0198ddf4fcb5f10375385296361bff9f",
+    "codex_thread_id": "019fa137-6da6-73d0-973c-84a6a0662bc1",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-27T01:37:22.425Z",
+    "design_hash": "90d3fb8d9b99116ebc8b210e8f94f59cd8a7dd68a62f4b0e4a6179c86ef52ec3"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "fdb9b9981173a0ff6bd34476b87a1b3915a29d19a2fbd327bdec6e16367ef392",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-27T01:37:22.425Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
