@@ -552,6 +552,45 @@ export function evidencedPhaseIdsFromManifest(content: string, designRef?: strin
     .map((e) => e.phase_id as string)
 }
 
+/** 미결속 phase의 분류(REQ-2026-072 DEC-2·DEC-5). `unbound = rebindable ∪ legacy`(서로소·정렬). */
+export interface UnboundPhaseSplit {
+  /** 증거는 있으나 현재 design_ref에 결속되지 않은 phase id. */
+  unbound: string[]
+  /** 그중 `phase_design_ref`가 있어 `req:rebind` 대상인 phase id. */
+  rebindable: string[]
+  /** 그중 `phase_design_ref`가 없어 재결속이 불가능한 phase id(진짜 레거시). */
+  legacy: string[]
+}
+
+/**
+ * 🔴 매니페스트의 phase 증거를 **현재 design_ref 기준으로** 결속/미결속으로 가르고, 미결속을 다시
+ *    `rebindable`(재결속 가능)과 `legacy`(불가)로 나눈다 (REQ-2026-072).
+ *
+ * `req:close --migrate`의 자격 판정(DEC-2)과 `req:new` intake 안내(DEC-5)가 **이 한 함수를 공유**한다 —
+ * 두 곳이 각자 "재결속 가능"을 정의하면 한쪽이 권한 명령을 다른 쪽이 거부하는 상태가 다시 생긴다.
+ *
+ * 🔴 `designRef`가 null이면(커밋된 design 승인 없음) 빈 분류를 낸다. 그 상태의 처리는 호출부 몫이다 —
+ *    마이그레이션은 그보다 먼저 거부하고, intake는 dev-complete 자체가 성립하지 않는다. 여기서
+ *    임의로 "전부 미결속"이라고 답하면 없는 재결속을 권하게 된다.
+ */
+export function splitUnboundPhases(content: string, designRef: string | null): UnboundPhaseSplit {
+  const empty: UnboundPhaseSplit = { unbound: [], rebindable: [], legacy: [] }
+  if (designRef == null || content === '') return empty
+  const rows = parseManifestEntries(content)
+  const phaseRows = rows.filter((e) => e.kind === 'phase' && typeof e.phase_id === 'string')
+  const bound = new Set(evidencedPhaseIdsFromManifest(content, designRef))
+  const unbound = [...new Set(phaseRows.map((e) => e.phase_id as string))].filter((id) => !bound.has(id)).sort()
+  const rebindable: string[] = []
+  const legacy: string[] = []
+  for (const id of unbound) {
+    // 같은 phase에 행이 여러 개면(재승인 이력) 하나라도 phase_design_ref를 가지면 재결속 대상이다 —
+    // `planRebind`가 그 필드를 가진 행을 찾아 `from`으로 쓴다.
+    const hasDesignRef = phaseRows.some((e) => e.phase_id === id && typeof e.phase_design_ref === 'string' && e.phase_design_ref !== '')
+    ;(hasDesignRef ? rebindable : legacy).push(id)
+  }
+  return { unbound, rebindable, legacy }
+}
+
 /** 매니페스트에서 커밋된 design 승인의 design_hash(가장 마지막 design 엔트리). 없으면 null. */
 export function designHashFromManifest(content: string): string | null {
   const designs = parseManifestEntries(content).filter((e) => e.kind === 'design' && typeof e.design_hash === 'string')

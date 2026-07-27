@@ -10,6 +10,9 @@ import {
   closeProofRowKey,
   closeProofPath,
   deriveBaseState,
+  verifiedTerminalEvent,
+  recoveryGuidance,
+  rebindConfirmSentence,
   isReconstructed,
   baseStateBlocksIntake,
   CLOSE_PROOF_KEYS,
@@ -349,6 +352,60 @@ describe('[close-proof] migrated-complete(REQ-2026-053) — 마이그레이션 �
     // design_ref가 달라도 같은 자연키(티켓당 1행) — dev-complete와 다르다.
     expect(closeProofRowKey(migratedComplete({ design_ref: 'A' }))).toBe(closeProofRowKey(migratedComplete({ design_ref: 'B' })))
     expect(closeProofRowKey(migratedComplete()).split(sep)).toEqual(['REQ-2026-049', 'migrated-complete', ''])
+  })
+})
+
+describe('[close-proof] 공유 terminal 술어 (REQ-2026-072 DEC-1)', () => {
+  it('deriveBaseState와 같은 답을 낸다 — 검증된 dev-complete', () => {
+    const input = baseInput({ closeProofRows: [devComplete({ phase_inventory: ['p1'], design_ref: 'DREF' })], evidencedPhaseIds: ['p1'], committedDesignRef: 'DREF' })
+    expect(verifiedTerminalEvent(input)).toBe('dev-complete')
+    expect(deriveBaseState(input)).toBe('dev-complete')
+  })
+  it('🔴 낡은 dev-complete(옛 design_ref)는 terminal이 아니다 — 이것이 소비자 교착의 핵심', () => {
+    const input = baseInput({ closeProofRows: [devComplete({ phase_inventory: ['p1'], design_ref: 'OLD' })], evidencedPhaseIds: ['p1'], committedDesignRef: 'NEW' })
+    expect(verifiedTerminalEvent(input)).toBeNull()
+    expect(deriveBaseState(input)).toBe('developing')
+  })
+  it('series-terminal·migrated-complete는 존재로 판정(사람/운영자 결정의 기록)', () => {
+    expect(verifiedTerminalEvent(baseInput({ closeProofRows: [terminal()] }))).toBe('series-terminal')
+    expect(verifiedTerminalEvent(baseInput({ closeProofRows: [migratedComplete()] }))).toBe('migrated-complete')
+  })
+  it('우선순위 불변: series-terminal > dev-complete > migrated-complete', () => {
+    const dc = devComplete({ phase_inventory: ['p1'], design_ref: 'DREF' })
+    const bound = { evidencedPhaseIds: ['p1'], committedDesignRef: 'DREF' }
+    expect(verifiedTerminalEvent(baseInput({ closeProofRows: [migratedComplete(), dc], ...bound }))).toBe('dev-complete')
+    expect(verifiedTerminalEvent(baseInput({ closeProofRows: [migratedComplete(), dc, terminal()], ...bound }))).toBe('series-terminal')
+  })
+  it('terminal이 없으면 null(= 상태 파생이 needs-recovery/developing으로 내려간다)', () => {
+    expect(verifiedTerminalEvent(baseInput())).toBeNull()
+  })
+})
+
+describe('[close-proof] 복구 안내 생성기 (REQ-2026-072 DEC-5)', () => {
+  it('미결속 phase 없음 → none(안내할 것 없음)', () => {
+    expect(recoveryGuidance({ ticketId: 'REQ-2026-088', unboundPhaseIds: [], rebindablePhaseIds: [] })).toEqual({ route: 'none', lines: [] })
+  })
+  it('전부 재결속 가능 → rebind 명령을 phase마다 완전한 형태로 제시', () => {
+    const g = recoveryGuidance({ ticketId: 'REQ-2026-088', unboundPhaseIds: ['phase-0', 'phase-1'], rebindablePhaseIds: ['phase-0', 'phase-1'] })
+    expect(g.route).toBe('rebind')
+    expect(g.lines.join('\n')).toContain('npx commitgate req:rebind REQ-2026-088 --phase phase-0 --confirm "rebind REQ-2026-088 phase-0" --run')
+    expect(g.lines.join('\n')).toContain('--phase phase-1')
+  })
+  it('🔴 하나라도 재결속 불가면 rebind를 제시하지 않는다(design-r01 P1) — migrate를 안내', () => {
+    const g = recoveryGuidance({ ticketId: 'REQ-2026-088', unboundPhaseIds: ['phase-0', 'phase-1'], rebindablePhaseIds: ['phase-0'] })
+    expect(g.route).toBe('migrate')
+    expect(g.lines.join('\n')).toContain('npx commitgate req:close REQ-2026-088 --migrate --run')
+    expect(g.lines.join('\n')).not.toContain('req:rebind')
+  })
+  it('3개를 넘으면 나머지는 개수로 알린다(무한 나열 금지)', () => {
+    const ids = ['p0', 'p1', 'p2', 'p3', 'p4']
+    const g = recoveryGuidance({ ticketId: 'REQ-2026-088', unboundPhaseIds: ids, rebindablePhaseIds: ids })
+    expect(g.lines.filter((l) => l.includes('req:rebind'))).toHaveLength(3)
+    expect(g.lines.join('\n')).toContain('…외 2개')
+  })
+  it('확인 문구는 티켓·phase마다 다르다(복사-붙여넣기로 엉뚱한 대상 금지)', () => {
+    expect(rebindConfirmSentence('REQ-2026-088', 'phase-0')).toBe('rebind REQ-2026-088 phase-0')
+    expect(rebindConfirmSentence('REQ-2026-088', 'phase-1')).not.toBe(rebindConfirmSentence('REQ-2026-088', 'phase-0'))
   })
 })
 

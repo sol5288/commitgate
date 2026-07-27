@@ -19,6 +19,10 @@ const facts = (over: Partial<MigrationFacts> = {}): MigrationFacts => ({
   committedDesignRef: DREF,
   evidencedPhaseIdsAll: ['phase-1-a', 'phase-2-b'],
   evidencedPhaseIdsBound: [], // 레거시: 현재 design_ref에 결속된 phase 없음
+  // 🔴 이 기본 픽스처가 표현하는 것은 **진짜 레거시**다(REQ-2026-072): phase 행에 `phase_design_ref`가
+  //    없어 재결속이 불가능하고, 그래서 마이그레이션이 유일한 종결 경로다. 재결속 가능한 티켓의
+  //    기대값은 아래 별도 describe에서 고정한다.
+  rebindablePhaseIds: [],
   committedPlannedPhaseIds: [], // 레거시 스캐폴드: 커밋된 계획 없음(vacuous)
   integrated: true,
   nowIso: '2026-07-25T05:00:00.000Z',
@@ -118,8 +122,9 @@ describe('[close-migrate] planMigrationClose — 이미 종결 시 no-op(DEC-M7)
     const p = planMigrationClose(facts({ closeRows: [closeRow('migrated-complete')] }))
     expect(p).toEqual({ kind: 'noop', existingState: 'migrated-complete' })
   })
-  it('⑬b dev-complete 행 존재 → no-op', () => {
-    const p = planMigrationClose(facts({ closeRows: [closeRow('dev-complete')] }))
+  it('⑬b **검증된** dev-complete → no-op (inventory가 현재 design_ref에 결속됨)', () => {
+    // REQ-2026-072: 행의 존재가 아니라 self-verify가 기준이다. inventory(phase-1-a)가 결속돼 있어야 종결.
+    const p = planMigrationClose(facts({ closeRows: [closeRow('dev-complete')], evidencedPhaseIdsBound: ['phase-1-a'] }))
     expect(p).toEqual({ kind: 'noop', existingState: 'dev-complete' })
   })
   it('⑬b series-terminal 행 존재 → no-op', () => {
@@ -130,5 +135,66 @@ describe('[close-migrate] planMigrationClose — 이미 종결 시 no-op(DEC-M7)
     // integrated=false여도 이미 종결이면 no-op(재실행 멱등).
     const p = planMigrationClose(facts({ integrated: false, closeRows: [closeRow('migrated-complete')] }))
     expect(p.kind).toBe('noop')
+  })
+})
+
+/**
+ * REQ-2026-072 — **낡은 dev-complete**(설계 재승인으로 옛 design_ref에 남은 행)와 재결속 경로.
+ * 소비자 버그리포트(lean_lms REQ-2026-088)가 고정된 시나리오다.
+ */
+const OLD_DREF = 'a'.repeat(64)
+
+describe('[close-migrate] 낡은 dev-complete·재결속 (REQ-2026-072)', () => {
+  it('A1 낡은 dev-complete(옛 design_ref)는 "이미 종결"이 아니다 — no-op으로 삼키지 않는다', () => {
+    const p = planMigrationClose(
+      facts({
+        closeRows: [closeRow('dev-complete', { design_ref: OLD_DREF })],
+        evidencedPhaseIdsBound: [],
+      }),
+    )
+    expect(p.kind).not.toBe('noop')
+  })
+
+  it('A2 미결속 phase가 전부 재결속 가능 → 거부하고 `req:rebind`를 안내한다(stamp 아님)', () => {
+    const p = planMigrationClose(
+      facts({
+        closeRows: [closeRow('dev-complete', { design_ref: OLD_DREF })],
+        rebindablePhaseIds: ['phase-1-a', 'phase-2-b'],
+      }),
+    )
+    expect(p.kind).toBe('refuse')
+    if (p.kind !== 'refuse') return
+    expect(p.reason).toContain('재결속 가능')
+    expect(p.hint).toContain('req:rebind REQ-2026-049 --phase phase-1-a')
+    expect(p.hint).toContain('--confirm "rebind REQ-2026-049 phase-1-a"')
+  })
+
+  it('A2b dev-complete 행이 아예 없어도 재결속 가능하면 마이그레이션하지 않는다(강한 경로 우선)', () => {
+    const p = planMigrationClose(facts({ rebindablePhaseIds: ['phase-1-a', 'phase-2-b'] }))
+    expect(p.kind === 'refuse' && p.reason).toContain('재결속 가능')
+  })
+
+  it('A3 하나라도 재결속 불가(phase_design_ref 부재)면 마이그레이션으로 진행한다 — 지금 교착인 경로가 열린다', () => {
+    const p = planMigrationClose(
+      facts({
+        closeRows: [closeRow('dev-complete', { design_ref: OLD_DREF })],
+        rebindablePhaseIds: ['phase-1-a'], // phase-2-b는 레거시
+      }),
+    )
+    expect(p.kind).toBe('stamp')
+    if (p.kind !== 'stamp') return
+    expect(p.row.event).toBe('migrated-complete')
+    expect(p.row.phase_inventory).toEqual(['phase-1-a', 'phase-2-b'])
+  })
+
+  it('낡은 dev-complete여도 손상 가드가 먼저다(fail-closed 순서 불변)', () => {
+    const p = planMigrationClose(
+      facts({
+        closeRows: [closeRow('dev-complete', { design_ref: OLD_DREF })],
+        rebindablePhaseIds: ['phase-1-a', 'phase-2-b'],
+        evidenceIntegrityProblems: ['archive 부재'],
+      }),
+    )
+    expect(p.kind === 'refuse' && p.reason).toContain('committed 증거')
   })
 })

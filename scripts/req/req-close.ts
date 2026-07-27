@@ -26,6 +26,7 @@ import {
   validateManifest,
   evidencedPhaseIdsFromManifest,
   designHashFromManifest,
+  splitUnboundPhases,
 } from './lib/evidence'
 import { parseCloseProof, appendCloseProofRow, closeProofPath } from './lib/close-proof'
 import { planMigrationClose, type MigrationFacts } from './lib/close-migrate'
@@ -132,6 +133,9 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const closeParsed = closeText ? parseCloseProof(closeText) : { rows: [], problems: [] }
   const committedDesignRef = manifestText ? designHashFromManifest(manifestText) : null
   const evidencedPhaseIdsBound = manifestText ? evidencedPhaseIdsFromManifest(manifestText, committedDesignRef) : []
+  // 🔴 REQ-2026-072 DEC-2: 미결속 phase 중 재결속 가능한 것(= `phase_design_ref` 보유). intake 안내와
+  //    **같은 helper**로 계산한다 — 한쪽이 권한 명령을 다른 쪽이 거부하는 표류를 막는다.
+  const unboundSplit = manifestText ? splitUnboundPhases(manifestText, committedDesignRef) : { unbound: [], rebindable: [], legacy: [] }
   const integrity = verifyCommittedEvidenceIntegrity({ ticketRel, manifestText, ports })
 
   // 2. integrated(완료성 증명) — 티켓 매니페스트를 마지막으로 수정한 HEAD 커밋이 mainline의 조상인가.
@@ -162,6 +166,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     committedDesignRef,
     evidencedPhaseIdsAll,
     evidencedPhaseIdsBound,
+    rebindablePhaseIds: unboundSplit.rebindable,
     committedPlannedPhaseIds: committedPlannedPhaseIds(stateText),
     integrated,
     nowIso: new Date().toISOString(),

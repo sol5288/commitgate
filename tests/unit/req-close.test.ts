@@ -14,6 +14,15 @@ import { main as closeMain, parseArgs, resolveMainline } from '../../scripts/req
 import { scanTicketIntake } from '../../scripts/req/lib/intake'
 import { buildManifestEntry, serializeManifestLine } from '../../scripts/req/lib/evidence'
 import { parseCloseProof } from '../../scripts/req/lib/close-proof'
+import {
+  commitStaleTicket,
+  mkRepo as mkRepo072,
+  headBlob as headBlob072,
+  commitCount as commitCount072,
+  D_OLD,
+  D_NEW,
+  type StaleTicketSpec,
+} from './fixtures/stale-devcomplete'
 
 /**
  * REQ-2026-062: 픽스처 repo는 **"setup을 마친 프로젝트"**를 나타낸다.
@@ -170,5 +179,69 @@ describe('[REQ-2026-053 phase-2] req:close --migrate (실 git)', () => {
     const t = commitDevelopingTicket(repo, 'REQ-2026-003', [{ pid: 'p1', ref: D1 }])
     expect(() => closeMain(['2026-003', '--migrate', '--run', '--root', repo])).toThrow(/req:commit --finalize/)
     void t
+  })
+})
+
+/**
+ * REQ-2026-072 — 낡은 `dev-complete`로 갇힌 티켓(소비자 버그리포트 REQ-2026-088의 상태).
+ * 🔴 이 describe가 고정하는 것은 **"거짓 no-op이 사라졌다"**와 **"적용 가능한 경로만 안내한다"**이다.
+ */
+describe('[REQ-2026-072] 낡은 dev-complete — 술어 일치·재결속 안내 (실 git)', () => {
+  const staleSpec = (overrides: Partial<StaleTicketSpec> = {}): StaleTicketSpec => ({
+    ticketId: 'REQ-2026-088',
+    oldPhases: [{ pid: 'phase-0', ref: D_OLD }, { pid: 'phase-1', ref: D_OLD }],
+    newPhases: ['phase-3'],
+    staleDevComplete: true,
+    ...overrides,
+  })
+
+  it('A1 낡은 dev-complete 티켓은 intake가 여전히 차단한다(developing) — 전제 확인', () => {
+    const repo = mkRepo072()
+    const t = commitStaleTicket(repo, staleSpec())
+    const scan = scanTicketIntake(repo, t, 'REQ-2026-088')
+    expect(scan.baseState).toBe('developing')
+    expect(scan.verdict).toBe('block')
+  })
+
+  it('🔴 A2 `--migrate`가 "이미 종결" no-op이 아니라 `req:rebind`를 안내하며 거부한다(write 0)', () => {
+    const repo = mkRepo072()
+    const t = commitStaleTicket(repo, staleSpec())
+    const before = commitCount072(repo)
+    let message = ''
+    try {
+      closeMain(['2026-088', '--migrate', '--run', '--root', repo])
+      throw new Error('거부되지 않았다')
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err)
+    }
+    expect(message).toContain('재결속 가능')
+    expect(message).toContain('req:rebind REQ-2026-088 --phase phase-0')
+    expect(message).toContain('--confirm "rebind REQ-2026-088 phase-0"')
+    // 🔴 거부는 write 0 — close proof에 새 행이 붙지 않는다(기존 낡은 행만 그대로).
+    expect(commitCount072(repo)).toBe(before)
+    expect(parseCloseProof(headBlob072(repo, `${t}/responses/ticket-close.jsonl`) as string).rows).toHaveLength(1)
+  })
+
+  it('A3 재결속 불가(phase_design_ref 부재)가 섞이면 마이그레이션으로 종결된다 — 교착이 열린다', () => {
+    const repo = mkRepo072()
+    const t = commitStaleTicket(repo, staleSpec({ oldPhases: [{ pid: 'phase-0', ref: D_OLD }, { pid: 'phase-1', ref: null }] }))
+    closeMain(['2026-088', '--migrate', '--run', '--root', repo])
+    const rows = parseCloseProof(headBlob072(repo, `${t}/responses/ticket-close.jsonl`) as string).rows
+    // 낡은 dev-complete는 보존되고(append-only) migrated-complete가 더해진다.
+    expect(rows.map((r) => r.event)).toEqual(['dev-complete', 'migrated-complete'])
+    const migrated = rows[1]!
+    expect(migrated.reconstructed).toBe(true)
+    expect(migrated.phase_inventory).toEqual(['phase-0', 'phase-1', 'phase-3'])
+    expect(migrated.design_ref).toBe(D_NEW)
+    // 종결됐으므로 intake가 통과시킨다.
+    const after = scanTicketIntake(repo, t, 'REQ-2026-088')
+    expect(after.baseState).toBe('migrated-complete')
+    expect(after.verdict).toBe('pass')
+  })
+
+  it('dev-complete가 한 번도 발행되지 않은 티켓도 재결속 가능하면 마이그레이션하지 않는다(REQ-2026-087 유형)', () => {
+    const repo = mkRepo072()
+    commitStaleTicket(repo, staleSpec({ ticketId: 'REQ-2026-087', staleDevComplete: false }))
+    expect(() => closeMain(['2026-087', '--migrate', '--run', '--root', repo])).toThrow(/req:rebind/)
   })
 })

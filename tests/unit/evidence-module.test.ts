@@ -19,6 +19,7 @@ import {
   isDurabilityRequired,
   verifyCommittedDesignEvidence,
   verifyCommittedEvidenceIntegrity,
+  splitUnboundPhases,
   type EvidencePorts,
 } from '../../scripts/req/lib/evidence'
 import { createEvidencePorts } from '../../scripts/req/lib/evidence-ports'
@@ -916,6 +917,40 @@ describe('[evidence] rebind 행 — 재결속 모델(REQ-2026-069)', () => {
   it('designRef 미지정(레거시 경로)은 그대로 전부 낸다', () => {
     const content = lines(phaseRow('p1', D1), phaseRow('p2'))
     expect(evidencedPhaseIdsFromManifest(content).sort()).toEqual(['p1', 'p2'])
+  })
+
+  /**
+   * REQ-2026-072 — 미결속 phase를 **재결속 가능/불가**로 가르는 분류. `req:close --migrate`의 자격 판정과
+   * `req:new` intake 안내가 이 한 함수를 공유하므로, 여기가 두 경로의 유일한 정의다.
+   */
+  describe('splitUnboundPhases — 미결속 분류(REQ-2026-072)', () => {
+    it('전부 결속돼 있으면 미결속 없음', () => {
+      const content = lines(designRow(D1), phaseRow('p1', D1))
+      expect(splitUnboundPhases(content, D1)).toEqual({ unbound: [], rebindable: [], legacy: [] })
+    })
+
+    it('설계 재승인으로 끊긴 phase는 재결속 가능으로 분류된다(phase_design_ref 보유)', () => {
+      const content = lines(designRow(D1), phaseRow('p1', D1), phaseRow('p2', D1), designRow(D2), phaseRow('p3', D2))
+      expect(splitUnboundPhases(content, D2)).toEqual({ unbound: ['p1', 'p2'], rebindable: ['p1', 'p2'], legacy: [] })
+    })
+
+    it('🔴 phase_design_ref 부재 행은 legacy — req:rebind가 거부하는 대상이라 권해서는 안 된다', () => {
+      const content = lines(designRow(D1), phaseRow('p1', D1), phaseRow('p-old'), designRow(D2))
+      const s = splitUnboundPhases(content, D2)
+      expect(s.unbound).toEqual(['p-old', 'p1'])
+      expect(s.rebindable).toEqual(['p1'])
+      expect(s.legacy).toEqual(['p-old'])
+    })
+
+    it('이미 재결속된 phase는 미결속이 아니다(rebind 행 산입)', () => {
+      const content = lines(designRow(D1), phaseRow('p1', D1), designRow(D2), rebindRow())
+      expect(splitUnboundPhases(content, D2).unbound).toEqual([])
+    })
+
+    it('designRef가 null이면 빈 분류 — 없는 재결속을 권하지 않는다(호출부가 그 상태를 따로 처리)', () => {
+      const content = lines(phaseRow('p1', D1))
+      expect(splitUnboundPhases(content, null)).toEqual({ unbound: [], rebindable: [], legacy: [] })
+    })
   })
 
   describe('행 검증', () => {

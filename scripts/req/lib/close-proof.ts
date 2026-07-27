@@ -276,11 +276,18 @@ export interface CloseStateInput {
 export type CloseBaseState = 'legacy' | 'series-terminal' | 'dev-complete' | 'migrated-complete' | 'needs-recovery' | 'developing'
 
 /**
+ * 🔴 terminal 판정에 필요한 입력만 뽑은 것(REQ-2026-072 DEC-1). `deriveBaseState`는 `CloseStateInput`
+ *    전체를 갖고 있고, `planMigrationClose`는 needs-recovery 입력을 갖지 않으므로 **공유 술어는 이 좁은
+ *    입력만 요구**한다. 전체 입력은 구조적으로 이 타입에 대입된다.
+ */
+export type TerminalStateInput = Pick<CloseStateInput, 'closeProofRows' | 'evidencedPhaseIds' | 'committedDesignRef'>
+
+/**
  * 🔴 dev-complete self-verify(순수, DEC-B2). HEAD close proof의 dev-complete row가 **자기 완결적으로** 증명되는가:
  *   ① dev-complete row 존재 ② 그 row의 phase_inventory **모든 phase**가 HEAD 증거(evidencedPhaseIds)에 있음
  *   ③ row의 design_ref = 현재 committed design 참조. runtime state는 절대 안 본다.
  */
-export function isDevCompleteVerified(input: CloseStateInput): boolean {
+export function isDevCompleteVerified(input: TerminalStateInput): boolean {
   if (input.committedDesignRef === null) return false
   // 🔴 **현재 design_ref에 맞는** dev-complete 행을 고른다(phase-3a r02 P1). design 재승인 후 옛 design_ref
   //    행은 무시(supersede)되고, 새 design_ref의 행이 있으면 그것으로 검증한다.
@@ -291,25 +298,118 @@ export function isDevCompleteVerified(input: CloseStateInput): boolean {
 }
 
 /**
+ * 🔴 **검증된 terminal 전이**(순수, REQ-2026-072 DEC-1). "이 티켓은 이미 종결됐는가"를 판정하는
+ *    저장소 유일의 술어 — `deriveBaseState`와 `planMigrationClose`가 **이 함수를 공유**한다.
+ *
+ * 그 전에는 두 곳이 서로 다른 술어를 썼다: 상태 파생은 *검증된* dev-complete를, 마이그레이션은
+ * *행의 존재*를. 그래서 설계 재승인으로 낡은 dev-complete 행(옛 design_ref)이 생기면 한쪽은
+ * `developing`(intake 차단), 다른 쪽은 "이미 종결"(no-op)이 되어 **탈출구가 사라졌다.**
+ * 술어를 두 곳에 적는 한 언제든 다시 갈라지므로 함수를 하나로 둔다.
+ *
+ * 우선순위는 `deriveBaseState`의 기존 순서를 그대로 보존한다:
+ * `series-terminal`(존재) > `dev-complete`(**self-verify**) > `migrated-complete`(존재).
+ */
+export function verifiedTerminalEvent(input: TerminalStateInput): CloseProofEvent | null {
+  const hasEvent = (e: CloseProofEvent): boolean => input.closeProofRows.some((r) => r.event === e)
+  if (hasEvent('series-terminal')) return 'series-terminal'
+  // 🔴 dev-complete만 self-verifying(DEC-B2): proof + committed evidence + design_ref로 재검증한다.
+  //    series-terminal·migrated-complete는 사람/운영자 결정의 기록이라 존재 자체가 종결이다.
+  if (isDevCompleteVerified(input)) return 'dev-complete'
+  // 🔴 REQ-2026-053(DEC-M1): 마이그레이션 종결 — dev-complete **아래**(정상 완료가 이김).
+  if (hasEvent('migrated-complete')) return 'migrated-complete'
+  return null
+}
+
+/**
  * 기본 상태 파생(순수·배타·완결 — 항상 정확히 하나). 우선순위:
  * `legacy` > `series-terminal` > `dev-complete` > `migrated-complete` > `needs-recovery` > `developing`(기본값).
  *
  * 🔴 워킹 state·워킹 승인을 절대 입력으로 받지 않는다(design-r01 P1·B4). `integrated`는 여기서 내지 않는다
  *    — git ancestry 오버레이라 순수 파생 밖이다(design-r02 P1).
+ * 🔴 terminal 판정은 `verifiedTerminalEvent`에 위임한다(DEC-1) — 마이그레이션 판정기와 같은 술어여야 한다.
+ *    needs-recovery **위**의 우선순위는 그 함수가 이미 담고 있다.
  */
 export function deriveBaseState(input: CloseStateInput): CloseBaseState {
   if (!input.durabilityRequired) return 'legacy'
-  const hasEvent = (e: CloseProofEvent): boolean => input.closeProofRows.some((r) => r.event === e)
-  if (hasEvent('series-terminal')) return 'series-terminal'
-  // 🔴 dev-complete는 self-verifying(DEC-B2): proof + committed evidence + design_ref로만 판정.
-  if (isDevCompleteVerified(input)) return 'dev-complete'
-  // 🔴 REQ-2026-053(DEC-M1): 마이그레이션 종결 — dev-complete **아래**(정상 완료가 이김), needs-recovery
-  //    **위**(일단 마이그레이션되면 종결). req:close가 needs-recovery/corrupt엔 스탬프를 찍지 않으므로(DEC-M3)
-  //    이 우선순위가 recovery 필요를 가리지 않는다.
-  if (hasEvent('migrated-complete')) return 'migrated-complete'
+  const terminal = verifiedTerminalEvent(input)
+  if (terminal) return terminal
   // 승인 흔적(원장)은 있으나 HEAD 증거가 불완전 = 복구 필요.
   if (input.ledgerHasApprovedClose && !input.committedEvidenceComplete) return 'needs-recovery'
   return 'developing'
+}
+
+// ───────────────────────────────── 복구 안내(REQ-2026-072 DEC-5) — 순수 ──
+
+/**
+ * 🔴 `req:rebind`가 요구하는 확인 문구의 **정본**. 안내가 제시하는 문구와 명령이 실제로 요구하는 문구가
+ *    다르면 사용자는 복사-붙여넣기 후 거부당한다 — 이 REQ가 고치려는 "막다른 안내"의 재발이다.
+ *    `req-rebind.ts`가 이 함수를 쓴다(자체 구현 금지).
+ *
+ * 티켓·phase마다 다른 문구여야 복사-붙여넣기로 엉뚱한 대상을 재결속하지 않는다.
+ */
+export function rebindConfirmSentence(ticketId: string, phaseId: string): string {
+  return `rebind ${ticketId} ${phaseId}`
+}
+
+/** 적용 가능한 복구 경로. `none`=미결속 phase가 없어 이 축의 안내가 필요 없음. */
+export type RecoveryRoute = 'none' | 'rebind' | 'migrate'
+
+export interface RecoveryGuidance {
+  route: RecoveryRoute
+  /** 사용자에게 그대로 보여줄 줄(명령은 복사해 실행 가능한 완전한 형태). `none`이면 빈 배열. */
+  lines: string[]
+}
+
+/** 안내에 나열하는 `req:rebind` 명령 최대 개수(초과분은 개수만 알린다). */
+const REBIND_HINT_LIMIT = 3
+
+/**
+ * 명령 표기는 `npx commitgate <verb>` 형식이다(`req-commit.ts`의 `req:confirm` 안내와 같은 형태).
+ * 🔴 pm별 파생(`buildScriptInvocation`)은 **`req:*` npm 스크립트**에 적용되는 규칙이고(REQ-2026-011 D2),
+ *    `rebind`·`close`는 런타임 패키지 verb라 pm과 무관하다. 이 leaf는 config를 알지도 못한다.
+ */
+
+/**
+ * 🔴 **복구 안내 생성기**(DEC-5). `req:close --migrate`의 거부 문구와 `req:new` intake 힌트가 **이 함수를
+ *    공유**한다 — 한쪽은 재결속을 권하는데 다른 쪽은 다른 말을 하는 표류를 구조적으로 막는다.
+ *
+ * 분류는 `planMigrationClose`의 자격 판정과 **같은 표**다(DEC-2):
+ * | 미결속 phase | 경로 |
+ * |---|---|
+ * | 없음 | `none` — 이 축의 문제 아님 |
+ * | 전부 rebindable(`phase_design_ref` 보유) | `rebind` |
+ * | 하나라도 레거시(`phase_design_ref` 부재) | `migrate` — rebind는 그 phase를 거부한다 |
+ *
+ * 🔴 "미결속"만 보고 rebind를 권하면 안 된다(design-r01 P1): `phase_design_ref`가 없는 phase에
+ *    `req:rebind`를 권하는 것은 **막다른 길을 하나 더 만드는 것**이다.
+ */
+export function recoveryGuidance(input: {
+  ticketId: string
+  /** 증거는 있으나 현재 design_ref에 결속되지 않은 phase id. */
+  unboundPhaseIds: readonly string[]
+  /** 그중 `phase_design_ref`가 있어 `req:rebind` 대상인 phase id. */
+  rebindablePhaseIds: readonly string[]
+}): RecoveryGuidance {
+  const unbound = [...new Set(input.unboundPhaseIds)].sort()
+  if (unbound.length === 0) return { route: 'none', lines: [] }
+  const rebindable = new Set(input.rebindablePhaseIds)
+  if (!unbound.every((id) => rebindable.has(id)))
+    return {
+      route: 'migrate',
+      lines: [
+        `미결속 phase 중 재결속할 수 없는 것이 있습니다(phase_design_ref 부재) — 레거시 종결 경로를 사용합니다.`,
+        `npx commitgate req:close ${input.ticketId} --migrate --run`,
+      ],
+    }
+  const shown = unbound.slice(0, REBIND_HINT_LIMIT)
+  const lines = [
+    `설계 재승인으로 앞선 phase의 결속이 끊겼습니다(${unbound.length}개) — 재결속하면 종결됩니다.`,
+    ...shown.map(
+      (id) => `npx commitgate req:rebind ${input.ticketId} --phase ${id} --confirm "${rebindConfirmSentence(input.ticketId, id)}" --run`,
+    ),
+  ]
+  if (unbound.length > shown.length) lines.push(`…외 ${unbound.length - shown.length}개 phase도 같은 방식으로 재결속합니다.`)
+  return { route: 'rebind', lines }
 }
 
 /** `reconstructed` 오버레이(순수·blob). close proof에 복원 행이 하나라도 있으면 true. */

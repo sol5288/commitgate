@@ -23,7 +23,7 @@ import { loadConfig } from './lib/config'
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { designHashFromManifest, parseManifestEntries, validateManifest, type RebindEntry } from './lib/evidence'
-import { closeProofPath } from './lib/close-proof'
+import { closeProofPath, rebindConfirmSentence } from './lib/close-proof'
 import { computeDevCompleteProof } from './req-commit'
 import { appendCloseProofRowToDisk, loadState, readPhases } from './review-codex'
 
@@ -60,7 +60,9 @@ export function parseArgs(argv: string[]): Opts {
  * (`delivery`의 확인 문구와 같은 이유).
  */
 export function confirmSentence(reqId: string, phaseId: string): string {
-  return `rebind ${reqId} ${phaseId}`
+  // 🔴 REQ-2026-072: 문구의 정본은 `lib/close-proof`에 있다. 복구 안내(`recoveryGuidance`)가 제시하는
+  //    명령줄과 여기서 요구하는 문구가 갈리면, 사용자는 안내를 그대로 복사하고도 거부당한다.
+  return rebindConfirmSentence(reqId, phaseId)
 }
 
 export type RebindPlan =
