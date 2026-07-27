@@ -3,13 +3,13 @@
   "branch": "feat/req-2026-079-vitest3-upgrade",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa44f-0ef1-7622-b8d0-81aa8ed87efc",
+  "codex_thread_id": "019fa471-c23c-7493-bbc6-0cbef9a0be91",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "0a4e2cfae190ba83e7c74726a5f116066a3efb5fcfa0f63ab61bf30a8cb23d60",
+  "design_approved_hash": "9794599eaca5f286166ad80a93071ad7e02fd366ec6262e33fb34ebe965f0118",
   "current_phase": null,
   "phases": [
     {
@@ -31,35 +31,42 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "6f2f5586cf15c0880811e93183ab71c885d9a6cf374ea073bf2188b97ced7dea",
+    "compare_hash": "cf7c419fabe62e3fa120e971845b7bee0355cf4071daa599b58489ed27525cde",
     "count": 1,
     "errors": [],
-    "at": "2026-07-27T16:01:38.009Z",
+    "at": "2026-07-27T16:40:02.631Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
-    "requirement": "1b272bdb832ce6e25ace376d988ce461ad475606",
-    "design": "a49cbc062b72a2e79058ffa18050166f67668e0c",
-    "plan": "35bd2cd9c840a640f2922ad000102d01a8e56549"
+    "requirement": "b070e74f18d3d94b49d169948242644864852db6",
+    "design": "d0324ccf2968bc857f31c8679274676eb99f49d8",
+    "plan": "fb8edc4e56ebfac514ed34c5f4118dc18f9e2ef6"
   },
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-079/responses/design-r02-approved.json",
-    "response_sha256": "74d5586d36d9bd614568e524044ba9a3250d03a59e1719cb91576dea310a66b7",
+    "response_path": "workflow/REQ-2026-079/responses/design-r05-approved.json",
+    "response_sha256": "0c42a4284cf376fd14b309337750b93e2985d9a55b9c2e343f5173fe3852e4c5",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "571980fc4b7d69d3a9768a10c256a89986f47c83",
-    "codex_thread_id": "019fa44f-0ef1-7622-b8d0-81aa8ed87efc",
+    "review_base_sha": "f404461c0ec77253f05de423050ffa701416dcf6",
+    "codex_thread_id": "019fa471-c23c-7493-bbc6-0cbef9a0be91",
     "machine_schema_version": "1.1",
     "status": "STEP_COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-07-27T16:01:38.009Z",
-    "design_hash": "0a4e2cfae190ba83e7c74726a5f116066a3efb5fcfa0f63ab61bf30a8cb23d60"
+    "approved_at": "2026-07-27T16:40:02.631Z",
+    "design_hash": "9794599eaca5f286166ad80a93071ad7e02fd366ec6262e33fb34ebe965f0118"
   }
 }
