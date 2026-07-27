@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"17647da12018cc9bd1eedeb6d0bc368e671618de","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계 승인 후 Phase 1을 구현하고, 로컬 검증 뒤 전 OS CI 결과를 확인하세요.","observations":[]}
