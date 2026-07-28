@@ -1453,6 +1453,65 @@ describe('[init] installGuidance — 안내 문구 (D4)', () => {
       .map((l) => l.trim())
       .filter((l) => l.startsWith('git '))
 
+  /**
+   * G-A — 🔴 안내 순서: **setup < 설치 커밋 < req:new** (REQ-2026-083 DEC-1·DEC-4).
+   *
+   * 0.12.1 까지 이 안내는 setup 을 **한 번도 언급하지 않았고**, 그대로 따르면 마지막 `req:new` 가
+   * setup 미완료로 차단됐다 — **따라 하면 막히는 절차**였다.
+   *
+   * 🔴 "setup < req:new" 만 보면 부족하다. phase-1 r01 이 잡아낸 중간 상태 — setup 을 커밋 **뒤**에 둔
+   *    배치 — 는 그 검사를 통과하지만 여전히 막힌다(setup 이 바꾼 `req.config.json` 이 미커밋으로 남아
+   *    clean-tree 게이트에 걸린다). 그래서 **세 지점의 상대 순서를 전부** 고정한다.
+   */
+  /**
+   * 🔴 `req:new` 는 **산문에도** 나온다("… 마치기 전에는 req:new 가 막힙니다").
+   *    맨 이름으로 찾으면 경고 문장이 먼저 걸려 순서 판정이 뒤집힌다(이 가드를 처음 쓸 때 실제로 그랬다).
+   *    실행 **명령**만 잡도록 인자까지 앵커한다 — 같은 파일의 `commands()` 헬퍼가 `-A` 에 쓰는 원칙과 동형.
+   */
+  const REQ_NEW_CMD = /req:new\s.*<slug> --run/
+
+  const orderOf = (lines: string[], re: RegExp, label: string): number => {
+    const i = lines.findIndex((l) => re.test(l))
+    expect(i, `안내에 ${label} 가 있어야 한다`).toBeGreaterThanOrEqual(0)
+    return i
+  }
+
+  it('🔴 G-A 정상 경로: setup → 설치 커밋 → req:new 순서다', () => {
+    const dir = tmpTarget()
+    try {
+      const g = installGuidance(runInit(OPTS(dir)))
+      const setupAt = orderOf(g, /npx commitgate setup/, 'npx commitgate setup')
+      const commitAt = orderOf(g, /git commit -m "chore: install commitgate"/, '설치 커밋 명령')
+      const newAt = orderOf(g, REQ_NEW_CMD, 'req:new 실행 명령')
+      expect(setupAt, 'setup 은 설치 커밋보다 앞이어야 한다(config 변경이 그 커밋에 담긴다)').toBeLessThan(commitAt)
+      expect(commitAt, '설치 커밋은 req:new 보다 앞이어야 한다(clean 워킹트리 요구)').toBeLessThan(newAt)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  it('🔴 G-A unsafe 경로: 여기서도 setup 이 커밋 지시보다 앞이다', () => {
+    const dir = tmpTarget()
+    try {
+      gitIn(dir, ['add', 'package.json'])
+      gitIn(dir, ['commit', '-q', '-m', 'base'])
+      writeFileSync(join(dir, '.gitignore'), 'workflow/.gitignore\n', 'utf8')
+      gitIn(dir, ['add', '.gitignore'])
+      gitIn(dir, ['commit', '-q', '-m', 'ignore wg'])
+      const r = runInit(OPTS(dir))
+      expect(r.workflowGitignorePolicyAtRisk, 'unsafe 경로여야 이 검사가 의미 있다').toBe(true)
+      const g = installGuidance(r)
+      // unsafe 경로는 번호가 아니라 문구로 커밋을 지시한다 → 그 문구를 앵커로 쓴다.
+      const setupAt = orderOf(g, /npx commitgate setup/, 'npx commitgate setup')
+      const commitAt = orderOf(g, /설치분만 커밋하십시오/, '커밋 지시 문구')
+      const newAt = orderOf(g, REQ_NEW_CMD, 'req:new 실행 명령')
+      expect(setupAt).toBeLessThan(commitAt)
+      expect(commitAt).toBeLessThan(newAt)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
   it('명령으로 `git add -A` 를 내지 않는다 — brownfield의 .env가 외부로 전송된다', () => {
     const dir = tmpTarget()
     try {
