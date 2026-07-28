@@ -3,16 +3,63 @@
   "branch": "feat/req-2026-081-docs-release-0120-gaps",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa72e-e01d-7812-8531-bffd035627da",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "da997c5c534a2ed5ccf3b62972b4c8400526de4dd2f8489b1e34ced08336911c",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-consumer-docs",
+      "approved": false
+    },
+    {
+      "id": "phase-2-dev-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "ef82048af4b574300fa2ee5526c66c5f8a55a0c61fd57e36c65dd97fb2a517b1",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-28T05:25:15.957Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "0879b105ecac880a58068e374b0c15ba5b7e738a",
+    "design": "2661af1c9c6d320b51c096dcdc3a8c4280beb79e",
+    "plan": "11c55ac3d0f28417fc68c9686445e1428745a04d"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-081/responses/design-r02-approved.json",
+    "response_sha256": "77eb22b70c1e118eb16d39f4decef5c763ef3decc0586e977ca11779d12719d9",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "6b5aeb157277b9fe7b031cd896d4a89db0e6a8d2",
+    "codex_thread_id": "019fa72e-e01d-7812-8531-bffd035627da",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-28T05:25:15.957Z",
+    "design_hash": "da997c5c534a2ed5ccf3b62972b4c8400526de4dd2f8489b1e34ced08336911c"
+  }
 }
