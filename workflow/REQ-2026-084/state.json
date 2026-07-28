@@ -3,18 +3,18 @@
   "branch": "feat/req-2026-084-review-contract-slimming",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa9c8-c64d-7693-90df-cfee8793f20e",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fa9d1-35ef-7850-8f9a-9f208c8763c0",
+  "review_base_sha": "7b4a0e9dad63a2e27b5ede9f0256dcb315e75456",
+  "review_diff_hash": "3eea68e58b16657d16ed4f7fef02e294c54e9468",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "76c42dad4dc868f48e274e73873d3c3d7a60e512fcf9b97d79a24dba8429d502",
-  "current_phase": null,
+  "current_phase": "phase-1-risk-level-deprecation",
   "phases": [
     {
       "id": "phase-1-risk-level-deprecation",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-invalid-budget",
@@ -33,6 +33,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-risk-level-deprecation#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-risk-level-deprecation",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -56,14 +63,23 @@
     "design_hash": "76c42dad4dc868f48e274e73873d3c3d7a60e512fcf9b97d79a24dba8429d502"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-risk-level-deprecation",
     "outcome": "approved",
-    "compare_hash": "e4aae55852e453702010d6cdd322e3887a9459b4f658bf9d8b5cc68cae22498e",
+    "compare_hash": "d434dab6aa0b8b30d145d18c054bf092849d66931696cad40343914bed33231a",
     "count": 1,
     "errors": [],
-    "at": "2026-07-28T17:32:30.711Z",
+    "at": "2026-07-28T17:42:09.029Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3eea68e58b16657d16ed4f7fef02e294c54e9468",
+      "phase_id": "phase-1-risk-level-deprecation",
+      "consumed_by_commit_sha": "70b0c1c48e8f6f1d79ef48f4cc51a018905e9a5d",
+      "approval_consumed_at": "2026-07-28T17:42:24.561Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
