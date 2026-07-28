@@ -3,16 +3,54 @@
   "branch": "feat/req-2026-083-codex-missing-guidance-surfaces",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa871-b446-71c3-8fcd-708fd16c2107",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "6832517287ed00347cc14cdcb637e6617cf7bc65d840272d3e1d573376e3d9f6",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "714bc857c327fa6b16b540bec2994edf15bf5123",
+    "design": "7a1f61d52b06d0ba4eae53245df455e022c6e6b1",
+    "plan": "c0aab0815223d69973d8209aa81234ffa7f5b8d6"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-083/responses/design-r01-approved.json",
+    "response_sha256": "77fcd3a6198a16de2bfd88184c9668c4dc4e3b2d3993e454605acb1ec54cf9f1",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "2595fa7895fd39cb251b6c445bd45e7af253bfa7",
+    "codex_thread_id": "019fa871-b446-71c3-8fcd-708fd16c2107",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-28T11:18:23.528Z",
+    "design_hash": "6832517287ed00347cc14cdcb637e6617cf7bc65d840272d3e1d573376e3d9f6"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "bfdedb2cfbb258c0aa9f675d1477860792eda22c3ea78c0a7b5820c2bf7ea1f0",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-28T11:18:23.528Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
