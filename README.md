@@ -6,11 +6,15 @@
 
 [![CI](https://github.com/sol5288/commitgate/actions/workflows/ci.yml/badge.svg)](https://github.com/sol5288/commitgate/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
+[![node](https://img.shields.io/node/v/commitgate.svg)](https://nodejs.org)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/sol5288/commitgate/main/assets/commitgate-workflow-hero.webp" alt="개발 AI와 독립 검수 AI가 검토한 뒤 사람이 확인하고 최종 커밋 게이트를 통과하는 모습" width="1200">
 </p>
+
+> **어디부터 보면 되나요?**
+> ⚡ 일단 써보고 싶다 → [3분 설치](#3분-설치) · 🔍 뭘 보장하는지부터 → [보장과 한계](#무엇을-보장하고-무엇은-보장하지-않나) · 🆘 막혔다 → [막혔을 때](#막혔을-때) · 📖 용어가 낯설다 → [용어 사전](#용어-사전)
 
 ## CommitGate란?
 
@@ -21,42 +25,38 @@ AI에게 코딩을 시키면 결과가 아주 빨리 나옵니다. 문제는 그
 CommitGate는 그 왕복을 자동으로 돌립니다. **검사에 통과하기 전에는 저장이 막힙니다.**
 
 ```text
-        요구사항을 말한다
-               |
-               v
+  요구사항을 말한다
+       |
+       v
   +--------------------+
-  |  code-writing AI   |   코드를 만든다
+  |  code-writing AI   |  코드를 만든다
   +--------------------+
-               |
-               v
+       |
+       v
   +--------------------+
-  |  reviewing AI      |   그 변경을 검사한다
+  |  reviewing AI      |  그 변경을 검사한다
   +--------------------+
-               |
-               v
-        고칠 점이 있나?  --- 있다 ---> 위로 돌아가 다시 만든다
-               |
-             없다 (= 승인)
-               |
-               v
+       |
+       +-- 고칠 점이 있다 --> 위로 돌아가 다시 만든다
+       |
+       v  (고칠 점 없다 = 승인)
   +--------------------+
-  |  save (= commit)   |   승인받은 그 변경만 저장된다
+  |  save (= commit)   |  승인받은 그 변경만 저장된다
   +--------------------+
-               |
-               v
-      남은 작업이 있나?  --- 있다 ---> 위로 돌아가 다시 만든다
-               |
-             없다
-               |
-               v
+       |
+       +-- 남은 작업이 있다 --> 위로 돌아가 다시 만든다
+       |
+       v
   +--------------------+
-  |  human check       |   사람은 여기서만 확인한다
-  +--------------------+       (작업 마무리 · 합치기)
+  |  human check       |  사람은 여기서만 확인한다 (마무리 · 합치기)
+  +--------------------+
 ```
 
 **중요한 건 반복이 아니라 마지막 약속입니다.** 검사에 통과한 **바로 그 변경분**만 저장됩니다 — 승인을 받은 뒤에 코드가 한 줄이라도 바뀌면 그 승인은 낡은 것으로 보고 **검사를 다시 요구**합니다.
 
 기본 설정에서 **사람은 중간마다 멈추지 않습니다.** 작업 하나가 끝나는 지점과 결과를 합치는 지점에서만 확인합니다. 매 단계마다 직접 보고 넘기고 싶다면 그렇게 바꿀 수 있습니다 — 아래 [사람이 멈추는 지점](#사람이-멈추는-지점)을 보세요.
+
+> 💳 **되돌아가는 화살표가 무한 반복은 아닙니다.** 한 단계(phase)의 재검사는 **자동 5회**까지입니다. 6~8회는 사람이 예외를 기록해야 진행되고, **9회부터는 예외로도 막힙니다.** 리뷰는 유료 호출이라 상한이 있습니다 — 값은 [설정](https://github.com/sol5288/commitgate/blob/main/docs/configuration.md)에서 조정합니다.
 
 | 원래는 사람이 챙기던 일 | CommitGate가 대신하는 것 |
 |---|---|
@@ -90,11 +90,20 @@ CommitGate는 그 왕복을 자동으로 돌립니다. **검사에 통과하기 
 | npm · pnpm · yarn 중 하나 | `npm --version` | 아래 안내는 npm 기준 |
 | **Codex CLI** | `codex --version` | 🔴 **리뷰 실행에 필요** — 없으면 설치는 성공하고 리뷰 단계에서 막힙니다 |
 
+> 💳 **리뷰는 무료가 아닙니다.** CommitGate 자체는 MIT 오픈소스지만, 검사는 Codex를 **실제로 호출**하므로 로그인한 계정(ChatGPT 계정 또는 OpenAI API 키)의 **사용량·요금이 발생합니다.** 얼마가 드는지는 선택한 모델과 변경 크기에 따라 다르므로 여기에 적지 않습니다 — 계정의 요금 정책을 확인하세요. 한 단계당 호출 횟수 상한은 위 [CommitGate란?](#commitgate란)에 있습니다.
+
 Codex CLI 설치·로그인 방법은 **[Quick Start](https://github.com/sol5288/commitgate/blob/main/docs/quick-start.md)**에 있습니다.
 
 ## 3분 설치
 
-git 저장소이고 `package.json`이 있는 폴더에서 세 단계면 됩니다.
+**0) 폴더를 준비합니다.** git 저장소이고 `package.json`이 있어야 합니다. 아직 아니라면 그 폴더에서:
+
+```sh
+git init      # 아직 git 저장소가 아니라면
+npm init -y   # package.json 이 없다면
+```
+
+**1~3) 설치합니다.**
 
 ```sh
 npm install -D commitgate     # 1) 런타임 설치 — 실행 코드가 node_modules/commitgate 에 들어옵니다
@@ -102,9 +111,21 @@ npx commitgate init           # 2) 설정·계약·스키마 + req:* 스크립�
 npx commitgate setup          # 3) 리뷰 모델·추론강도·멈춤 지점을 고르고 codex 로그인까지 (대화형)
 ```
 
-🔴 **3단계는 건너뛸 수 없습니다.** setup을 마치지 않으면 `req:new`를 비롯한 워크플로 명령이 막힙니다. **사람이 터미널에서 직접** 실행해야 합니다 — 대화형 전용이라 에이전트 세션·CI에서는 질문 없이 즉시 종료합니다.
+🔴 **3단계는 건너뛸 수 없습니다.** setup을 마치지 않으면 `req:new`를 비롯한 워크플로 명령이 막힙니다. **사람이 터미널에서 직접** 실행해야 합니다 — 대화형 전용이라 에이전트 세션·CI에서는 질문 없이 즉시 종료합니다. 질문은 세 개이고 ↑/↓로 고르면 됩니다.
 
-설치는 파일만 놓고 **커밋하지 않습니다.** `req:new`는 clean 워킹트리를 요구하므로 설치분을 먼저 커밋하세요 — 설치 출력의 `다음:` 안내가 stage할 정확한 경로를 알려 줍니다(`-A`/`.` 전체 stage는 쓰지 마세요). 경로 명시 stage와 전체 첫 흐름은 **[Quick Start](https://github.com/sol5288/commitgate/blob/main/docs/quick-start.md)**.
+**4) 설치분을 커밋합니다.** 설치는 파일만 놓고 **커밋하지 않는데**, `req:new`는 저장하지 않은 변경이 없는 상태를 요구합니다.
+
+```sh
+git add -- <설치 출력의 `다음:` 안내가 알려 준 경로들>
+git status                                  # 의도한 것만 담겼는지 눈으로 확인
+git commit -m "chore: install commitgate"
+```
+
+> 🔴 **`git add -A`나 `git add .`를 쓰지 마세요.** 프로젝트에 원래 있던 무관한 변경과 `.env` 같은 파일까지 함께 담기고, **이어지는 리뷰가 그 내용을 통째로 외부(Codex)로 전송합니다.** 설치 출력이 stage할 정확한 경로를 알려 주니 그것만 적으세요.
+
+경로를 명시해 stage하는 법과 전체 첫 흐름은 **[Quick Start](https://github.com/sol5288/commitgate/blob/main/docs/quick-start.md)**에 있습니다.
+
+> ↩️ **마음이 바뀌면 되돌릴 수 있습니다.** `npx commitgate uninstall`은 **아무것도 지우지 않고 제거 계획만 출력**합니다 — 무엇이 없어지는지 먼저 보고 결정하세요([제거하기](https://github.com/sol5288/commitgate/blob/main/docs/uninstall.md)).
 
 ## 첫 REQ 실행
 
@@ -130,7 +151,30 @@ phase:
 통제점: req:commit --run 직전 / [B1] main direct push 직전 (또는 [I1] PR 생성 → [I2] merge)
 ```
 
-에이전트는 `req:next`가 시키는 대로 **설계 → Codex 리뷰 → 구현 → 재리뷰 → 커밋**을 진행합니다. 다음 행동은 항상 `req:next`가 `state.json`과 git 상태에서 **계산**합니다(읽기 전용 — 에이전트가 추측하지 않습니다). 사용자는 통제점(`AWAIT_HUMAN`)에서 승인 문장을 줄 때만 개입하면 됩니다. (Claude Code가 아니면 `/req` 없이 요구사항만 줘도 `AGENTS.md`·`.cursor/rules`가 규칙을 로드합니다.)
+에이전트는 `req:next`가 시키는 대로 **설계 → Codex 리뷰 → 구현 → 재리뷰 → 커밋**을 진행합니다. 다음 행동은 항상 `req:next`가 `state.json`과 git 상태에서 **계산**합니다(읽기 전용 — 에이전트가 추측하지 않습니다).
+
+### 사용자는 무엇을 하나요 — "승인 문장" 주고받기
+
+사람이 필요한 지점에 오면 `req:next`가 멈추고(`AWAIT_HUMAN`) **뭐라고 답해야 하는지를 그대로 알려 줍니다.**
+
+```text
+[req:next] AWAIT_HUMAN  REQ-2026-002
+  phase 승인이 살아 있다. 커밋 전 사람 확인이 필요하다.
+
+  통제점: req:commit --run 직전
+  승인 문장: "req:commit --run 승인"
+  승인 후 실행: $ npm run req:commit -- 2026-002 --run -m "<이 phase의 conventional 커밋 메시지>"
+```
+
+여기서 사용자가 할 일은 하나입니다 — **`승인 문장:` 에 적힌 그대로** 에이전트에게 답해 주는 것입니다.
+
+```text
+req:commit --run 승인
+```
+
+명령을 직접 외울 필요는 없습니다. 승인 문장은 통제점마다 다르고, **그때그때 화면에 인쇄됩니다.** 승인하지 않으면 그 지점을 넘어가지 않습니다.
+
+(Claude Code가 아니면 `/req` 없이 요구사항만 줘도 `AGENTS.md`·`.cursor/rules`가 규칙을 로드합니다.)
 
 ### AI가 더 꼼꼼하게 일하도록 돕습니다
 
@@ -150,7 +194,35 @@ setup의 세 번째 질문(`stopGate`)이 **사람이 어디서 확인하는지*
 
 어느 값이든 **Codex 리뷰 게이트와 통합(main 병합) 승인은 그대로**입니다 — `stopGate`가 옮기는 것은 *사람 정지* 위치뿐입니다. 위험도 `HIGH` 취급과 확인 범위(`scope`) 대응은 **[워크플로](https://github.com/sol5288/commitgate/blob/main/docs/workflow.md)**의 "HIGH 위험 티켓의 사람 확인" 절이 정본입니다.
 
+## 막혔을 때
+
+**먼저 이것부터 실행하세요.** 읽기 전용이라 아무것도 고치지 않고, 어떤 게이트에도 배선되어 있지 않습니다 — 결과가 나빠도 이 명령 때문에 새로 막히는 일은 없습니다.
+
+```sh
+npx commitgate check
+```
+
+```text
+[OK] C1: req.config.json 유효(또는 부재 — 기본값 사용)
+[OK] C2: 리뷰어 CLI 확인: codex-cli 0.144.1
+[OK] C3: 리뷰어 로그인 확인: Logged in using ChatGPT
+[OK] C4: 리뷰 모델·추론강도 고정: gpt-5.6-terra / medium
+PASS — OK 4 · WARN 0
+```
+
+버전·모델 이름은 환경마다 다릅니다. 봐야 할 것은 숫자가 아니라 **`[OK]`인지 `FAIL`인지**입니다.
+
+| 증상 | 원인 | 조치 |
+|---|---|---|
+| `setup을 아직 마치지 않았습니다`라며 `req:new`가 막힌다 | 설치 3단계를 건너뛰었다 | `npx commitgate setup` — **사람이 터미널에서 직접** |
+| 리뷰가 `codex 종료 코드 1`로 죽는다 | 미설치·미로그인이 흔합니다 | 🔴 **다시 돌리기 전에** `npx commitgate check` — 이 실패는 리뷰 예산을 차감합니다 |
+| `req:new`가 워킹트리를 이유로 막힌다 | 저장하지 않은 변경이 남아 있다 | 위 [3분 설치](#3분-설치)의 4) 커밋 블록 |
+
+더 많은 증상과 답은 **[문제 해결](https://github.com/sol5288/commitgate/blob/main/docs/troubleshooting.md)**에 있습니다.
+
 ## 자주 쓰는 명령
+
+**작업 흐름** — `package.json` 스크립트라 `npm run`으로 부르고, npm은 인자 전달에 `--`가 필요합니다.
 
 | 명령 | 용도 |
 |---|---|
@@ -160,7 +232,39 @@ setup의 세 번째 질문(`stopGate`)이 **사람이 어디서 확인하는지*
 | `npm run req:commit -- <id> --run -m "..."` | 승인된 변경 커밋 |
 | `npm run req:confirm -- <id> --scope <s> --method "..." --run` | HIGH 위험 티켓의 사람 확인 기록 |
 
-`req:*`는 PATH 실행 파일이 아니라 `package.json` 스크립트입니다(npm은 인자 전달에 `--` 필요). 전체 명령과 `pnpm`/`yarn` 표기는 **[워크플로](https://github.com/sol5288/commitgate/blob/main/docs/workflow.md)**에 있습니다.
+**설치·진단** — 이쪽은 `npx commitgate <명령>`으로 직접 실행합니다.
+
+| 명령 | 용도 |
+|---|---|
+| `npx commitgate setup` | 리뷰 모델·멈춤 지점 선택 + codex 로그인 (대화형·필수) |
+| `npx commitgate check` | 준비 상태 진단 (읽기 전용) |
+| `npx commitgate sync` | 업그레이드 후 프로젝트에 깔린 자산을 런타임과 맞춤 (기본: 계획만 · 적용은 `--apply`) |
+| `npx commitgate uninstall` | 제거 **계획만** 출력 (아무것도 지우지 않음) |
+
+전체 명령과 `pnpm`/`yarn` 표기는 **[워크플로](https://github.com/sol5288/commitgate/blob/main/docs/workflow.md)**에 있습니다. 각 명령의 옵션은 `npx commitgate <명령> --help`로 볼 수 있습니다.
+
+## 용어 사전
+
+<details>
+<summary>낯선 단어가 나오면 여기를 펼치세요</summary>
+
+| 용어 | 뜻 |
+|---|---|
+| **REQ (티켓)** | 요구사항 하나를 담는 작업 단위. `REQ-2026-002` 같은 번호가 붙고 전용 브랜치가 생깁니다 |
+| **phase** | 한 REQ를 나눈 작업 단계. 단계마다 따로 검사받고 따로 저장됩니다 |
+| **stage (staged)** | git에서 "이번에 저장할 것"으로 골라 둔 상태. `git add`가 그 일을 합니다 |
+| **staged diff** | 그렇게 골라 둔 변경 내용. **검사하는 AI에게 통째로 전송되는 것이 바로 이것**입니다 |
+| **워킹트리가 clean하다** | 저장(커밋)하지 않은 변경이 하나도 없는 상태 |
+| **commit (커밋)** | git에 변경을 확정해 저장하는 것. 이 도구가 말하는 "저장"이 이것입니다 |
+| **branch (브랜치)** | 작업을 따로 떼어 두는 작업선. REQ마다 하나씩 생깁니다 |
+| **main 병합(merge)** | 브랜치에서 한 작업을 본줄기(`main`)에 합치는 것. 사람 승인이 필요한 지점입니다 |
+| **fail-closed** | 애매하면 통과시키지 않고 **막는** 쪽을 고르는 설계 원칙 |
+| **AWAIT_HUMAN** | 도구가 사람 승인을 기다리며 멈춘 상태. 화면에 승인 문장이 함께 인쇄됩니다 |
+| **delivery set** | 여러 REQ를 하나로 묶은 상위 단위. `stopGate: merge`에서 쓰입니다 |
+| **devDependency** | 개발할 때만 필요하고 실제 서비스에는 안 들어가는 패키지. CommitGate가 여기 설치됩니다 |
+| **companion skill** | AI에게 일하는 방법을 안내하는 지침 파일. 강제가 아니라 권고입니다 |
+
+</details>
 
 ## 더 알아보기
 

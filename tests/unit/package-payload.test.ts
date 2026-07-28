@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { resolve, join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { HELP_TEXT } from '../../bin/init'
 
 /**
  * publish payload 위생 **보조 가드** (REQ-2026-009).
@@ -549,14 +550,15 @@ describe('[REQ-2026-023] companion 문서 정합', () => {
   //   (README 랜딩화 · 이동 맵 00 · 설계 D2). phase-2가 한국어(docs/agent-prompt.md), phase-3가 영문(.en.md).
   //   불변식(4 스킬명·SHA·installer·--force 보존·승인증거 경계)은 동일하게 유지하고 **대상만** 이동한다.
   const COMPANION_DOCS = ['docs/agent-prompt.md', 'docs/agent-prompt.en.md'] as const
-  /** `printHelp` 본문만 잘라낸다(주변 코드가 아니라 사용자가 보는 문자열을 검사). */
-  const helpBody = (): string => {
-    const src = read('bin/init.ts')
-    const i = src.indexOf('function printHelp')
-    expect(i, 'printHelp 함수를 찾지 못했다').toBeGreaterThanOrEqual(0)
-    const rest = src.slice(i)
-    return rest.slice(0, rest.indexOf('\n}\n'))
-  }
+  /**
+   * 사용자가 보는 도움말 문자열.
+   *
+   * REQ-2026-082 phase-1 이전에는 `bin/init.ts` **소스에서 `function printHelp` ~ `\n}\n` 구간을
+   * 잘라** 썼다. 같은 phase가 본문을 `HELP_TEXT` 상수로 분리하자 그 슬라이스가 3줄짜리 래퍼만
+   * 집어 검사가 공회전했다(실패로 드러남). 이제 **상수 자체**를 읽는다 — 소스 배치가 바뀌어도
+   * 검사 대상이 사용자가 실제로 보는 문자열이라는 사실은 변하지 않는다.
+   */
+  const helpBody = (): string => lf(HELP_TEXT)
 
   it.each(COMPANION_DOCS)('%s: companion 불변값을 담는다 (R5)', (rel) => {
     const t = read(rel)
