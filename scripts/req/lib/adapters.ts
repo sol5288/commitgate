@@ -140,6 +140,38 @@ export interface VersionProbeResult {
   detail: string
 }
 
+/**
+ * codex 미설치를 말하는 **모든 런타임 표면**이 함께 주는 다음 명령(REQ-2026-083 DEC-2).
+ *
+ * 🔴 왜 상수인가: 표면마다 문자열을 따로 쓰면 새 표면이 생길 때 또 빠진다. REQ-2026-082가 `--help`만
+ *    고치고 `installGuidance`·`setup`·`check`를 놓친 것이 정확히 그 실패다. 표기(`npm i -g` vs
+ *    `npm install -g`)도 여기 한 곳에서 정한다.
+ *
+ * 🔴 왜 "새 터미널"까지 적는가: Windows 에서 전역 설치 직후 `codex` 를 못 찾는 것은 PATH 갱신 문제인데,
+ *    이때 사용자는 **설치가 실패했다고 오해**한다. 설치 명령만 주면 같은 자리에서 두 번 막힌다.
+ */
+export const CODEX_INSTALL_HINT = '설치: npm i -g @openai/codex  (설치 후 새 터미널에서 codex --version)'
+
+/**
+ * codex 를 실행할 수 없을 때 각 표면이 내는 메시지 빌더.
+ *
+ * 🔴 `tests/unit/codex-missing-guidance.test.ts` 가 이 함수들을 한 배열로 모아 **전부**
+ *    `CODEX_INSTALL_HINT` 를 포함하는지 검사한다. 새 표면을 추가하면 빌더를 여기 만들고 그 배열에도 등록한다.
+ */
+export function codexMissingSetupMessage(detail: string): string {
+  return `codex CLI 를 실행할 수 없습니다(${detail}). 설치·PATH 를 확인한 뒤 다시 실행하세요 — 설정을 저장하지 않았습니다.\n${CODEX_INSTALL_HINT}`
+}
+
+/** `check` C2 실패 메시지. 읽기 전용 진단이므로 **차단이 아니라 사실**만 말한다. */
+export function codexMissingCheckMessage(detail: string): string {
+  return `리뷰어 CLI(codex)를 실행할 수 없습니다(${detail}). 이 상태에서는 리뷰가 실패합니다. ${CODEX_INSTALL_HINT}`
+}
+
+/** `init` 설치 후 안내의 codex 확인 줄. 아직 막히지 않은 시점이라 **예방 안내**다. */
+export function codexMissingInstallGuidanceLine(): string {
+  return `codex --version   # 리뷰 실호출 전제 — 없으면 ${CODEX_INSTALL_HINT}`
+}
+
 /** "로그인 안 됨" 신호. **긍정 패턴보다 먼저** 본다 — `Not logged in`은 `logged in`을 포함한다. */
 const LOGGED_OUT_RE = /not\s+logged\s+in|logged\s+out|not\s+authenticated|please\s+(run\s+)?.*login/i
 /** "로그인 됨" 신호. 실측: `Logged in using ChatGPT`(exit 0, **stdout**). */

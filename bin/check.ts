@@ -14,7 +14,12 @@
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadConfig, type ResolvedConfig } from '../scripts/req/lib/config'
-import { createReviewerProbes, type AuthProbeResult, type VersionProbeResult } from '../scripts/req/lib/adapters'
+import {
+  createReviewerProbes,
+  codexMissingCheckMessage,
+  type AuthProbeResult,
+  type VersionProbeResult,
+} from '../scripts/req/lib/adapters'
 
 /** `req:doctor`와 같은 어휘(사용자가 이미 아는 등급). */
 export type CheckLevel = 'OK' | 'WARN' | 'FAIL'
@@ -59,7 +64,7 @@ export function runChecks(inp: CheckInputs): CheckReport {
     checks.push({
       id: 'C2',
       level: 'FAIL',
-      msg: `리뷰어 CLI(codex)를 실행할 수 없습니다(${inp.version.detail}). 설치·PATH 를 확인하세요 — 이 상태에서는 리뷰가 실패합니다.`,
+      msg: codexMissingCheckMessage(inp.version.detail),
     })
 
   // C3 — 로그인. 🔴 `unknown`은 WARN이지 FAIL이 아니다(DEC-3).

@@ -35,7 +35,7 @@ import { createHash } from 'node:crypto'
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadConfig, stripBom, DEFAULT_REVIEW_PERSONA_RELPATH, type PackageManager } from '../scripts/req/lib/config'
-import { createGitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
+import { createGitAdapter, codexMissingInstallGuidanceLine, type GitRunner } from '../scripts/req/lib/adapters'
 import { parseStatusZ, entryPaths, STATUS_Z_ARGS, type StatusEntry } from '../scripts/req/lib/porcelain'
 import { VERB_MODULES } from './dispatch.mjs' // 🔴 DEC-D3: 현재 Stage-B req 명령 표면 SSOT.
 import * as semver from 'semver'
@@ -1338,6 +1338,21 @@ export function pathNeedsManualQuoting(p: string): boolean {
  *  3. **안전한 안내를 만들 수 없으면 내지 않는다**(DEC-011-11). staged 변경은 커밋이 삼키고,
  *     산출물과 겹치는 tracked 변경은 사후 분리가 불가능하다. 잘못된 안내보다 안내 없음이 낫다.
  */
+/**
+ * 설치 후 **필수** setup 단계 안내(REQ-2026-083 DEC-1). 첫 줄이 번호가 붙는 머리줄이고 나머지는 이어지는 줄.
+ *
+ * 🔴 `installGuidance` 의 **두 반환 경로**(정상 · unsafe 조기 반환)가 모두 이 함수를 쓴다 —
+ *    한쪽만 고치면 그 조건에 걸린 사용자만 `req:new` 에서 막힌다.
+ */
+export function setupGuidanceLines(): string[] {
+  return [
+    '🔴 setup 을 마치십시오 — 건너뛸 수 없습니다(마치기 전에는 req:new 가 막힙니다):',
+    'npx commitgate setup',
+    '대화형 전용이라 **사람이 터미널에서 직접** 실행합니다(에이전트 세션·CI 에서는 즉시 종료).',
+    'setup 은 req.config.json 을 바꿉니다 — 아래 설치 커밋에 함께 담기므로 별도 조치가 필요 없습니다.',
+  ]
+}
+
 export function installGuidance(r: InitResult): string[] {
   const { staged, overlapping, unrelated } = r.preexistingDirty
   // `.gitignore`를 담아야 하는데 그 파일 자신이 무시되면 `git add`가 fatal이고 규칙이 커밋되지 않는다 →
@@ -1350,7 +1365,7 @@ export function installGuidance(r: InitResult): string[] {
 
   const cdLine = risky.includes(r.targetRoot) ? `  1. 저장소 루트로 이동: ${r.targetRoot}` : `  1. cd ${quoteForShell(r.targetRoot)}`
   const out: string[] = ['', '다음:', cdLine, `  2. ${r.packageManager} install`]
-  out.push(`  3. codex --version   # 리뷰 실호출 전제(미설치면 review-codex --run이 fail-closed)`)
+  out.push(`  3. ${codexMissingInstallGuidanceLine()}`)
   out.push(`  4. req.config.json 확인(branchPrefix 등)`)
 
   if (unsafe) {
@@ -1364,13 +1379,29 @@ export function installGuidance(r: InitResult): string[] {
       out.push(`        ${KIT_GITIGNORE.dest} 가 무시됨 — 설치 커밋에 못 담겨 fresh clone·CI에 scratch 정책이 없습니다`)
     for (const p of risky)
       out.push(`        셸 특수문자(" \` $ % !) 포함 — 어떤 인용으로도 복붙이 안전하지 않음: ${p}`)
-    out.push('      위를 커밋하거나 되돌린 뒤, `git status` 로 직접 확인하며 설치분만 커밋하십시오.')
+    // 🔴 이 경로에도 setup 이 필요하다(REQ-2026-083 DEC-1) — 빠뜨리면 unsafe 사용자만 req:new 에서 막힌다.
+    //    그리고 **커밋 지시보다 앞**이어야 한다: setup 이 바꾼 req.config.json 을 그 커밋이 함께 담아야
+    //    이어지는 req:new 가 clean-tree 게이트를 통과한다(정상 경로와 같은 이유).
+    out.push('')
+    for (const l of setupGuidanceLines()) out.push(`      ${l}`)
+    out.push('')
+    out.push('      그 뒤 위를 커밋하거나 되돌린 뒤, `git status` 로 직접 확인하며 설치분만 커밋하십시오.')
     out.push(`      그다음: ${runScriptCmd(r.packageManager, 'req:new', '<slug> --run')}`)
     return out
   }
 
   const toStage = stageList(r.artifacts, r.gitIgnoredArtifacts)
   let n = 5
+  // 🔴 setup 은 **설치 커밋보다 앞**이다(REQ-2026-083 DEC-1, phase-1 r01 P1 으로 정정).
+  //    처음에는 커밋 뒤에 뒀는데, setup 이 바꾼 req.config.json 이 워킹트리를 다시 dirty 하게 만들어
+  //    바로 다음 req:new 가 clean-tree 게이트에서 막혔다 — 막히는 자리를 옮겼을 뿐이었다.
+  //    `plan.configRel` 은 항상 artifacts 에 들어가므로(planArtifactPaths) 아래 stage 목록이 그 변경을
+  //    이미 포함한다 → 추가 커밋 단계 없이 한 번의 설치 커밋으로 끝난다(docs/quick-start 와 같은 흐름).
+  {
+    const [head, ...rest] = setupGuidanceLines()
+    out.push(`  ${n++}. ${head}`)
+    for (const l of rest) out.push(`     ${l}`)
+  }
   if (r.nodeModulesWillDirty) {
     // `<pm> install`이 만든 `?? node_modules/`가 clean-tree 게이트를 막는다. README의 `git init && npm init -y`
     // 경로에는 .gitignore가 없어 **반드시** 걸린다. `.gitignore`는 이미 `artifacts`에 들어 있으므로

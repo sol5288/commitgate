@@ -20,7 +20,7 @@ import { createInterface } from 'node:readline/promises'
 import { canUseRawMode, colorEnabled, colorize, displayWidth, runSelect } from './select-prompt'
 import Ajv from 'ajv'
 import { CONFIG_SCHEMA, DEFAULTS, stripBom, STOP_GATE_OF, type SetupMarker, type PhaseCommitPolicy } from '../scripts/req/lib/config'
-import { createReviewerProbes, type ReviewerProbes } from '../scripts/req/lib/adapters'
+import { createReviewerProbes, codexMissingSetupMessage, type ReviewerProbes } from '../scripts/req/lib/adapters'
 
 /**
  * TTY 판정 입력(주입 가능 — 테스트). `process.std*.isTTY`는 **비-TTY에서 `undefined`**이지 `false`가 아니므로
@@ -609,10 +609,8 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
 
   // ③ codex 설치 확인 — 미설치면 로그인·설정 모두 의미가 없다.
   const ver = deps.probes.version()
-  if (!ver.ok)
-    throw new Error(
-      `codex CLI 를 실행할 수 없습니다(${ver.detail}). 설치·PATH 를 확인한 뒤 다시 실행하세요 — 설정을 저장하지 않았습니다.`,
-    )
+  // 🔴 메시지는 공유 빌더가 만든다 — 설치 명령을 표면마다 따로 쓰면 새 표면에서 또 빠진다(REQ-2026-083 DEC-2).
+  if (!ver.ok) throw new Error(codexMissingSetupMessage(ver.detail))
   deps.log(`codex 확인: ${ver.version ?? '(버전 미상)'}`)
 
   // ④ 질문(모델·effort). 현재 값이 기본 답변이다(DEC-11).
