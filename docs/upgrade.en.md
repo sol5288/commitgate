@@ -53,6 +53,44 @@ npx commitgate quickstart --apply      # inject only the managed block (preserve
 
 > In short: install `commitgate@latest` → `commitgate sync --apply` → `commitgate quickstart --apply` → (if needed) `commitgate migrate`.
 
+## Per-version notes
+
+Anything you only need to handle **for a specific version** lives here. Sections are never removed, so if you
+are coming from an older version, read **every section after yours, in order**.
+
+### 0.11 → 0.12 — Node 20 or newer is required
+
+`engines.node` moved from `>=18.17` to **`>=20`**. **Node 18 is no longer supported.**
+
+Installing `commitgate@latest` on Node 18 prints:
+
+```text
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'commitgate@0.12.0',
+npm warn EBADENGINE   required: { node: '>=20' },
+npm warn EBADENGINE   current: { node: 'v18.20.4', npm: '10.7.0' }
+```
+
+**Whether the install succeeds depends on your npm settings.**
+
+| Setting | Result |
+|---|---|
+| Default | **Warning only** — it installs (but we do not promise it works) |
+| `--engine-strict` (or `engine-strict=true` in `.npmrc`) | 🔴 **Install fails** — `npm error code EBADENGINE`, exit code 1 |
+
+**You have three options.**
+
+| Option | Result | |
+|---|---|---|
+| **Move to Node 20 or newer** | Works normally. CI verifies Node **20, 22, and 24** on every release | ✅ **Recommended** |
+| **Stay on `commitgate@^0.11`** | You stop receiving anything after 0.12. 🔴 And **the intermittent test-suite freeze on macOS + Node 18 stays with you** — 0.11 never fixed it either | Stopgap |
+| Force 0.12 on Node 18 (ignore the warning) | 🔴 **Unsupported.** The freeze is still there and we do not verify this combination | ❌ |
+
+> 🔴 **The easy mistake**: dropping back to 0.11 does **not** make the freeze go away.
+> **No version ever fixed it.** 0.12 did not repair the cause — it **removed Node 18 from the
+> supported set**, which is where the problem showed up. The root cause is still unknown, and
+> going back to Node 18 brings the symptom back with it.
+
 ## Migrating from an older install (`migrate`)
 
 If `scripts/req/` is copied into your project and `req:*` points at `tsx scripts/req/*.ts`, you have an **older (vendored) install**. When `init` detects this state, it **stops** rather than creating a silent mix, and points you here.

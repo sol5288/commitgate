@@ -1,5 +1,21 @@
 # Troubleshooting (FAQ)
 
+**Installing prints `EBADENGINE Unsupported engine`, or the install fails outright.**
+Your Node version does not meet the requirement. From CommitGate 0.12.0, **Node 20 or newer** is required (`engines: >=20`).
+
+```text
+npm warn EBADENGINE   required: { node: '>=20' },
+npm warn EBADENGINE   current: { node: 'v18.20.4', npm: '10.7.0' }
+```
+
+With default settings you get **a warning and the install still proceeds** (we do not promise it works). With
+`--engine-strict`, or `engine-strict=true` in `.npmrc`, the **install fails** (`npm error code EBADENGINE`).
+
+Fix: **move to Node 20 or newer.** If you cannot right now, you can stay on `commitgate@^0.11` — but
+🔴 **the intermittent test-suite freeze on macOS + Node 18 is present in 0.11 as well.** No version ever fixed
+it; 0.12 removed the condition it appeared under. The full set of options is in the "0.11 → 0.12" section of
+[Upgrading](./upgrade.en.md).
+
 **What happens if Codex CLI is missing?**
 The review command fails. It is not treated as approval.
 

@@ -37,6 +37,7 @@ So that you do not miscalculate where your real defenses are:
 
 | Environment | Status |
 |---|---|
+| **Runtime (Node.js)** | **Node 20, 22, and 24** — verified by CI on three operating systems every release. 🔴 **Node 18 is not supported** (`engines: >=20` — installs warn, and fail under `--engine-strict`). Node 20 reached EOL on 2026-04-30 but is **deliberately kept** in the supported set because it is still widely deployed |
 | **npm** | Fully supported — verified on every release by a packed-tarball smoke test |
 | **pnpm · yarn** (`node_modules` linker) | Supported — uses the standard `node_modules/.bin/commitgate` resolution |
 | **Yarn PnP** | **Not supported in this release** (untested). Use `nodeLinker: node-modules` |

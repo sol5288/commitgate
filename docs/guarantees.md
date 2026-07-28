@@ -37,6 +37,7 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 
 | 환경 | 상태 |
 |---|---|
+| **런타임 (Node.js)** | **Node 20 · 22 · 24** — 3개 OS에서 매 릴리스 CI로 검증합니다. 🔴 **Node 18은 지원하지 않습니다**(`engines: >=20` — 설치 시 경고가 뜨고 `--engine-strict`에서는 실패). Node 20은 2026-04-30 EOL이지만 보급률을 고려해 **의도적으로 지원 목록에 둡니다** |
 | **npm** | 완전 지원 — 매 릴리스 packed tarball smoke로 검증합니다 |
 | **pnpm · yarn** (`node_modules` linker) | 지원 — `node_modules/.bin/commitgate`로 해소되는 표준 경로를 씁니다 |
 | **Yarn PnP** | **이번 릴리스 미지원**(검증하지 않았습니다). `nodeLinker: node-modules`를 쓰세요 |

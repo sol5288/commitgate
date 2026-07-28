@@ -50,6 +50,44 @@ npx commitgate quickstart --apply      # 관리 블록만 주입(블록 밖 내�
 
 > 정리: `commitgate@latest` 설치 → `commitgate sync --apply` → `commitgate quickstart --apply` → (필요 시) `commitgate migrate`.
 
+## 버전별 주의사항
+
+새 버전으로 넘어갈 때 **그 버전에서만** 챙겨야 하는 것을 여기 모읍니다. 지나온 버전의 절은 지우지 않으니,
+예전 버전에서 올라온다면 **자기 버전 이후의 절을 순서대로** 읽으세요.
+
+### 0.11 → 0.12 — Node 20 이상이 필요합니다
+
+`engines.node`가 `>=18.17`에서 **`>=20`**으로 올라갔습니다. **Node 18에서는 더 이상 지원되지 않습니다.**
+
+Node 18에서 `commitgate@latest`를 설치하면 이런 경고가 나옵니다.
+
+```text
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'commitgate@0.12.0',
+npm warn EBADENGINE   required: { node: '>=20' },
+npm warn EBADENGINE   current: { node: 'v18.20.4', npm: '10.7.0' }
+```
+
+**설치가 되는지 안 되는지는 npm 설정에 달려 있습니다.**
+
+| 설정 | 결과 |
+|---|---|
+| 기본값 | **경고만** — 설치는 됩니다(동작은 보장하지 않습니다) |
+| `--engine-strict` (또는 `.npmrc`의 `engine-strict=true`) | 🔴 **설치 실패** — `npm error code EBADENGINE`, 종료 코드 1 |
+
+**선택지는 셋입니다.**
+
+| 선택지 | 결과 | |
+|---|---|---|
+| **Node 20 이상으로 올린다** | 정상 동작합니다. CI는 Node **20·22·24**에서 매 릴리스 검증합니다 | ✅ **권장** |
+| **`commitgate@^0.11`에 머문다** | 0.12 이후 기능을 받지 못합니다. 🔴 그리고 **macOS + Node 18 조합에서 테스트 스위트가 간헐적으로 멈추는 문제가 그대로 남습니다** — 0.11도 그것을 고치지 못했습니다 | 임시책 |
+| Node 18에서 0.12를 강행한다(경고 무시) | 🔴 **지원하지 않습니다.** 위 멈춤 현상이 그대로이고, 저희가 검증하지도 않습니다 | ❌ |
+
+> 🔴 **오해하기 쉬운 지점**: 0.11로 내려간다고 멈춤 현상이 해결되지 않습니다.
+> 그 문제는 **어느 버전에서도 고쳐지지 않았습니다.** 0.12는 원인을 고친 것이 아니라
+> **문제가 나타나던 조건(Node 18)을 지원 대상에서 뺀 것**입니다.
+> 근본 원인은 아직 밝혀지지 않았고, Node 18로 돌아가면 현상도 함께 돌아옵니다.
+
 ## 예전 설치본에서 옮겨오기 (`migrate`)
 
 `scripts/req/`가 프로젝트에 복사돼 있고 `req:*`가 `tsx scripts/req/*.ts`를 가리킨다면 **예전(vendored) 설치본**입니다. `init`은 이 상태를 감지하면 조용히 섞이지 않도록 **중단하고** 이 명령을 안내합니다.

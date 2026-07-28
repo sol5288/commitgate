@@ -1,5 +1,21 @@
 # 문제 해결 (FAQ)
 
+**설치할 때 `EBADENGINE Unsupported engine` 경고가 뜨거나 설치가 실패합니다.**
+Node 버전이 요구를 못 맞춘 것입니다. CommitGate 0.12.0부터 **Node 20 이상**이 필요합니다(`engines: >=20`).
+
+```text
+npm warn EBADENGINE   required: { node: '>=20' },
+npm warn EBADENGINE   current: { node: 'v18.20.4', npm: '10.7.0' }
+```
+
+기본 설정에서는 **경고만 뜨고 설치는 됩니다**(동작은 보장하지 않습니다). `--engine-strict`나
+`.npmrc`의 `engine-strict=true`가 있으면 **설치가 실패**합니다(`npm error code EBADENGINE`).
+
+해결: **Node 20 이상으로 올리세요.** 지금 올릴 수 없다면 `commitgate@^0.11`에 머무를 수 있지만,
+🔴 **macOS + Node 18 조합에서 테스트 스위트가 간헐적으로 멈추는 문제는 0.11에도 그대로 있습니다** —
+그 문제는 어느 버전에서도 고쳐지지 않았고, 0.12는 그 조건을 지원 대상에서 뺀 것입니다.
+자세한 선택지는 [업그레이드](./upgrade.md)의 "0.11 → 0.12" 절에 있습니다.
+
 **Codex CLI가 없으면 어떻게 되나요?**
 리뷰 명령이 실패합니다. 조용히 승인 처리하지 않습니다.
 
