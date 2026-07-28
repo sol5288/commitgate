@@ -2,6 +2,59 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+> **REQ-2026-084는 세 커밋으로 나뉘어 들어왔습니다.** 아래 항목의 구현은 이 커밋이 아니라 **같은 브랜치의 앞선 커밋**에 있고, 작업 트리의 해당 파일에서 지금 바로 확인할 수 있습니다.
+>
+> | phase | 구현 커밋 | 확인할 파일 |
+> |---|---|---|
+> | phase-1 (risk_level 계약 축소) | `70b0c1c4` | `workflow/machine.schema.json`의 `properties.risk_level.deprecated` · `scripts/req/lib/adapters.ts`의 `dropDeprecatedProperties` · `scripts/req/review-codex.ts`의 `validateVerdict` |
+> | phase-2 (invalid 예산) | `484ecc95` | `scripts/req/review-codex.ts`의 `voidAttempt`·`budgetCounts`·`checkReviewBudget` · `scripts/req/req-next.ts`의 G3 · `scripts/req/req-review-exception.ts`의 `planReviewException` |
+> | phase-3 (CHANGELOG) | **이 커밋** | 이 파일 |
+
+- **리뷰어에게 `risk_level`을 더 이상 묻지 않습니다** (REQ-2026-084).
+
+  소비 repo의 리뷰 호출 68회를 감사한 결과, 응답 67건 중 **31건이 `risk_level: HIGH`**였고 그중 **7건은
+  승인과 함께** HIGH였습니다. 그런데 티켓은 계속 `LOW`였고 사람 확인은 0회였습니다. 이 필드는 **어떤 게이트에도
+  닿지 않았습니다** — 검증기가 값의 유효성만 보고 버렸고, 실제 판정은 `req:new` 때 정해지는 티켓 자신의
+  `risk_level`(`req:commit`·`req:next`가 소비)이 합니다. 매 리뷰마다 묻고, 받아 적고, 버린 셈입니다.
+
+  이제 리뷰어에게 가는 출력 스키마에서 **이 필드가 아예 빠집니다.** 리뷰어는 요청받지도, 방출할 수도 없습니다.
+
+  🔴 **기존 증거는 하나도 깨지지 않습니다.** 검증 SSOT(`workflow/machine.schema.json`)는 root가
+  `additionalProperties: false`라, property 정의를 지우면 `risk_level`을 담은 **과거 아카이브가 전부 구조
+  부적합**이 됩니다(`req:doctor`의 D17·D9가 아카이브를 재검증합니다). 그래서 SSOT에는 property를 `deprecated`로
+  **남기고** `required`에서만 뺐습니다. 리뷰어가 보는 strict 출력 스키마를 파생할 때만 탈락시킵니다 —
+  `findings[].severity`를 P1로 좁힐 때(REQ-2026-018) 쓴 것과 같은 구조입니다. `machine_schema_version`도
+  같은 이유로 **`1.1`을 유지**합니다(상향하면 정확 일치 검사로 전 아카이브가 무효가 됩니다).
+
+  > **소비 repo 안내**: `machine.schema.json`이 바뀌었으므로 업그레이드 후 `req:doctor`가 **D20 WARN**
+  > (자산 skew)을 낼 수 있습니다. `npx commitgate sync`로 재동기화하면 됩니다 — FAIL이 아니며 게이트를 막지 않습니다.
+
+  이 변경은 **티켓의** `risk_level`·`stopGate`·HIGH 확인 경로를 건드리지 않습니다(REQ-2026-071의 결정 그대로).
+
+- **리뷰어가 깨진 응답을 내도 빌더의 리뷰 예산이 깎이지 않습니다** (REQ-2026-084).
+
+  소비 repo에서 실제로 일어난 일입니다: 한 phase의 시도 수가 **3인데 아카이브된 라운드는 2개**뿐이었습니다.
+  2회차가 `invalid`(호출은 성공했지만 응답이 스키마·도메인 검증을 통과하지 못함, 49초 소모, 산출물 0)로
+  끝났고, 그 회차가 정상 회차와 똑같이 예산을 소모했습니다. **리뷰어의 계약 위반인데 빌더가 대가를 치릅니다** —
+  어려운 phase의 5회차에서 이런 일이 나면 곧바로 사람 예외 사유서(`req:review-exception`)를 써야 했습니다.
+
+  이제 회차를 두 축으로 셉니다.
+
+  | 계수 | 의미 | 자동 예산(`autoBudget`) | 절대 상한(`hardCap`) |
+  |---|---|---|---|
+  | `refunded_attempts` (기존) | 호출이 **나가지 않음**(pre-dispatch 실패) — 비용 0 | 차감 | 차감 |
+  | `void_attempts` (신규) | 호출은 나갔고 **판정이 없음**(`invalid`) — 비용 발생 | 차감 | **차감 안 함** |
+
+  🔴 **무한 루프는 여전히 불가능합니다.** `hardCap`은 실제로 나간 호출 수로 판정하므로, 리뷰어가 계속
+  깨진 응답만 내도 8회에서 반드시 멈춥니다. 넓어진 것은 "사람 사유서 없이 자동으로 재시도할 수 있는 범위"뿐입니다.
+
+  `req:next`의 예산 소진 안내도 같은 판정을 씁니다 — 한쪽만 고쳤다면 `req:next`는 "예산 소진(사람 결정 필요)"이라고
+  하는데 `req:review-codex`는 그냥 통과시키는 모순이 생겼을 것입니다. 진단 줄이 두 계수를 각각 보여줍니다.
+
+  옛 `state.json`(신규 계수가 없는 티켓)은 두 계수가 같은 값이 되어 **판정이 이전과 완전히 동일**합니다.
+
 ## 0.12.2 (2026-07-29)
 
 > **REQ-2026-083은 세 커밋으로 나뉘어 들어왔습니다.** 아래 항목의 구현은 이 커밋이 아니라 **같은 브랜치의 앞선 커밋**에 있고, 작업 트리의 해당 파일에서 지금 바로 확인할 수 있습니다.

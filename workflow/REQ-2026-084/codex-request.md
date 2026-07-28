@@ -21,8 +21,8 @@ phase 리뷰는 **해당 phase의 staged diff만** 본다. 앞 phase는 이미 �
 | phase | 상태 | 커밋 | 확인할 파일 / 확인 방법 |
 |---|---|---|---|
 | phase-1 risk-level-deprecation | ✅ 커밋됨 | `70b0c1c4` | `workflow/machine.schema.json` — `required`에 `risk_level` 없음 · `properties.risk_level.deprecated === true`<br>`scripts/req/lib/adapters.ts` — `dropDeprecatedProperties()` 존재, `deriveStrictOutputSchema`에서 `required` 재구성 **앞**에 호출<br>`scripts/req/review-codex.ts` — `validateVerdict`의 risk_level 검사가 `v.risk_level !== undefined` 조건부 |
-| **phase-2 invalid-budget** | **🔎 지금 리뷰 대상** | (이 diff) | staged diff 전체 |
-| phase-3 changelog | ⏳ 미착수 | — | 다음 phase에서 `CHANGELOG.md` |
+| phase-2 invalid-budget | ✅ 커밋됨 | `484ecc95` | `scripts/req/review-codex.ts` — `void_attempts`·`voidAttempt`·`openSeriesProductiveAttempts`·`budgetCounts`·`checkReviewBudget({productive,dispatched})`, 정상 경로 `persistedState`의 invalid 분기<br>`scripts/req/req-next.ts` — G3가 `budgetCounts`+`checkReviewBudget` 사용<br>`scripts/req/req-review-exception.ts` — `planReviewException` 동일 입력 |
+| **phase-3 changelog** | **🔎 지금 리뷰 대상** | (이 diff) | `CHANGELOG.md` Unreleased |
 
 ## 리뷰 포인트
 
