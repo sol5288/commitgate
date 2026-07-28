@@ -21,10 +21,16 @@ on:
         description: '이 시간을 넘기면 교착으로 보고 증거를 수집한다'
         required: false
         default: '6'
+      node_version:
+        # REQ-2026-080: 원래 node 18 고정이었다(REQ-2026-077 조사 대상). Node 18 지원을 중단하면서
+        # 고정값을 입력으로 뺐다 — 워치독·증거 수집이라는 도구의 가치는 그대로 두고 낡은 값만 없앤다.
+        description: '시험할 Node 버전'
+        required: false
+        default: '22'
 
 jobs:
   probe:
-    name: probe ${{ matrix.run }} · macos · node 18
+    name: probe ${{ matrix.run }} · macos · node ${{ inputs.node_version }}
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -38,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: ${{ inputs.node_version }}
           cache: npm
       - run: npm ci
 
