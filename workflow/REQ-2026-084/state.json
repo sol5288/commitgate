@@ -3,16 +3,67 @@
   "branch": "feat/req-2026-084-review-contract-slimming",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa9c8-c64d-7693-90df-cfee8793f20e",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "76c42dad4dc868f48e274e73873d3c3d7a60e512fcf9b97d79a24dba8429d502",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-risk-level-deprecation",
+      "approved": false
+    },
+    {
+      "id": "phase-2-invalid-budget",
+      "approved": false
+    },
+    {
+      "id": "phase-3-changelog",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "e14c0da2c44173a0efa6ce4f0fcf044e4eadd792",
+    "design": "5957ab173cda930310964d86596ac2bfcd3e0fa9",
+    "plan": "e93846dde765804edb0c67d9ebb6a522948117a4"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-084/responses/design-r01-approved.json",
+    "response_sha256": "97c31c078ac4c7f6929e8f71ebfa0dc659eaebde5989022e4e01ae561dc05718",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "ad1be4b25a48426ee2ca889982901520aa00fb8f",
+    "codex_thread_id": "019fa9c8-c64d-7693-90df-cfee8793f20e",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-28T17:32:30.711Z",
+    "design_hash": "76c42dad4dc868f48e274e73873d3c3d7a60e512fcf9b97d79a24dba8429d502"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "e4aae55852e453702010d6cdd322e3887a9459b4f658bf9d8b5cc68cae22498e",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-28T17:32:30.711Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
