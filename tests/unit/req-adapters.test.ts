@@ -239,6 +239,61 @@ describe('Phase 3 — codex ReviewerAdapter(createCodexReviewerAdapter)', () => 
     expect(severities).toContain('P3')
   })
 
+  // ── REQ-2026-084: risk_level deprecation(요청 계약에서 탈락, 검증 SSOT에는 보존) ──
+  it('[REQ-084 R1] 파생 출력 스키마에 risk_level이 properties·required 어디에도 없다 — 리뷰어가 방출할 수 없다', () => {
+    const schemaText = readFileSync(join(REPO_ROOT, 'workflow/machine.schema.json'), 'utf8')
+    const strict = JSON.parse(deriveStrictOutputSchema(schemaText))
+    expect(Object.keys(strict.properties)).not.toContain('risk_level')
+    expect(strict.required).not.toContain('risk_level')
+    // root가 additionalProperties:false이므로 방출 자체가 불가능하다(요청 안 함 + 낼 수 없음).
+    expect(strict.additionalProperties).toBe(false)
+    // 순수 함수 — SSOT 문자열은 불변.
+    expect(JSON.parse(schemaText).properties.risk_level).toBeDefined()
+  })
+
+  it('[REQ-084 DEC-2] deprecated 탈락이 required 재구성보다 먼저다 — 뒤였다면 required로 부활한다', () => {
+    // 이 순서가 뒤집히면(`required = Object.keys(properties)` 뒤에 삭제) required에 키가 남아 목적이 무산된다.
+    // synth 스키마로 고정해 SSOT 내용 변화와 무관하게 순서만 검사한다.
+    const withDeprecated = JSON.stringify(
+      synthSchema({ gone: { type: 'string', deprecated: true }, kept: { type: 'string' } }),
+    )
+    const strict = JSON.parse(deriveStrictOutputSchema(withDeprecated))
+    expect(Object.keys(strict.properties)).not.toContain('gone')
+    expect(strict.required).not.toContain('gone')
+    expect(strict.required).toContain('kept')
+    // deprecated가 아닌 필드는 하나도 잃지 않는다.
+    expect(strict.required.sort()).toEqual(['a', 'b', 'findings', 'kept', 'observations'])
+  })
+
+  it('[REQ-084 R3] 검증 SSOT는 risk_level을 보존 — risk_level을 담은 기존 아카이브 전량이 통과한다', () => {
+    const schema = JSON.parse(readFileSync(join(REPO_ROOT, 'workflow/machine.schema.json'), 'utf8'))
+    // property는 남기고(= additionalProperties:false 하에서 기존 아카이브가 통과), required에서만 뺀다.
+    expect(schema.properties.risk_level).toBeDefined()
+    expect(schema.properties.risk_level.deprecated).toBe(true)
+    expect(schema.required).not.toContain('risk_level')
+    // 상향하면 validateVerdict의 정확 일치 검사로 전 아카이브가 무효가 된다(R4).
+    expect(schema.properties.machine_schema_version.enum).toEqual(['1.1'])
+
+    const archives = listReviewArchives()
+    expect(archives.length).toBeGreaterThan(0)
+
+    const ajv = new Ajv({ allErrors: true, strict: false })
+    const validate = ajv.compile(schema)
+    const invalid: string[] = []
+    let sampleWithRisk: Record<string, unknown> | null = null
+    for (const rel of archives) {
+      const doc = JSON.parse(readFileSync(join(REPO_ROOT, rel), 'utf8'))
+      if (doc.risk_level !== undefined && !sampleWithRisk) sampleWithRisk = doc
+      if (!validate(doc)) invalid.push(`${rel}: ${ajv.errorsText(validate.errors)}`)
+    }
+    expect(invalid).toEqual([])
+    // 이 회귀가 실효적이려면 risk_level을 담은 아카이브가 실제로 있어야 한다(0건이면 하위호환을 고정하지 못한다).
+    expect(sampleWithRisk).not.toBeNull()
+    // 그리고 같은 문서에서 risk_level만 뺀 형태(= 신규 응답)도 통과해야 한다(R2).
+    const { risk_level: _dropped, ...withoutRisk } = sampleWithRisk as Record<string, unknown>
+    expect(validate(withoutRisk)).toBe(true)
+  })
+
   it('[REQ-018 D3] severity 경로가 없는 스키마는 조용히 통과하지 않고 throw한다(fail-closed)', () => {
     const noFindings = JSON.stringify({ type: 'object', properties: { a: { type: 'string' } } })
     expect(() => deriveStrictOutputSchema(noFindings)).toThrow(/severity/)

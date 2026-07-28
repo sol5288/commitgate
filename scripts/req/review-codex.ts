@@ -485,7 +485,10 @@ export function validateVerdict(
   if (!STATUS_VALUES.includes(v.status ?? '')) errors.push(`status 비유효: ${v.status}`)
   if (!YESNO.includes(v.commit_approved ?? '')) errors.push(`commit_approved 비유효: ${v.commit_approved}`)
   if (!YESNO.includes(v.merge_ready ?? '')) errors.push(`merge_ready 비유효: ${v.merge_ready}`)
-  if (!RISK_VALUES.includes(v.risk_level ?? '')) errors.push(`risk_level 비유효: ${v.risk_level}`)
+  // REQ-2026-084 DEC-3: `risk_level`은 deprecated다 — 리뷰어에게 더 이상 요청하지 않는다(출력 스키마에서 탈락).
+  // **부재는 허용, 오값은 불허**: 신규 응답은 담지 않으므로 부재를 통과시켜야 하고(R2), 옛 리뷰어·기존 archive가
+  // 담은 값은 계속 검증돼야 D17 증거 무결성이 약해지지 않는다(R3). 무검사로 두면 오염된 값이 조용히 통과한다.
+  if (v.risk_level !== undefined && !RISK_VALUES.includes(v.risk_level)) errors.push(`risk_level 비유효: ${v.risk_level}`)
 
   if (!v.review_base_sha) errors.push('review_base_sha 누락')
   else if (opts.reviewBaseSha && v.review_base_sha !== opts.reviewBaseSha)

@@ -7,7 +7,6 @@
     "status",
     "commit_approved",
     "merge_ready",
-    "risk_level",
     "review_kind",
     "findings",
     "next_action"
@@ -22,7 +21,12 @@
       "description": "Gate approval for this review. For review_kind=design, yes means the design is approved to proceed (nothing is committed); approve a good design with commit_approved=yes and merge_ready=no. For review_kind=phase, yes means the staged tree is approved to commit. Approve (yes) ONLY when findings is empty: any finding is a blocking signal, so commit_approved=yes with a non-empty findings array is a contradiction and is rejected. Conversely, returning no with an empty findings array is also a contradiction and is rejected as BLOCKED — if you have no findings you must approve. Minor/non-blocking remarks do NOT belong in findings; put them in observations and still approve."
     },
     "merge_ready": { "type": "string", "enum": ["yes", "no"] },
-    "risk_level": { "type": "string", "enum": ["LOW", "HIGH"] },
+    "risk_level": {
+      "type": "string",
+      "enum": ["LOW", "HIGH"],
+      "deprecated": true,
+      "description": "DEPRECATED (REQ-2026-084) — DO NOT EMIT. This field is retained solely so previously archived reviews still validate against this schema (the root is additionalProperties:false, so deleting the property would invalidate every existing archive). It never reached any gate: risk is decided by the ticket's own risk_level at req:new, consumed by req:commit and req:next. The output schema you are given omits this property entirely, so you cannot and must not emit it."
+    },
     "review_kind": { "type": "string", "enum": ["design", "phase"] },
     "full_review_requested": {
       "type": "string",

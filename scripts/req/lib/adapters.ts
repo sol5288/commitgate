@@ -355,18 +355,42 @@ function narrowFindingsSeverityToP1(schema: Record<string, unknown>): void {
 }
 
 /**
- * Codex `--output-schema`용 **strict copy** 파생(REQ-2026-005 + REQ-2026-018). 원본 스키마
- * (`workflow/machine.schema.json`)는 **검증 SSOT로 불변**이고, codex 호출 직전에만 아래 두 가지를 적용한 copy를 파생한다.
+ * 출력 스키마에서 `deprecated: true`로 표시된 root property를 **탈락**시킨다(REQ-2026-084 DEC-2).
+ *
+ * **왜 SSOT가 아니라 copy에서 지우는가**: root가 `additionalProperties: false`이므로 SSOT에서 property 정의를
+ * 지우면 그 필드를 담은 **기존 archive가 전부 구조 부적합**이 된다(D17/D9가 archive를 재검증한다).
+ * `narrowFindingsSeverityToP1`과 동일한 구조적 이유이며 해법도 같다 — SSOT는 보존하고 copy만 좁힌다.
+ *
+ * **왜 `required` 재구성보다 먼저인가**: strict copy의 root `required`는 `Object.keys(properties)`로
+ * 재구성되므로, 여기서 먼저 지우지 않으면 deprecated 필드가 **다시 required로 부활**해 리뷰어가 계속 방출한다.
+ *
+ * **왜 throw하지 않는가**: `narrowFindingsSeverityToP1`의 throw는 "P2가 차단 채널로 새는 정책 구멍"을 막는
+ * fail-closed다. 여기서 지울 것이 없다는 건 요청 계약에 deprecated 필드가 애초에 없다는 뜻이라 구멍이 아니다.
+ */
+function dropDeprecatedProperties(schema: Record<string, unknown>): void {
+  const properties = asPlainObject(schema.properties)
+  if (!properties) return
+  for (const key of Object.keys(properties)) {
+    if (asPlainObject(properties[key])?.deprecated === true) delete properties[key]
+  }
+}
+
+/**
+ * Codex `--output-schema`용 **strict copy** 파생(REQ-2026-005 + REQ-2026-018 + REQ-2026-084). 원본 스키마
+ * (`workflow/machine.schema.json`)는 **검증 SSOT로 불변**이고, codex 호출 직전에만 아래 세 가지를 적용한 copy를 파생한다.
  * 응답/archive 검증은 계속 원본으로 한다.
  *
- * 1. **root `required` = `properties` 전체 키**(REQ-2026-005) — OpenAI structured-outputs strict mode는 root required가
+ * 1. **`deprecated: true` root property 제거**(REQ-2026-084) — 더 이상 요청하지 않는 필드를 요청 계약에서 뺀다.
+ *    **반드시 2번보다 먼저** — 뒤에 오면 `required` 재구성이 되살린다. 상세 근거는 `dropDeprecatedProperties` 참조.
+ * 2. **root `required` = `properties` 전체 키**(REQ-2026-005) — OpenAI structured-outputs strict mode는 root required가
  *    properties의 모든 키를 포함해야 한다. optional 필드(예: observations)가 있으면 400 invalid_json_schema.
  *    중첩 객체(findings/observations items)는 이미 모든 필드 required + additionalProperties:false라 root만 확장하면 충분.
- * 2. **`findings[].severity` = `["P1"]`**(REQ-2026-018) — 차단 채널에 P2/P3가 들어오지 못하게 구조적으로 막는다.
+ * 3. **`findings[].severity` = `["P1"]`**(REQ-2026-018) — 차단 채널에 P2/P3가 들어오지 못하게 구조적으로 막는다.
  *    상세 근거는 `narrowFindingsSeverityToP1` 참조.
  */
 export function deriveStrictOutputSchema(schemaText: string): string {
   const schema = JSON.parse(schemaText) as { properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown }
+  dropDeprecatedProperties(schema) // 🔴 required 재구성 **전**(REQ-2026-084 DEC-2)
   if (schema && typeof schema === 'object' && schema.properties && typeof schema.properties === 'object') {
     schema.required = Object.keys(schema.properties)
   }

@@ -678,6 +678,26 @@ describe('req:review-codex — 응답 도메인 검증(validateVerdict)', () => 
     expect(r.errors.join()).toContain('review_kind')
   })
 
+  // ── REQ-2026-084 DEC-3: risk_level은 deprecated — 부재는 허용, 오값은 불허 ──
+  it('[REQ-084 R2] risk_level 부재 → 통과(리뷰어에게 더 이상 요청하지 않는 필드)', () => {
+    const { risk_level: _omit, ...noRisk } = ok
+    expect(validateVerdict(noRisk, { reviewBaseSha: 'abc' })).toEqual({ ok: true, errors: [] })
+  })
+
+  it('[REQ-084 R3] risk_level이 있으면 계속 검증한다 — 유효값 통과 · 오값 거부', () => {
+    // 기존 아카이브(LOW/HIGH를 담음)는 그대로 통과해야 D17 증거 재검증이 깨지지 않는다.
+    expect(validateVerdict({ ...ok, risk_level: 'LOW' }, { reviewBaseSha: 'abc' }).ok).toBe(true)
+    expect(validateVerdict({ ...ok, risk_level: 'HIGH' }, { reviewBaseSha: 'abc' }).ok).toBe(true)
+    // 오염된 값은 조용히 통과시키지 않는다(무검사로 두면 여기가 뚫린다).
+    const bad = validateVerdict({ ...ok, risk_level: 'MEDIUM' }, { reviewBaseSha: 'abc' })
+    expect(bad.ok).toBe(false)
+    expect(bad.errors.join()).toContain('risk_level')
+  })
+
+  it('[REQ-084 R4] MACHINE_SCHEMA_VERSION은 1.1로 고정 — 상향하면 전 아카이브가 무효가 된다', () => {
+    expect(MACHINE_SCHEMA_VERSION).toBe('1.1')
+  })
+
   it('review_kind 오타 → 실패', () => {
     const r = validateVerdict({ ...ok, review_kind: 'desing' }, { reviewBaseSha: 'abc' })
     expect(r.ok).toBe(false)
