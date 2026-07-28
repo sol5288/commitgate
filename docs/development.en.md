@@ -23,6 +23,29 @@ A false red is worse than a hang, because people start ignoring red.
 the cause required **killing the job** — diagnosing meant destroying the evidence. A timed-out job leaves its
 logs behind. Keep that in mind before raising the value.
 
+### The per-test timeout is 30 seconds
+
+`testTimeout` and `hookTimeout` in `vitest.config.ts` are **30 seconds** (the default is 5).
+
+🔴 **Why raised**: one test in `delivery-verbs` takes **4740 ms on its own** — **95%** of the default budget.
+It creates throwaway repositories and spawns `commitgate` several times, so that is simply what it costs.
+Under parallel load or on a slower runner it goes over, which made **load variance produce a false red**.
+
+🔴 This is **an infrastructure value, not an expectation** — what the test asserts is unchanged, and a test
+that genuinely hangs still fails once it hits this ceiling.
+
+### The hang-probe workflow
+
+`.github/workflows/hang-probe.yml` is a **manual-only** (`workflow_dispatch`) investigation tool. It repeats the
+same test run 10 times to **measure how often an intermittent failure occurs**, and when the watchdog decides a
+run has exceeded its normal duration it collects `ps` output and stacks (`sample`) **before** killing anything.
+
+🔴 **Collecting before killing is the point**: GitHub **will not hand you the logs of a job that is still
+running**, so without this tool you have to kill the job to see the cause — which destroys the evidence.
+
+It is separate from `ci.yml`, so it does not affect required checks. Inputs let you choose the target test, the
+watchdog duration, and the Node version.
+
 ### Tests run with bounded parallelism
 
 `maxWorkers: 2` in `vitest.config.ts` caps how many test files run at once.

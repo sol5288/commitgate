@@ -24,7 +24,18 @@ Exit: `docs:lint` green · 수용기준 1·2·3·5 · Codex 승인.
 
 ## Phase 2 — 기여자 문서·CHANGELOG (`phase-2-dev-docs`)
 
-범위(DEC-6): `docs/development` ko/en · `CHANGELOG.md`.
+범위(DEC-6): `docs/development` ko/en · `CHANGELOG.md`. **이 두 가지뿐이다.**
+
+🔴 **`upgrade`·`guarantees`·`troubleshooting`(각 ko/en)은 phase-1에서 이미 착륙했다**(커밋 `0e6a365`).
+phase 리뷰는 `git diff --cached`만 보므로 이 phase의 staged diff에 그 6파일이 **없는 것이 정상**이다.
+CHANGELOG가 그 문서들을 언급·링크하는데 diff에 없다고 지적이 나오면 다음으로 확인한다:
+
+```sh
+git log --oneline -1 -- docs/upgrade.md docs/guarantees.md docs/troubleshooting.md
+git show HEAD:docs/upgrade.md | grep -c EBADENGINE      # 5
+```
+
+(REQ-2026-071·080에서 같은 오탐이 각각 두 번 났다 — 리뷰어는 stateless이고 앞 phase의 커밋을 보지 않는다.)
 
 순서:
 1. **G4** `development` ko/en — `testTimeout: 30초`와 `hang-probe.yml`.
