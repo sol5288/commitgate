@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-082-readme-onboarding-for-nondevs",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa7f7-14a4-71c2-bcbd-75317790aa04",
-  "review_base_sha": "0cf42e222c48c089ca010f9012228fd7110a991d",
-  "review_diff_hash": "3bfdc44642bc728fc3608ea6aedf9487c80e798b",
+  "codex_thread_id": "019fa7fc-4d0e-76c1-a5ec-8ef1f16b5ccb",
+  "review_base_sha": "92109761b47f7458e4451af044f93881f4f1dbb9",
+  "review_diff_hash": "06666a5eabe4911f57e99d3c47d601703432b170",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "24de2fbdf9b141c88aed6cd92cac54b07dbd6c25978c834be10da96f5606a1b9",
-  "current_phase": "phase-2-readme",
+  "current_phase": "phase-3-docs-sync",
   "phases": [
     {
       "id": "phase-1-cli-help",
@@ -22,7 +22,7 @@
     },
     {
       "id": "phase-3-docs-sync",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -49,6 +49,13 @@
       "phase_id": "phase-2-readme",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-docs-sync#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-docs-sync",
+      "attempts": 3,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -71,12 +78,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-readme",
+    "phase_id": "phase-3-docs-sync",
     "outcome": "approved",
-    "compare_hash": "7c736dfa9e62de2c9700aaccfbcff6d9ca0f0428bb57003e93f0cdfb94ef62d3",
+    "compare_hash": "499a25b9c06a859c449aa0b7f3b6e4133eda0618899649a585de68db2a699503",
     "count": 1,
     "errors": [],
-    "at": "2026-07-28T09:04:11.000Z",
+    "at": "2026-07-28T09:09:48.777Z",
     "findings": [],
     "elided_count": 0
   },
@@ -92,6 +99,12 @@
       "phase_id": "phase-2-readme",
       "consumed_by_commit_sha": "0db00cd36a2470d32fb06eee5378472e26b724f7",
       "approval_consumed_at": "2026-07-28T09:04:22.760Z"
+    },
+    {
+      "approved_tree": "06666a5eabe4911f57e99d3c47d601703432b170",
+      "phase_id": "phase-3-docs-sync",
+      "consumed_by_commit_sha": "129371370127cbc273e6eba350f1bd416abdec19",
+      "approval_consumed_at": "2026-07-28T09:09:59.032Z"
     }
   ],
   "user_commit_confirmed": null
