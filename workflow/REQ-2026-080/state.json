@@ -3,18 +3,18 @@
   "branch": "feat/req-2026-080-drop-node18",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa691-9c76-7bc1-bbad-b83f72b44d38",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fa698-9129-7983-9e13-cabeccfbe9f3",
+  "review_base_sha": "51a8eb613e7b90bf5aca7ba6ac8f5779bef7fa72",
+  "review_diff_hash": "c2d6ff426591c456e09ac3edfc14a8c265030e36",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "fd4be578f9e71a9e5fdfa6989dcc565c0e3a30ca9228d00ca0b522616bcfade1",
-  "current_phase": null,
+  "current_phase": "phase-1-runtime",
   "phases": [
     {
       "id": "phase-1-runtime",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-docs",
@@ -29,6 +29,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-runtime#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-runtime",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -52,14 +59,23 @@
     "design_hash": "fd4be578f9e71a9e5fdfa6989dcc565c0e3a30ca9228d00ca0b522616bcfade1"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-runtime",
     "outcome": "approved",
-    "compare_hash": "bd1491ec2d33ade0eacd5198e0037e87feffe2b6a2c902ea0fca15d74431f40a",
+    "compare_hash": "3b1104cf82974c653161e6e091b491039c68f95638fe1a2f20dd6aca906a94b2",
     "count": 1,
     "errors": [],
-    "at": "2026-07-28T02:33:57.639Z",
+    "at": "2026-07-28T02:41:24.028Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "c2d6ff426591c456e09ac3edfc14a8c265030e36",
+      "phase_id": "phase-1-runtime",
+      "consumed_by_commit_sha": "6010f6e8cc7455c30fa4f5370e6b6e3f6ea02a84",
+      "approval_consumed_at": "2026-07-28T02:41:41.942Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
