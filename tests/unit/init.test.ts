@@ -49,8 +49,10 @@ import {
   assertConfinedDest,
   sha256File,
   PACKAGE_ROOT,
+  HELP_TEXT,
   type InitOptions,
 } from '../../bin/init'
+import { VERB_MODULES } from '../../bin/dispatch.mjs'
 import { DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 
@@ -3315,4 +3317,42 @@ describe('[init] 세 축 정합 — KIT 자산 ⊆ package.json files[] (REQ-202
       expect(covered(rel), `${rel} 이 package.json files[]에 없음`).toBe(true)
     })
   }
+})
+
+describe('[init] --help ↔ dispatch 정합 (REQ-2026-082 DEC-7)', () => {
+  /**
+   * 🔴 이 도구는 `setup`을 **건너뛸 수 없는 단계**로 강제하는데, 0.12.0 까지 `--help` 는 그 존재를
+   *    몰랐다(`init`·`migrate`·`uninstall` 만 안내). 터미널에서 `--help` 부터 치는 사용자는
+   *    필수 단계를 모른 채 진행해 `req:new` 에서 막혔다.
+   *
+   * 오라클: dispatch 테이블(`bin/dispatch.mjs`)과 도움말 리터럴(`bin/init.ts`)은 **서로 독립한 두
+   * 아티팩트**다. 한쪽의 키가 다른 쪽 본문에 등장하는지 교차 검증하므로 tautology 가 아니다 —
+   * 새 verb 를 등록하고 도움말을 잊으면 그 시점에 실패한다.
+   *
+   * `req:*` 는 제외한다: `npm run req:* --` 스크립트로 호출되고 워크플로 문서가 정본이다.
+   */
+  const cliVerbs = Object.keys(VERB_MODULES).filter((v) => !v.startsWith('req:'))
+
+  it('검사 대상 verb 가 실제로 잡힌다(0개를 검사하고 통과하지 않는다)', () => {
+    expect(cliVerbs.length).toBeGreaterThanOrEqual(8)
+    expect(cliVerbs).toContain('setup')
+    expect(cliVerbs).toContain('check')
+  })
+
+  for (const verb of Object.keys(VERB_MODULES).filter((v) => !v.startsWith('req:'))) {
+    it(`도움말이 "${verb}" 를 안내한다`, () => {
+      // `init` 는 verb 를 생략해도 기본 진입점이라 사용법에 `[init]` 로 적힌다 — 두 표기 모두 "안내됨"이다.
+      const documented =
+        HELP_TEXT.includes(`npx commitgate ${verb}`) || HELP_TEXT.includes(`npx commitgate [${verb}]`)
+      expect(documented, `dispatch 에 등록된 verb 가 --help 에 없음: ${verb}`).toBe(true)
+    })
+  }
+
+  it('"설치 후" 안내가 setup 을 req:new 보다 먼저 놓는다(막히지 않는 순서)', () => {
+    const setupAt = HELP_TEXT.indexOf('npx commitgate setup')
+    const newAt = HELP_TEXT.indexOf('req:new -- <slug> --run')
+    expect(setupAt).toBeGreaterThanOrEqual(0)
+    expect(newAt).toBeGreaterThanOrEqual(0)
+    expect(setupAt, 'setup 안내가 첫 티켓 생성보다 앞이어야 한다').toBeLessThan(newAt)
+  })
 })

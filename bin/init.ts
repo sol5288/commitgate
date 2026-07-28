@@ -1443,8 +1443,12 @@ export function parseArgs(argv: string[]): InitOptions {
   return { dir: resolve(dir), force, dryRun, strict, noAgentEntrypoints }
 }
 
-function printHelp(): void {
-  console.log(`commitgate — AI REQ workflow(커밋 게이트) 설치
+/**
+ * `-h/--help` 본문. **`bin/dispatch.mjs`의 `VERB_MODULES`와 정합**해야 한다 — 등록된 verb를
+ * 도움말이 모르면 사용자는 필수 단계(`setup`)를 모른 채 진행한다(REQ-2026-082 DEC-7).
+ * `tests/unit/init.test.ts`가 두 아티팩트를 교차 검증한다.
+ */
+export const HELP_TEXT = `commitgate — AI REQ workflow(커밋 게이트) 설치
 
 ⚠️ commitgate 를 **먼저 devDependency 로 설치**해야 합니다:
      npm install -D commitgate
@@ -1453,10 +1457,17 @@ function printHelp(): void {
 
 사용법:
   npx commitgate [init] [--dir <대상repo>] [--force] [--dry-run] [--strict]
+  npx commitgate setup [--dir <대상repo>]               # 🔴 설치 후 필수 — 리뷰 모델·멈춤 지점 선택 + codex 로그인(대화형)
+  npx commitgate check [--dir <대상repo>] [--json]      # 준비 상태 진단(읽기 전용 — 아무것도 고치지 않음)
+  npx commitgate sync [--apply] [--dir <대상repo>]      # vendored 자산(스키마·persona·gitignore) 재동기화(기본: 계획만)
+  npx commitgate quickstart [--apply] [--dir <대상repo>] # 기존 CLAUDE.md/AGENTS.md에 Quick Start 블록 백필(기본: 계획만)
+  npx commitgate delivery <sub> ...                     # 여러 REQ를 한 묶음(delivery set)으로 관리
   npx commitgate migrate [--apply] [--dir <대상repo>]   # 예전 vendored 설치본 → 런타임 패키지(기본: 계획만)
   npx commitgate uninstall [--dir <대상repo>]           # 제거 계획만 출력(아무것도 지우지 않음)
 
-옵션:
+각 명령의 상세 옵션은 npx commitgate <명령> --help 로 볼 수 있습니다.
+
+옵션(init):
   --dir <path>   대상 repo 루트(기본: 현재 디렉터리)
   --force        덮어쓰기 가능한 kit 항목만 갱신(기본: 스킵).
                  AGENTS.md · CLAUDE.md · workflow/.gitignore · companion skills(.claude/skills/commitgate-*)는
@@ -1473,13 +1484,22 @@ function printHelp(): void {
   (전부 commitgate 패키지에 들어 있습니다).
 
 설치 후:
-  1. codex CLI 설치 확인(리뷰 실호출용)
+  1. 🔴 setup 실행 — 건너뛸 수 없습니다. 마치기 전에는 req:new 를 비롯한 워크플로 명령이 막힙니다.
+       npx commitgate setup
+     대화형 전용이라 **사람이 터미널에서 직접** 실행합니다(에이전트 세션·CI 에서는 즉시 종료).
+     리뷰 모델·추론강도·멈춤 지점을 고르고 codex 로그인까지 마칩니다.
+     🔴 codex CLI 가 먼저 있어야 합니다(리뷰 실호출용): npm i -g @openai/codex
   2. req.config.json 조정(branchPrefix/ticketRoot 등)
   3. 설치분 커밋(안내가 stage 할 경로를 알려 줍니다)
-  4. 첫 티켓 생성:
+  4. 준비 상태 확인(선택 — 읽기 전용):
+       npx commitgate check
+  5. 첫 티켓 생성:
        npm  → npm run req:new -- <slug> --run
        pnpm → pnpm req:new <slug> --run
-       yarn → yarn req:new <slug> --run`)
+       yarn → yarn req:new <slug> --run`
+
+function printHelp(): void {
+  console.log(HELP_TEXT)
 }
 
 export function main(argv: string[]): void {
