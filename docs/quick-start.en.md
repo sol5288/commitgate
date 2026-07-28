@@ -127,6 +127,9 @@ CommitGate stops **before writing any file**. The cases are:
 | npm, pnpm, or yarn | `npm --version` | Examples use npm |
 | Codex CLI | `codex --version` | Required for review runs |
 
+> 💳 **Reviews are not free.** CommitGate itself is MIT open source, but a review **actually calls Codex**, which consumes the usage or billing of the account you signed in with (a ChatGPT account or an OpenAI API key). What it costs depends on the model you pick and the size of the change, so no figure is quoted here — check your account's pricing.
+> The number of re-reviews in one series is capped (default: 5 automatic, rounds 6–8 need a human exception, blocked from round 9) — see [Configuration — `reviewBudget`](./configuration.en.md).
+
 If Codex CLI is not installed:
 
 ```sh

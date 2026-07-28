@@ -127,6 +127,9 @@ npx commitgate --strict
 | npm, pnpm, yarn 중 하나 | `npm --version` | npm 기준으로 안내 |
 | Codex CLI | `codex --version` | 리뷰 실행에 필요 |
 
+> 💳 **리뷰는 무료가 아닙니다.** CommitGate 자체는 MIT 오픈소스지만, 리뷰는 Codex를 **실제로 호출**하므로 로그인한 계정(ChatGPT 계정 또는 OpenAI API 키)의 **사용량·요금이 발생합니다.** 드는 비용은 선택한 모델과 변경 크기에 따라 다르므로 여기에 적지 않습니다 — 계정의 요금 정책을 확인하세요.
+> 한 series의 재리뷰 횟수에는 상한이 있습니다(기본: 자동 5회 · 6~8회는 사람 예외 필요 · 9회부터 차단) — [설정 — `reviewBudget`](./configuration.md)을 보세요.
+
 Codex CLI가 없다면:
 
 ```sh
