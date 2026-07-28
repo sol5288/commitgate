@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"b82e73b3311be603eac049313fd463991faa6d4c","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"승인된 설계에 따라 phase-1-runtime-guidance를 구현하고, 각 phase를 독립 검증 후 리뷰 요청하세요.","observations":[]}
