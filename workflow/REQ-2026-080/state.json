@@ -3,16 +3,63 @@
   "branch": "feat/req-2026-080-drop-node18",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa691-9c76-7bc1-bbad-b83f72b44d38",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "fd4be578f9e71a9e5fdfa6989dcc565c0e3a30ca9228d00ca0b522616bcfade1",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-runtime",
+      "approved": false
+    },
+    {
+      "id": "phase-2-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "b45845c5b3a2f15eaa47e2cd1643c1ab324aed35",
+    "design": "dee8e419889a14c37bbba5b6ab1dc6a743a80ac8",
+    "plan": "8950e4a304485d8efee07955b961d81ca96318bc"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-080/responses/design-r01-approved.json",
+    "response_sha256": "892213069a27b0c6c93a6230f482fbff1d623f25e3e94c945fc791402e0a4155",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "7c5d7b234effb21dd1870be148a42e6088b359bc",
+    "codex_thread_id": "019fa691-9c76-7bc1-bbad-b83f72b44d38",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-28T02:33:57.639Z",
+    "design_hash": "fd4be578f9e71a9e5fdfa6989dcc565c0e3a30ca9228d00ca0b522616bcfade1"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "bd1491ec2d33ade0eacd5198e0037e87feffe2b6a2c902ea0fca15d74431f40a",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-28T02:33:57.639Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
