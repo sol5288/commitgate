@@ -47,7 +47,7 @@ commitgate/
 
 | 항목 | 값 | 근거 |
 |---|---|---|
-| 런타임 | Node.js `>=18.17` (`"type":"module"` ESM) | [package.json](../../package.json) |
+| 런타임 | Node.js `>=20` (`"type":"module"` ESM) | [package.json](../../package.json) |
 | 언어 | TypeScript `^5.6.2` | [package.json](../../package.json) devDeps |
 | TS 실행 | `tsx ^4.19.1` (컴파일 없이 `.ts` 실행) | [package.json](../../package.json) deps |
 | 테스트 러너 | `vitest ^2.1.2` | [vitest.config.ts](../../vitest.config.ts) |

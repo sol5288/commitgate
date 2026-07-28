@@ -11,7 +11,7 @@ CommitGate는 배포되는 서비스가 아니라 **npm 패키지**다. "환경"
 | 워크플로명 | `CI` |
 | 트리거 | `push`(branches: `main`, tags: `v*`), `pull_request`(전체) |
 | Job | `build` (`${{matrix.os}} · node ${{matrix.node}}`) |
-| 매트릭스 | `os: [ubuntu-latest, macos-latest, windows-latest]` × `node: [18,20,22]` = **9-leg** (`fail-fast: false`) |
+| 매트릭스 | `os: [ubuntu-latest, macos-latest, windows-latest]` × `node: [20,22,24]` = **9-leg** (`fail-fast: false`) |
 | 스텝 | `checkout@v4` → `setup-node@v4(cache:npm)` → `npm ci` → `npm run typecheck` → `npm test` → `npm run smoke` |
 
 - Windows 러너가 `.cmd` 경로도 검증(smoke 주석).

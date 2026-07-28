@@ -128,7 +128,7 @@ flowchart TB
 | **보안(명령 주입 차단)** | `safeSpawnSync`는 shell 없이 `cross-spawn`으로 실행([scripts/req/lib/adapters.ts](../../scripts/req/lib/adapters.ts)). Windows `.cmd` 래퍼 회귀 테스트([tests/unit/req-adapters-cmd.test.ts](../../tests/unit/req-adapters-cmd.test.ts)). |
 | **무결성(승인 위조 방지)** | 승인 응답 sha256을 `approvals.jsonl`·`state.json`에 고정, 재검증([scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `evidenceProblems`). |
 | **결정성/재현성** | `req:next`·상태 머신은 state+git의 순수 함수. `git status -z` 파싱 고정([scripts/req/lib/porcelain.ts](../../scripts/req/lib/porcelain.ts)). |
-| **이식성(크로스 플랫폼)** | CI가 `{ubuntu,macos,windows} × {Node 18,20,22}` 9-leg([.github/workflows/ci.yml](../../.github/workflows/ci.yml)). BOM·경로·shell 연산자 회피([bin/init.ts](../../bin/init.ts)). |
+| **이식성(크로스 플랫폼)** | CI가 `{ubuntu,macos,windows} × {Node 20,22,24}` 9-leg([.github/workflows/ci.yml](../../.github/workflows/ci.yml)). BOM·경로·shell 연산자 회피([bin/init.ts](../../bin/init.ts)). |
 | **관측성** | 텔레메트리 없음. 신호는 exit code + stderr 텍스트([10-operations-deployment-and-observability.md](10-operations-deployment-and-observability.md)). |
 | **비용 통제(리뷰 토큰)** | 리뷰 모델·추론강도를 `-c`로 고정(기본 `gpt-5.6-terra`/`high`)해 전역 설정 상속으로 인한 토큰 과다를 방지([scripts/req/lib/config.ts](../../scripts/req/lib/config.ts) `DEFAULTS`). |
 | **복구성** | evidence-finalize 중단은 `pending_evidence_for` + `req:commit --finalize`로 복구. 단 scratch `state.json` 전체를 fresh clone에서 재구축하는 기능은 없음. |

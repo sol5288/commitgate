@@ -3,6 +3,11 @@
 > 상태: **설계/가이드 문서** — 구현 전. Codex 보안 리뷰에서 non-blocking 후속으로 분류된 3건.
 > 대상 이슈: [#1](https://github.com/sol5288/commitgate/issues/1) · [#2](https://github.com/sol5288/commitgate/issues/2) · [#3](https://github.com/sol5288/commitgate/issues/3)
 > 이 문서는 "무엇을·왜·어떻게"만 정의한다. 실제 구현은 별도(가급적 CommitGate 워크플로 자신으로 dogfood — §6).
+>
+> ⚠️ **이 문서는 작성 시점의 스냅샷이다.** 본문의 현재형 서술(예: `engines.node>=18.17`,
+> 매트릭스 `[18,20,22]`)은 **그때의 사실**이며 지금과 다르다 — REQ-2026-080에서 최소 런타임이
+> **Node 20**으로, 매트릭스가 **`[20,22,24]`**로 바뀌었다. 제안 문서를 사후에 고쳐 쓰지 않는
+> 대신 이 표기를 둔다(현재 사실은 [ssot-design](ssot-design/README.md)과 `package.json`이 정본).
 
 ---
 

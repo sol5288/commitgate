@@ -86,7 +86,7 @@ CommitGate는 그 왕복을 자동으로 돌립니다. **검사에 통과하기 
 | 필요 | 확인 명령 | 비고 |
 |---|---|---|
 | Git | `git --version` | 필수 |
-| Node.js 18.17+ | `node --version` | 필수 |
+| Node.js 20+ | `node --version` | 필수 |
 | npm · pnpm · yarn 중 하나 | `npm --version` | 아래 안내는 npm 기준 |
 | **Codex CLI** | `codex --version` | 🔴 **리뷰 실행에 필요** — 없으면 설치는 성공하고 리뷰 단계에서 막힙니다 |
 

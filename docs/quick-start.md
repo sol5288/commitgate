@@ -123,7 +123,7 @@ npx commitgate --strict
 | 필요 | 확인 명령 | 비고 |
 |---|---|---|
 | Git | `git --version` | 필수 |
-| Node.js 18.17+ | `node --version` | 필수 |
+| Node.js 20+ | `node --version` | 필수 |
 | npm, pnpm, yarn 중 하나 | `npm --version` | npm 기준으로 안내 |
 | Codex CLI | `codex --version` | 리뷰 실행에 필요 |
 

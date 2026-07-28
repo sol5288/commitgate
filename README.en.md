@@ -86,7 +86,7 @@ For the full list of what is and is not guaranteed, see **[Guarantees & limits](
 | Required | Check with | Note |
 |---|---|---|
 | Git | `git --version` | Required |
-| Node.js 18.17+ | `node --version` | Required |
+| Node.js 20+ | `node --version` | Required |
 | npm, pnpm, or yarn | `npm --version` | Instructions below use npm |
 | **Codex CLI** | `codex --version` | 🔴 **Needed to run reviews** — without it the install succeeds and you get blocked at the review step |
 

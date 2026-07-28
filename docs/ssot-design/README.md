@@ -48,7 +48,7 @@
 
 ## 5. 재구현 필수 선행조건
 
-- Node.js **18.17 이상**([package.json](../../package.json) `engines.node`)
+- Node.js **20 이상**([package.json](../../package.json) `engines.node`)
 - git (모든 게이트의 기반 상태원), npm/pnpm/yarn 중 하나
 - 리뷰 실호출을 재현하려면 Codex CLI(`@openai/codex`) + 로그인. 리뷰 로직 자체는 `createFakeReviewerAdapter`로 대체 검증 가능(테스트).
 

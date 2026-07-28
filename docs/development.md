@@ -4,7 +4,7 @@
 
 현재 운영 중인 검증입니다.
 
-- GitHub Actions에서 `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 18/20/22 매트릭스를 실행합니다.
+- GitHub Actions에서 `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 20/22/24 매트릭스를 실행합니다.
 - `npm run smoke`는 pack tarball을 임시 프로젝트에 실제로 설치해, 대상에 `scripts/req/`가 **없고** `tsx`·`ajv`·`cross-spawn`이 **주입되지 않으며** 다섯 `req:*`가 패키지 bin을 가리키는지, 그리고 `npm run req:doctor`가 실제로 패키지 안의 모듈까지 dispatch되는지 확인합니다. `migrate` 비파괴성도 같은 방식으로 검증합니다.
 - Windows `.cmd` 래퍼 주입 회귀 테스트가 패키지 매니저와 Codex wrapper 경로를 보호합니다.
 - `npm test`는 **전체 스위트**를 돌리고, 게이트 판정도 이것을 봅니다(변경분만 돌리는 방식은 쓰지 않습니다 —

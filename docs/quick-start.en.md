@@ -123,7 +123,7 @@ CommitGate stops **before writing any file**. The cases are:
 | Requirement | Check | Notes |
 |---|---|---|
 | Git | `git --version` | Required |
-| Node.js 18.17+ | `node --version` | Required |
+| Node.js 20+ | `node --version` | Required |
 | npm, pnpm, or yarn | `npm --version` | Examples use npm |
 | Codex CLI | `codex --version` | Required for review runs |
 

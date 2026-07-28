@@ -20,7 +20,18 @@ Exit: 로컬 green · 🔴 **CI 9잡 green** — 여기에 **Node 24가 처음 �
 
 ## Phase 2 — 문서 (`phase-2-docs`)
 
-범위(DEC-1·DEC-2): 아래 목록.
+범위(DEC-1·DEC-2): 아래 목록. **문서 전용이다.**
+
+🔴 **`package.json`(`engines`)과 `.github/workflows/ci.yml`(매트릭스)은 phase-1에서 이미 착륙했다**
+(커밋 `6010f6e`). phase 리뷰는 `git diff --cached`만 보므로 이 phase의 staged diff에는 그 둘이
+**없는 것이 정상**이다 — "변경이 반영되지 않았다"는 지적이 나오면 다음으로 확인한다:
+
+```sh
+git show HEAD:package.json | grep engines -A2      # ">=20"
+git show HEAD:.github/workflows/ci.yml | grep 'node: \['   # [20, 22, 24]
+```
+
+(REQ-2026-071 phase-4에서 같은 오탐이 두 번 났다 — 리뷰어는 stateless이고 앞 phase의 커밋을 보지 않는다.)
 
 순서:
 1. **준비물·요구 버전**: README ko/en · `docs/quick-start` ko/en — "Node.js 18.17+" → **"Node.js 20+"**.
