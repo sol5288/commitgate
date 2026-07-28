@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"b49e9f622df4349ebb79e87f5af3bb98fb5d38ff","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","risk_level":"LOW","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"Commit the staged reversion and verification record.","observations":[]}
