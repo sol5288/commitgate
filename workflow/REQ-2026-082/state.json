@@ -3,16 +3,54 @@
   "branch": "feat/req-2026-082-readme-onboarding-for-nondevs",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fa7e1-55ec-7a42-8bd0-1fe5395768cb",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "24de2fbdf9b141c88aed6cd92cac54b07dbd6c25978c834be10da96f5606a1b9",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "8906130105a8343b4c09eddbc5b7d813feeff5ee",
+    "design": "c0e87f1d7656f03b6a53717efbbbdc56b0373d94",
+    "plan": "900c4ccdf5b5054119f7536655e54241e2679f1a"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-082/responses/design-r01-approved.json",
+    "response_sha256": "506b7dfa87de99ff9f436a9b14266426448890a3033dc7baf3de99d3074eb80d",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "453ca75d7bb32e41cce163abe919a8d20ccab6be",
+    "codex_thread_id": "019fa7e1-55ec-7a42-8bd0-1fe5395768cb",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-28T08:40:46.099Z",
+    "design_hash": "24de2fbdf9b141c88aed6cd92cac54b07dbd6c25978c834be10da96f5606a1b9"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "708a8e9796698962c6a6dab528a333531c4f077b54562781655d348c96a9bfc6",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-28T08:40:46.099Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
