@@ -3,15 +3,28 @@
   "branch": "feat/req-2026-082-readme-onboarding-for-nondevs",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa7e1-55ec-7a42-8bd0-1fe5395768cb",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fa7ea-a48d-77d2-a146-1839fcab8cbb",
+  "review_base_sha": "194441d81b96e002e881d719d2a42245114c4c64",
+  "review_diff_hash": "a473507246aedd4f4926a3001eceda00dc4ac03e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "24de2fbdf9b141c88aed6cd92cac54b07dbd6c25978c834be10da96f5606a1b9",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-cli-help",
+  "phases": [
+    {
+      "id": "phase-1-cli-help",
+      "approved": true
+    },
+    {
+      "id": "phase-2-readme",
+      "approved": false
+    },
+    {
+      "id": "phase-3-docs-sync",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -20,6 +33,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-cli-help#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-cli-help",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -43,14 +63,23 @@
     "design_hash": "24de2fbdf9b141c88aed6cd92cac54b07dbd6c25978c834be10da96f5606a1b9"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-cli-help",
     "outcome": "approved",
-    "compare_hash": "708a8e9796698962c6a6dab528a333531c4f077b54562781655d348c96a9bfc6",
+    "compare_hash": "7d2eff4d8583a0fcabe81ec226569b7287f9240d033e4773843b67a13b708917",
     "count": 1,
     "errors": [],
-    "at": "2026-07-28T08:40:46.099Z",
+    "at": "2026-07-28T08:50:39.993Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "a473507246aedd4f4926a3001eceda00dc4ac03e",
+      "phase_id": "phase-1-cli-help",
+      "consumed_by_commit_sha": "0ac5554b8d117b8259b8b0a157656f37679bd09f",
+      "approval_consumed_at": "2026-07-28T08:51:13.680Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
