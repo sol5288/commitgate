@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   classifyDispatchFailure,
   refundAttempt,
+  voidAttempt,
   openSeriesAttempts,
+  openSeriesProductiveAttempts,
+  budgetCounts,
   recordAttempt,
   checkReviewBudget,
   type SeriesRecord,
@@ -99,8 +102,50 @@ describe('[REQ-2026-054] 예산 환불(DEC-C3)', () => {
   })
   it('③ 예산 게이트: 환불이 유효회차를 낮춰 needs-exception→allow', () => {
     // attempts=5·refunded=1 → 유효4 → allow. 환불 없으면 유효5 → needs-exception.
-    expect(checkReviewBudget(openSeriesAttempts(st([openDesign(5, 1)]), 'design', null), BUDGET).kind).toBe('allow')
-    expect(checkReviewBudget(openSeriesAttempts(st([openDesign(5)]), 'design', null), BUDGET).kind).toBe('needs-exception')
+    // REQ-2026-084: 계수 추출은 budgetCounts 단일 출처. pre-dispatch 환불은 **두 축 모두**에서 빠진다(R7).
+    expect(checkReviewBudget(budgetCounts(st([openDesign(5, 1)]), 'design', null), BUDGET).kind).toBe('allow')
+    expect(checkReviewBudget(budgetCounts(st([openDesign(5)]), 'design', null), BUDGET).kind).toBe('needs-exception')
+  })
+
+  // ── REQ-2026-084: void_attempts(호출됨·판정 없음)는 refunded_attempts(호출 안 됨)와 의미가 다르다 ──
+  it('[REQ-084 R7] refundAttempt는 dispatched·productive를 함께 낮춘다 — 기존 의미 불변', () => {
+    const s = st([openDesign(5, 1)])
+    expect(openSeriesAttempts(s, 'design', null)).toBe(4)
+    expect(openSeriesProductiveAttempts(s, 'design', null)).toBe(4)
+  })
+
+  it('[REQ-084 DEC-4] voidAttempt는 productive만 낮추고 dispatched는 그대로 둔다', () => {
+    const s = voidAttempt(st([openDesign(5)]), 'design', null)
+    expect((s.review_series as SeriesRecord[])[0]!.void_attempts).toBe(1)
+    expect((s.review_series as SeriesRecord[])[0]!.attempts).toBe(5) // 단조 유지(DEC-6 — 원장 자연키 충돌 회피)
+    expect(openSeriesAttempts(s, 'design', null)).toBe(5) // 호출은 실제로 나갔다
+    expect(openSeriesProductiveAttempts(s, 'design', null)).toBe(4) // 판정은 없었다
+    // 그 결과 autoBudget 판정만 완화된다.
+    expect(checkReviewBudget(budgetCounts(s, 'design', null), BUDGET).kind).toBe('allow')
+  })
+
+  it('[REQ-084 R6] void가 쌓여도 dispatched가 hardCap에 도달하면 차단된다', () => {
+    let s = st([openDesign(8)])
+    for (let i = 0; i < 8; i++) s = voidAttempt(s, 'design', null)
+    expect(openSeriesProductiveAttempts(s, 'design', null)).toBe(0)
+    expect(openSeriesAttempts(s, 'design', null)).toBe(8)
+    expect(checkReviewBudget(budgetCounts(s, 'design', null), BUDGET).kind).toBe('hard-blocked')
+  })
+
+  it('[REQ-084 R8] void_attempts 부재 state는 두 계수가 같다 — 판정이 REQ-084 이전과 동일', () => {
+    for (const n of [0, 4, 5, 7, 8]) {
+      const s = st([openDesign(n)])
+      expect(openSeriesProductiveAttempts(s, 'design', null)).toBe(openSeriesAttempts(s, 'design', null))
+      expect(checkReviewBudget(budgetCounts(s, 'design', null), BUDGET).kind).toBe(
+        n < 5 ? 'allow' : n < 8 ? 'needs-exception' : 'hard-blocked',
+      )
+    }
+  })
+
+  it('[REQ-084 DEC-4] voidAttempt: 열린 series 없으면 no-op', () => {
+    const closed = { ...openDesign(3), closed_reason: 'approved' as const }
+    const s = voidAttempt(st([closed]), 'design', null)
+    expect((s.review_series as SeriesRecord[])[0]!.void_attempts).toBeUndefined()
   })
   it('⑦ recordAttempt는 refunded_attempts 불변·attempts 단조 증가(재시도 새 키)', () => {
     const s = recordAttempt(st([openDesign(5, 1)]), 'design', null)

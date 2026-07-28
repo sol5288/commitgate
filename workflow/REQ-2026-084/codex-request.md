@@ -13,6 +13,17 @@
 - **phase-2**: `void_attempts` 계수를 추가해 invalid 회차가 `autoBudget`을 소모하지 않게 한다. `hardCap`은 실제 호출 수(`dispatched`) 기준으로 그대로 남겨 무한 루프를 막는다.
 - **phase-3**: CHANGELOG.
 
+## 🔴 진행 상태 — 이 diff는 phase-2만 담는다
+
+phase 리뷰는 **해당 phase의 staged diff만** 본다. 앞 phase는 이미 커밋돼 이 diff에 나타나지 않으므로,
+"phase-1이 구현되지 않았다"고 읽지 말 것. 아래는 **작업 트리에서 직접 확인**할 수 있다.
+
+| phase | 상태 | 커밋 | 확인할 파일 / 확인 방법 |
+|---|---|---|---|
+| phase-1 risk-level-deprecation | ✅ 커밋됨 | `70b0c1c4` | `workflow/machine.schema.json` — `required`에 `risk_level` 없음 · `properties.risk_level.deprecated === true`<br>`scripts/req/lib/adapters.ts` — `dropDeprecatedProperties()` 존재, `deriveStrictOutputSchema`에서 `required` 재구성 **앞**에 호출<br>`scripts/req/review-codex.ts` — `validateVerdict`의 risk_level 검사가 `v.risk_level !== undefined` 조건부 |
+| **phase-2 invalid-budget** | **🔎 지금 리뷰 대상** | (이 diff) | staged diff 전체 |
+| phase-3 changelog | ⏳ 미착수 | — | 다음 phase에서 `CHANGELOG.md` |
+
 ## 리뷰 포인트
 
 - **기존 아카이브 무손상**: `additionalProperties: false` + D17/D9의 아카이브 재검증 경로에서, `risk_level`을 담은 과거 응답이 계속 통과하는가. 이 REQ에서 가장 중요한 불변식이다.

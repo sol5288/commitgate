@@ -945,6 +945,11 @@ export interface SeriesRecord {
   // 🔴 REQ-2026-054(DEC-C3): pre-dispatch 실패로 **환불된** 회차 수(additive·기본 0). 예산 게이트가 보는 유효
   //    회차 = attempts - refunded_attempts. attempts는 단조 유지(원장 자연키 충돌 회피)하고 여기서만 환불한다.
   refunded_attempts?: number
+  // 🔴 REQ-2026-084(DEC-4): **호출은 나갔으나 판정이 없던**(outcome==='invalid') 회차 수(additive·기본 0).
+  //    `refunded_attempts`와 의미가 다르다 — 저쪽은 "호출 안 나감(비용 0)"이라 두 상한 모두에서 빠지지만,
+  //    이쪽은 비용이 발생했으므로 **autoBudget에서만** 빠지고 `hardCap`(절대 호출 상한)에는 그대로 남는다.
+  //    리뷰어 계약 위반으로 빌더가 사람 예외 사유서를 쓰게 되는 것을 막되, 무한 invalid 루프는 막는다.
+  void_attempts?: number
 }
 
 /**
@@ -1128,14 +1133,28 @@ export type BudgetDecision =
   | { kind: 'hard-blocked'; attempt: number }
 
 /**
- * 같은 `(kind, phase_id)`의 **열린** series의 attempts(없으면 0). 게이트 입력.
+ * 같은 `(kind, phase_id)`의 **열린** series에서 실제로 나간 호출 수(없으면 0). `hardCap`(절대 상한) 입력.
  * `escalated`나 직전 outcome을 보지 않는다 — 계수만이 기준이다(R2, 배분표 ⑤).
+ *
+ * 🔴 REQ-2026-084(DEC-4)로 이름의 의미가 **dispatched**(호출이 나간 회차)로 명확해졌다. 값·계산식은 불변이다 —
+ *    `void_attempts`는 여기서 빼지 않는다(invalid도 호출은 나갔다). autoBudget 입력은 `openSeriesProductiveAttempts`.
  */
 export function openSeriesAttempts(state: WorkflowState, kind: ReviewKind, phaseId: string | null): number {
   const rec = openSeriesRecord(state, kind, phaseId)
   // 🔴 REQ-2026-054(DEC-C3): 유효 회차 = attempts - refunded_attempts. pre-dispatch 실패로 환불된 회차는
   //    예산에서 뺀다. refunded_attempts 부재(옛 state)면 attempts 그대로(하위호환).
   return rec ? Math.max(0, rec.attempts - (rec.refunded_attempts ?? 0)) : 0
+}
+
+/**
+ * 같은 `(kind, phase_id)`의 **열린** series에서 **판정을 낸** 회차 수(없으면 0). `autoBudget`(soft cap) 입력.
+ * REQ-2026-084 DEC-4: `dispatched - void_attempts`. `void_attempts` 부재(옛 state)면 dispatched 그대로 —
+ * 즉 이 REQ 이전 state는 두 입력이 같아 판정이 **현행과 완전히 동일**하다(R8).
+ */
+export function openSeriesProductiveAttempts(state: WorkflowState, kind: ReviewKind, phaseId: string | null): number {
+  const rec = openSeriesRecord(state, kind, phaseId)
+  if (!rec) return 0
+  return Math.max(0, rec.attempts - (rec.refunded_attempts ?? 0) - (rec.void_attempts ?? 0))
 }
 
 /**
@@ -1154,16 +1173,57 @@ export function refundAttempt(state: WorkflowState, kind: ReviewKind, phaseId: s
 }
 
 /**
- * 예산 게이트 판정(REQ-2026-028 D1, 순수). **기준은 `openAttempts`뿐**(R2).
- * - `openAttempts < autoBudget` → allow(자동)
- * - `autoBudget <= openAttempts < hardCap` → needs-exception(6~8회차, 사람 예외 필요)
- * - `openAttempts >= hardCap` → hard-blocked(9회차, 예외로도 차단)
+ * 예산 게이트 입력(REQ-2026-084 DEC-4). 두 계수를 **각각** 다른 상한에 건다.
+ * - `dispatched`  : 실제로 나간 호출 수(`openSeriesAttempts`) → `hardCap`
+ * - `productive`  : 그중 판정을 낸 회차 수(`openSeriesProductiveAttempts`) → `autoBudget`
  */
-export function checkReviewBudget(openAttempts: number, budget: ReviewBudget): BudgetDecision {
-  const attempt = openAttempts + 1 // 이 다음 호출의 회차
-  if (openAttempts < budget.autoBudget) return { kind: 'allow' }
-  if (openAttempts < budget.hardCap) return { kind: 'needs-exception', attempt }
-  return { kind: 'hard-blocked', attempt }
+export interface BudgetCounts {
+  productive: number
+  dispatched: number
+}
+
+/**
+ * 예산 게이트 판정(REQ-2026-028 D1 + REQ-2026-084 DEC-5, 순수). **기준은 계수뿐**(R2).
+ * - `dispatched >= hardCap`     → hard-blocked(9회차, 예외로도 차단)
+ * - `productive < autoBudget`   → allow(자동)
+ * - 그 외                        → needs-exception(6~8회차, 사람 예외 필요)
+ *
+ * 🔴 **hard-blocked를 먼저 판정한다**(DEC-5). 절대 호출 상한은 어떤 경로로도 뚫리면 안 된다 — invalid가
+ *    반복돼도 `dispatched`는 계속 증가하므로 `hardCap`에서 반드시 멈춘다(R6).
+ * 🔴 `attempt`(다음 호출 회차)는 **`dispatched` 기준**이다. 원장의 attempt 번호는 실제 호출 순번이고,
+ *    `review-exception`의 `for_attempt`가 이 값과 맞아야 부여-소비가 같은 회차를 가리킨다(DEC-7).
+ *
+ * `void_attempts`가 없는 state는 `productive === dispatched`라 REQ-2026-084 이전과 판정이 동일하다(R8).
+ */
+export function checkReviewBudget(counts: BudgetCounts, budget: ReviewBudget): BudgetDecision {
+  const attempt = counts.dispatched + 1 // 이 다음 호출의 회차(실제 호출 순번)
+  if (counts.dispatched >= budget.hardCap) return { kind: 'hard-blocked', attempt }
+  if (counts.productive < budget.autoBudget) return { kind: 'allow' }
+  return { kind: 'needs-exception', attempt }
+}
+
+/** `(state, kind, phaseId)`에서 예산 계수를 뽑는다(DEC-7 — 부여·소비가 같은 입력을 쓰도록 단일 출처). */
+export function budgetCounts(state: WorkflowState, kind: ReviewKind, phaseId: string | null): BudgetCounts {
+  return {
+    productive: openSeriesProductiveAttempts(state, kind, phaseId),
+    dispatched: openSeriesAttempts(state, kind, phaseId),
+  }
+}
+
+/**
+ * invalid 회차 표시(REQ-2026-084 DEC-4, 순수). 열린 series의 `void_attempts +1`.
+ * 🔴 `refundAttempt`와 대칭이되 **의미가 다르다** — 이쪽은 호출이 나갔으므로 `hardCap`에서는 빠지지 않는다.
+ * 🔴 `attempts`는 건드리지 않는다(DEC-6) — 감소하면 재시도가 같은 `(series_id, attempt)`를 만들어 원장
+ *    자연키가 충돌한다. 열린 series 없으면 no-op(방어).
+ */
+export function voidAttempt(state: WorkflowState, kind: ReviewKind, phaseId: string | null): WorkflowState {
+  const series = readSeries(state)
+  const openIdx = series.findIndex(
+    (r) => r.review_kind === kind && (r.phase_id ?? null) === phaseId && r.closed_reason === null,
+  )
+  if (openIdx < 0) return state
+  const next = series.map((r, i) => (i === openIdx ? { ...r, void_attempts: (r.void_attempts ?? 0) + 1 } : r))
+  return { ...state, review_series: next }
 }
 
 // `isValidIsoInstant`는 REQ-2026-048 phase-1에서 `lib/evidence.ts`로 이동했다(매니페스트 검증과 공유하는
@@ -1414,8 +1474,9 @@ export function gateAndRecordAttempt(ctx: {
       '이 series는 human-resolution으로 종결됐다 — 같은 키에서 자동으로 재개하지 않는다. 대체가 필요하면 `req:new --successor-of <이 REQ>`로 만든다.',
     )
   // REQ-2026-028 D1: recordAttempt **전**에 예산 검사. 초과면 호출·기록 전에 throw.
-  const openAttempts = openSeriesAttempts(ctx.state, ctx.kind, ctx.phaseId)
-  const decision = checkReviewBudget(openAttempts, ctx.budget)
+  // REQ-2026-084 DEC-4·7: 계수는 `budgetCounts` 단일 출처 — req:review-exception의 부여 판정과 같은 입력이어야
+  // 예외를 받아놓고 소비에서 거부되는 교착이 생기지 않는다.
+  const decision = checkReviewBudget(budgetCounts(ctx.state, ctx.kind, ctx.phaseId), ctx.budget)
   let gated = ctx.state
   if (decision.kind === 'hard-blocked')
     throw new Error(
@@ -1423,8 +1484,8 @@ export function gateAndRecordAttempt(ctx: {
     )
   if (decision.kind === 'needs-exception') {
     // 🔴 열린 record의 series_id를 **직접** 쓴다(design-r01 P1). 재구성(`split('#')`)은 phase id에 `#`가
-    // 들어가면 깨진다(`phase#alpha` → `NaN`). needs-exception이면 openAttempts>=autoBudget≥1이라 열린
-    // record가 반드시 존재한다(attempts>=1).
+    // 들어가면 깨진다(`phase#alpha` → `NaN`). needs-exception이면 productive>=autoBudget≥1이고
+    // attempts >= productive이므로 열린 record가 반드시 존재한다(attempts>=1).
     const open = openSeriesRecord(ctx.state, ctx.kind, ctx.phaseId)
     if (!open) throw new Error('review 예외: 열린 series를 찾을 수 없다(불변 위반)') // 방어(도달 불가)
     gated = consumeReviewException(ctx.state, open.series_id, decision.attempt) // 무효면 throw
@@ -2531,7 +2592,17 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   })
   // REQ-2026-027 D2·R6: approved만이 series 자동 종료 계기. needs-fix·blocked·invalid는 열린 채 둔다
   // (그래야 A-2 상한이 의미를 갖는다). finalState는 afterAttempt 계보라 attempts 증가가 보존돼 있다.
-  const persistedState = outcome === 'approved' ? closeSeriesApproved(finalState, opts.kind, phaseId) : finalState
+  //
+  // 🔴 REQ-2026-084 DEC-4: `invalid`(호출은 성공했으나 응답이 스키마/도메인 검증을 통과 못 함)는 **리뷰어의**
+  //    계약 위반이지 빌더의 코드 문제가 아니다. `void_attempts`로 표시해 autoBudget을 소모하지 않게 한다
+  //    (사람 예외 사유서를 억울하게 쓰게 만들지 않는다). hardCap은 dispatched 기준이라 그대로 남는다 —
+  //    invalid만 반복돼도 절대 상한에서 반드시 멈춘다(R6). series는 여전히 열린 채다(재시도 가능).
+  const persistedState =
+    outcome === 'approved'
+      ? closeSeriesApproved(finalState, opts.kind, phaseId)
+      : outcome === 'invalid'
+        ? voidAttempt(finalState, opts.kind, phaseId)
+        : finalState
   writeState(ticketDir, persistedState)
 
   // REQ-2026-051 D2: 원장 `attempt-closed`. 🔴 **durableDesignEvidence 커밋보다 먼저** 써야 한다 —

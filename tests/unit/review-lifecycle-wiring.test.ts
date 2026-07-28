@@ -126,6 +126,36 @@ describe('[REQ-2026-054] dispatch lifecycle 배선(실 git near-e2e)', () => {
     }
   })
 
+  // ── REQ-2026-084 DEC-4: 정상 경로 invalid(호출 성공·판정 없음)가 void로 표시되는지 **실제 진입점**으로 확인 ──
+  // 🔴 순수 함수(voidAttempt) 단위 테스트만으로는 배선이 끊겨도 통과한다 — mainImpl을 직접 돌려야 잡힌다.
+  it('[REQ-084 R5] 정상 경로 invalid → void_attempts +1 · attempts 단조 · series는 열린 채', () => {
+    const { repo, ticket, head } = setupRepo({ evidence_durability_required: true })
+    try {
+      // 파싱은 되지만 도메인 검증에서 걸리는 응답(NEEDS_FIX인데 findings 비어 있음) → lifecycle=completed·outcome=invalid.
+      const domainInvalid = JSON.stringify({
+        machine_schema_version: '1.1', review_base_sha: head, review_kind: 'design',
+        status: 'NEEDS_FIX', commit_approved: 'no', merge_ready: 'no', findings: [], next_action: '',
+      })
+      const fake = createFakeReviewerAdapter({ lastMessage: domainInvalid, threadId: 'TID', rawStdout: '' })
+      try {
+        reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      } catch {
+        /* invalid는 비-0 종료(fail-closed) — 종료 코드가 아니라 계수·원장을 검증한다. */
+      }
+      const rows = readLedger(ticket)
+      expect(rows.map((r) => r.event)).toEqual(['attempt-opened', 'attempt-closed'])
+      expect(rows[1]!.lifecycle).toBe('completed') // dispatch 실패 경로(DEC-C4)가 아니라 **정상 경로**다
+      expect(rows[1]!.outcome).toBe('invalid')
+      const s = readSeries(ticket)[0]!
+      expect(s.void_attempts).toBe(1) // 🔴 배선 지점
+      expect(s.attempts).toBe(1) // 단조 유지(DEC-6)
+      expect(s.refunded_attempts).toBeUndefined() // pre-dispatch 환불과 섞이지 않는다(R7)
+      expect(s.closed_reason).toBeNull() // 재시도 가능하게 열린 채(REQ-2026-027 R6)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   it('⑫ durable: 보상 closed가 HEAD에 커밋된다 + 재시도는 새 원장 키(#2, 충돌 없음)', () => {
     const { repo, ticket } = setupRepo({ evidence_durability_required: true })
     const git = gitOf(repo)

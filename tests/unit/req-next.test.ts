@@ -26,7 +26,7 @@ import {
   type NextTarget,
 } from '../../scripts/req/req-next'
 import { captureDesignBinding } from '../../scripts/req/review-codex'
-import type { WorkflowState } from '../../scripts/req/review-codex'
+import type { WorkflowState, SeriesRecord } from '../../scripts/req/review-codex'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
 
 /**
@@ -798,7 +798,9 @@ describe('REQ-2026-028 — G3 예산 소진 안내(resolveNext)', () => {
     expect(a.controlPoint).toBe('review 예산 소진(escalated)')
     const diag = a.diagnostics?.join(' ') ?? ''
     // 🔴 라벨 존재가 아니라 **실제 값**을 단언 — =0·(없음)으로 고정하면 실패한다.
-    expect(diag).toContain('openAttempts)=5')
+    // REQ-2026-084 DEC-7: 진단이 두 계수를 각각 보인다(판정 회차 → autoBudget · 호출 회차 → hardCap).
+    expect(diag).toContain('판정 회차=5')
+    expect(diag).toContain('호출 회차=5')
     expect(diag).toContain('다음 회차=6')
     expect(diag).toContain('직전 리뷰 outcome=needs-fix')
     // 선택지 내용까지 — soft-escalated는 예외·종료·대체 REQ.
@@ -806,6 +808,28 @@ describe('REQ-2026-028 — G3 예산 소진 안내(resolveNext)', () => {
     expect(diag).toContain('예외 가능')
     expect(diag).toContain('종료')
     expect(diag).toContain('대체 REQ')
+  })
+
+  // ── REQ-2026-084 DEC-7: G3가 review-codex의 소비 게이트와 같은 판정을 써야 한다 ──
+  it('[REQ-084 DEC-7] invalid가 낀 series는 G3가 "예산 소진"이라 하지 않는다 — 소비 게이트는 allow인데 여기만 막으면 거짓 정지', () => {
+    // 호출 5회 중 1회가 invalid → 판정 회차 4 → review-codex는 allow. G3도 통과시켜야 한다.
+    const state = withOpenSeries(5, {} as Partial<WorkflowState>)
+    const series = (state.review_series as SeriesRecord[]).map((r) => ({ ...r, void_attempts: 1 }))
+    const a = resolveNext(baseInput({ state: { ...state, review_series: series } as WorkflowState, hasStagedChanges: true }))
+    expect(a.controlPoint).not.toBe('review 예산 소진(escalated)')
+
+    // 대조군: void가 없으면 같은 attempts=5에서 예산 소진이다(이 테스트가 tautology가 아님을 고정).
+    const b = resolveNext(baseInput({ state, hasStagedChanges: true }))
+    expect(b.controlPoint).toBe('review 예산 소진(escalated)')
+  })
+
+  it('[REQ-084 R6] void가 많아도 호출 회차가 hardCap이면 G3가 hard-blocked 문구를 낸다', () => {
+    const state = withOpenSeries(8, {} as Partial<WorkflowState>)
+    const series = (state.review_series as SeriesRecord[]).map((r) => ({ ...r, void_attempts: 8 }))
+    const a = resolveNext(baseInput({ state: { ...state, review_series: series } as WorkflowState, hasStagedChanges: true }))
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.controlPoint).toBe('review 예산 소진(escalated)')
+    expect(a.detail).toContain('하드 상한')
   })
 
   it('O2-2 🔴 G3가 G2보다 앞선다 — escalated + 같은 바인딩 needs-fix 동시 성립', () => {

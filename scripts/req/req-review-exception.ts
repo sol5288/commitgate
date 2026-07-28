@@ -21,7 +21,7 @@ import {
   loadState,
   writeState,
   openSeriesRecord,
-  openSeriesAttempts,
+  budgetCounts,
   checkReviewBudget,
   isSeriesKeyTerminal,
   type WorkflowState,
@@ -90,18 +90,19 @@ export type ReviewExceptionPlan =
   | { ok: false; reason: string; hint: string }
 
 /**
- * 예외 부여 자격 판정(순수·DEC-RE1). 🔴 회차를 **소비 게이트와 같은 함수**(openSeriesAttempts·checkReviewBudget)로
+ * 예외 부여 자격 판정(순수·DEC-RE1). 🔴 회차를 **소비 게이트와 같은 함수**(budgetCounts·checkReviewBudget)로
  * 계산 → consumeReviewException의 for_attempt 검증과 정확히 일치(REQ-2026-054 유효 회차 기준).
+ * REQ-2026-084 DEC-7: 계수 출처가 `budgetCounts` 하나여야 부여-소비가 갈리지 않는다.
  */
 export function planReviewException(state: WorkflowState, kind: ReviewKind, phaseId: string | null, budget: ReviewBudget): ReviewExceptionPlan {
   if (isSeriesKeyTerminal(state, kind, phaseId))
     return { ok: false, reason: '이 series는 human-resolution으로 종결됨', hint: '예산 예외가 아니라 대체 REQ가 필요(req:new --successor-of)' }
   const open = openSeriesRecord(state, kind, phaseId)
   if (!open) return { ok: false, reason: '열린 series가 없음 — 예외 걸 대상이 없다', hint: '먼저 req:review-codex로 리뷰를 시작하세요' }
-  const openAttempts = openSeriesAttempts(state, kind, phaseId)
-  const decision = checkReviewBudget(openAttempts, budget)
+  const counts = budgetCounts(state, kind, phaseId)
+  const decision = checkReviewBudget(counts, budget)
   if (decision.kind === 'allow')
-    return { ok: false, reason: `아직 예외 불요(유효 회차 ${openAttempts} < autoBudget ${budget.autoBudget})`, hint: '그냥 req:review-codex로 리뷰하세요' }
+    return { ok: false, reason: `아직 예외 불요(판정 회차 ${counts.productive} < autoBudget ${budget.autoBudget})`, hint: '그냥 req:review-codex로 리뷰하세요' }
   if (decision.kind === 'hard-blocked')
     return { ok: false, reason: `예산 소진 — 예외로도 불가(hardCap ${budget.hardCap})`, hint: '종료하거나 정합한 대체 REQ를 작성하세요' }
   return { ok: true, seriesId: open.series_id, forAttempt: decision.attempt }

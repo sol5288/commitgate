@@ -4509,19 +4509,45 @@ describe('REQ-2026-027 phase-2 — withAttemptRecorded throw 보존(near-fs)', (
  */
 describe('REQ-2026-028 phase-1 — checkReviewBudget(순수)', () => {
   const B = { autoBudget: 5, hardCap: 8 }
-  it('O1-1: 자동 1~5 허용 — openAttempts 0..4는 allow(5회차 포함)', () => {
-    for (let a = 0; a <= 4; a++) expect(checkReviewBudget(a, B).kind).toBe('allow')
+  /** REQ-2026-084 이전 형태(void 없음) — productive === dispatched. 하위호환 축을 그대로 고정한다. */
+  const at = (n: number) => ({ productive: n, dispatched: n })
+  it('O1-1: 자동 1~5 허용 — 회차 0..4는 allow(5회차 포함)', () => {
+    for (let a = 0; a <= 4; a++) expect(checkReviewBudget(at(a), B).kind).toBe('allow')
   })
-  it('O1-2: 6~8회차는 needs-exception — openAttempts 5..7', () => {
+  it('O1-2: 6~8회차는 needs-exception — 회차 5..7', () => {
     for (let a = 5; a <= 7; a++) {
-      const d = checkReviewBudget(a, B)
+      const d = checkReviewBudget(at(a), B)
       expect(d.kind).toBe('needs-exception')
       if (d.kind === 'needs-exception') expect(d.attempt).toBe(a + 1)
     }
   })
-  it('O1-3: 9회차는 hard-blocked — openAttempts >= 8', () => {
-    expect(checkReviewBudget(8, B).kind).toBe('hard-blocked')
-    expect(checkReviewBudget(12, B).kind).toBe('hard-blocked')
+  it('O1-3: 9회차는 hard-blocked — 회차 >= 8', () => {
+    expect(checkReviewBudget(at(8), B).kind).toBe('hard-blocked')
+    expect(checkReviewBudget(at(12), B).kind).toBe('hard-blocked')
+  })
+
+  // ── REQ-2026-084 DEC-4·5: invalid는 autoBudget만 비껴가고 hardCap에는 남는다 ──
+  it('[REQ-084 R5] invalid 회차는 autoBudget을 소모하지 않는다 — 같은 dispatched에서 판정이 갈린다', () => {
+    // 호출 5회 중 1회가 invalid → 판정 회차 4 → 아직 자동 허용(사람 예외 사유서를 쓰게 하지 않는다).
+    expect(checkReviewBudget({ productive: 4, dispatched: 5 }, B).kind).toBe('allow')
+    // void가 없었다면 같은 dispatched=5에서 needs-exception이다(대조군).
+    expect(checkReviewBudget({ productive: 5, dispatched: 5 }, B).kind).toBe('needs-exception')
+  })
+
+  it('[REQ-084 R6] invalid만 반복돼도 hardCap이 반드시 차단한다 — productive=0이어도 hard-blocked', () => {
+    // 8회 전부 invalid: productive=0이라 autoBudget 기준으로는 여유가 있지만, 실제 호출은 8회 나갔다.
+    const d = checkReviewBudget({ productive: 0, dispatched: 8 }, B)
+    expect(d.kind).toBe('hard-blocked')
+    // 다음 회차 번호는 **실제 호출 순번** 기준(원장 attempt 번호와 정합).
+    if (d.kind === 'hard-blocked') expect(d.attempt).toBe(9)
+    // 판정 순서가 뒤집혀 allow가 먼저 평가되면 여기서 무한 invalid 루프가 열린다.
+    expect(checkReviewBudget({ productive: 0, dispatched: 20 }, B).kind).toBe('hard-blocked')
+  })
+
+  it('[REQ-084 DEC-5] needs-exception의 attempt도 dispatched 기준 — 부여·소비가 같은 회차를 가리킨다', () => {
+    const d = checkReviewBudget({ productive: 5, dispatched: 6 }, B)
+    expect(d.kind).toBe('needs-exception')
+    if (d.kind === 'needs-exception') expect(d.attempt).toBe(7)
   })
   it('openSeriesAttempts: 열린 series의 attempts(없으면 0)', () => {
     const s: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1,

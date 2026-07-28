@@ -37,7 +37,8 @@ import {
   captureIndexHash,
   findUnstagedOrUntracked,
   isLegacyTicket,
-  openSeriesAttempts,
+  budgetCounts,
+  checkReviewBudget,
   isSeriesKeyTerminal,
   type WorkflowState,
   type ReviewKind,
@@ -473,12 +474,16 @@ function gateRunCandidate(input: NextInput, cand: RunCandidate): NextAction {
   // G3 (REQ-2026-028 A-2a): 자동 예산 소진(escalated) → AWAIT_HUMAN. **G2보다 앞**(R13) — 5회차 NEEDS_FIX
   // 직후엔 escalated와 같은 바인딩 needs-fix가 동시 성립하는데, G2가 먼저 "findings 고치고 다시 add"(AGENT)를
   // 내면 그 조언이 거짓이다(고쳐도 사람 승인 없이 6회차가 안 열린다). escalated는 파생값(저장 안 함, R11).
-  const openAttempts = openSeriesAttempts(input.state, cand.kind, cand.phaseId)
+  // 🔴 REQ-2026-084 DEC-7: 계수·판정을 review-codex의 소비 게이트와 **같은 함수**로 낸다. 여기만 옛 술어
+  //    (dispatched >= autoBudget)로 남으면, invalid가 낀 series에서 req:next는 "예산 소진(AWAIT_HUMAN)"이라
+  //    하는데 req:review-codex는 그냥 allow하는 모순이 생긴다(사람에게 거짓 정지를 안내한다).
+  const counts = budgetCounts(input.state, cand.kind, cand.phaseId)
   const { autoBudget, hardCap } = input.reviewBudget
-  if (openAttempts >= autoBudget) {
-    const nextAttempt = openAttempts + 1
+  const budgetDecision = checkReviewBudget(counts, input.reviewBudget)
+  if (budgetDecision.kind !== 'allow') {
+    const nextAttempt = budgetDecision.attempt
     const lrOutcome = (input.state.last_review as LastReviewMarker | undefined)?.outcome ?? '(없음)'
-    const hardBlocked = openAttempts >= hardCap
+    const hardBlocked = budgetDecision.kind === 'hard-blocked'
     // ⚠️ "위험 수용"은 어느 문구에도 넣지 않는다(배분표 ④ — 부정문으로도 금지). 긍정 선택지만 나열.
     const options = hardBlocked
       ? '예외로도 진행 불가 — 종료하거나 정합한 대체 REQ를 작성한다.'
@@ -493,7 +498,7 @@ function gateRunCandidate(input: NextInput, cand: RunCandidate): NextAction {
         ? 'review 하드 상한 도달 — 종료 또는 대체 REQ 작성(둘 중 하나를 사람이 결정)'
         : `review ${nextAttempt}회차 예외 승인(또는 종료·대체 REQ 작성)`,
       diagnostics: [
-        `series 시도 수(openAttempts)=${openAttempts} · 다음 회차=${nextAttempt}`,
+        `series 판정 회차=${counts.productive}(autoBudget ${autoBudget}) · 호출 회차=${counts.dispatched}(hardCap ${hardCap}) · 다음 회차=${nextAttempt}`,
         `직전 리뷰 outcome=${lrOutcome}`,
         `선택지: ${options}`,
       ],
