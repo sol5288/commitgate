@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-084-review-contract-slimming",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fa9d1-35ef-7850-8f9a-9f208c8763c0",
-  "review_base_sha": "7b4a0e9dad63a2e27b5ede9f0256dcb315e75456",
-  "review_diff_hash": "3eea68e58b16657d16ed4f7fef02e294c54e9468",
+  "codex_thread_id": "019fa9e5-25de-7600-9f80-1fd0c78c4b02",
+  "review_base_sha": "08a0a0e15e4e9b303ea21dcbf1a2d0957ee7ca13",
+  "review_diff_hash": "c3c021401a897409fc7a0cb016e868f7175a51dd",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "76c42dad4dc868f48e274e73873d3c3d7a60e512fcf9b97d79a24dba8429d502",
-  "current_phase": "phase-1-risk-level-deprecation",
+  "current_phase": "phase-2-invalid-budget",
   "phases": [
     {
       "id": "phase-1-risk-level-deprecation",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-invalid-budget",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-changelog",
@@ -42,6 +42,13 @@
       "phase_id": "phase-1-risk-level-deprecation",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-invalid-budget#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-invalid-budget",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -64,12 +71,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-risk-level-deprecation",
+    "phase_id": "phase-2-invalid-budget",
     "outcome": "approved",
-    "compare_hash": "d434dab6aa0b8b30d145d18c054bf092849d66931696cad40343914bed33231a",
+    "compare_hash": "960d81c3aae38292a2ae43c04e7bc1716da1806141f3618cd3277187f0b407e1",
     "count": 1,
     "errors": [],
-    "at": "2026-07-28T17:42:09.029Z",
+    "at": "2026-07-28T18:03:52.867Z",
     "findings": [],
     "elided_count": 0
   },
@@ -79,6 +86,12 @@
       "phase_id": "phase-1-risk-level-deprecation",
       "consumed_by_commit_sha": "70b0c1c48e8f6f1d79ef48f4cc51a018905e9a5d",
       "approval_consumed_at": "2026-07-28T17:42:24.561Z"
+    },
+    {
+      "approved_tree": "c3c021401a897409fc7a0cb016e868f7175a51dd",
+      "phase_id": "phase-2-invalid-budget",
+      "consumed_by_commit_sha": "484ecc9556c8b6bf301c2ef42a8d43bd8ff61fdb",
+      "approval_consumed_at": "2026-07-28T18:04:03.466Z"
     }
   ],
   "user_commit_confirmed": null
