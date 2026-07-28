@@ -2,7 +2,7 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.12.0 (2026-07-28)
 
 - 🔴 **호환성 깨짐 — Node 18을 더 이상 지원하지 않습니다. 최소 Node 20입니다** (REQ-2026-080).
 
