@@ -2,6 +2,50 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+> **REQ-2026-090은 두 커밋으로 나뉘어 들어왔습니다.**
+>
+> | phase | 구현 커밋 | 확인할 파일 |
+> |---|---|---|
+> | phase-1 (runCli 계약 복구) | `018ff8b1` | `scripts/req/req-rebind.ts`·`scripts/req/req-confirm.ts`의 `runCli` · `bin/commitgate.mjs`의 계약 검사 · `tests/unit/dispatch.test.ts` |
+> | phase-2 (CHANGELOG) | **이 커밋** | 이 파일 |
+
+- 🔴 **`req:rebind`와 `req:confirm`이 실행 즉시 죽던 문제를 고쳤습니다** (REQ-2026-090).
+
+  ```
+  TypeError: mod.runCli is not a function   (bin/commitgate.mjs)
+  ```
+
+  `bin/commitgate.mjs`는 dispatch 대상이 모두 `runCli(argv)`를 export한다고 가정하는데, **10개 중 2개가
+  그 계약을 어기고 있었습니다.** 둘 다 오류 경계는 있었지만 `isMain` 블록에 **인라인**돼 export되지 않았습니다.
+
+  🔴 **두 명령 모두 도구 자신이 처방하는 해법이라 더 나빴습니다.**
+
+  | 막힌 상황 | 도구가 안내하던 명령 |
+  |---|---|
+  | 설계 재승인으로 phase 결속이 끊겨 티켓이 안 닫힘 | `req:rebind` |
+  | HIGH 위험 티켓의 커밋 차단 | `req:confirm` |
+
+  특히 **0.14.0이 방금 추가한 D26과 `staleBindingNotice`가 가리키는 명령이 `req:rebind`였습니다** —
+  진단은 좋아졌는데 처방이 실행되지 않았습니다. `req:confirm`은 HIGH 티켓의 유일한 탈출구라
+  죽으면 빠져나갈 길이 없었습니다.
+
+  **왜 지금까지 안 잡혔나**: 이 저장소는 **Stage A**(`tsx scripts/…` 직접 실행)로 dogfooding하는데,
+  그 경로는 dispatch를 거치지 않습니다. **Stage B 소비자**(`commitgate <verb>`)만 정면으로 맞았습니다.
+  `smoke`도 전 verb의 *package.json 설치*는 검사했지만 실제 호출은 `req:doctor` 하나뿐이라,
+  "설치 배선은 맞는데 모듈이 실행 가능한가"는 보지 않았습니다 — 가드는 있었는데 **틀린 것을 재고** 있었습니다.
+
+  이제 `VERB_MODULES`의 **모든 대상을 실제로 import**해 `runCli` 계약을 단언하는 테스트가 있고,
+  계약이 깨진 채 배포돼도 사용자는 원시 TypeError 대신 **진단 가능한 오류**를 봅니다.
+
+  > **`main` 폴백은 넣지 않았습니다.** `(mod.runCli ?? mod.main)(...)`은 한 줄로 증상을 지우지만
+  > 오류 경계가 조용히 사라져 스택트레이스가 그대로 새어 나옵니다. 계약을 지키게 하는 것이 수정이지
+  > 위반을 관용하는 것이 수정이 아닙니다. 그 금지도 테스트로 고정했습니다(실제 subprocess 실행).
+
+  ⚠️ 오류 문구 접두어가 `req:rebind:`/`req:confirm:` → **`commitgate:`**로 바뀝니다(나머지 8개와 동일).
+  판정·부작용은 그대로입니다.
+
 ## 0.14.0 (2026-07-30)
 
 > **동작이 좁아지는 변경은 없습니다.** 새 진단(`req:doctor` **D26**)과 측정 로그 필드가 추가될 뿐이고,

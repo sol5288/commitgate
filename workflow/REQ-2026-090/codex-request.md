@@ -32,3 +32,13 @@ TypeError: mod.runCli is not a function   (bin/commitgate.mjs:38)
 - **표본 하한**: 대상 수 하한 단언이 있는가(목록이 비면 검사가 아무것도 지키지 못한다).
 - **동작 보존**: 두 명령의 판정·부작용이 그대로인가. 오류 문구 접두어가 `req:rebind:` → `commitgate:`로 바뀌는 것이 나머지 8개와의 정합으로 정당한가(설계 DEC-1에 명시).
 - **Stage A 무회귀**: `tsx scripts/req/req-rebind.ts` 직접 실행 경로가 그대로 동작하는가.
+
+## 🔴 진행 상태 — 이 diff는 phase-2만 담는다
+
+| phase | 상태 | 커밋 | 확인할 파일 |
+|---|---|---|---|
+| phase-1 runcli-contract | ✅ 커밋됨 | `018ff8b1` | `scripts/req/req-rebind.ts`·`req-confirm.ts`의 `export function runCli` · `bin/commitgate.mjs`의 `typeof mod.runCli !== 'function'` 가드 · `tests/unit/dispatch.test.ts`의 전 대상 계약 검사 + subprocess 실행 검사 |
+| **phase-2 changelog** | **🔎 지금 리뷰 대상** | (이 diff) | `CHANGELOG.md` |
+
+phase-1은 r01 P1(소스 문자열 검사로는 가드 동작을 못 잡음)을 실제 bin subprocess 실행 테스트로 고쳐 r02 승인됐다.
+변이검사로 폴백 도입 시 `MAIN-WAS-CALLED`가 잡히는 것도 확인했다.
