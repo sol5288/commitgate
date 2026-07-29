@@ -271,12 +271,22 @@ function recheckCompletion(args: {
   console.log(`[req:rebind] ✅ dev-complete 발행 — ${args.reqId} 종결. 이제 다음 REQ를 열 수 있습니다.`)
 }
 
-const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
-if (isMain) {
+/**
+ * bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계).
+ *
+ * 🔴 REQ-2026-090: 예전에는 이 경계가 아래 `isMain` 블록에 **인라인**돼 있어 export되지 않았고,
+ *    `bin/commitgate.mjs`가 `mod.runCli(...)`를 부르는 순간 `TypeError`로 죽었다. Stage A(모듈 직접 실행)만
+ *    쓰는 이 repo에서는 재현되지 않고 **Stage B 소비자에게만** 터지던 사각지대다.
+ *    특히 이 명령은 D26·`staleBindingNotice`가 처방하는 해법이라 "진단은 되는데 처방이 안 되는" 상태였다.
+ */
+export function runCli(argv: string[]): void {
   try {
-    main()
+    main(argv)
   } catch (err) {
-    console.error(`req:rebind: ${err instanceof Error ? err.message : String(err)}`)
+    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
     process.exitCode = 1
   }
 }
+
+const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) runCli(process.argv.slice(2))

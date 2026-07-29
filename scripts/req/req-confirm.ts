@@ -150,12 +150,21 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
   deps.log(`[req:confirm] ✅ 기록 — scope=${o.scope} · ${confirm.confirmed_at}`)
 }
 
-const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
-if (isMain) {
+/**
+ * bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계).
+ *
+ * 🔴 REQ-2026-090: `req:rebind`와 같은 결함이었다 — 경계가 `isMain`에 인라인돼 export되지 않아
+ *    Stage B에서 `mod.runCli is not a function`으로 죽었다. 이 명령은 **HIGH 위험 티켓의 커밋 차단을
+ *    푸는 유일한 경로**라(`userConfirmGate`가 이것을 실행하라고 안내한다), 죽으면 빠져나갈 길이 없었다.
+ */
+export function runCli(argv: string[]): void {
   try {
-    main()
+    main(argv)
   } catch (err) {
-    console.error(`req:confirm: ${err instanceof Error ? err.message : String(err)}`)
+    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
     process.exitCode = 1
   }
 }
+
+const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) runCli(process.argv.slice(2))

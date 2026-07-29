@@ -35,4 +35,17 @@ if ('unknown' in decision) {
 
 const mod = await import(pathToFileURL(join(binDir, decision.entry)).href)
 // runCli = 예외를 친절한 한 줄 메시지 + exit 1로 변환하는 CLI 경계(스택트레이스 노출 방지).
+//
+// 🔴 REQ-2026-090: 계약 위반을 **진단 가능한 오류**로 바꾼다. 예전에는 여기서 곧바로
+//    `TypeError: mod.runCli is not a function`이 스택트레이스와 함께 터졌다(req:rebind·req:confirm).
+//    ⚠️ `mod.main`으로 **폴백하지 않는다** — 폴백하면 오류 경계가 조용히 사라져 스택트레이스가 그대로
+//    새어 나온다. 계약을 지키게 하는 것이 수정이지, 위반을 관용하는 것이 수정이 아니다.
+//    (재발 방지의 본체는 `tests/unit/dispatch.test.ts`의 전 대상 계약 검사다.)
+if (typeof mod.runCli !== 'function') {
+  console.error(
+    `commitgate: 내부 오류 — '${decision.entry}' 모듈이 runCli를 제공하지 않습니다(dispatch 계약 위반). ` +
+      'https://github.com/sol5288/commitgate 에 보고해 주세요.',
+  )
+  process.exit(1)
+}
 mod.runCli(decision.rest)
