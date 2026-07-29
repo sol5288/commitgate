@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-085-workflow-observability",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fab5d-fec5-7bc1-86c1-628b77aab572",
-  "review_base_sha": "f986a2bd1431c478270d861d9b136479157ce799",
-  "review_diff_hash": "9e731ecaa9d45f24bd24d47252c2a49a0b084d8d",
+  "codex_thread_id": "019fab66-8ed0-7d12-a61f-98100c2a7443",
+  "review_base_sha": "b131d29cfc6ebbe8afd2ea8769c493dc21081609",
+  "review_diff_hash": "a3cbdcf942ab9059a8b2eb9fb58f56bfa7a69080",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "fe8835e065e83e9e03bfa9cc919dcbcd9841e173376efe36661667505735aff9",
-  "current_phase": "phase-1-dead-state-phase",
+  "current_phase": "phase-2-bookkeeping-marker-core",
   "phases": [
     {
       "id": "phase-1-dead-state-phase",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-bookkeeping-marker-core",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-bookkeeping-marker-lifecycle",
@@ -50,6 +50,13 @@
       "phase_id": "phase-1-dead-state-phase",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-bookkeeping-marker-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-bookkeeping-marker-core",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -72,12 +79,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-dead-state-phase",
+    "phase_id": "phase-2-bookkeeping-marker-core",
     "outcome": "approved",
-    "compare_hash": "44a5308f0272fb187f1be0e96af92f218d18e24e7635c660af84654b1d8f6f06",
+    "compare_hash": "3ad150015a43f90433666be172be7f34d2e05856af9ed61884599a571d53d994",
     "count": 1,
     "errors": [],
-    "at": "2026-07-29T00:55:26.880Z",
+    "at": "2026-07-29T01:04:52.613Z",
     "findings": [],
     "elided_count": 0
   },
@@ -87,6 +94,12 @@
       "phase_id": "phase-1-dead-state-phase",
       "consumed_by_commit_sha": "f3dbf5d408e039ed33f43fa8587a47dbb8640e28",
       "approval_consumed_at": "2026-07-29T00:55:34.124Z"
+    },
+    {
+      "approved_tree": "a3cbdcf942ab9059a8b2eb9fb58f56bfa7a69080",
+      "phase_id": "phase-2-bookkeeping-marker-core",
+      "consumed_by_commit_sha": "bade6f500a2af2c748fad62729e4c2f19220d303",
+      "approval_consumed_at": "2026-07-29T01:05:05.788Z"
     }
   ],
   "user_commit_confirmed": null
