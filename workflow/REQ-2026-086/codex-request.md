@@ -25,3 +25,14 @@
 - **파일 분류**: 리뷰 시점에 D10이 클린을 보장하므로 `git diff --cached --name-only` 중 티켓 디렉터리 밖 = 그 phase의 코드 변경, 이 전제가 맞는가. doctor의 분류를 복제하지 않은 것이 옳은가.
 - **범위**: design 리뷰가 영향받지 않는가. `granularityMaxFiles` 기본값·D18 판정식이 안 바뀌었는가.
 - ⚠️ **의도된 동작 축소**: 업그레이드 시 진행 중이던 큰 phase가 멈춘다. 이 tradeoff가 CHANGELOG에 충분히 고지되는가(phase-2).
+
+## 🔴 진행 상태 — 이 diff는 phase-2만 담는다
+
+phase 리뷰는 **해당 phase의 staged diff만** 본다. phase-1은 이미 커밋돼 이 diff에 없다.
+
+| phase | 상태 | 커밋 | 확인할 파일 |
+|---|---|---|---|
+| phase-1 granularity-preflight | ✅ 커밋됨 | `2b205849` | `scripts/req/review-codex.ts`의 `STAGED_NAMES_Z_ARGS`·`phaseCodeFiles`·`declaredPhaseMaxFiles`·`judgePhaseArea`·`phaseAreaMessage`와 `gateAndRecordAttempt` **앞**의 preflight · `lib/config.ts`의 `granularityGate` · `workflow/req.config.schema.json` · `tests/unit/review-lifecycle-wiring.test.ts`의 REQ-2026-086 블록 |
+| **phase-2 docs-changelog** | **🔎 지금 리뷰 대상** | (이 diff) | `req-doctor.ts` 문구 · `docs/workflow*.md` · `CHANGELOG.md` |
+
+phase-1 r01 P1(비ASCII 경로 C-quote)은 `-z` 전환 + 한글 파일명 회귀 테스트로 해소해 승인받았다.

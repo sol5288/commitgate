@@ -842,3 +842,40 @@ describe('[REQ-2026-085] D25 — 종결됐지만 trunk에 없는 티켓', () => 
     expect(lvl(runChecks(mk({ unmergedClosedTickets: [], trunkBranch: 'main' })), 'D25')).toBe('OK')
   })
 })
+
+// ─────────────── D18 레벨 상한 (REQ-2026-086 DEC-5) ──
+describe('[REQ-2026-086] D18은 WARN 상한을 유지한다', () => {
+  it('🔴 초과해도 FAIL이 아니다 — FAIL이면 승인받은 phase가 커밋되지 못하고 승인도 소비되지 않는 교착이 된다', () => {
+    const over = E(...Array.from({ length: 20 }, (_, i) => `M  src/f${i}.ts`))
+    const checks = runChecks(mk({ statusEntries: over, granularityMaxFiles: 8 }))
+    expect(lvl(checks, 'D18')).toBe('WARN')
+    expect(checks.filter((c) => c.id === 'D18' && c.level === 'FAIL')).toEqual([])
+  })
+
+  it('block(기본)일 때 문구가 차단 절차와 두 탈출구를 가리킨다', () => {
+    const msgs = phaseGranularityWarnings(['a', 'b', 'c'], 2)
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0]).toContain('실행 전에 막힙니다')
+    expect(msgs[0]).toContain('staging')
+    expect(msgs[0]).toContain('max_files')
+  })
+
+  // 🔴 phase-2 r01 P1: 문구가 실제 설정과 어긋나면 안 된다. warn 사용자에게 "막힙니다"는 거짓이다.
+  it('🔴 granularityGate="warn"이면 "막힌다"고 말하지 않는다(안내가 실제 동작과 일치)', () => {
+    const msgs = phaseGranularityWarnings(['a', 'b', 'c'], 2, 'warn')
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0]).not.toContain('막힙니다')
+    expect(msgs[0]).toContain('그대로 진행됩니다')
+  })
+
+  it('runChecks도 설정을 그대로 반영한다(배선)', () => {
+    const over = E(...Array.from({ length: 20 }, (_, i) => `M  src/f${i}.ts`))
+    const block = runChecks(mk({ statusEntries: over, granularityMaxFiles: 8, granularityGate: 'block' }))
+    const warn = runChecks(mk({ statusEntries: over, granularityMaxFiles: 8, granularityGate: 'warn' }))
+    expect(block.find((c) => c.id === 'D18')?.msg).toContain('막힙니다')
+    expect(warn.find((c) => c.id === 'D18')?.msg).not.toContain('막힙니다')
+    // 레벨은 둘 다 WARN(상한 불변).
+    expect(lvl(block, 'D18')).toBe('WARN')
+    expect(lvl(warn, 'D18')).toBe('WARN')
+  })
+})

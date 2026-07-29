@@ -31,7 +31,7 @@ import {
 import { setupGateVerdict, collectGateFacts, type GateVerdict } from './lib/setup-gate'
 // REQ-2026-085 D25: 종결 증거 파일명(trunk 트리에서 이 경로의 존재로 "도달했는가"를 판정한다).
 import { CLOSE_PROOF_BASENAME } from './lib/close-proof'
-import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager } from './lib/config'
+import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { missingQuickstartFiles } from '../../bin/quickstart'
 
@@ -59,6 +59,8 @@ export interface DoctorInputs {
   branchPrefix: string
   // D18 granularity 임계(config, advisory). 미지정 시 GRANULARITY_MAX_FILES(현재 동작). main이 cfg.granularityMaxFiles 주입.
   granularityMaxFiles?: number
+  /** REQ-2026-086: granularity 강제 수준. D18 문구가 실제 동작과 어긋나지 않게 한다. 미지정 = DEFAULTS. */
+  granularityGate?: GranularityGate
   stagedTree: string
   statusEntries: StatusEntry[]
   scratch: string[]
@@ -163,12 +165,21 @@ export const GRANULARITY_MAX_FILES = 8
 
 /**
  * Phase 분할 권고(순수, advisory). phase 1개의 코드 변경 파일 수가 maxFiles 초과면 WARN 메시지(빈 배열=권고 없음).
- * ⚠️ 절대 FAIL 아님 — 리뷰 면적을 줄이도록 **다음 phase부터** 분할을 유도하는 조언일 뿐(이미 큰 phase를 막지 않음).
+ *
+ * ⚠️ **절대 FAIL 아님**(REQ-2026-086 DEC-5로 재확인). 차단은 `req:review-codex`의 phase preflight가
+ * **리뷰 호출 전에** 한다 — 그 시점의 시정은 staging 재구성이라 싸다. 여기서 FAIL로 올리면 이미 Codex
+ * 승인을 받은 phase가 커밋되지 못하고 승인도 소비되지 않는 **교착**이 된다(`req:commit`이 doctor를 하드
+ * 게이트로 spawn한다). 그래서 이 자리는 끝까지 진단 표면으로 남는다.
  */
-export function phaseGranularityWarnings(codeFiles: string[], maxFiles: number): string[] {
-  if (codeFiles.length > maxFiles)
-    return [`phase 코드 변경 ${codeFiles.length}파일 > 권고 ${maxFiles} — 리뷰 면적 큼, 다음부터 phase 분할 권고(granularity 정책)`]
-  return []
+export function phaseGranularityWarnings(codeFiles: string[], maxFiles: number, gate: GranularityGate = DEFAULTS.granularityGate): string[] {
+  if (codeFiles.length <= maxFiles) return []
+  // 🔴 문구는 **실제 설정에 종속**된다(phase-2 r01 P1). `granularityGate:"warn"`인 사용자에게
+  //    "막힙니다"라고 하면 도구가 하지 않을 일을 약속하는 것이다 — 안내가 거짓이면 사람은 안내를 믿지 않게 된다.
+  const tail =
+    gate === 'block'
+      ? '다음 phase 리뷰는 이 임계를 넘으면 실행 전에 막힙니다: staging을 줄이거나 state.json의 phases[]에 "max_files"를 선언하세요.'
+      : 'granularityGate="warn"이라 리뷰는 그대로 진행됩니다 — 면적을 줄이면 리뷰 라운드가 줄어듭니다(실측: >8파일 평균 2.4R vs ≤8파일 1.4R).'
+  return [`phase 코드 변경 ${codeFiles.length}파일 > 권고 ${maxFiles} — 리뷰 면적 큼(granularity 정책). ${tail}`]
 }
 
 /** 설치 모드(REQ-2026-014 D19 진단). `req:*` 스크립트 **값의 형태**로만 판정한다. */
@@ -398,7 +409,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
   // 임계 = config(cfg.granularityMaxFiles) 주입, 미지정 시 GRANULARITY_MAX_FILES(현재 동작).
   {
     const maxFiles = inp.granularityMaxFiles ?? GRANULARITY_MAX_FILES
-    const adv = phaseGranularityWarnings(codeChanges, maxFiles)
+    const adv = phaseGranularityWarnings(codeChanges, maxFiles, inp.granularityGate ?? DEFAULTS.granularityGate)
     if (adv.length) c.push({ id: 'D18', level: 'WARN', msg: adv.join(' / ') })
     else c.push({ id: 'D18', level: 'OK', msg: `granularity OK(코드 변경 ${codeChanges.length}파일 ≤ ${maxFiles})` })
   }
@@ -900,6 +911,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     branchExists: branchExistsLocal(typeof state.branch === 'string' ? state.branch : ''),
     branchPrefix: cfg.branchPrefix,
     granularityMaxFiles: cfg.granularityMaxFiles,
+    granularityGate: cfg.granularityGate,
     unmergedClosedTickets: unmerged,
     trunkBranch: cfg.trunkBranch,
     stagedTree: git(['write-tree']),

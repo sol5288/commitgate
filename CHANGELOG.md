@@ -4,6 +4,47 @@
 
 ## Unreleased
 
+> **REQ-2026-086은 두 커밋으로 나뉘어 들어왔습니다.** 아래 항목의 구현은 이 커밋이 아니라 **같은 브랜치의 앞선 커밋**에 있습니다.
+>
+> | phase | 구현 커밋 | 확인할 파일 |
+> |---|---|---|
+> | phase-1 (리뷰 전 면적 판정) | `2b205849` | `scripts/req/review-codex.ts`의 `phaseCodeFiles`·`judgePhaseArea`·`declaredPhaseMaxFiles`·`phaseAreaMessage`와 phase preflight · `scripts/req/lib/config.ts`의 `granularityGate` · `workflow/req.config.schema.json` |
+> | phase-2 (D18 문구·문서) | **이 커밋** | `scripts/req/req-doctor.ts`의 `phaseGranularityWarnings` · `docs/workflow*.md` · 이 파일 |
+
+- 🔴 **너무 큰 phase는 이제 리뷰 전에 멈춥니다 — 동작이 좁아지는 변경입니다** (REQ-2026-086).
+
+  소비 repo 실측에서 phase 26개 중 **18개(69%)가 권고치(8파일)를 초과**했고, 초과 phase의 평균 리뷰
+  라운드는 **2.39**였습니다(≤8파일은 1.38). D18은 매번 WARN을 냈고 매번 무시됐습니다 — 무시에 비용이
+  없었고(`절대 FAIL 아님`), **무엇보다 시점이 커밋 직전이라 이미 늦었습니다.** 그때 "쪼개라"는 말은
+  이미 짠 코드를 되돌리라는 뜻이라, 합리적인 작업자라면 리뷰를 한 번 더 받는 쪽을 택합니다.
+
+  이제 판정은 **`req:review-codex`가 phase 리뷰를 실행하기 직전**에 일어납니다. 이 시점의 시정은
+  코드 재작성이 아니라 **staging 재구성**(`git restore --staged`)이라 쌉니다. 차단은 예산 게이트·attempt
+  기록·원장 커밋보다 **앞**이라 **소모되는 것이 없습니다** — 되돌릴 상태가 남지 않습니다.
+
+  탈출구는 둘이고 메시지가 둘 다 제시합니다.
+
+  | 선택 | 방법 |
+  |---|---|
+  | A. 지금 나눈다(권장) | `git restore --staged <뺄 파일들>` → 빼낸 파일은 `phases[]`에 항목을 추가해 다음 phase로 |
+  | B. 원래 크다고 선언한다 | `phases[]`의 해당 항목에 `"max_files": <실제 개수>` (기계적 일괄 변경 등) |
+
+  `max_files`는 `state.json`에 남고 그 파일은 커밋되므로 **선언이 기록**됩니다. 값은 1 이상의 정수여야
+  하며 그 밖의 값은 거부됩니다 — 오타 하나로 게이트가 조용히 기본값으로 되돌아가면 선언자는 자기가
+  선언했다고 믿게 됩니다.
+
+  ⚠️ **업그레이드 시 진행 중이던 큰 phase가 멈춥니다.** 그것이 이 변경의 목적이라 조용히 넘기지 않습니다.
+  이전 동작으로 되돌리려면 `req.config.json`에 **`"granularityGate": "warn"`** 한 줄이면 됩니다(경고만 내고 진행).
+  임계는 `granularityMaxFiles`(기본 8)로 바꿉니다. design 리뷰는 영향받지 않습니다.
+
+  `req:doctor`의 **D18은 WARN 그대로**입니다. 거기서 FAIL로 올리면 이미 Codex 승인을 받은 phase가
+  커밋되지 못하고 승인도 소비되지 않는 **교착**이 됩니다(`req:commit`이 doctor를 하드 게이트로 spawn합니다).
+
+  > 개발 중 Codex 리뷰가 P1을 하나 잡았습니다. 파일 목록을 `git diff --cached --name-only`로 읽었는데,
+  > 기본 `core.quotePath=true`에서 **비ASCII 경로는 C-quote된 표시 문자열**로 나옵니다. 그러면 티켓 내부
+  > 경로가 제외되지 않아 코드가 0줄인데도 면적 초과로 리뷰가 막힙니다. `-z`(NUL 구분, 인용 없음)로 고치고
+  > 한글 파일명 회귀 테스트를 넣었습니다.
+
 > **REQ-2026-085는 다섯 커밋으로 나뉘어 들어왔습니다.** 아래 항목의 구현은 이 커밋이 아니라 **같은 브랜치의 앞선 커밋**에 있고, 작업 트리의 해당 파일에서 지금 바로 확인할 수 있습니다.
 >
 > | phase | 구현 커밋 | 확인할 파일 |
