@@ -30,3 +30,12 @@ granularity_limit : number | null
 - **null vs 0**: design 리뷰에서 세 값이 `null`인가(`0`이면 "면적 0"과 "측정 대상 아님"이 구별되지 않는다).
 - **하위호환**: 신규 필드가 옵셔널이고, 인자 미지정(legacy 호출)·옛 행이 그대로 동작하는가.
 - **fail-safe 유지**: 로그 쓰기 실패가 여전히 리뷰 판정·종료 코드를 바꾸지 않는가.
+
+## 🔴 진행 상태 — 이 diff는 phase-2만 담는다
+
+| phase | 상태 | 커밋 | 확인할 파일 |
+|---|---|---|---|
+| phase-1 log-area | ✅ 커밋됨 | `6bfd13ab` | `scripts/req/review-codex.ts`의 `ReviewCallLogRow` 3필드·`buildReviewCallLogRow`의 `phaseArea` 인자·phase preflight의 `phaseArea` 보존 · `tests/unit/req-review-codex.test.ts` |
+| **phase-2 changelog** | **🔎 지금 리뷰 대상** | (이 diff) | `CHANGELOG.md` |
+
+phase-1은 1라운드 승인됐고, 커밋 직후 이 도구 자신의 리뷰 호출이 `{"count":2,"over":false,"limit":8}`로 기록되는 것을 확인했다.
