@@ -2,14 +2,14 @@
   "id": "REQ-2026-088",
   "branch": "feat/req-2026-088-stale-binding-early-notice",
   "risk_level": "LOW",
-  "codex_thread_id": "019fae4a-e7b5-7363-8f58-1da211318e5e",
-  "review_base_sha": "e839715be2764979547aa1796945e05b196eff1d",
-  "review_diff_hash": "667c816eb0d8b8421e34b9a36c1bdf63a77b4691",
+  "codex_thread_id": "019fae52-b2c7-7b11-b2ca-e5c9529842ad",
+  "review_base_sha": "9f6579a66b397e75caaa9e9c4ec8572ed942e403",
+  "review_diff_hash": "fc4edcea9993807f2b91d6601ac3ec83c4f8aec3",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "b39abd368916e4792d3190996c08c4596e191942d95d781be086e22082dc73dc",
-  "current_phase": "phase-1-early-notice",
+  "current_phase": "phase-2-docs-changelog",
   "phases": [
     {
       "id": "phase-1-early-notice",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-docs-changelog",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -35,6 +35,13 @@
       "series_id": "phase:phase-1-early-notice#1",
       "review_kind": "phase",
       "phase_id": "phase-1-early-notice",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-docs-changelog#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-docs-changelog",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -59,12 +66,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-early-notice",
+    "phase_id": "phase-2-docs-changelog",
     "outcome": "approved",
-    "compare_hash": "587fc684ec583041f95755b7eba58928bac42f20be2e5ddd9ae643ba248e81ed",
+    "compare_hash": "2055cc4602ff85a40e4f4c0098e7d0cd402ca23840b4e9d06cb7377dc8f5af21",
     "count": 1,
     "errors": [],
-    "at": "2026-07-29T14:33:33.776Z",
+    "at": "2026-07-29T14:41:52.610Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,6 +81,12 @@
       "phase_id": "phase-1-early-notice",
       "consumed_by_commit_sha": "12e62271cd8e4760d0cc23967f6e255eaded858b",
       "approval_consumed_at": "2026-07-29T14:33:44.271Z"
+    },
+    {
+      "approved_tree": "fc4edcea9993807f2b91d6601ac3ec83c4f8aec3",
+      "phase_id": "phase-2-docs-changelog",
+      "consumed_by_commit_sha": "57b41e6adb04a770d515050e1304b9e99d78e7f7",
+      "approval_consumed_at": "2026-07-29T14:42:02.969Z"
     }
   ],
   "user_commit_confirmed": null
