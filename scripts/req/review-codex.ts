@@ -626,6 +626,18 @@ export interface ReviewCallLogRow {
   assembled_prompt_sha256: string
   review_base_sha: string | null
   review_tree: string | null
+  /**
+   * REQ-2026-089: **phase 검수 면적 판정 결과**(REQ-2026-086의 판정을 기록만 한다).
+   *
+   * 🔴 셋 다 phase 리뷰에서만 값이 있고 design 리뷰는 `null`이다 — `0`이면 "면적 0"과 "측정 대상 아님"이
+   *    구별되지 않는다. 옛 행에는 키 자체가 없다(옵셔널·하위호환).
+   * 🔴 `granularity_limit`가 함께 있어야 **당시 판정을 재현**할 수 있다. 임계는 `phases[].max_files`
+   *    선언으로 phase마다 다를 수 있고 config로도 바뀌므로, `count`만으로는 "그때 넘었는가"를 알 수 없다.
+   * 🔴 **경로·파일명은 남기지 않는다** — REQ-2026-045가 세운 "개수/해시만, 내용배제" 계약이다.
+   */
+  code_file_count?: number | null
+  granularity_over?: boolean | null
+  granularity_limit?: number | null
 }
 
 /**
@@ -654,6 +666,12 @@ export function buildReviewCallLogRow(args: {
   assembledPromptSha256: string
   reviewBaseSha: string | null
   reviewTree: string | null
+  /**
+   * REQ-2026-089 DEC-1: phase preflight가 **이미 계산한** verdict를 그대로 받는다(재계산 금지 —
+   * 그 사이 인덱스가 바뀌면 로그가 "그때 무엇으로 판정했는가"를 나타내지 못한다).
+   * 미지정/null = design 리뷰이거나 legacy 호출 → 세 필드 모두 null.
+   */
+  phaseArea?: PhaseAreaVerdict | null
 }): ReviewCallLogRow {
   return {
     ticket_id: args.ticketId,
@@ -671,6 +689,9 @@ export function buildReviewCallLogRow(args: {
     review_duration_ms: args.reviewDurationMs,
     previous_findings_count: args.previousFindingsCount,
     assembled_prompt_sha256: args.assembledPromptSha256,
+    code_file_count: args.phaseArea ? args.phaseArea.count : null,
+    granularity_over: args.phaseArea ? args.phaseArea.over : null,
+    granularity_limit: args.phaseArea ? args.phaseArea.limit : null,
     review_base_sha: args.reviewBaseSha,
     review_tree: args.reviewTree,
   }
@@ -2511,9 +2532,12 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   // 🔴 REQ-2026-086 DEC-1: phase 검수 면적 게이트 — **예산 gate·attempt 기록·pre-call 원장 커밋보다 앞**이다.
   //    뒤에 두면 attempt가 열리고 부기 커밋이 남은 뒤 막혀 "아무것도 소모하지 않고 되돌린다"가 거짓이 된다.
   //    design 리뷰는 대상이 아니다(DEC-7) — 권위 아티팩트가 설계 문서이고 그 크기는 이 정책 밖이다.
+  // 🔴 REQ-2026-089 DEC-1: 이 verdict를 측정 로그까지 **그대로** 흘린다(아래 buildReviewCallLogRow).
+  let phaseArea: PhaseAreaVerdict | null = null
   if (opts.kind === 'phase') {
     const codeFiles = phaseCodeFiles(git([...STAGED_NAMES_Z_ARGS]).split('\0'), ticketRel)
     const verdict = judgePhaseArea(codeFiles.length, declaredPhaseMaxFiles(state, phaseId), cfg.granularityMaxFiles)
+    phaseArea = verdict
     if (verdict.over) {
       const msg = phaseAreaMessage(verdict, phaseId ?? '(phase)')
       if (cfg.granularityGate === 'block') throw new Error(msg)
@@ -2817,6 +2841,8 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       assembledPromptSha256: createHash('sha256').update(prompt, 'utf8').digest('hex'),
       reviewBaseSha,
       reviewTree,
+      // REQ-2026-089 DEC-1: preflight가 계산한 값을 그대로(재계산 금지). design 리뷰면 null.
+      phaseArea,
     }),
   )
 

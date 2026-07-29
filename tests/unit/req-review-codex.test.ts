@@ -3207,7 +3207,7 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       observations: Array.from({ length: observations }, (_, i) => ({ detail: `o${i}`, file: `f${i}` })),
     })
 
-    it('R6+REQ-043+REQ-045: 17개 필드가 전부 존재한다(model·effort·관측성6 포함, 핀 케이스)', () => {
+    it('R6+REQ-043+REQ-045+REQ-089: 20개 필드가 전부 존재한다(model·effort·관측성6·면적3 포함, 핀 케이스)', () => {
       const row = buildReviewCallLogRow({
         ticketId: 'REQ-2026-025',
         kind: 'phase',
@@ -3245,6 +3245,10 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
           'assembled_prompt_sha256',
           'review_base_sha',
           'review_tree',
+          // REQ-2026-089: phase 검수 면적 판정 기록(개수·초과여부·적용 임계).
+          'code_file_count',
+          'granularity_over',
+          'granularity_limit',
         ].sort(),
       )
       expect(row.findings_count).toBe(2)
@@ -4992,5 +4996,66 @@ describe('[REQ-2026-052 addendum] 정상 phase-review 경로의 phase_design_ref
     expect(deriveFromHead(repo, git)).toBe('dev-complete')
     rmSync(join(ticketAbs, 'state.json'))
     expect(deriveFromHead(repo, git)).toBe('dev-complete')
+  })
+})
+
+// ───────────── REQ-2026-089: granularity 판정 기록 ──
+describe('[REQ-2026-089] 측정 로그에 phase 검수 면적을 남긴다', () => {
+  const v: Verdict = { findings: [], observations: [] }
+  const base = {
+    ticketId: 'REQ-2026-089',
+    kind: 'phase' as const,
+    phaseId: 'p1',
+    archiveRound: 1,
+    outcome: 'approved' as const,
+    verdict: v,
+    timestamp: '2026-07-29T00:00:00.000Z',
+    policyVersion: 'p',
+    reviewModel: null,
+    reviewReasoningEffort: null,
+    promptBytes: 1,
+    reviewDurationMs: 1,
+    previousFindingsCount: 0,
+    assembledPromptSha256: 'a'.repeat(64),
+    reviewBaseSha: null,
+    reviewTree: null,
+  }
+
+  it('초과 판정이 그대로 실린다(개수·초과여부·적용 임계)', () => {
+    const row = buildReviewCallLogRow({ ...base, phaseArea: { over: true, count: 14, limit: 8, source: 'config' } })
+    expect(row.code_file_count).toBe(14)
+    expect(row.granularity_over).toBe(true)
+    expect(row.granularity_limit).toBe(8)
+  })
+
+  it('비초과도 기록한다 — "몇 번 넘겼나"를 세려면 분모가 있어야 한다', () => {
+    const row = buildReviewCallLogRow({ ...base, phaseArea: { over: false, count: 5, limit: 8, source: 'config' } })
+    expect(row.granularity_over).toBe(false)
+    expect(row.code_file_count).toBe(5)
+  })
+
+  it('🔴 R2: max_files 선언 시 적용 임계가 그 값이다 — 당시 판정을 재현할 수 있어야 한다', () => {
+    const row = buildReviewCallLogRow({ ...base, phaseArea: { over: false, count: 20, limit: 24, source: 'declared' } })
+    expect(row.granularity_limit).toBe(24) // config 기본 8이 아니라 선언값
+    expect(row.granularity_over).toBe(false) // count(20) > 8 이지만 선언 임계(24) 이하라 미초과
+  })
+
+  it('🔴 DEC-3: design 리뷰·미지정은 세 값 모두 null(0이 아니다)', () => {
+    for (const arg of [{}, { phaseArea: null }]) {
+      const row = buildReviewCallLogRow({ ...base, kind: 'design', phaseId: null, ...arg })
+      expect(row.code_file_count).toBeNull()
+      expect(row.granularity_over).toBeNull()
+      expect(row.granularity_limit).toBeNull()
+    }
+  })
+
+  it('🔴 R4: 행에 파일 경로·이름이 들어가지 않는다(내용배제 계약)', () => {
+    const row = buildReviewCallLogRow({ ...base, phaseArea: { over: true, count: 14, limit: 8, source: 'config' } })
+    const json = JSON.stringify(row)
+    expect(json).not.toContain('/')
+    expect(json).not.toContain('.ts')
+    // 값 타입도 고정 — 배열이 끼면 목록이 샌 것이다.
+    expect(Array.isArray(row.code_file_count)).toBe(false)
+    expect(typeof row.code_file_count).toBe('number')
   })
 })
