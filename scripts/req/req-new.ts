@@ -21,6 +21,7 @@ import { parseStatusZ, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from
 import { isToolOutputScratch } from './lib/scratch'
 import { scanIntake, type IntakeTicketResult } from './lib/intake'
 import { assertSetupComplete } from './lib/setup-gate'
+import { bookkeepingMessage } from './lib/bookkeeping'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -291,7 +292,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     'utf8',
   )
   git(['add', ticketRel])
-  git(['commit', '-m', `chore(req): ${reqId} 티켓 생성`])
+  git(['commit', '-m', bookkeepingMessage(`chore(req): ${reqId} 티켓 생성`)])
 
   console.log(`[req:new] 생성 완료: ${reqId}`)
   console.log(`  branch : ${branch} (체크아웃됨)`)

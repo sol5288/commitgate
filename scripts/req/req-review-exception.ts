@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url'
 import { loadConfig, packageRoot, type ReviewBudget } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
+import { bookkeepingMessage } from './lib/bookkeeping'
 import {
   loadState,
   writeState,
@@ -170,7 +171,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     mkdirSync(dirname(abs), { recursive: true })
     writeFileSync(abs, res.content, 'utf8')
     git(['add', '--', exRel])
-    git(['commit', '-m', `chore(${reqId}): review exception grant ${plan.seriesId} #${plan.forAttempt}`, '--', exRel])
+    git(['commit', '-m', bookkeepingMessage(`chore(${reqId}): review exception grant ${plan.seriesId} #${plan.forAttempt}`), '--', exRel])
   }
   // res.outcome === 'duplicate' → durable 이미 존재(멱등·커밋 없음).
 

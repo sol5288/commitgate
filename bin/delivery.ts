@@ -31,6 +31,7 @@ import {
 } from '../scripts/req/lib/evidence'
 import { main as reqNewMain } from '../scripts/req/req-new'
 import { assertSetupComplete } from '../scripts/req/lib/setup-gate'
+import { bookkeepingMessage } from '../scripts/req/lib/bookkeeping'
 import {
   canApprove,
   canBegin,
@@ -207,7 +208,8 @@ export function commitRecord(ctx: Ctx, slug: string, record: DeliveryRecord, mes
   mkdirSync(dirname(abs), { recursive: true })
   writeFileSync(abs, serializeDeliveryRecord(record), 'utf8')
   ctx.git.exec(['add', '--', rel])
-  ctx.git.exec(['commit', '-m', message, '--', rel])
+  // REQ-2026-085 DEC-6: 호출부마다가 아니라 **여기 한 곳**에서 표식을 붙인다 — 새 호출부가 생겨도 누락되지 않는다.
+  ctx.git.exec(['commit', '-m', bookkeepingMessage(message), '--', rel])
 }
 
 /**
@@ -708,7 +710,7 @@ export function cmdIntegrate(ctx: Ctx, slug: string, reqId: string, io: Io = def
     ctx.git.exec(['add', '--', rel])
     // 🔴 여기만 pathspec 없이 커밋한다 — merge 커밋은 인덱스 전체(= 병합 결과)를 담아야 하기 때문이다.
     //    무관한 변경이 섞이지 않는 근거는 ②-0의 clean 가드다(그 뒤로 인덱스를 건드리는 것은 merge와 레코드뿐).
-    ctx.git.exec(['commit', '-m', `chore(delivery): integrate ${reqId} into ${slug}`])
+    ctx.git.exec(['commit', '-m', bookkeepingMessage(`chore(delivery): integrate ${reqId} into ${slug}`)])
     io.log(`[delivery] ${reqId} 반영 완료 → ${branch}`)
     const gate = deliveryGateVerdict(updated)
     // 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a) — req:next만 판정하면 영영 안 나온다.

@@ -32,6 +32,7 @@ import {
 import { parseCloseProof, appendCloseProofRow, closeProofPath } from './lib/close-proof'
 import { planMigrationClose, type MigrationFacts } from './lib/close-migrate'
 import { assertSetupComplete } from './lib/setup-gate'
+import { bookkeepingMessage } from './lib/bookkeeping'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 function git(args: string[]): string {
@@ -204,7 +205,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   mkdirSync(dirname(abs), { recursive: true })
   writeFileSync(abs, res.content, 'utf8')
   git(['add', '--', cpRel])
-  git(['commit', '-m', `chore(${reqId}): migrated-complete close proof (레거시 마이그레이션 종결·REQ-2026-053)`, '--', cpRel])
+  git(['commit', '-m', bookkeepingMessage(`chore(${reqId}): migrated-complete close proof (레거시 마이그레이션 종결·REQ-2026-053)`), '--', cpRel])
   console.log(`[req:close] ✅ ${reqId} migrated-complete durable commit(reconstructed:true·evidence_basis).`)
 }
 

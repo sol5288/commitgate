@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -149,18 +149,113 @@ describe('[REQ-2026-085 DEC-6] state checkpoint 실 커밋 — 표식은 붙고 
   })
 })
 
-describe('[REQ-2026-085 DEC-6] 리뷰 루프 커밋 자리가 헬퍼를 통과한다(정적)', () => {
+describe('[REQ-2026-085 DEC-6] 도구가 만드는 커밋 자리 전수 스캔(구조적)', () => {
   const src = (rel: string): string => readFileSync(join(process.cwd(), rel), 'utf8')
 
-  it('고빈도 4개 자리가 bookkeepingMessage를 쓴다', () => {
-    // 이 phase의 적용 대상. 저빈도 lifecycle 자리는 phase-3에서 전수 스캔한다.
-    for (const rel of [
-      'scripts/req/review-codex.ts',
-      'scripts/req/req-commit.ts',
-      'scripts/req/lib/state-checkpoint.ts',
-      'scripts/req/lib/evidence.ts',
-    ]) {
-      expect(src(rel), `${rel}이 헬퍼를 import해야 한다`).toContain('bookkeepingMessage')
+  /**
+   * 🔴 **"파일에 문자열이 있는가"가 아니라 "각 `commit -m` 자리의 인자가 무엇인가"를 본다**(phase-2 리뷰 관측).
+   * 파일 단위 문자열 검사는 새 커밋 자리가 헬퍼를 우회해도 통과한다 — 그 우회가 정확히 이 규약의 실패 모드다.
+   */
+  /**
+   * `'-m',` 바로 뒤의 **메시지 인자 표현식만** 떼어낸다.
+   *
+   * 🔴 줄 끝까지 잘라 쓰면(초기 구현) `opts.message]`처럼 뒤따르는 구문이 섞여, 무관한 서식 변경으로
+   *    예외 대조가 깨진다(phase-3 r02 P1이 지적한 취약점). 괄호·문자열 깊이를 세어 top-level `,` 또는 `]`
+   *    에서 끊는다 — 그래야 `arg`가 표현식 그 자체다.
+   */
+  const extractArg = (text: string): string => {
+    let i = 0
+    for (;;) {
+      while (i < text.length && /\s/.test(text[i] as string)) i++
+      if (text.startsWith('//', i)) {
+        while (i < text.length && text[i] !== '\n') i++
+        continue
+      }
+      break
+    }
+    const start = i
+    let depth = 0
+    let quote: string | null = null
+    for (; i < text.length; i++) {
+      const c = text[i] as string
+      if (quote !== null) {
+        if (c === '\\') i++
+        else if (c === quote) quote = null
+        continue
+      }
+      if (c === "'" || c === '"' || c === '`') quote = c
+      else if (c === '(' || c === '[' || c === '{') depth++
+      else if (c === ')' || c === '}') depth--
+      else if (c === ']') {
+        if (depth === 0) break
+        depth--
+      } else if (c === ',' && depth === 0) break
+    }
+    return text.slice(start, i).trim()
+  }
+
+  const scanCommitSites = (): Array<{ file: string; line: number; arg: string }> => {
+    const files: string[] = []
+    const walk = (d: string): void => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const p = `${d}/${e.name}`
+        if (e.isDirectory()) walk(p)
+        else if (e.name.endsWith('.ts')) files.push(p)
+      }
+    }
+    walk('scripts/req')
+    walk('bin')
+    const out: Array<{ file: string; line: number; arg: string }> = []
+    for (const f of files) {
+      const s = src(f)
+      const re = /'commit',\s*'-m',/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(s))) {
+        out.push({ file: f, line: s.slice(0, m.index).split('\n').length, arg: extractArg(s.slice(m.index + m[0].length)) })
+      }
+    }
+    return out
+  }
+
+  /**
+   * 헬퍼를 **의도적으로** 거치지 않는 자리. 새 자리가 생기면 이 목록에 근거와 함께 올려야 통과한다 —
+   * 즉 "빠뜨림"과 "의도적 예외"가 구별된다.
+   */
+  const INTENTIONAL_EXCEPTIONS: Record<string, string> = {
+    // 사용자의 **소스 커밋 메시지**다. 부기가 아니라 코드 커밋이므로 표식이 붙으면 안 된다.
+    'scripts/req/req-commit.ts': 'opts.message',
+    // 범용 포트 — 메시지는 호출부(lib/evidence.ts)가 이미 감싸서 넘긴다. 여기서 또 감싸면 이중 trailer.
+    'scripts/req/lib/evidence-ports.ts': 'message',
+  }
+
+  it('🔴 모든 커밋 자리가 bookkeepingMessage를 통과하거나 명시적 예외다', () => {
+    const sites = scanCommitSites()
+    // 스캐너가 실제로 무언가를 찾았는지 먼저 고정 — 0건이면 이 테스트는 아무것도 지키지 않는다.
+    expect(sites.length).toBeGreaterThanOrEqual(13)
+
+    const violations = sites.filter((s) => {
+      if (s.arg.startsWith('bookkeepingMessage(')) return false
+      return INTENTIONAL_EXCEPTIONS[s.file] !== s.arg
+    })
+    expect(violations.map((v) => `${v.file}:${v.line} → ${v.arg}`)).toEqual([])
+  })
+
+  it('추출기가 뒤따르는 구문을 섞지 않는다(예외 대조가 서식에 흔들리지 않는다)', () => {
+    // r02 P1 대응: 같은 인자를 여러 서식으로 써도 arg는 표현식 그 자체여야 한다.
+    const sites = scanCommitSites()
+    for (const s of sites) {
+      expect(s.arg, `${s.file}:${s.line}`).not.toMatch(/[\]}]\s*\)?\s*$/)
+      expect(s.arg, `${s.file}:${s.line}`).not.toContain("'--'")
+    }
+    // 실제로 뒤에 `]`가 붙는 자리(`… , opts.message]`)와 뒤에 `, '--', …`가 붙는 자리 둘 다 표본에 있다.
+    expect(sites.some((s) => s.arg === 'opts.message')).toBe(true)
+    expect(sites.some((s) => s.arg.startsWith('bookkeepingMessage(') && s.arg.endsWith(')'))).toBe(true)
+  })
+
+  it('예외 목록이 실제로 존재하는 자리를 가리킨다(죽은 예외 금지)', () => {
+    const sites = scanCommitSites()
+    for (const [file, arg] of Object.entries(INTENTIONAL_EXCEPTIONS)) {
+      expect(sites.some((s) => s.file === file && s.arg === arg), `${file}의 예외가 더 이상 존재하지 않는다`).toBe(true)
     }
   })
 
@@ -168,7 +263,7 @@ describe('[REQ-2026-085 DEC-6] 리뷰 루프 커밋 자리가 헬퍼를 통과�
     const s = src('scripts/req/review-codex.ts')
     // `precallCommitLedgerRow`가 `'--', ledgerRel`로 경로를 한정하는 구조를 유지하는지 고정.
     const fn = s.slice(s.indexOf('export function precallCommitLedgerRow'))
-    expect(fn.slice(0, 900)).toContain("'--', // 🔴 pathspec 커밋")
-    expect(fn.slice(0, 900)).toContain('ledgerRel,')
+    expect(fn.slice(0, 1200)).toContain("'--', // 🔴 pathspec 커밋")
+    expect(fn.slice(0, 1200)).toContain('ledgerRel,')
   })
 })

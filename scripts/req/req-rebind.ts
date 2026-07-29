@@ -26,6 +26,7 @@ import { designHashFromManifest, parseManifestEntries, plannedPhaseIdsFromState,
 import { closeProofPath, rebindConfirmSentence } from './lib/close-proof'
 import { computeDevCompleteProof } from './req-commit'
 import { appendCloseProofRowToDisk, loadState, readPhases } from './review-codex'
+import { bookkeepingMessage } from './lib/bookkeeping'
 
 export interface Opts {
   reqId: string | null
@@ -179,7 +180,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   writeFileSync(manifestAbs, candidate, 'utf8')
   git.exec(['add', '--', manifestRel])
-  git.exec(['commit', '-m', `chore(${reqId}): rebind ${o.phase} → 현재 설계`, '--', manifestRel])
+  git.exec(['commit', '-m', bookkeepingMessage(`chore(${reqId}): rebind ${o.phase} → 현재 설계`), '--', manifestRel])
   console.log(`[req:rebind] ✅ 재결속 기록 커밋 — ${o.phase}는 이제 현재 설계에 결속됩니다.`)
 
   recheckCompletion({ cfg, reqId, ticketRel, manifestContent: candidate, git })
@@ -266,7 +267,7 @@ function recheckCompletion(args: {
     return
   }
   args.git.exec(['add', '--', cpRel])
-  args.git.exec(['commit', '-m', `chore(${args.reqId}): dev-complete — 재결속으로 완료`, '--', cpRel])
+  args.git.exec(['commit', '-m', bookkeepingMessage(`chore(${args.reqId}): dev-complete — 재결속으로 완료`), '--', cpRel])
   console.log(`[req:rebind] ✅ dev-complete 발행 — ${args.reqId} 종결. 이제 다음 REQ를 열 수 있습니다.`)
 }
 

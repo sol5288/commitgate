@@ -24,6 +24,7 @@ import { planReconstruction, type SuccessorEvidence, type ReconstructPlan } from
 import { listHeadTicketIds } from './lib/intake'
 import { assertSetupComplete } from './lib/setup-gate'
 import { isValidHumanResolution } from './review-codex'
+import { bookkeepingMessage } from './lib/bookkeeping'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 /**
@@ -209,7 +210,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   }
   writeFileSync(join(cfg.root, cpRel), content, 'utf8')
   git(['add', '--', cpRel])
-  git(['commit', '-m', `chore(${reqId}): reconstruct series-terminal close proof (evidence-based)`, '--', cpRel])
+  git(['commit', '-m', bookkeepingMessage(`chore(${reqId}): reconstruct series-terminal close proof (evidence-based)`), '--', cpRel])
   console.log(`[req:reconstruct] ✅ ${appended}행 복원·durable commit(reconstructed:true·evidence_basis).`)
 }
 
