@@ -2,16 +2,59 @@
   "id": "REQ-2026-087",
   "branch": "feat/req-2026-087-granularity-gate-default-warn",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fac3d-2927-70c1-9971-42a366131e44",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "7f1c732ed4afb6721a451b42fc1226f990fd95c1edad11e76b833e90b832f97d",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-default-warn",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "13740637780e1f580e8d04522abf7176492c4268",
+    "design": "b06d564d7ca3ce8e4231560b13fa58338200adf2",
+    "plan": "08a1ac98b5b860bea8348ed976435f8573c39246"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-087/responses/design-r01-approved.json",
+    "response_sha256": "b19d249930292afbefcaf9966c4afa5aefb3482ad70249dcf98de7b1cd6cf2b2",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "d57b9b113b88facf894ce0d6b85d44aea1ed00b8",
+    "codex_thread_id": "019fac3d-2927-70c1-9971-42a366131e44",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-29T04:59:12.319Z",
+    "design_hash": "7f1c732ed4afb6721a451b42fc1226f990fd95c1edad11e76b833e90b832f97d"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "fc90160b715d013aeb82d0fb530fcd8aa4e2b15d41561eb754db60262f6530d9",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-29T04:59:12.319Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
