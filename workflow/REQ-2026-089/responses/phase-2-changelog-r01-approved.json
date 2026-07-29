@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"f8678c87078dc3e43b230aa09f09cc684011c137","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"phase-2 changelog 변경을 커밋하고, 전체 요청의 다음 워크플로 단계로 진행하세요.","observations":[]}
