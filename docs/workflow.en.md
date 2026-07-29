@@ -228,19 +228,23 @@ is issued, `delivery` at `delivery approve`. Once consumed, the next scope needs
 > The timestamp is read from the **real clock**. Before this command you had to hand-edit `state.json`,
 > and that let the timestamp be fabricated.
 
-## An oversized phase stops before the review
+## An oversized phase is flagged right before the review
 
-When one phase changes more code files than the threshold (8 by default), **`req:review-codex` does not
-run the review.**
+When one phase changes more code files than the threshold (8 by default), `req:review-codex` warns
+**right before it would run the review.**
 
 ```
 phase 검수 면적 초과: 코드 변경 14파일 > 8(granularityMaxFiles)
 리뷰 라운드는 면적에 비례해 늘어납니다(실측: >8파일 평균 2.4R vs ≤8파일 1.4R).
-리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다.
 ```
+
+**By default this only warns and the review proceeds** — the workflow is never stopped by phase size.
+Set `"granularityGate": "block"` in `req.config.json` to have it enforced (then the review is not run at
+all, and no attempt, ledger row, or commit is created — nothing is consumed).
 
 **Why before the review and not before the commit**: what we are saving is review rounds (a paid call,
 the wait, and the bookkeeping commits). And at this point the fix is **restaging, not rewriting code**.
+Even as a warning, this timing is far more actionable than the old D18 (at commit time, "split from next time").
 
 | Choice | How |
 |---|---|
@@ -250,11 +254,19 @@ the wait, and the bookkeeping commits). And at this point the fix is **restaging
 `max_files` lives in `state.json`, and that file gets committed — so **the declaration is on the record**.
 It must be an integer ≥ 1; anything else is rejected (so a typo cannot silently disable the gate).
 
-To turn the policy off, set `"granularityGate": "warn"` in `req.config.json` — it then only warns and
-proceeds. The threshold itself is `granularityMaxFiles` (default 8). Design reviews are unaffected.
+The threshold itself is `granularityMaxFiles` (default 8). Design reviews are unaffected.
 
-**D18 in `req:doctor` stays a WARN.** Blocking happens before the review; a phase that already has Codex
-approval is never blocked from committing — that would deadlock, with the approval neither consumed nor committed.
+| `granularityGate` | Behavior |
+|---|---|
+| `"warn"` (**default**) | Warns and proceeds with the review — the workflow never stops |
+| `"block"` | Does not run the review. Resolve with A or B above, then re-run |
+
+> 0.13.0 shipped with `"block"` as the default. 0.13.1 **corrected it to `"warn"`** — it was never a dead
+> end (nothing consumed, three ways out), but it was a stop that does not clear itself, which breaks an
+> autonomous workflow. The value of this policy is its **timing**, not its severity, and the timing is unchanged.
+
+**D18 in `req:doctor` stays a WARN.** Blocking (`block`) happens before the review; a phase that already has
+Codex approval is never blocked from committing — that would deadlock, with the approval neither consumed nor committed.
 
 ## Seeing only code commits in the history
 

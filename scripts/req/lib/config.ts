@@ -59,8 +59,11 @@ export type PhaseCommitPolicy = 'never' | 'low-only'
 export type StopGate = 'phase' | 'req' | 'merge'
 
 /**
- * granularity 정책 강제 수준(REQ-2026-086). `block`은 **리뷰 호출 전** 차단이라 되돌릴 상태가 남지 않는다.
- * 정당하게 큰 phase는 `phases[].max_files` 선언으로 통과시킨다 — 끄는 것이 아니라 선언하는 것이 기본 탈출구다.
+ * granularity 정책 강제 수준(REQ-2026-086, 기본값은 REQ-2026-087로 `warn`으로 정정).
+ *
+ * - `warn`(기본): 리뷰 직전에 경고만 내고 진행한다 — **면적 때문에 워크플로가 멈추지 않는다.**
+ * - `block`     : 초과하면 리뷰를 실행하지 않는다. 차단은 **리뷰 호출 전**이라 되돌릴 상태가 남지 않는다
+ *   (attempt·원장·커밋 무생성). 정당하게 큰 phase는 `phases[].max_files` 선언으로 통과시킨다.
  */
 export type GranularityGate = 'block' | 'warn'
 
@@ -219,13 +222,19 @@ export const DEFAULTS = {
   trunkBranch: 'main' as string | null,
   /**
    * REQ-2026-086: granularity 정책의 **강제 수준**.
-   * - `block`(기본): phase 리뷰 실행 **전**에 검수 면적을 판정하고 초과면 리뷰하지 않는다.
-   * - `warn`      : 경고만 내고 진행(REQ-2026-086 이전 동작).
+   * - `warn`(기본): 리뷰 직전에 경고만 내고 **그대로 진행한다.**
+   * - `block`     : 초과하면 리뷰를 실행하지 않는다(opt-in).
    *
-   * 🔴 기본이 `block`인 것은 의도다. `warn`이 기본이면 아무도 켜지 않아 정책이 존재하는 의미가 없다 —
-   *    실측에서 phase의 69%가 권고치를 넘겼고 그때마다 WARN이 무시됐다.
+   * 🔴 **기본은 `warn`이다**(REQ-2026-087로 정정). 0.13.0은 `block`으로 냈는데, 그 기본은
+   *    **자동으로 넘어가지 않는 정지**라 자율 루프를 끊는다. 막다른 길은 아니었지만(소모 0 · 탈출구 3개)
+   *    "진행을 막지 않는다"가 우선한다는 것이 사용자 결정이다.
+   *
+   * 🔴 정책의 실제 가치는 **강도가 아니라 시점**이다. 판정은 여전히 **리뷰 호출 직전**에 일어난다 —
+   *    그 시점의 시정은 `git restore --staged`(staging 재구성)라 싸고, 예전 D18처럼 커밋 직전에
+   *    "다음부터 분할 권고"라는 행동 불가능한 조언을 내지 않는다. `warn`이어도 그 가치는 유지된다.
+   *    차단이 필요한 팀은 `"granularityGate": "block"`으로 켠다.
    */
-  granularityGate: 'block' as GranularityGate,
+  granularityGate: 'warn' as GranularityGate,
 }
 
 /** ISO instant(UTC). `close-proof`의 `isValidIsoInstant`와 같은 형태를 스키마 수준에서 강제한다. */

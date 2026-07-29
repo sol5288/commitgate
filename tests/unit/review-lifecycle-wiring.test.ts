@@ -244,6 +244,16 @@ describe('[REQ-2026-086] granularity 게이트 — 리뷰 호출 전 차단', ()
     writeFileSync(join(r.ticket, 'state.json'), `${JSON.stringify(st, null, 2)}\n`)
     return r
   }
+  /** 이 repo의 granularityGate를 명시한다. 기본값은 'warn'(REQ-2026-087)이라 차단 검증은 opt-in이 필요하다. */
+  const setGate = (repo: string, gate: 'block' | 'warn'): void => {
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null, granularityGate: gate }))
+    // 🔴 **커밋**한다 — stage만 하면 두 가지가 어긋난다:
+    //    (1) 미스테이징이면 D10(워킹트리 클린)이 granularity 게이트보다 먼저 막고,
+    //    (2) staged면 config가 티켓 밖 파일이라 **면적 계수에 잡혀** 테스트가 세려는 수와 달라진다.
+    const git = gitOf(repo)
+    git(['add', '--', 'req.config.json'])
+    git(['commit', '-qm', `test: granularityGate=${gate}`, '--', 'req.config.json'])
+  }
   const runPhase = (repo: string): { threw: boolean; msg: string } => {
     try {
       reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1-a', '--run', '--root', repo], {
@@ -265,9 +275,10 @@ describe('[REQ-2026-086] granularity 게이트 — 리뷰 호출 전 차단', ()
     }
   })
 
-  it('🔴 초과(9파일)하면 throw + 두 탈출구를 모두 안내한다', () => {
+  it('🔴 [block] 초과(9파일)하면 throw + 두 탈출구를 모두 안내한다', () => {
     const { repo } = setupPhaseRepo()
     try {
+      setGate(repo, 'block')
       stageCode(repo, gitOf(repo), 9)
       const r = runPhase(repo)
       expect(r.threw).toBe(true)
@@ -280,9 +291,12 @@ describe('[REQ-2026-086] granularity 게이트 — 리뷰 호출 전 차단', ()
     }
   })
 
-  it('🔴 DEC-1 순서: 차단되면 attempt·원장 행·부기 커밋이 하나도 생기지 않는다', () => {
-    const { repo, ticket, head } = setupPhaseRepo()
+  it('🔴 [block] DEC-1 순서: 차단되면 attempt·원장 행·부기 커밋이 하나도 생기지 않는다', () => {
+    const { repo, ticket } = setupPhaseRepo()
     try {
+      setGate(repo, 'block')
+      // 🔴 HEAD는 setGate의 설정 커밋 **이후**에 잡는다 — 그게 "리뷰가 커밋을 만들지 않았다"의 기준선이다.
+      const head = gitOf(repo)(['rev-parse', 'HEAD']).trim()
       stageCode(repo, gitOf(repo), 12)
       expect(runPhase(repo).threw).toBe(true)
       expect(readLedger(ticket)).toEqual([]) // 원장 행 0
@@ -296,6 +310,7 @@ describe('[REQ-2026-086] granularity 게이트 — 리뷰 호출 전 차단', ()
   it('DEC-3: phases[].max_files 선언이 그 phase의 임계를 올린다', () => {
     const { repo } = setupPhaseRepo({ phases: [{ id: 'phase-1-a', approved: false, max_files: 12 }] })
     try {
+      setGate(repo, 'block')
       stageCode(repo, gitOf(repo), 12)
       expect(runPhase(repo).msg).not.toContain('검수 면적 초과')
     } finally {
@@ -317,10 +332,26 @@ describe('[REQ-2026-086] granularity 게이트 — 리뷰 호출 전 차단', ()
     }
   })
 
-  it('DEC-6: granularityGate:"warn"이면 초과해도 진행한다(이전 동작)', () => {
+  // 🔴 REQ-2026-087 R1: **기본 설정이 진행을 막지 않는다.** 0.13.0은 여기서 막혔고 그것이 정정 대상이다.
+  it('🔴 [REQ-087 R1] 기본 설정(granularityGate 미지정)은 크게 초과해도 면적으로 멈추지 않는다', () => {
     const { repo } = setupPhaseRepo()
     try {
-      writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null, granularityGate: 'warn' }))
+      // req.config.json을 손대지 않는다 — setupRepo가 쓴 그대로(= granularityGate 미지정 = 기본값).
+      stageCode(repo, gitOf(repo), 25)
+      expect(runPhase(repo).msg).not.toContain('검수 면적 초과')
+      // 🔴 대조군: 같은 상태에서 block을 명시하면 막힌다 — 기본값이 실제로 warn임을 증명한다
+      //    (이게 없으면 "다른 이유로 안 막힌 것"과 구별되지 않는다).
+      setGate(repo, 'block')
+      expect(runPhase(repo).msg).toContain('검수 면적 초과')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('DEC-6: granularityGate:"warn" 명시 시 초과해도 진행한다', () => {
+    const { repo } = setupPhaseRepo()
+    try {
+      setGate(repo, 'warn')
       stageCode(repo, gitOf(repo), 20)
       expect(runPhase(repo).msg).not.toContain('검수 면적 초과')
     } finally {

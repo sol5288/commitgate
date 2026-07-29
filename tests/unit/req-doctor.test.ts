@@ -13,7 +13,7 @@ import {
   type DoctorInputs,
   type Check,
 } from '../../scripts/req/req-doctor'
-import { packageRoot } from '../../scripts/req/lib/config'
+import { packageRoot, DEFAULTS } from '../../scripts/req/lib/config'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 import type { WorkflowState, Verdict } from '../../scripts/req/review-codex'
 
@@ -852,8 +852,8 @@ describe('[REQ-2026-086] D18은 WARN 상한을 유지한다', () => {
     expect(checks.filter((c) => c.id === 'D18' && c.level === 'FAIL')).toEqual([])
   })
 
-  it('block(기본)일 때 문구가 차단 절차와 두 탈출구를 가리킨다', () => {
-    const msgs = phaseGranularityWarnings(['a', 'b', 'c'], 2)
+  it('block 명시 시 문구가 차단 절차와 두 탈출구를 가리킨다', () => {
+    const msgs = phaseGranularityWarnings(['a', 'b', 'c'], 2, 'block')
     expect(msgs).toHaveLength(1)
     expect(msgs[0]).toContain('실행 전에 막힙니다')
     expect(msgs[0]).toContain('staging')
@@ -863,6 +863,16 @@ describe('[REQ-2026-086] D18은 WARN 상한을 유지한다', () => {
   // 🔴 phase-2 r01 P1: 문구가 실제 설정과 어긋나면 안 된다. warn 사용자에게 "막힙니다"는 거짓이다.
   it('🔴 granularityGate="warn"이면 "막힌다"고 말하지 않는다(안내가 실제 동작과 일치)', () => {
     const msgs = phaseGranularityWarnings(['a', 'b', 'c'], 2, 'warn')
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0]).not.toContain('막힙니다')
+    expect(msgs[0]).toContain('그대로 진행됩니다')
+  })
+
+  // 🔴 REQ-2026-087: 기본 인자는 DEFAULTS를 따른다. 기본값과 문구가 갈라지면 REQ-2026-086 phase-2 r01 P1
+  //    (안내가 실제 동작과 어긋남)이 재발한다 — 그 정합이 우연이 아님을 여기서 고정한다.
+  it('🔴 [REQ-087 R4] 기본 인자(=DEFAULTS)일 때 "막힌다"고 말하지 않는다', () => {
+    expect(DEFAULTS.granularityGate).toBe('warn') // 기본값 자체를 고정
+    const msgs = phaseGranularityWarnings(['a', 'b', 'c'], 2) // gate 미지정 = DEFAULTS
     expect(msgs).toHaveLength(1)
     expect(msgs[0]).not.toContain('막힙니다')
     expect(msgs[0]).toContain('그대로 진행됩니다')
