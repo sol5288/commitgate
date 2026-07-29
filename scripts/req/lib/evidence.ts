@@ -14,6 +14,7 @@
  *    `req-commit`(나머지)이 각각 **re-export**한다.
  */
 import { isArchiveFileName } from './scratch'
+import { bookkeepingMessage } from './bookkeeping'
 import type { ApprovalEvidence, ReviewKind } from '../review-codex'
 
 // ─────────────────────────────────────────────────────── 공통 형식 술어 ──
@@ -785,7 +786,8 @@ export function durableDesignEvidence(args: {
   const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
   const outside = stagePaths.filter((p) => !p.replace(/\\/g, '/').startsWith(prefix))
   if (outside.length) throw new Error(`design evidence 커밋 대상이 티켓 responses/ 밖: ${outside.join(', ')}`)
-  ports.commitPaths(stagePaths, `chore(${args.ticketId}): design-finalize — design 승인 approvals.jsonl 기록`)
+  // REQ-2026-085 DEC-6: 메시지에 부기 trailer만 더한다 — stagePaths는 그대로다.
+  ports.commitPaths(stagePaths, bookkeepingMessage(`chore(${args.ticketId}): design-finalize — design 승인 approvals.jsonl 기록`))
   return { outcome: onDiskRow ? 'recommitted' : 'committed', stagePaths }
 }
 

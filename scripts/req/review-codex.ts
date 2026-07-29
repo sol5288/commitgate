@@ -31,6 +31,7 @@ import { resolve, join, relative, sep, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
+import { bookkeepingMessage } from './lib/bookkeeping'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
@@ -1432,7 +1433,7 @@ export function durableParentSeriesTerminal(args: {
   const ledgerRel = ledgerPath(args.parentTicketRel)
   const paths = existsSync(join(args.root, ledgerRel)) ? [cpRel, ledgerRel] : [cpRel]
   args.gitFn(['add', '--', ...paths])
-  args.gitFn(['commit', '-m', `chore(${args.parentId}): series-terminal close proof (replace/human-resolution)`, '--', ...paths])
+  args.gitFn(['commit', '-m', bookkeepingMessage(`chore(${args.parentId}): series-terminal close proof (replace/human-resolution)`), '--', ...paths])
   return true
 }
 
@@ -1442,7 +1443,9 @@ export function precallCommitLedgerRow(gitFn: GitFn, ticketRel: string, ticketId
   gitFn([
     'commit',
     '-m',
-    `chore(${ticketId}): ledger attempt-opened ${attempt.series_id} #${attempt.attempt}`,
+    // REQ-2026-085 DEC-6: 메시지에 부기 trailer만 더한다. 🔴 이 커밋의 **"외부 호출 전"이라는 순서**와
+    // pathspec 범위는 이 REQ가 손대지 않는다(REQ-2026-052 DEC-A4·A6).
+    bookkeepingMessage(`chore(${ticketId}): ledger attempt-opened ${attempt.series_id} #${attempt.attempt}`),
     '--', // 🔴 pathspec 커밋 — 이 경로만. staged design/code는 인덱스에 그대로 남는다.
     ledgerRel,
   ])
@@ -2546,7 +2549,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
         // 원장 modified가 남으면 다음 리뷰 D10이 막힌다 → attempt-opened와 동일 조건·기법으로 pathspec 커밋.
         const ledgerRel = ledgerPath(ticketRel)
         git(['add', '--', ledgerRel])
-        git(['commit', '-m', `chore(${String(state.id ?? '')}): ledger attempt-closed ${attemptInfo.series_id} #${attemptInfo.attempt} (${lifecycle})`, '--', ledgerRel])
+        git(['commit', '-m', bookkeepingMessage(`chore(${String(state.id ?? '')}): ledger attempt-closed ${attemptInfo.series_id} #${attemptInfo.attempt} (${lifecycle})`), '--', ledgerRel])
       }
     } catch (compErr) {
       // 보상 기록/커밋 실패는 삼킨다 — 원본 dispatch 오류가 전파돼야 한다(판정을 가리지 않는다).

@@ -20,6 +20,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { bookkeepingMessage } from './bookkeeping'
 
 /** `state.json` 직렬화의 **단일 지점**. `review-codex`의 `writeState`가 이 함수를 쓴다(포맷 드리프트 금지). */
 export function serializeState(state: unknown): string {
@@ -73,6 +74,7 @@ export function commitStateCheckpoint(args: StateCheckpointArgs): boolean {
 
   // 🔴 pathspec 커밋 — 이 경로만. 사용자가 stage해 둔 코드/문서는 인덱스에 그대로 남는다.
   gitFn(['add', '--', stateRel])
-  gitFn(['commit', '-m', `chore(${ticketId}): state checkpoint — ${reason}`, '--', stateRel])
+  // REQ-2026-085 DEC-6: 메시지에 부기 trailer만 더한다 — pathspec·순서는 그대로다.
+  gitFn(['commit', '-m', bookkeepingMessage(`chore(${ticketId}): state checkpoint — ${reason}`), '--', stateRel])
   return true
 }

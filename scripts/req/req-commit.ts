@@ -25,6 +25,8 @@ import {
   type WorkflowState,
 } from './review-codex'
 import { isArchiveFileName } from './lib/scratch'
+// REQ-2026-085: 도구가 만든 부기 커밋 표식(leaf — 순환 없음).
+import { bookkeepingMessage } from './lib/bookkeeping'
 // REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
 import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { LEDGER_BASENAME } from './lib/review-ledger'
@@ -651,7 +653,8 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     git(['add', ...archivePaths, `${ctx.ticketRel}/responses/approvals.jsonl`, ...ledgerAdd, ...devCompleteAdd])
     const choreLeak = stagedNames().filter((p) => !p.startsWith(`${ctx.ticketRel}/responses/`))
     if (choreLeak.length) throw new Error(`evidence 커밋에 responses 외 staged 금지(코드/state 누수): ${choreLeak.join(', ')}`)
-    git(['commit', '-m', `chore(${ctx.state.id}): evidence-finalize — ${ctx.ev.review_kind} ${ctx.ev.phase_id ?? ''} 아카이브·approvals.jsonl${devCompleteAdd.length ? '·dev-complete' : ''}`])
+    // REQ-2026-085 DEC-6: 메시지에 부기 trailer만 더한다 — 스테이징 범위는 그대로다.
+    git(['commit', '-m', bookkeepingMessage(`chore(${ctx.state.id}): evidence-finalize — ${ctx.ev.review_kind} ${ctx.ev.phase_id ?? ''} 아카이브·approvals.jsonl${devCompleteAdd.length ? '·dev-complete' : ''}`)])
     // 🔴 발행 후 HEAD-only 재검증(DEC-B3 step 4): 발행했으면 HEAD blob만으로 dev-complete가 성립해야 한다.
     if (devCompleteAdd.length) verifyDevCompleteAtHead(ctx)
   } else {
