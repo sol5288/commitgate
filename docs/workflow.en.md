@@ -228,6 +228,51 @@ is issued, `delivery` at `delivery approve`. Once consumed, the next scope needs
 > The timestamp is read from the **real clock**. Before this command you had to hand-edit `state.json`,
 > and that let the timestamp be fabricated.
 
+## Seeing only code commits in the history
+
+CommitGate writes the ledger, the evidence, and the state as **separate commits** for every review and
+every phase. That is what keeps the record of "a call was attempted" even when the call fails. The price
+is history density — in one measured stretch, **79 of 108 commits (73%) were bookkeeping** and only 23
+were actual code.
+
+Squashing them would break that durability, so instead every tool-made commit carries a trailer.
+
+```
+chore(REQ-2026-085): state checkpoint — design 승인
+
+CommitGate-Bookkeeping: true
+```
+
+To see only code commits:
+
+```bash
+git log --oneline --invert-grep --grep=^CommitGate-Bookkeeping:\ true
+```
+
+- The marker is on **tool-made commits only**. A `chore(REQ-…)` commit you wrote by hand still shows up
+  (that is why this is a trailer and not a subject convention).
+- Your own source commits from `req:commit -m "…"` **do not carry it** — those are code commits.
+- ⚠️ The marker exists only on commits made **from 0.13.0 onward**. Older history is not filtered by this.
+
+## When finished tickets have not been merged — D25
+
+`req:doctor` counts tickets that are **closed (`dev-complete`) but have not reached the trunk**.
+
+```
+[req:doctor] WARN D25: 종결됐지만 trunk(main)에 없는 티켓 3건: REQ-2026-070, REQ-2026-071, REQ-2026-072 — …
+```
+
+As these pile up, each branch becomes an ancestor of the next, and you can no longer **merge them out of
+order or revert just one**. That is why seeing it early matters.
+
+- The verdict is based on whether the **committed close proof** (`responses/ticket-close.jsonl`) is in the
+  trunk tree. It stays correct even after you delete the merged branch.
+- The ticket currently being checked is not counted (a just-finished ticket being absent from trunk is normal).
+- It is **a WARN and blocks nothing.** When to merge is decided by `stopGate` and executed by a human.
+- The trunk name is `trunkBranch` in `req.config.json` (default `"main"`). Set it to `null` to turn D25 off.
+  If the ref does not exist locally the check passes silently — a noisy false positive would train you to
+  ignore the whole doctor output.
+
 ## Command Cheat Sheet
 
 | Command | Purpose |

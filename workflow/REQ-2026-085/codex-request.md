@@ -16,6 +16,19 @@
 - **phase-4**: `req:doctor` D25 — 종결됐지만 trunk에 도달하지 않은 티켓을 WARN. 판정 근거는 **trunk 트리의 close proof 파일**(브랜치 존재 아님).
 - **phase-5**: 문서(읽기 명령) + CHANGELOG.
 
+## 🔴 진행 상태 — 이 diff는 phase-5만 담는다
+
+phase 리뷰는 **해당 phase의 staged diff만** 본다. 앞 phase는 이미 커밋돼 이 diff에 나타나지 않으므로
+"구현되지 않았다"고 읽지 말 것. 아래는 **작업 트리에서 직접 확인**할 수 있다.
+
+| phase | 상태 | 커밋 | 확인할 파일 |
+|---|---|---|---|
+| phase-1 dead-state-phase | ✅ 커밋됨 | `f3dbf5d4` | `scripts/req/req-new.ts`의 `buildInitialState`(phase 미방출) · `review-codex.ts`의 `loadState`·`contextPhase` · `req-doctor.ts`의 D11(조건 삭제) |
+| phase-2 bookkeeping-marker-core | ✅ 커밋됨 | `bade6f50` | `scripts/req/lib/bookkeeping.ts`(신설) · `lib/state-checkpoint.ts` · `lib/evidence.ts` · `req-commit.ts` |
+| phase-3 bookkeeping-marker-lifecycle | ✅ 커밋됨 | `733ed2ee` | `req-close.ts`·`req-rebind.ts`·`req-reconstruct.ts`·`req-review-exception.ts`·`bin/delivery.ts` · `tests/unit/bookkeeping.test.ts`의 전수 스캔 |
+| phase-4 unmerged-warning | ✅ 커밋됨 | `b1d02374` | `req-doctor.ts`의 `unmergedClosedTickets`·D25 · `lib/config.ts`의 `trunkBranch` · `workflow/req.config.schema.json` |
+| **phase-5 docs-changelog** | **🔎 지금 리뷰 대상** | (이 diff) | `docs/workflow.md` · `docs/workflow.en.md` · `CHANGELOG.md` |
+
 ## 리뷰 포인트
 
 - **D11 축소의 정당성**: 런타임 어디에도 `state.phase`에 `'DONE'`을 쓰는 곳이 없다는 전제가 맞는가. 맞다면 정상 경로 판정은 불변이고 위조 경로만 닫힌다. 틀리다면 이 변경은 정상 티켓을 막는다 — **이 REQ에서 가장 위험한 지점**이다.

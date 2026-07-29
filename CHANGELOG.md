@@ -4,6 +4,59 @@
 
 ## Unreleased
 
+> **REQ-2026-085는 다섯 커밋으로 나뉘어 들어왔습니다.** 아래 항목의 구현은 이 커밋이 아니라 **같은 브랜치의 앞선 커밋**에 있고, 작업 트리의 해당 파일에서 지금 바로 확인할 수 있습니다.
+>
+> | phase | 구현 커밋 | 확인할 파일 |
+> |---|---|---|
+> | phase-1 (죽은 state.phase 제거) | `f3dbf5d4` | `scripts/req/req-new.ts`의 `buildInitialState` · `scripts/req/review-codex.ts`의 `loadState`·`contextPhase` · `scripts/req/req-doctor.ts`의 D11 |
+> | phase-2 (부기 표식 — 고빈도) | `bade6f50` | `scripts/req/lib/bookkeeping.ts`(신설) · `lib/state-checkpoint.ts` · `lib/evidence.ts` · `req-commit.ts` |
+> | phase-3 (부기 표식 — lifecycle) | `733ed2ee` | `scripts/req/req-close.ts`·`req-rebind.ts`·`req-reconstruct.ts`·`req-review-exception.ts` · `bin/delivery.ts` · `tests/unit/bookkeeping.test.ts`의 전수 스캔 |
+> | phase-4 (D25) | `b1d02374` | `scripts/req/req-doctor.ts`의 `unmergedClosedTickets`·D25 · `scripts/req/lib/config.ts`의 `trunkBranch` · `workflow/req.config.schema.json` |
+> | phase-5 (문서·CHANGELOG) | **이 커밋** | `docs/workflow.md` · `docs/workflow.en.md` · 이 파일 |
+
+- 🔴 **`req:doctor`가 "끝났는데 아직 병합 안 된 티켓"을 알려줍니다 — D25** (REQ-2026-085).
+
+  소비 repo 실측에서 **`dev-complete`까지 정상 종결된 티켓 6개가 15시간 동안 trunk 밖에 쌓여** 있었습니다.
+  게다가 각 브랜치가 다음 브랜치의 조상이라 **순서를 바꿔 병합하거나 하나만 되돌릴 수 없는** 상태였습니다.
+  `stopGate: "merge"`는 "병합은 사람이 한다"는 선언인데, **도구는 그 사람이 실제로 했는지 어디서도 보지
+  않았습니다.** 사람이 `git branch --merged`를 직접 치기 전에는 알 길이 없었습니다.
+
+  판정 근거는 **커밋된 종결 증거**(`responses/ticket-close.jsonl`)가 trunk 트리에 있는가입니다 —
+  병합 후 브랜치를 지우는 정상 운영에서도 오탐이 없습니다. 검사 중인 티켓 자신은 세지 않습니다.
+
+  **WARN일 뿐 아무것도 막지 않습니다.** trunk 이름은 `req.config.json`의 `trunkBranch`(기본 `"main"`)이고,
+  `null`이면 꺼집니다. 로컬에 그 ref가 없으면 조용히 통과합니다 — 오탐은 진짜 경고까지 죽입니다.
+
+- **`git log`에서 코드 커밋만 볼 수 있습니다** (REQ-2026-085).
+
+  실측 구간에서 108커밋 중 **79개(73%)가 부기 커밋**이었고 실제 코드는 23개(21%)였습니다. 부기 커밋 수는
+  내구성의 대가라 **줄이지 않았습니다**(원장은 외부 호출 *전에* 커밋돼야 실패한 시도가 기록에 남습니다).
+  대신 도구가 만드는 커밋 **11자리 전부**에 trailer를 답니다.
+
+  ```bash
+  git log --oneline --invert-grep --grep=^CommitGate-Bookkeeping:\ true
+  ```
+
+  subject 규약(`chore(REQ-…)`)이 아니라 trailer인 이유는 **사람도 같은 subject를 쓰기 때문**입니다 —
+  trailer라야 손으로 쓴 커밋이 함께 숨지 않습니다. `req:commit -m "…"`으로 만드는 소스 커밋에는 붙지 않습니다.
+  테스트가 소스를 전수 스캔해 커밋 자리 하나라도 빠지면 실패합니다.
+
+  ⚠️ 표식은 **이 릴리스 이후 커밋에만** 있습니다. 이전 히스토리는 이 필터로 걸러지지 않습니다.
+
+- **죽은 `state.phase`를 제거했습니다 — 리뷰 프롬프트 오염과 D11 우회로가 함께 사라집니다** (REQ-2026-085).
+
+  `req:new`가 `phase: "INTAKE"`를 한 번 쓰고 그 뒤 아무도 갱신하지 않아, **모든 티켓이 영원히 `INTAKE`**였습니다.
+  단순히 죽어 있던 게 아닙니다:
+
+  1. 리뷰 프롬프트의 Review Context가 이 값을 실어 **매 호출마다 리뷰어에게 `- phase: INTAKE`라는
+     거짓 정보**를 토큰 써서 보냈습니다. 이제 진행 중인 phase(phase 리뷰면 그 대상, design 리뷰면 `current_phase`)가 들어갑니다.
+  2. 🔴 **D11이 이 값으로 열렸습니다.** `phase !== 'DONE'` 조건이 앞에 붙어 있었는데 런타임은 `'DONE'`을
+     어디에도 쓰지 않으므로 정상 경로에서는 늘 참 — 아무 기능이 없었습니다. 그런데 검사는 **워킹
+     `state.json`**을 읽으므로, 손으로 `"phase": "DONE"`을 써 넣으면 `main` 위에서도 D11이 통과했습니다.
+     조건을 없애 그 위조 경로만 닫았습니다. **정상 경로 판정은 완전히 동일합니다.**
+
+  기존 티켓의 `state.json`에 값이 남아 있어도 무해합니다(읽는 코드가 없습니다). 마이그레이션은 없습니다.
+
 > **REQ-2026-084는 세 커밋으로 나뉘어 들어왔습니다.** 아래 항목의 구현은 이 커밋이 아니라 **같은 브랜치의 앞선 커밋**에 있고, 작업 트리의 해당 파일에서 지금 바로 확인할 수 있습니다.
 >
 > | phase | 구현 커밋 | 확인할 파일 |
