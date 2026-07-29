@@ -3,14 +3,14 @@
   "branch": "feat/req-2026-085-workflow-observability",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": "019fab66-8ed0-7d12-a61f-98100c2a7443",
-  "review_base_sha": "b131d29cfc6ebbe8afd2ea8769c493dc21081609",
-  "review_diff_hash": "a3cbdcf942ab9059a8b2eb9fb58f56bfa7a69080",
+  "codex_thread_id": "019fab77-ba7b-7293-a4da-754752d76888",
+  "review_base_sha": "628bfafb535d0fe4037863acd1fe1b64df834ddf",
+  "review_diff_hash": "ad3ee53a9c9f66a115beedc73b288f468f5d306b",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "fe8835e065e83e9e03bfa9cc919dcbcd9841e173376efe36661667505735aff9",
-  "current_phase": "phase-2-bookkeeping-marker-core",
+  "current_phase": "phase-3-bookkeeping-marker-lifecycle",
   "phases": [
     {
       "id": "phase-1-dead-state-phase",
@@ -22,7 +22,7 @@
     },
     {
       "id": "phase-3-bookkeeping-marker-lifecycle",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-4-unmerged-warning",
@@ -57,6 +57,14 @@
       "phase_id": "phase-2-bookkeeping-marker-core",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-bookkeeping-marker-lifecycle#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-bookkeeping-marker-lifecycle",
+      "attempts": 3,
+      "closed_reason": "approved",
+      "void_attempts": 1
     }
   ],
   "design_baseline": {
@@ -79,12 +87,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-bookkeeping-marker-core",
+    "phase_id": "phase-3-bookkeeping-marker-lifecycle",
     "outcome": "approved",
-    "compare_hash": "3ad150015a43f90433666be172be7f34d2e05856af9ed61884599a571d53d994",
+    "compare_hash": "cebb89bb7e7a7d65e8583c7b2e8bbf8d35b467ffa0618a2047302c7c7a8176ae",
     "count": 1,
     "errors": [],
-    "at": "2026-07-29T01:04:52.613Z",
+    "at": "2026-07-29T01:23:24.842Z",
     "findings": [],
     "elided_count": 0
   },
@@ -100,6 +108,12 @@
       "phase_id": "phase-2-bookkeeping-marker-core",
       "consumed_by_commit_sha": "bade6f500a2af2c748fad62729e4c2f19220d303",
       "approval_consumed_at": "2026-07-29T01:05:05.788Z"
+    },
+    {
+      "approved_tree": "ad3ee53a9c9f66a115beedc73b288f468f5d306b",
+      "phase_id": "phase-3-bookkeeping-marker-lifecycle",
+      "consumed_by_commit_sha": "733ed2ee8824ea00dc34cf80f2eb493622a315fe",
+      "approval_consumed_at": "2026-07-29T01:23:32.915Z"
     }
   ],
   "user_commit_confirmed": null
