@@ -889,3 +889,31 @@ describe('[REQ-2026-086] D18은 WARN 상한을 유지한다', () => {
     expect(lvl(warn, 'D18')).toBe('WARN')
   })
 })
+
+// ───────────── D26: 낡은 design_ref 결속 사전 안내 (REQ-2026-088) ──
+describe('[REQ-2026-088] D26 — 결속이 끊긴 phase 사전 경고', () => {
+  it('🔴 DEC-4: 어떤 입력에서도 FAIL이 아니다 — FAIL이면 재결속에 필요한 phase를 커밋조차 못 하는 교착이 된다', () => {
+    for (const v of [undefined, [], ['a'], ['a', 'b', 'c', 'd', 'e']]) {
+      const checks = runChecks(mk({ staleBindingLines: v }))
+      expect(lvl(checks, 'D26'), `staleBindingLines=${JSON.stringify(v)}`).not.toBe('FAIL')
+      expect(checks.filter((c) => c.id === 'D26' && c.level === 'FAIL')).toEqual([])
+    }
+  })
+
+  it('미계산(undefined)·결속 온전([])은 OK', () => {
+    expect(lvl(runChecks(mk({})), 'D26')).toBe('OK')
+    expect(lvl(runChecks(mk({ staleBindingLines: [] })), 'D26')).toBe('OK')
+  })
+
+  it('안내 줄이 있으면 WARN이고 그 내용이 그대로 실린다', () => {
+    const lines = [
+      '설계 재승인으로 앞선 phase의 결속이 끊겼습니다(2개) — 재결속하면 종결됩니다.',
+      'npx commitgate req:rebind REQ-2026-001 --phase p1 --confirm "rebind REQ-2026-001 p1" --run',
+    ]
+    const checks = runChecks(mk({ staleBindingLines: lines }))
+    expect(lvl(checks, 'D26')).toBe('WARN')
+    const msg = checks.find((c) => c.id === 'D26')?.msg ?? ''
+    expect(msg).toContain('req:rebind REQ-2026-001 --phase p1')
+    expect(msg).toContain('--confirm "rebind REQ-2026-001 p1"') // 실행 가능한 명령 그대로
+  })
+})

@@ -7,6 +7,7 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   resolveNext,
+  staleBindingNotice,
   mentionsMember,
   nextPhaseId,
   phaseModelProblems,
@@ -26,6 +27,7 @@ import {
   type NextTarget,
 } from '../../scripts/req/req-next'
 import { captureDesignBinding } from '../../scripts/req/review-codex'
+import { recoveryGuidance } from '../../scripts/req/lib/close-proof'
 import type { WorkflowState, SeriesRecord } from '../../scripts/req/review-codex'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
 
@@ -1332,5 +1334,98 @@ describe('[req:next] DEC-18 기본값 완화가 HIGH 백스톱을 건드리지 �
       phaseCommitAutoApprove: 'low-only',
     })
     expect(resolveNext(missing).kind).toBe('AWAIT_HUMAN')
+  })
+})
+
+// ───────────── REQ-2026-088: 낡은 design_ref 결속 사전 안내 ──
+describe('[REQ-2026-088] staleBindingNotice — 진행 중 사전 안내', () => {
+  const line = (o: Record<string, unknown>): string => JSON.stringify(o)
+  /** design 2회 승인 + phase 2개(첫 승인에 결속) → phase 2개가 미결속. */
+  const strandedManifest = [
+    line({ kind: 'design', design_hash: 'AAA' }),
+    line({ kind: 'phase', phase_id: 'p1', phase_design_ref: 'AAA' }),
+    line({ kind: 'phase', phase_id: 'p2', phase_design_ref: 'AAA' }),
+    line({ kind: 'design', design_hash: 'BBB' }),
+    line({ kind: 'phase', phase_id: 'p3', phase_design_ref: 'BBB' }),
+  ].join('\n') + '\n'
+  /** 재승인 없음 → 전부 결속. */
+  const cleanManifest = [
+    line({ kind: 'design', design_hash: 'AAA' }),
+    line({ kind: 'phase', phase_id: 'p1', phase_design_ref: 'AAA' }),
+  ].join('\n') + '\n'
+  /** phase_design_ref 없는 레거시 행 → rebind 불가 → migrate 안내여야 한다. */
+  const legacyManifest = [
+    line({ kind: 'design', design_hash: 'AAA' }),
+    line({ kind: 'phase', phase_id: 'p1' }),
+    line({ kind: 'design', design_hash: 'BBB' }),
+  ].join('\n') + '\n'
+
+  it('미결속 phase가 있으면 rebind 명령(확인 문장 포함)을 안내한다', () => {
+    const lines = staleBindingNotice('REQ-2026-088', strandedManifest)
+    expect(lines.length).toBeGreaterThan(0)
+    expect(lines.join('\n')).toContain('req:rebind REQ-2026-088 --phase p1')
+    expect(lines.join('\n')).toContain('--confirm "rebind REQ-2026-088 p1"')
+    expect(lines.join('\n')).toContain('--phase p2')
+    expect(lines.join('\n')).not.toContain('--phase p3') // 현재 design_ref에 결속된 것은 대상 아님
+  })
+
+  it('🔴 R5: 안내 문구가 recoveryGuidance 산출과 동일하다(재구현 금지)', () => {
+    const expected = recoveryGuidance({ ticketId: 'REQ-2026-088', unboundPhaseIds: ['p1', 'p2'], rebindablePhaseIds: ['p1', 'p2'] }).lines
+    const got = staleBindingNotice('REQ-2026-088', strandedManifest)
+    // 첫 줄은 이 REQ가 얹는 도입부, 나머지는 생성기 산출 그대로여야 한다.
+    expect(got.slice(1)).toEqual(expected)
+  })
+
+  it('🔴 R7: 결속이 온전하면 한 줄도 추가하지 않는다', () => {
+    expect(staleBindingNotice('REQ-2026-088', cleanManifest)).toEqual([])
+  })
+
+  it('매니페스트 미계산·부재·파손이면 무동작', () => {
+    expect(staleBindingNotice('X', undefined)).toEqual([])
+    expect(staleBindingNotice('X', null)).toEqual([])
+    expect(staleBindingNotice('X', '')).toEqual([])
+    expect(staleBindingNotice('X', '{not json\n')).toEqual([])
+  })
+
+  it('🔴 R6: phase_design_ref 없는 레거시는 rebind가 아니라 --migrate를 권한다', () => {
+    const lines = staleBindingNotice('REQ-2026-088', legacyManifest).join('\n')
+    expect(lines).toContain('--migrate')
+    expect(lines).not.toContain('req:rebind')
+  })
+})
+
+describe('[REQ-2026-088] resolveNext — 액션은 그대로, 진단만 얹는다', () => {
+  const strandedManifest =
+    [
+      JSON.stringify({ kind: 'design', design_hash: 'AAA' }),
+      JSON.stringify({ kind: 'phase', phase_id: 'p1', phase_design_ref: 'AAA' }),
+      JSON.stringify({ kind: 'design', design_hash: 'BBB' }),
+    ].join('\n') + '\n'
+
+  it('🔴 R3: kind·detail·command가 바뀌지 않는다(대조군 비교)', () => {
+    const base = baseInput({ hasStagedChanges: true })
+    const without = resolveNext(base)
+    const withNotice = resolveNext({ ...base, committedManifestText: strandedManifest })
+    expect(withNotice.kind).toBe(without.kind)
+    expect(withNotice.detail).toBe(without.detail)
+    expect(withNotice.command).toEqual(without.command)
+    // 대조군이 실제로 안내를 못 받았어야 이 비교가 의미 있다.
+    expect(withNotice.diagnostics?.length ?? 0).toBeGreaterThan(without.diagnostics?.length ?? 0)
+  })
+
+  it('기존 diagnostics를 지우지 않고 뒤에 덧붙인다', () => {
+    // G3(예산 소진)는 diagnostics를 이미 3줄 낸다 — 그 뒤에 안내가 붙어야 한다.
+    const state = baseState({
+      review_series: [{ series_id: 'phase:p1#1', review_kind: 'phase', phase_id: 'p1', attempts: 5, closed_reason: null }],
+    } as Partial<WorkflowState>)
+    const a = resolveNext(baseInput({ state, hasStagedChanges: true, committedManifestText: strandedManifest }))
+    const d = a.diagnostics ?? []
+    expect(d.some((x) => x.includes('판정 회차'))).toBe(true) // 기존 진단 보존
+    expect(d.some((x) => x.includes('req:rebind'))).toBe(true) // 새 안내 추가
+  })
+
+  it('committedManifestText 미지정이면 현행과 완전히 동일하다(무회귀)', () => {
+    const base = baseInput({ hasStagedChanges: true })
+    expect(resolveNext(base)).toEqual(resolveNext({ ...base, committedManifestText: undefined }))
   })
 })

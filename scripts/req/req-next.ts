@@ -24,6 +24,9 @@ import { loadConfig, buildScriptInvocation, type PackageManager } from './lib/co
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
+// REQ-2026-088 DEC-1: 판정·안내를 재구현하지 않는다 — intake·req:close --migrate와 **같은 함수**를 쓴다.
+import { splitUnboundPhases, designHashFromManifest } from './lib/evidence'
+import { recoveryGuidance } from './lib/close-proof'
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { reviewScratchPaths } from './lib/scratch'
 import { deliveryGateVerdict, deliveryRecordProblems, type DeliveryRecord } from './lib/delivery'
@@ -160,6 +163,12 @@ export interface NextInput {
   currentSemanticIdentity: string | null
   /** REQ-2026-028 A-2a: review 예산(G3 escalated 판정용). main이 cfg에서 채운다. */
   reviewBudget: ReviewBudget
+  /**
+   * REQ-2026-088 DEC-3: **커밋된** 승인 매니페스트(HEAD blob) 본문. `main()`이 intake와 같은 원천에서 채운다.
+   * `undefined`/`null` = 미계산(legacy 2-arg 호출·테스트) → 사전 안내 없음(현행과 동일).
+   * 🔴 워킹트리 사본을 쓰지 않는다 — evidence-finalize 도중일 수 있어 판정 입력이 될 수 없다.
+   */
+  committedManifestText?: string | null
   /**
    * REQ-2026-037: phase 자동 커밋 정책. main이 `cfg.phaseCommit.autoApprove`로 채운다(항상 존재 — DEFAULTS=never).
    * 필수 필드다(선택 아님): 해소는 config 계층에서 끝나므로 resolveNext는 내부 기본값을 두지 않는다.
@@ -563,7 +572,48 @@ function gateRunCandidate(input: NextInput, cand: RunCandidate): NextAction {
  * 것보다, G2(`last_review.compare_hash`)로 바인딩 변경을 정확히 감지하는 편이 맞다. 회로차단기의 **강제**는
  * `review-codex`의 `shouldShortCircuitBlockedReview`에 그대로 남아 있다(codex 호출 없이 exit 2).
  */
+/**
+ * 🔴 REQ-2026-088 DEC-2: **낡은 design_ref 결속 사전 안내**(순수). 커밋된 매니페스트만 본다.
+ *
+ * 설계를 다시 승인하면 앞서 승인된 phase가 **옛 design_hash에 묶인 채** 남는다. `dev-complete`는 모든
+ * phase가 **현재** design_ref에 결속돼야 발행되므로(computeDevCompleteProof DEC-B5), 그대로 두면 마지막
+ * phase를 끝낸 뒤에야 티켓이 닫히지 않는 것을 알게 된다 — 그 시점엔 이미 `req:new`까지 막힌다.
+ *
+ * 🔴 **판정·안내를 다시 구현하지 않는다**(DEC-1). intake와 `req:close --migrate`가 쓰는
+ *    `splitUnboundPhases`+`recoveryGuidance` 그대로다 — 갈라지면 한쪽이 권한 명령을 다른 쪽이 거부한다
+ *    (REQ-2026-072가 고친 결함).
+ * 🔴 결속이 온전하면 **빈 배열**이다(DEC-5). 항상 뜨는 안내는 곧 무시되는 안내다.
+ * 🔴 매니페스트를 읽을 수 없으면(부재·legacy·파손) 조용히 빈 배열 — 이건 알림이지 게이트가 아니다.
+ */
+export function staleBindingNotice(ticketId: string, committedManifestText: string | null | undefined): string[] {
+  if (!committedManifestText) return []
+  let split: { unbound: string[]; rebindable: string[] }
+  try {
+    split = splitUnboundPhases(committedManifestText, designHashFromManifest(committedManifestText))
+  } catch {
+    return [] // 파손된 매니페스트의 처리는 intake(fail-closed)의 몫이다 — 여기서 추측하지 않는다.
+  }
+  if (split.unbound.length === 0) return []
+  const g = recoveryGuidance({ ticketId, unboundPhaseIds: split.unbound, rebindablePhaseIds: split.rebindable })
+  if (g.lines.length === 0) return []
+  return ['⚠️ 설계 재승인으로 앞선 phase의 결속이 끊겼습니다 — 지금 재결속하지 않으면 마지막 phase를 마쳐도 티켓이 닫히지 않습니다.', ...g.lines]
+}
+
+/**
+ * 🔴 REQ-2026-088 DEC-2: `resolveNextCore`의 판정을 **그대로 두고** 진단만 얹는 wrapper.
+ *
+ * `kind`·`detail`·`command`를 바꾸지 않는다 — 진행 중 결속이 끊긴 것은 그 자체로 오류가 아니고,
+ * 마지막에 `req:rebind`로 해소하면 된다. 여기서 막으면 REQ-2026-087이 되돌린 실수(진행을 막는 정지)의 반복이다.
+ * wrapper로 둔 이유: 게이트 분기가 여럿이라 분기마다 심으면 **누락**이 생긴다.
+ */
 export function resolveNext(input: NextInput): NextAction {
+  const action = resolveNextCore(input)
+  const notice = staleBindingNotice(String(input.state.id ?? ''), input.committedManifestText)
+  if (notice.length === 0) return action
+  return { ...action, diagnostics: [...(action.diagnostics ?? []), ...notice] }
+}
+
+function resolveNextCore(input: NextInput): NextAction {
   const { state, packageManager: pm, target } = input
 
   // 0. state를 신뢰할 수 없으면 **아무 판정도 하지 않는다**(phase-2 R1/R2/R3/R4 P2).
@@ -1003,6 +1053,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     })(),
     reviewBudget: cfg.reviewBudget,
     phaseCommitAutoApprove: cfg.phaseCommit.autoApprove,
+    // 🔴 REQ-2026-088 DEC-3: 사전 안내 입력 — intake와 **같은 원천**(HEAD blob)이다. 읽을 수 없으면 null → 무동작.
+    committedManifestText: createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(`${ticketRel}/responses/approvals.jsonl`),
     // REQ-2026-066 DEC-10: 묶음 판정은 **delivery ref**에서 읽는다(DEC-3). 실패는 조용히 null —
     // 묶음이 없는 것과 구분되지 않지만, 어느 쪽이든 "묶음 정지 대상 아님"이라 판정은 같다.
     stopGate: cfg.stopGate,

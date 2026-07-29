@@ -30,7 +30,10 @@ import {
 } from './review-codex'
 import { setupGateVerdict, collectGateFacts, type GateVerdict } from './lib/setup-gate'
 // REQ-2026-085 D25: 종결 증거 파일명(trunk 트리에서 이 경로의 존재로 "도달했는가"를 판정한다).
-import { CLOSE_PROOF_BASENAME } from './lib/close-proof'
+import { CLOSE_PROOF_BASENAME, recoveryGuidance } from './lib/close-proof'
+// REQ-2026-088 DEC-1: 판정은 intake와 같은 술어로. 재구현하면 두 안내가 갈라진다.
+import { splitUnboundPhases, designHashFromManifest } from './lib/evidence'
+import { createEvidencePorts } from './lib/evidence-ports'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { missingQuickstartFiles } from '../../bin/quickstart'
@@ -126,6 +129,12 @@ export interface DoctorInputs {
   unmergedClosedTickets?: string[]
   /** D25 메시지에 쓰는 trunk 이름(`undefined`면 판정 불가라 메시지에 도달하지 않는다). */
   trunkBranch?: string | null
+  /**
+   * D26(REQ-2026-088): 낡은 design_ref에 묶인 phase의 **복구 안내 줄**(`recoveryGuidance` 산출 그대로).
+   * `undefined` = 미계산 → OK. `[]` = 결속 온전 → OK. 비어있지 않음 → WARN(**절대 FAIL 아님**).
+   * 🔴 여기서 판정하지 않는다 — main()이 intake와 같은 술어로 계산해 넣는다(재구현 금지, DEC-1).
+   */
+  staleBindingLines?: string[]
   // D23(REQ-2026-056): frozen-lockfile 위생. 감지된 PM의 lockfile이 없거나 untracked면 재현 가능한 설치
   //   (`<pm> ci`/`--frozen-lockfile`)가 불가하다. undefined = 미계산(2-arg/legacy) → OK.
   //   'no-package-json'/'ok' → OK. 'missing'/'untracked' → **WARN**(FAIL 아님 — D19~D22 근거 동일).
@@ -612,6 +621,19 @@ export function runChecks(inp: DoctorInputs): Check[] {
     })
   }
 
+  // D26(REQ-2026-088): 설계 재승인으로 **앞선 phase의 결속이 끊긴** 상태 사전 안내.
+  //
+  // 🔴 **level 상한은 WARN — 어떤 입력에서도 FAIL이 아니다**(DEC-4). `req:commit`이 doctor를 하드 게이트로
+  //    spawn하므로 FAIL이면 **재결속에 필요한 남은 phase를 커밋조차 못 하는 교착**이 된다(재결속하려면
+  //    티켓을 끝내야 하는데 끝낼 수가 없다). 진행 중 결속이 끊긴 것 자체는 오류가 아니다 — 마지막에 해소하면 된다.
+  if (inp.staleBindingLines === undefined) {
+    c.push({ id: 'D26', level: 'OK', msg: 'design 결속 점검 불요(미계산·매니페스트 없음)' })
+  } else if (inp.staleBindingLines.length === 0) {
+    c.push({ id: 'D26', level: 'OK', msg: '모든 phase 증거가 현재 design 승인에 결속됨' })
+  } else {
+    c.push({ id: 'D26', level: 'WARN', msg: inp.staleBindingLines.join('\n   ') })
+  }
+
   return c
 }
 
@@ -912,6 +934,18 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     branchPrefix: cfg.branchPrefix,
     granularityMaxFiles: cfg.granularityMaxFiles,
     granularityGate: cfg.granularityGate,
+    // 🔴 REQ-2026-088 DEC-1·3: intake와 **같은 술어·같은 원천(HEAD blob)**. 여기서 판정을 재구현하지 않는다.
+    staleBindingLines: (() => {
+      const text = createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(`${ticketRel}/responses/approvals.jsonl`)
+      if (!text) return undefined
+      try {
+        const split = splitUnboundPhases(text, designHashFromManifest(text))
+        if (split.unbound.length === 0) return []
+        return recoveryGuidance({ ticketId: String(state.id ?? ''), unboundPhaseIds: split.unbound, rebindablePhaseIds: split.rebindable }).lines
+      } catch {
+        return undefined // 손상 매니페스트의 fail-closed 처리는 intake·D17의 몫이다.
+      }
+    })(),
     unmergedClosedTickets: unmerged,
     trunkBranch: cfg.trunkBranch,
     stagedTree: git(['write-tree']),
