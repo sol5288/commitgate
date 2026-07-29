@@ -2,18 +2,18 @@
   "id": "REQ-2026-086",
   "branch": "feat/req-2026-086-granularity-enforcement",
   "risk_level": "LOW",
-  "codex_thread_id": "019faba5-c2e8-7843-b8de-2126e3a56f26",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fabba-3e36-7403-b3bf-d54251d2ebb4",
+  "review_base_sha": "56582a11d59e0758b77622ad1d4cf6c018f9e926",
+  "review_diff_hash": "a79f9bfe2b5b814c2797ad168132a561240c6128",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "ff4fc6ff9596574f7dff44825a7264a162e10ec274429025362390af3a65ab14",
-  "current_phase": null,
+  "current_phase": "phase-1-granularity-preflight",
   "phases": [
     {
       "id": "phase-1-granularity-preflight",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-docs-changelog",
@@ -29,6 +29,13 @@
       "review_kind": "design",
       "phase_id": null,
       "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-granularity-preflight#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-granularity-preflight",
+      "attempts": 2,
       "closed_reason": "approved"
     }
   ],
@@ -51,14 +58,23 @@
     "design_hash": "ff4fc6ff9596574f7dff44825a7264a162e10ec274429025362390af3a65ab14"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-granularity-preflight",
     "outcome": "approved",
-    "compare_hash": "25820bf3f1b20f5759bc85c87fb2bd8560191f7a73c0d3ba343391540d4f6b96",
+    "compare_hash": "a0aaf02579865a55784a2b5be15d832b19f96817732b2506e31c409f28a120ff",
     "count": 1,
     "errors": [],
-    "at": "2026-07-29T02:14:20.899Z",
+    "at": "2026-07-29T02:36:34.270Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "a79f9bfe2b5b814c2797ad168132a561240c6128",
+      "phase_id": "phase-1-granularity-preflight",
+      "consumed_by_commit_sha": "2b205849accb72891d3928ecca9c491aaea456ba",
+      "approval_consumed_at": "2026-07-29T02:36:41.835Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
