@@ -142,6 +142,20 @@ Each one changes `design_hash`, and **phases approved earlier stay bound to the 
 proof (`dev-complete`) is only issued when every phase is bound to the current design, so in that state
 **the ticket never closes and you cannot open the next REQ.**
 
+**You are told before you hit the wall.** As soon as a phase becomes unbound, `req:next` appends the exact
+command to its diagnostics, and `req:doctor` reports the same thing as **D26**.
+
+```
+[req:next] AGENT  REQ-2026-086
+  Implement phase `phase-4` …
+  - ⚠️ 설계 재승인으로 앞선 phase의 결속이 끊겼습니다 — 지금 재결속하지 않으면 마지막 phase를 마쳐도 티켓이 닫히지 않습니다.
+  - npx commitgate req:rebind REQ-2026-086 --phase phase-1-x --confirm "rebind REQ-2026-086 phase-1-x" --run
+```
+
+This notice **blocks nothing.** Being unbound mid-flight is not itself an error — you resolve it at the end.
+It only makes sure the end is not the *first* time you hear about it. Tickets whose bindings are intact get
+**no extra lines at all.**
+
 ```sh
 # see the plan only — which phase is bound to an old hash
 npx commitgate req:rebind 2026-069 --phase phase-1-x

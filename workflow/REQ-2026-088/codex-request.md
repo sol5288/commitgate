@@ -25,3 +25,12 @@
 - **노이즈**: 결속이 온전한 티켓에 문구가 **하나도** 추가되지 않는가. 항상 뜨는 안내는 무시된다.
 - **레거시 처리**: `phase_design_ref`가 없는 phase에 `req:rebind`를 권하지 않는가(막다른 길 추가 금지) — `recoveryGuidance`의 migrate 분기에 위임했는가.
 - **무회귀**: `committedManifestText` 미지정(legacy 호출)이면 현행과 완전히 동일한가. `resolveNextCore`로 옮긴 본문이 로직 변경 없이 이름만 바뀌었는가.
+
+## 🔴 진행 상태 — 이 diff는 phase-2만 담는다
+
+| phase | 상태 | 커밋 | 확인할 파일 |
+|---|---|---|---|
+| phase-1 early-notice | ✅ 커밋됨 | `12e62271` | `scripts/req/req-next.ts`의 `staleBindingNotice`·`resolveNext` wrapper·`NextInput.committedManifestText` · `scripts/req/req-doctor.ts`의 D26·`staleBindingLines` · 각 테스트 |
+| **phase-2 docs-changelog** | **🔎 지금 리뷰 대상** | (이 diff) | `docs/workflow.md` · `docs/workflow.en.md` · `CHANGELOG.md` |
+
+phase-1은 1라운드 승인됐고, 소비 repo(yammy)의 실제 교착 티켓에서 rebind 명령 3줄이 정확히 출력되는 것을 확인했다.

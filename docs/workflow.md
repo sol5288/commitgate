@@ -138,6 +138,20 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 바뀌고 **앞서 승인된 phase는 옛 해시에 묶인 채** 남습니다. 완료 증거(`dev-complete`)는 모든 phase가
 현재 설계에 결속돼야 발행되므로, 그 상태에서는 **티켓이 종결되지 않고 다음 REQ도 열리지 않습니다.**
 
+**벽에 부딪히기 전에 알려줍니다.** 결속이 끊긴 phase가 생기면 `req:next`가 그때부터 진단 줄에
+실행할 명령을 그대로 붙이고, `req:doctor`도 **D26**으로 같은 사실을 냅니다.
+
+```
+[req:next] AGENT  REQ-2026-086
+  phase `phase-4`를 구현하고 …
+  - ⚠️ 설계 재승인으로 앞선 phase의 결속이 끊겼습니다 — 지금 재결속하지 않으면 마지막 phase를 마쳐도 티켓이 닫히지 않습니다.
+  - npx commitgate req:rebind REQ-2026-086 --phase phase-1-x --confirm "rebind REQ-2026-086 phase-1-x" --run
+```
+
+이 안내는 **아무것도 막지 않습니다.** 진행 중에 결속이 끊긴 것 자체는 오류가 아니고, 마지막에 재결속하면
+됩니다 — 다만 그 사실을 **마지막에 처음 알게 되지 않도록** 미리 보여줄 뿐입니다.
+결속이 온전한 티켓에는 이 줄이 **하나도 붙지 않습니다.**
+
 ```sh
 # 어느 phase가 옛 해시에 묶였는지 계획만 보기
 npx commitgate req:rebind 2026-069 --phase phase-1-x

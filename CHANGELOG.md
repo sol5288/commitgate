@@ -2,6 +2,40 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+> **REQ-2026-088은 두 커밋으로 나뉘어 들어왔습니다.** 아래 항목의 구현은 이 커밋이 아니라 **같은 브랜치의 앞선 커밋**에 있습니다.
+>
+> | phase | 구현 커밋 | 확인할 파일 |
+> |---|---|---|
+> | phase-1 (사전 안내) | `12e62271` | `scripts/req/req-next.ts`의 `staleBindingNotice`·`resolveNext` wrapper · `scripts/req/req-doctor.ts`의 D26 |
+> | phase-2 (문서) | **이 커밋** | `docs/workflow.md` · `docs/workflow.en.md` · 이 파일 |
+
+- 🔴 **설계를 다시 승인해 앞선 phase의 결속이 끊기면 이제 그 자리에서 알려줍니다** (REQ-2026-088).
+
+  소비 repo에서 실제로 일어난 일입니다. 한 티켓이 설계를 **네 번** 승인받는 동안 앞선 세 phase가 옛
+  `design_hash`에 묶인 채 남았고, **4개 phase를 전부 완료·커밋한 뒤에야** `dev-complete`가 발행되지 않는다는
+  것을 알게 됐습니다. 그 시점엔 다음 `req:new`까지 막힌 상태였습니다.
+
+  판정에 필요한 데이터는 **이미 커밋된 매니페스트에 전부 있었습니다.** 다만 그것을 읽는 곳이
+  `req:new` 차단 시점과 `req:close --migrate` 거부 시점 — **둘 다 이미 갇힌 뒤**뿐이었습니다.
+
+  이제 `req:next`가 진단 줄에 실행할 명령을 그대로 붙이고, `req:doctor`가 **D26**으로 같은 사실을 냅니다.
+
+  ```
+  - ⚠️ 설계 재승인으로 앞선 phase의 결속이 끊겼습니다 — 지금 재결속하지 않으면 마지막 phase를 마쳐도 티켓이 닫히지 않습니다.
+  - npx commitgate req:rebind REQ-2026-086 --phase phase-1-x --confirm "rebind REQ-2026-086 phase-1-x" --run
+  ```
+
+  🔴 **아무것도 막지 않습니다.** `req:next`의 판정(`kind`·`detail`·`command`)은 그대로고 진단만 늘어납니다.
+  D26도 **WARN 상한**입니다 — FAIL이면 재결속에 필요한 남은 phase를 커밋조차 못 하는 교착이 됩니다.
+  결속이 온전한 티켓에는 **한 줄도 붙지 않습니다.**
+
+  판정·안내는 `req:new` 차단과 `req:close --migrate` 거부가 쓰는 것과 **같은 함수**(`splitUnboundPhases` +
+  `recoveryGuidance`)입니다. 다시 구현하면 한쪽이 권한 명령을 다른 쪽이 거부하는 상태(REQ-2026-072가 고친
+  결함)가 재발합니다. `phase_design_ref`가 없는 레거시 phase에는 `req:rebind` 대신 `--migrate`를 권하는
+  분기도 그대로 물려받습니다.
+
 ## 0.13.1 (2026-07-29)
 
 - 🔴 **granularity 게이트 기본값을 `warn`으로 되돌립니다 — 워크플로가 면적 때문에 멈추지 않습니다** (REQ-2026-087).
