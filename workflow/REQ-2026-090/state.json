@@ -2,14 +2,14 @@
   "id": "REQ-2026-090",
   "branch": "feat/req-2026-090-dispatch-runcli-contract",
   "risk_level": "LOW",
-  "codex_thread_id": "019faedc-0ffe-7602-b324-b2416c60fb6a",
-  "review_base_sha": "6814548fed8f4698eed519e69f19514e4e257261",
-  "review_diff_hash": "70d162d8c9b03ae44f14e781b9819157aca8397a",
+  "codex_thread_id": "019faee7-ff00-7832-8541-0787c579c467",
+  "review_base_sha": "f4442afe2acf3d054bc824c9190d98777a258801",
+  "review_diff_hash": "b7743aa24751272560be605346b8f7b861a9dc22",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "6ac39e000170f3eb930cb6afbe59794e357a0decea640c0483dc7471cc4a08c3",
-  "current_phase": "phase-1-runcli-contract",
+  "current_phase": "phase-2-changelog",
   "phases": [
     {
       "id": "phase-1-runcli-contract",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-changelog",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -36,6 +36,13 @@
       "review_kind": "phase",
       "phase_id": "phase-1-runcli-contract",
       "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-changelog#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-changelog",
+      "attempts": 1,
       "closed_reason": "approved"
     }
   ],
@@ -59,12 +66,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-runcli-contract",
+    "phase_id": "phase-2-changelog",
     "outcome": "approved",
-    "compare_hash": "d5f1d5c0c52f898e48fe9969947cfc30758b721377aed8ac7ad69dcf9ac0de02",
+    "compare_hash": "2d372e53f56bf00152da804a97d81e0c9431e83cc070281821d4e0aae5f66326",
     "count": 1,
     "errors": [],
-    "at": "2026-07-29T17:12:08.026Z",
+    "at": "2026-07-29T17:24:51.892Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,6 +81,12 @@
       "phase_id": "phase-1-runcli-contract",
       "consumed_by_commit_sha": "018ff8b1b85e5c897b2341473f9ff32f3f80479d",
       "approval_consumed_at": "2026-07-29T17:12:18.802Z"
+    },
+    {
+      "approved_tree": "b7743aa24751272560be605346b8f7b861a9dc22",
+      "phase_id": "phase-2-changelog",
+      "consumed_by_commit_sha": "480693adc359af8901121c3474cde17a326b94eb",
+      "approval_consumed_at": "2026-07-29T17:25:01.662Z"
     }
   ],
   "user_commit_confirmed": null
