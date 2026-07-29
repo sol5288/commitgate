@@ -2,16 +2,63 @@
   "id": "REQ-2026-086",
   "branch": "feat/req-2026-086-granularity-enforcement",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019faba5-c2e8-7843-b8de-2126e3a56f26",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "ff4fc6ff9596574f7dff44825a7264a162e10ec274429025362390af3a65ab14",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-granularity-preflight",
+      "approved": false
+    },
+    {
+      "id": "phase-2-docs-changelog",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "8a4f333e081e1eafa7608eb19a5dc1d7266033a1",
+    "design": "7b2cace1529b53db7b75dfa6c7596bea15400a04",
+    "plan": "69f84c9b1e38e9b7828f5f58cbe26b21d9490b31"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-086/responses/design-r01-approved.json",
+    "response_sha256": "1e81a6cbb31e9c5a4c34962f9bdcae0d3d5a0af50c2fe665918d1af6c15f7a28",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "7bbb4880612452a59a46b17c5b7a9a3e9fc9c199",
+    "codex_thread_id": "019faba5-c2e8-7843-b8de-2126e3a56f26",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-29T02:14:20.899Z",
+    "design_hash": "ff4fc6ff9596574f7dff44825a7264a162e10ec274429025362390af3a65ab14"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "25820bf3f1b20f5759bc85c87fb2bd8560191f7a73c0d3ba343391540d4f6b96",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-29T02:14:20.899Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
