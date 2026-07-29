@@ -9,6 +9,7 @@ import {
   classifyInstallMode,
   safeSha256,
   unprotectedRepoRootScratch,
+  unmergedClosedTickets,
   type DoctorInputs,
   type Check,
 } from '../../scripts/req/req-doctor'
@@ -785,5 +786,59 @@ describe('req:doctor — D20 (자산 skew content-hash, REQ-2026-038)', () => {
   })
   it('safeSha256 — 부재 파일은 null(fail-safe → D20 OK 처리)', () => {
     expect(safeSha256(join(tmpdir(), 'cg-nonexistent-xyz-123.json'))).toBeNull()
+  })
+})
+
+// ───────────────────────────── D25: 미병합 누적 경고 (REQ-2026-085) ──
+describe('[REQ-2026-085] D25 — 종결됐지만 trunk에 없는 티켓', () => {
+  const paths = (...ids: string[]) =>
+    new Set(ids.map((id) => `workflow/${id}/responses/ticket-close.jsonl`))
+
+  it('DEC-1: 판정 근거는 trunk 트리의 close proof다 — 브랜치 존재가 아니다', () => {
+    // 070·071은 종결됐고 trunk에는 070만 있다 → 071만 미병합.
+    expect(
+      unmergedClosedTickets(['REQ-2026-070', 'REQ-2026-071'], paths('REQ-2026-070'), 'workflow', 'REQ-2026-099'),
+    ).toEqual(['REQ-2026-071'])
+  })
+
+  it('DEC-3: 대상 티켓(자기 자신)은 세지 않는다 — 방금 종결된 것이 trunk에 없는 건 정상이다', () => {
+    expect(unmergedClosedTickets(['REQ-2026-085'], new Set(), 'workflow', 'REQ-2026-085')).toEqual([])
+  })
+
+  it('전부 반영됐으면 빈 배열 · 정렬된 목록을 준다', () => {
+    expect(unmergedClosedTickets(['REQ-2026-070'], paths('REQ-2026-070'), 'workflow', 'X')).toEqual([])
+    expect(
+      unmergedClosedTickets(['REQ-2026-072', 'REQ-2026-070', 'REQ-2026-071'], new Set(), 'workflow', 'X'),
+    ).toEqual(['REQ-2026-070', 'REQ-2026-071', 'REQ-2026-072'])
+  })
+
+  it('ticketRoot가 config로 바뀌어도 경로를 맞춘다', () => {
+    const p = new Set(['tickets/REQ-2026-070/responses/ticket-close.jsonl'])
+    expect(unmergedClosedTickets(['REQ-2026-070'], p, 'tickets', 'X')).toEqual([])
+    expect(unmergedClosedTickets(['REQ-2026-070'], p, 'workflow', 'X')).toEqual(['REQ-2026-070'])
+  })
+
+  it('🔴 DEC-4: 어떤 입력에서도 FAIL이 아니다 — 알림이지 게이트가 아니다', () => {
+    for (const u of [undefined, [], ['REQ-2026-070'], ['A', 'B', 'C', 'D', 'E', 'F']]) {
+      const level = lvl(runChecks(mk({ unmergedClosedTickets: u, trunkBranch: 'main' })), 'D25')
+      expect(level, `unmerged=${JSON.stringify(u)}`).not.toBe('FAIL')
+    }
+  })
+
+  it('DEC-2: 판정 불가(undefined)는 조용히 통과 — 오탐으로 doctor 출력을 죽이지 않는다', () => {
+    expect(lvl(runChecks(mk({ unmergedClosedTickets: undefined })), 'D25')).toBe('OK')
+  })
+
+  it('미병합이 있으면 WARN + 목록에 REQ id가 실린다', () => {
+    const checks = runChecks(mk({ unmergedClosedTickets: ['REQ-2026-070', 'REQ-2026-071'], trunkBranch: 'main' }))
+    expect(lvl(checks, 'D25')).toBe('WARN')
+    const msg = checks.find((c) => c.id === 'D25')?.msg ?? ''
+    expect(msg).toContain('REQ-2026-070')
+    expect(msg).toContain('REQ-2026-071')
+    expect(msg).toContain('main')
+  })
+
+  it('전부 반영됐으면 OK', () => {
+    expect(lvl(runChecks(mk({ unmergedClosedTickets: [], trunkBranch: 'main' })), 'D25')).toBe('OK')
   })
 })

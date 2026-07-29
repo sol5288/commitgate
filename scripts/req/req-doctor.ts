@@ -7,7 +7,7 @@
  *
  * 사용: req:doctor <REQ-id>  |  req:doctor --ticket <dir>   (저장소 패키지매니저의 실행 형식으로)
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
@@ -29,6 +29,8 @@ import {
   type ApprovalEvidence,
 } from './review-codex'
 import { setupGateVerdict, collectGateFacts, type GateVerdict } from './lib/setup-gate'
+// REQ-2026-085 D25: 종결 증거 파일명(trunk 트리에서 이 경로의 존재로 "도달했는가"를 판정한다).
+import { CLOSE_PROOF_BASENAME } from './lib/close-proof'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { missingQuickstartFiles } from '../../bin/quickstart'
@@ -115,6 +117,13 @@ export interface DoctorInputs {
    * 🔴 이 값이 무엇이든 **WARN 상한**이다 — 차단은 doctor가 아니라 워크플로 verb의 preflight가 한다.
    */
   setupGate?: GateVerdict
+  /**
+   * D25(REQ-2026-085): 종결됐지만 trunk에 도달하지 않은 티켓 id들. `undefined` = 판정 불가·미계산 → OK.
+   * `[]` = 전부 반영됨 → OK. 비어있지 않음 → WARN(**절대 FAIL 아님**).
+   */
+  unmergedClosedTickets?: string[]
+  /** D25 메시지에 쓰는 trunk 이름(`undefined`면 판정 불가라 메시지에 도달하지 않는다). */
+  trunkBranch?: string | null
   // D23(REQ-2026-056): frozen-lockfile 위생. 감지된 PM의 lockfile이 없거나 untracked면 재현 가능한 설치
   //   (`<pm> ci`/`--frozen-lockfile`)가 불가하다. undefined = 미계산(2-arg/legacy) → OK.
   //   'no-package-json'/'ok' → OK. 'missing'/'untracked' → **WARN**(FAIL 아님 — D19~D22 근거 동일).
@@ -572,7 +581,55 @@ export function runChecks(inp: DoctorInputs): Check[] {
     })
   }
 
+  // D25(REQ-2026-085): **종결됐지만 trunk에 도달하지 않은 티켓** 누적 경고.
+  //
+  // 🔴 **level 상한은 WARN — 어떤 입력에서도 FAIL이 아니다**(DEC-4). 병합 시점은 `stopGate`가 정하고
+  //    사람이 실행한다. 이 검사는 *알림*이지 게이트가 아니다.
+  // 🔴 판정 불가(trunk ref 없음·미계산·비활성)는 **조용히 통과**한다(DEC-2). trunk 이름이 다른 repo에
+  //    매번 빨간 줄을 내면 사람이 doctor 출력 전체를 무시하게 되고, 그러면 진짜 FAIL까지 죽는다.
+  if (inp.unmergedClosedTickets === undefined) {
+    c.push({ id: 'D25', level: 'OK', msg: '미병합 누적 점검 불요(미계산·trunk 없음·비활성)' })
+  } else if (inp.unmergedClosedTickets.length === 0) {
+    c.push({ id: 'D25', level: 'OK', msg: `종결 티켓이 모두 trunk(${inp.trunkBranch ?? '-'})에 반영됨` })
+  } else {
+    c.push({
+      id: 'D25',
+      level: 'WARN',
+      msg:
+        `종결됐지만 trunk(${inp.trunkBranch ?? '-'})에 없는 티켓 ${inp.unmergedClosedTickets.length}건: ` +
+        `${inp.unmergedClosedTickets.join(', ')} — 쌓일수록 브랜치가 서로의 조상이 되어 **순서를 바꿔 병합하거나 되돌릴 수 없게** 됩니다. 통합하거나 정리하세요.`,
+    })
+  }
+
   return c
+}
+
+/**
+ * D25 판정(REQ-2026-085 DEC-1·3, 순수).
+ *
+ * **왜 브랜치가 아니라 커밋된 close proof를 보는가**(R2): 병합 후 브랜치를 지우는 것이 정상 운영이다.
+ * 브랜치 존재로 판정하면 정리를 잘한 repo가 계속 경고를 받는다. close proof는 **커밋된 증거**라
+ * 병합되면 trunk 트리에 반드시 있다.
+ *
+ * **왜 대상 티켓을 빼는가**(DEC-3): doctor는 티켓 하나를 대상으로 돈다. 방금 종결된 그 티켓이 아직
+ * trunk에 없는 것은 정상이다. 그것까지 세면 모든 REQ의 마지막 doctor가 WARN을 낸다.
+ *
+ * @param closedTicketIds 워킹트리에 close proof가 있는(= 도구가 "끝났다"고 판정한) 티켓 id
+ * @param trunkPaths      trunk 트리의 파일 경로 집합(`git ls-tree -r --name-only <trunk> -- <ticketRoot>`)
+ * @param ticketRoot      티켓 루트(repo-상대)
+ * @param selfTicketId    지금 doctor가 도는 대상 티켓(제외)
+ */
+export function unmergedClosedTickets(
+  closedTicketIds: readonly string[],
+  trunkPaths: ReadonlySet<string>,
+  ticketRoot: string,
+  selfTicketId: string,
+): string[] {
+  const root = toPosix(ticketRoot).replace(/\/+$/, '')
+  return closedTicketIds
+    .filter((id) => id !== selfTicketId)
+    .filter((id) => !trunkPaths.has(`${root}/${id}/responses/${CLOSE_PROOF_BASENAME}`))
+    .sort()
 }
 
 /** Windows 경로 구분자를 POSIX로. `setup-gate`는 repo-상대 경로를 `/` 기준으로 받는다. */
@@ -816,12 +873,35 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     }
   }
 
+  // D25(REQ-2026-085): trunk 도달 여부. `ls-tree` **1회**로 끝낸다 — 티켓마다 `git log`를 돌리면 80회다.
+  //   판정 불가(비활성·ref 없음·git 실패)는 undefined로 남겨 조용히 통과시킨다(DEC-2).
+  let unmerged: string[] | undefined
+  if (cfg.trunkBranch !== null) {
+    try {
+      git(['rev-parse', '--verify', '--quiet', `${cfg.trunkBranch}^{commit}`])
+      const trunkPaths = new Set(
+        git(['ls-tree', '-r', '--name-only', cfg.trunkBranch, '--', cfg.ticketRoot]).split('\n').map((l) => l.trim()).filter(Boolean),
+      )
+      const closed = existsSync(cfg.workflowDirAbs)
+        ? readdirSync(cfg.workflowDirAbs, { withFileTypes: true })
+            .filter((d) => d.isDirectory() && /^REQ-\d{4}-\d+$/.test(d.name))
+            .filter((d) => existsSync(join(cfg.workflowDirAbs, d.name, 'responses', CLOSE_PROOF_BASENAME)))
+            .map((d) => d.name)
+        : []
+      unmerged = unmergedClosedTickets(closed, trunkPaths, cfg.ticketRoot, String(state.id ?? ''))
+    } catch {
+      unmerged = undefined // trunk ref 없음 등 — 알림을 낼 근거가 없다.
+    }
+  }
+
   const inp: DoctorInputs = {
     state,
     currentBranch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
     branchExists: branchExistsLocal(typeof state.branch === 'string' ? state.branch : ''),
     branchPrefix: cfg.branchPrefix,
     granularityMaxFiles: cfg.granularityMaxFiles,
+    unmergedClosedTickets: unmerged,
+    trunkBranch: cfg.trunkBranch,
     stagedTree: git(['write-tree']),
     // `-z`: 경로 인용 없음(설계 D11) → core.quotePath 불필요. --untracked-files=all: `?? responses/` collapse 방지.
     statusEntries: parseStatusZ(git([...STATUS_Z_ARGS])),

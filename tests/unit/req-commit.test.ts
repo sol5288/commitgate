@@ -388,6 +388,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   lockfilePromptFull: false,
   setup: null,
   stopGate: 'phase',
+  trunkBranch: 'main',
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,

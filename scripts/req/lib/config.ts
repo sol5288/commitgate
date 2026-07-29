@@ -110,6 +110,8 @@ export interface RawConfig {
   setup?: SetupMarker
   /** REQ-2026-063: 멈춤 위치(의미 SSOT). 미지정 = `phaseCommit`에서 역파생하거나 DEFAULTS. */
   stopGate?: StopGate
+  /** REQ-2026-085: D25(미병합 누적 경고) 판정용 통합 브랜치. `null` = D25 비활성. 미지정 = DEFAULTS(`main`). */
+  trunkBranch?: string | null
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -132,6 +134,8 @@ export interface ResolvedConfig {
   setup: SetupMarker | null
   /** REQ-2026-063: 멈춤 위치. `phaseCommit`과 **항상 정합**(둘 중 하나가 다른 하나에서 파생된다). */
   stopGate: StopGate
+  /** REQ-2026-085: D25 판정용 통합 브랜치. `null` = D25 비활성. */
+  trunkBranch: string | null
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -196,6 +200,13 @@ export const DEFAULTS = {
   //    **안전 기본값을 완화하는 변경**이다 — 값을 핀하지 않은 소비자는 LOW phase가 사람 정지 없이
   //    자동 커밋된다. HIGH 위험 티켓은 어느 값에서도 매 phase 확인이다(userConfirmGate 백스톱).
   stopGate: 'req' as StopGate,
+  /**
+   * REQ-2026-085: D25(미병합 누적 경고)가 "도달했는가"를 판정하는 통합 브랜치.
+   * `null` = D25 비활성. 로컬에 이 ref가 없으면 **조용히 통과**한다 — D25는 알림이지 게이트가 아니라서,
+   * trunk 이름이 다른 repo에 매번 오탐을 내면 사람이 doctor 출력 전체를 무시하게 된다.
+   * `as ... | null`은 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
+   */
+  trunkBranch: 'main' as string | null,
 }
 
 /** ISO instant(UTC). `close-proof`의 `isValidIsoInstant`와 같은 형태를 스키마 수준에서 강제한다. */
@@ -209,6 +220,8 @@ export const CONFIG_SCHEMA = {
   additionalProperties: false,
   properties: {
     ticketRoot: { type: 'string', minLength: 1 },
+    // REQ-2026-085: null = D25 비활성. 문자열이면 minLength 1(빈 문자열은 "비활성"의 애매한 표현 → null을 쓰게 한다).
+    trunkBranch: { type: ['string', 'null'], minLength: 1 },
     schemaPath: { type: 'string', minLength: 1 },
     handoffPath: { type: ['string', 'null'] },
     // null = 의도적 비활성. 문자열이면 minLength 1(빈 문자열은 "비활성"의 애매한 표현 → 거부, null을 쓰게 한다).
@@ -364,6 +377,7 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
 
   const merged = {
     ticketRoot: raw.ticketRoot ?? DEFAULTS.ticketRoot,
+    trunkBranch: raw.trunkBranch === undefined ? DEFAULTS.trunkBranch : raw.trunkBranch,
     schemaPath: raw.schemaPath ?? DEFAULTS.schemaPath,
     handoffPath: raw.handoffPath !== undefined ? raw.handoffPath : DEFAULTS.handoffPath, // null = 명시적 비활성
     reviewPersonaPath:
