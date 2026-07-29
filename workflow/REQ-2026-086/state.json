@@ -2,14 +2,14 @@
   "id": "REQ-2026-086",
   "branch": "feat/req-2026-086-granularity-enforcement",
   "risk_level": "LOW",
-  "codex_thread_id": "019fabba-3e36-7403-b3bf-d54251d2ebb4",
-  "review_base_sha": "56582a11d59e0758b77622ad1d4cf6c018f9e926",
-  "review_diff_hash": "a79f9bfe2b5b814c2797ad168132a561240c6128",
+  "codex_thread_id": "019fabca-3abb-7542-93b1-752d8ddb5ecc",
+  "review_base_sha": "70b1de52e8279fe01d40e10bd48fa2ebe2baddf2",
+  "review_diff_hash": "05e4cf65642ff6ee6ff0ecb7106fc982bf858ae5",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "ff4fc6ff9596574f7dff44825a7264a162e10ec274429025362390af3a65ab14",
-  "current_phase": "phase-1-granularity-preflight",
+  "current_phase": "phase-2-docs-changelog",
   "phases": [
     {
       "id": "phase-1-granularity-preflight",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-docs-changelog",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -35,6 +35,13 @@
       "series_id": "phase:phase-1-granularity-preflight#1",
       "review_kind": "phase",
       "phase_id": "phase-1-granularity-preflight",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-docs-changelog#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-docs-changelog",
       "attempts": 2,
       "closed_reason": "approved"
     }
@@ -59,12 +66,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-granularity-preflight",
+    "phase_id": "phase-2-docs-changelog",
     "outcome": "approved",
-    "compare_hash": "a0aaf02579865a55784a2b5be15d832b19f96817732b2506e31c409f28a120ff",
+    "compare_hash": "ea63614d8dfa1126f043205c3bcd6f148d794caa727443ec462f527bf1bebbec",
     "count": 1,
     "errors": [],
-    "at": "2026-07-29T02:36:34.270Z",
+    "at": "2026-07-29T02:53:34.407Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,6 +81,12 @@
       "phase_id": "phase-1-granularity-preflight",
       "consumed_by_commit_sha": "2b205849accb72891d3928ecca9c491aaea456ba",
       "approval_consumed_at": "2026-07-29T02:36:41.835Z"
+    },
+    {
+      "approved_tree": "05e4cf65642ff6ee6ff0ecb7106fc982bf858ae5",
+      "phase_id": "phase-2-docs-changelog",
+      "consumed_by_commit_sha": "a0f474627e2d797550b48bf0df5b39ec0619e4fc",
+      "approval_consumed_at": "2026-07-29T02:53:43.669Z"
     }
   ],
   "user_commit_confirmed": null
