@@ -2,16 +2,63 @@
   "id": "REQ-2026-088",
   "branch": "feat/req-2026-088-stale-binding-early-notice",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fae3c-e4d8-76a3-9908-0f8cf8787428",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "b39abd368916e4792d3190996c08c4596e191942d95d781be086e22082dc73dc",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-early-notice",
+      "approved": false
+    },
+    {
+      "id": "phase-2-docs-changelog",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "6b7cc2d904836fb2c8623d37d36052a532befbe4",
+    "design": "9927a608e0266732c4559725059aadbb8161a8e2",
+    "plan": "950c1447bf51fb8dc64d07748a214042fd8153fb"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-088/responses/design-r01-approved.json",
+    "response_sha256": "d00a313eb11b9da5f532a185699fa7650ce3e2c0617657f7c0643900575089c6",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "9f32803647d1122b94ff28d886fddf794a8b1b2f",
+    "codex_thread_id": "019fae3c-e4d8-76a3-9908-0f8cf8787428",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-29T14:18:04.351Z",
+    "design_hash": "b39abd368916e4792d3190996c08c4596e191942d95d781be086e22082dc73dc"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "9b79c81de8e8e4d2164d484f5ea1c8389016090584cc3f9e487fa140192819eb",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-29T14:18:04.351Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
