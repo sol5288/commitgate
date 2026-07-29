@@ -276,7 +276,6 @@ export function runChecks(inp: DoctorInputs): Check[] {
   const c: Check[] = []
   const s = inp.state
   const branch = typeof s.branch === 'string' ? s.branch : ''
-  const phase = String(s.phase)
   const commitAllowed = s.commit_allowed === true
 
   // D2: state.branch == 현재 브랜치
@@ -343,8 +342,14 @@ export function runChecks(inp: DoctorInputs): Check[] {
     c.push({ id: 'D10', level: 'FAIL', msg: `unstaged/untracked 존재:\n  ${dirty.map(formatStatusEntry).join('\n  ')}` })
   else c.push({ id: 'D10', level: 'OK', msg: '워킹트리 클린(staged + 스크래치)' })
 
-  // D11: phase≠DONE인데 main 또는 비-<branchPrefix>* 브랜치(DEC-WF-020). branchPrefix=config(기본 feat/req-).
-  if (phase !== 'DONE' && (inp.currentBranch === 'main' || !branch.startsWith(inp.branchPrefix)))
+  // D11: main 또는 비-<branchPrefix>* 브랜치면 FAIL(DEC-WF-020). branchPrefix=config(기본 feat/req-).
+  //
+  // 🔴 REQ-2026-085 DEC-5b: 예전엔 `state.phase !== 'DONE' &&`가 앞에 붙어 있었다. 런타임은 `phase`에
+  //    `'DONE'`을 **어디서도 쓰지 않으므로**(전수 확인) 그 조건은 정상 경로에서 늘 참이었다 — 아무 기능이 없었다.
+  //    반면 runChecks는 **워킹 state.json**을 읽으므로, 손으로 `"phase": "DONE"`을 써 넣으면 main 위에서도
+  //    D11이 통과했다. 즉 죽은 필드로 게이트가 열리는 위조 경로였다. 조건을 없애 그것만 닫는다
+  //    (정상 경로 판정은 완전히 동일하다).
+  if (inp.currentBranch === 'main' || !branch.startsWith(inp.branchPrefix))
     c.push({
       id: 'D11',
       level: 'FAIL',

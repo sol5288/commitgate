@@ -100,7 +100,8 @@ export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | '
   return {
     id: reqId,
     branch,
-    phase: 'INTAKE',
+    // 🔴 REQ-2026-085 DEC-5.1: `phase: 'INTAKE'`를 더 이상 방출하지 않는다. 아무도 갱신하지 않아 모든 티켓이
+    //    영원히 INTAKE였고(죽은 필드), 그 값이 리뷰 프롬프트와 D11에까지 새어 나갔다. 정본은 current_phase·phases[].
     risk_level: risk,
     codex_thread_id: null,
     review_base_sha: null,

@@ -86,10 +86,17 @@ describe('req:new — 브랜치명/초기 state', () => {
   it('buildInitialState 기본값(BOM 없는 writeState로 기록될 객체)', () => {
     const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
     expect(s.id).toBe('REQ-2026-001')
-    expect(s.phase).toBe('INTAKE')
     expect(s.commit_allowed).toBe(false)
     expect(s.risk_level).toBe('LOW')
     expect(s.approved_diff_hash).toBe(null)
+  })
+
+  // 🔴 REQ-2026-085 DEC-5.1: 죽은 필드를 더 이상 방출하지 않는다. 키 **부재**를 단언한다 —
+  //    `toBeUndefined()`는 키가 `undefined` 값으로 있어도 통과하므로 직렬화 결과에도 없음을 확인한다.
+  it('[REQ-085 R4] buildInitialState는 죽은 state.phase를 방출하지 않는다', () => {
+    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
+    expect('phase' in s).toBe(false)
+    expect(Object.keys(JSON.parse(JSON.stringify(s)) as object)).not.toContain('phase')
   })
 
   it('[Phase2] buildInitialState: DEC-WF-027 design/phase 상태 필드 초기화', () => {

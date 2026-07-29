@@ -904,7 +904,12 @@ export function recordLastReview(
 
 export interface WorkflowState {
   id: string
-  phase: string
+  /**
+   * 🔴 **DEPRECATED(REQ-2026-085)** — 도구는 읽지도 쓰지도 않는다. `req:new`가 한 번 `'INTAKE'`를 쓰고
+   * 그 뒤 아무도 갱신하지 않아 모든 티켓이 영원히 `INTAKE`였다. 진행 상태의 정본은 `current_phase`·`phases[]`다.
+   * 옛 티켓의 state.json에 값이 남아 있으므로 **타입에서만 optional로 유지**한다(읽는 코드는 없다).
+   */
+  phase?: string
   branch?: string
   review_base_sha?: string | null
   design_approved?: boolean
@@ -1616,8 +1621,9 @@ export function loadState(ticketDir: string): WorkflowState {
     throw new Error(`state.json 파싱 실패: ${p} — ${(e as Error).message}`)
   }
   const s = raw as WorkflowState
-  if (!s || typeof s !== 'object' || !s.id || !s.phase)
-    throw new Error(`state.json 필수 필드(id, phase) 누락: ${p}`)
+  // REQ-2026-085 DEC-5.2: `phase`는 필수에서 뺐다 — 아무도 읽지 않는 값 때문에 티켓 로드가 실패할 이유가 없다.
+  // 옛 티켓은 값이 남아 있어도 무시되므로 그대로 로드된다(하위호환).
+  if (!s || typeof s !== 'object' || !s.id) throw new Error(`state.json 필수 필드(id) 누락: ${p}`)
   return s
 }
 
@@ -2322,7 +2328,10 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   // 프롬프트 블록 원천 — state 재할당(attempt 기록) **전** 원본에서 계산.
   const previousFindingsBlock = buildPreviousFindingsBlock(state, opts.kind, phaseId)
   const previousFindingsCountVal = previousFindingsCount(state, opts.kind, phaseId)
-  const originalPhase = state.phase
+  // 🔴 REQ-2026-085 DEC-5.3: 예전엔 `state.phase`를 넣어 **모든 프롬프트에 `- phase: INTAKE`**가 실렸다 —
+  //    아무도 갱신하지 않는 죽은 값이라 리뷰어에게 거짓 정보를 토큰 써서 보내는 셈이었다. 이제 진행 중인 phase다:
+  //    phase 리뷰면 그 대상 phase, design 리뷰면 티켓의 current_phase, 둘 다 없으면 `-`.
+  const contextPhase = phaseId ?? state.current_phase ?? '-'
   const previewPath = join(ticketDir, '.review-preview.txt')
 
   // 실제 approval binding으로 프롬프트를 짓는 helper(DRY-RUN·LIVE 공유). reviewBaseSha/reviewTree는 호출 시점 실제값.
@@ -2331,7 +2340,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       branch,
       reviewBaseSha: rbSha,
       reviewTree: rTree,
-      phase: originalPhase,
+      phase: contextPhase,
       // REQ-2026-013 P4: 직전 same-target NEEDS_FIX findings만 주입(교차-대상이면 null).
       previousFindingsToClose: previousFindingsBlock,
     }

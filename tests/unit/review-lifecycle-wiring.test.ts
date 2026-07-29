@@ -126,6 +126,44 @@ describe('[REQ-2026-054] dispatch lifecycle 배선(실 git near-e2e)', () => {
     }
   })
 
+  // ── REQ-2026-085 DEC-5.3: 리뷰 프롬프트가 죽은 `state.phase`를 더 이상 싣지 않는지 **실제 진입점**으로 확인 ──
+  // 🔴 setupRepo가 심는 state에는 `phase: 'INTAKE'`가 그대로 있다(옛 티켓 형태). 프롬프트 조립이 그 값을
+  //    읽지 않아야 한다 — 빌더 함수만 단위로 보면 배선이 살아 있어도 통과한다.
+  it('[REQ-085 R5] Review Context에 죽은 state.phase(INTAKE)가 실리지 않고 진행 중 phase가 들어간다', () => {
+    const { repo, ticket } = setupRepo({
+      evidence_durability_required: true,
+      current_phase: 'phase-7-live',
+      phases: [{ id: 'phase-7-live', approved: false }],
+    })
+    try {
+      // dry-run(--run 없음) — 외부 호출 없이 프롬프트만 조립해 미리보기로 떨군다.
+      reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo], { reviewer: undefined as never })
+      const preview = readFileSync(join(ticket, '.review-preview.txt'), 'utf8')
+      expect(preview).toContain('# Review Context')
+      expect(preview).toContain('- phase: phase-7-live') // design 리뷰 → current_phase
+      expect(preview).not.toContain('INTAKE') // 🔴 배선 지점
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('[REQ-085 R5] phase 리뷰는 대상 phase를 Review Context에 싣는다', () => {
+    const { repo, ticket } = setupRepo({
+      evidence_durability_required: true,
+      design_approved: true,
+      current_phase: 'phase-1-a',
+      phases: [{ id: 'phase-1-a', approved: false }],
+    })
+    try {
+      reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1-a', '--root', repo], { reviewer: undefined as never })
+      const preview = readFileSync(join(ticket, '.review-preview.txt'), 'utf8')
+      expect(preview).toContain('- phase: phase-1-a')
+      expect(preview).not.toContain('INTAKE')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   // ── REQ-2026-084 DEC-4: 정상 경로 invalid(호출 성공·판정 없음)가 void로 표시되는지 **실제 진입점**으로 확인 ──
   // 🔴 순수 함수(voidAttempt) 단위 테스트만으로는 배선이 끊겨도 통과한다 — mainImpl을 직접 돌려야 잡힌다.
   it('[REQ-084 R5] 정상 경로 invalid → void_attempts +1 · attempts 단조 · series는 열린 채', () => {

@@ -269,8 +269,19 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     expect(lvl(runChecks(mk({ currentBranch: 'main', state: { branch: 'main' } })), 'D11')).toBe('FAIL')
   })
 
-  it('D11: phase=DONE면 브랜치 무관 OK', () => {
-    expect(lvl(runChecks(mk({ currentBranch: 'main', state: { branch: 'main', phase: 'DONE' } })), 'D11')).toBe('OK')
+  // 🔴 REQ-2026-085 DEC-5b: **정답이 뒤집힌 테스트다.** 예전에는 `phase: 'DONE'`이면 브랜치 무관 OK였다.
+  //    그런데 런타임은 `state.phase`에 `'DONE'`을 어디서도 쓰지 않는다 — 즉 그 통과는 도달 가능한 기능이 아니라
+  //    **워킹 state.json을 손으로 고치면 열리는 우회로**였다(runChecks는 워킹 state를 읽는다).
+  //    이제 조건이 없어져 위조해도 막힌다. 정상 경로 판정은 바뀌지 않았다(늘 참이던 조건을 뺐을 뿐).
+  it('[REQ-085 DEC-5b] D11: state.phase를 "DONE"으로 위조해도 main이면 FAIL — 죽은 필드로 게이트가 열리지 않는다', () => {
+    expect(lvl(runChecks(mk({ currentBranch: 'main', state: { branch: 'main', phase: 'DONE' } })), 'D11')).toBe('FAIL')
+    // feature 브랜치 밖(prefix 불일치)도 마찬가지.
+    expect(lvl(runChecks(mk({ currentBranch: 'wip/x', state: { branch: 'wip/x', phase: 'DONE' } })), 'D11')).toBe('FAIL')
+  })
+
+  it('[REQ-085 DEC-5.4] D11: state.phase가 아예 없어도 정상 feature 브랜치는 OK(신규 스캐폴드 형태)', () => {
+    const { phase: _omit, ...noPhase } = { phase: 'INTAKE', branch: 'feat/req-2026-001-x' }
+    expect(lvl(runChecks(mk({ currentBranch: 'feat/req-2026-001-x', state: noPhase })), 'D11')).toBe('OK')
   })
 
   it('[P2] D11: config branchPrefix override(feature/REQ-) → 일치 브랜치 OK', () => {

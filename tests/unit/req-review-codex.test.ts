@@ -832,18 +832,27 @@ describe('req:review-codex — state.json 로드(loadState)', () => {
     expect(() => loadState(dir as string)).toThrow(/파싱 실패/)
   })
 
-  it('필수 필드(id, phase) 누락 시 에러', () => {
+  it('필수 필드(id) 누락 시 에러', () => {
     dir = mkdtempSync(join(tmpdir(), 'req-state-'))
-    writeFileSync(join(dir, 'state.json'), JSON.stringify({ id: 'X' }), 'utf8')
+    writeFileSync(join(dir, 'state.json'), JSON.stringify({ branch: 'feat/x' }), 'utf8')
     expect(() => loadState(dir as string)).toThrow(/필수 필드/)
   })
 
-  it('정상 state는 객체를 반환', () => {
+  // REQ-2026-085 DEC-5.2: `phase`는 아무도 읽지 않는 값이라 필수에서 뺐다. 양방향 하위호환이 요점이다.
+  it('[REQ-085 R4] phase 없는 신규 스캐폴드 state가 로드된다', () => {
     dir = mkdtempSync(join(tmpdir(), 'req-state-'))
-    writeFileSync(join(dir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', phase: 'REVIEW_REQUEST' }), 'utf8')
+    writeFileSync(join(dir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', current_phase: null }), 'utf8')
     const s = loadState(dir as string)
     expect(s.id).toBe('REQ-2026-001')
-    expect(s.phase).toBe('REVIEW_REQUEST')
+    expect(s.phase).toBeUndefined()
+  })
+
+  it('[REQ-085 R6] phase가 남아 있는 옛 티켓도 그대로 로드된다(마이그레이션 불요)', () => {
+    dir = mkdtempSync(join(tmpdir(), 'req-state-'))
+    writeFileSync(join(dir, 'state.json'), JSON.stringify({ id: 'REQ-2026-001', phase: 'INTAKE' }), 'utf8')
+    const s = loadState(dir as string)
+    expect(s.id).toBe('REQ-2026-001')
+    expect(s.phase).toBe('INTAKE') // 값은 보존된다 — 읽는 코드가 없을 뿐이다
   })
 })
 
@@ -2151,7 +2160,7 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
     expect(p).not.toContain(DELTA_BASELINE_TAG)
     const { branch, sha, tree } = gitCtx(git)
     const expected = buildExpected({
-      persona: null, branch, sha, tree, phase: 'INTAKE', requestBody: REQBODY, kind: 'design',
+      persona: null, branch, sha, tree, phase: '-', requestBody: REQBODY, kind: 'design',
       designDocs: readDesignDocsFromIndex(TICKET_REL, git),
     })
     expect(p).toBe(expected)
@@ -2192,7 +2201,7 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
     expect(p).not.toContain(DELTA_BASELINE_TAG)
     const { branch, sha, tree } = gitCtx(git)
     const expected = buildExpected({
-      persona: null, branch, sha, tree, phase: 'INTAKE', requestBody: REQBODY, kind: 'phase',
+      persona: null, branch, sha, tree, phase: 'phase-1', requestBody: REQBODY, kind: 'phase',
       stagedDiff: git(['diff', '--cached']),
     })
     expect(p).toBe(expected)
@@ -2360,7 +2369,7 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     const c = ctxFromPrompt(fake.requests[0]!.prompt)
     const expected = buildExpected({
-      persona: `${PERSONA}\n${DESIGN_DELTA_CONTRACT}`, ...c, phase: 'INTAKE', kind: 'design',
+      persona: `${PERSONA}\n${DESIGN_DELTA_CONTRACT}`, ...c, phase: '-', kind: 'design',
       designDocs: readDesignDocsFromIndex(TICKET_REL, git), designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
     })
     expect(fake.requests[0]!.prompt).toBe(expected)
@@ -2376,7 +2385,7 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     const c = ctxFromPrompt(fake.requests[0]!.prompt)
     const expected = buildExpected({
-      persona: DESIGN_DELTA_CONTRACT, ...c, phase: 'INTAKE', kind: 'design',
+      persona: DESIGN_DELTA_CONTRACT, ...c, phase: '-', kind: 'design',
       designDocs: readDesignDocsFromIndex(TICKET_REL, git), designDelta: { changed: ['design'], unchanged: ['requirement', 'plan'] },
     })
     expect(fake.requests[0]!.prompt).toBe(expected)
@@ -2394,7 +2403,7 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     const c = ctxFromPrompt(fake.requests[0]!.prompt)
     expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
-    const expected = buildExpected({ persona: PERSONA, ...c, phase: 'INTAKE', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
+    const expected = buildExpected({ persona: PERSONA, ...c, phase: '-', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
     expect(fake.requests[0]!.prompt).toBe(expected)
     expect(logPolicy(repo)).toBe(reviewPolicyVersion(PERSONA))
   })
@@ -2407,7 +2416,7 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
     const c = ctxFromPrompt(fake.requests[0]!.prompt)
     expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
-    const expected = buildExpected({ persona: null, ...c, phase: 'INTAKE', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
+    const expected = buildExpected({ persona: null, ...c, phase: '-', kind: 'design', designDocs: readDesignDocsFromIndex(TICKET_REL, git) })
     expect(fake.requests[0]!.prompt).toBe(expected)
     expect(logPolicy(repo)).toBe('none')
   })
@@ -2444,7 +2453,7 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--run', '--root', repo], { reviewer: fake })
     expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
     const c = ctx(git)
-    const expected = buildExpected({ persona: PERSONA, ...c, phase: 'INTAKE', kind: 'phase', stagedDiff: git(['diff', '--cached']) })
+    const expected = buildExpected({ persona: PERSONA, ...c, phase: 'phase-1', kind: 'phase', stagedDiff: git(['diff', '--cached']) })
     expect(fake.requests[0]!.prompt).toBe(expected)
     expect(logPolicy(repo)).toBe(reviewPolicyVersion(PERSONA))
   })
@@ -2455,7 +2464,7 @@ describe('[B-2b] main() effectivePersona 배선(near-e2e, hand-built expected)',
     reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--run', '--root', repo], { reviewer: fake })
     expect(fake.requests[0]!.prompt).not.toContain(DESIGN_DELTA_CONTRACT)
     const c = ctx(git)
-    const expected = buildExpected({ persona: null, ...c, phase: 'INTAKE', kind: 'phase', stagedDiff: git(['diff', '--cached']) })
+    const expected = buildExpected({ persona: null, ...c, phase: 'phase-1', kind: 'phase', stagedDiff: git(['diff', '--cached']) })
     expect(fake.requests[0]!.prompt).toBe(expected)
     expect(logPolicy(repo)).toBe('none')
   })
