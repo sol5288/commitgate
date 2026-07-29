@@ -3,16 +3,75 @@
   "branch": "feat/req-2026-085-workflow-observability",
   "phase": "INTAKE",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fab43-59c0-7901-8162-8d68e005e006",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "fe8835e065e83e9e03bfa9cc919dcbcd9841e173376efe36661667505735aff9",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-dead-state-phase",
+      "approved": false
+    },
+    {
+      "id": "phase-2-bookkeeping-marker-core",
+      "approved": false
+    },
+    {
+      "id": "phase-3-bookkeeping-marker-lifecycle",
+      "approved": false
+    },
+    {
+      "id": "phase-4-unmerged-warning",
+      "approved": false
+    },
+    {
+      "id": "phase-5-docs-changelog",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "2c4a424a83f97ed636b0802f2857888ff47ef221",
+    "design": "57ef8589ecb8934ab8f57b74a5d1a6c64ef6c9f1",
+    "plan": "d2e549bb8e843874dde10a824d2959f0ec43ea97"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-085/responses/design-r01-approved.json",
+    "response_sha256": "e787463bd82d94fe2df7a32825446363564c6c318b313433ad6125fea34bfc58",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "7846c96fd41c8bec9a35293fab5cec49dddcf228",
+    "codex_thread_id": "019fab43-59c0-7901-8162-8d68e005e006",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-29T00:26:15.804Z",
+    "design_hash": "fe8835e065e83e9e03bfa9cc919dcbcd9841e173376efe36661667505735aff9"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "987b4008b0fc30ec20b1afe95a64a7defc985754875b35d7c36c5aeba02331eb",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-29T00:26:15.804Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
