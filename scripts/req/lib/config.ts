@@ -58,6 +58,12 @@ export type PhaseCommitPolicy = 'never' | 'low-only'
  */
 export type StopGate = 'phase' | 'req' | 'merge'
 
+/**
+ * granularity 정책 강제 수준(REQ-2026-086). `block`은 **리뷰 호출 전** 차단이라 되돌릴 상태가 남지 않는다.
+ * 정당하게 큰 phase는 `phases[].max_files` 선언으로 통과시킨다 — 끄는 것이 아니라 선언하는 것이 기본 탈출구다.
+ */
+export type GranularityGate = 'block' | 'warn'
+
 /** `stopGate` → 파생 `phaseCommit.autoApprove`. 두 축의 유일한 번역표(SSOT). */
 export const AUTO_APPROVE_OF: Record<StopGate, PhaseCommitPolicy> = { phase: 'never', req: 'low-only', merge: 'low-only' }
 /**
@@ -112,6 +118,8 @@ export interface RawConfig {
   stopGate?: StopGate
   /** REQ-2026-085: D25(미병합 누적 경고) 판정용 통합 브랜치. `null` = D25 비활성. 미지정 = DEFAULTS(`main`). */
   trunkBranch?: string | null
+  /** REQ-2026-086: granularity 강제 수준. 미지정 = DEFAULTS(`block`). */
+  granularityGate?: GranularityGate
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -136,6 +144,8 @@ export interface ResolvedConfig {
   stopGate: StopGate
   /** REQ-2026-085: D25 판정용 통합 브랜치. `null` = D25 비활성. */
   trunkBranch: string | null
+  /** REQ-2026-086: granularity 강제 수준. `block` = 리뷰 전 차단(기본). */
+  granularityGate: GranularityGate
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -207,6 +217,15 @@ export const DEFAULTS = {
    * `as ... | null`은 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
    */
   trunkBranch: 'main' as string | null,
+  /**
+   * REQ-2026-086: granularity 정책의 **강제 수준**.
+   * - `block`(기본): phase 리뷰 실행 **전**에 검수 면적을 판정하고 초과면 리뷰하지 않는다.
+   * - `warn`      : 경고만 내고 진행(REQ-2026-086 이전 동작).
+   *
+   * 🔴 기본이 `block`인 것은 의도다. `warn`이 기본이면 아무도 켜지 않아 정책이 존재하는 의미가 없다 —
+   *    실측에서 phase의 69%가 권고치를 넘겼고 그때마다 WARN이 무시됐다.
+   */
+  granularityGate: 'block' as GranularityGate,
 }
 
 /** ISO instant(UTC). `close-proof`의 `isValidIsoInstant`와 같은 형태를 스키마 수준에서 강제한다. */
@@ -229,6 +248,8 @@ export const CONFIG_SCHEMA = {
     branchPrefix: { type: 'string', minLength: 1 }, // 빈 prefix는 D11 무력화 → 금지
     packageManager: { type: 'string', enum: ['pnpm', 'npm', 'yarn'] },
     granularityMaxFiles: { type: 'integer', minimum: 1 },
+    // REQ-2026-086: 강제 수준. enum이 정책을 고정한다 — 임의 문자열로 게이트를 무력화할 수 없다.
+    granularityGate: { type: 'string', enum: ['block', 'warn'] },
     // REQ-2026-013 P1. null=override 생략(전역 상속). model은 slug 패턴(따옴표·개행 거부 → TOML `model="…"` 주입 안전; null은 pattern에 vacuously 통과).
     reviewModel: { type: ['string', 'null'], pattern: BASENAME_RE },
     // effort는 실측 확정 enum(R15) + null. null을 enum에 포함해야 `{effort:null}`이 통과(JSON Schema enum은 타입 무관 전체 적용).
@@ -378,6 +399,7 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
   const merged = {
     ticketRoot: raw.ticketRoot ?? DEFAULTS.ticketRoot,
     trunkBranch: raw.trunkBranch === undefined ? DEFAULTS.trunkBranch : raw.trunkBranch,
+    granularityGate: raw.granularityGate ?? DEFAULTS.granularityGate,
     schemaPath: raw.schemaPath ?? DEFAULTS.schemaPath,
     handoffPath: raw.handoffPath !== undefined ? raw.handoffPath : DEFAULTS.handoffPath, // null = 명시적 비활성
     reviewPersonaPath:

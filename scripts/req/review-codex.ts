@@ -536,6 +536,14 @@ export function validateVerdict(
 export interface PhaseEntry {
   id: string
   approved: boolean
+  /**
+   * 🔴 REQ-2026-086 DEC-3: 이 phase가 **의도적으로 크다**는 선언(검수 면적 임계 상향). 부재 = config 기본.
+   *
+   * 기계적 일괄 변경(대량 rename 등)처럼 나누는 것이 오히려 검수를 해치는 경우의 탈출구다.
+   * `state.json`에 남고 그 파일은 state checkpoint로 커밋되므로 **선언이 기록된다** — 조용한 우회가 아니다.
+   * 값 계약: **1 이상의 정수**. 그 밖의 값은 fail-closed로 거부한다(오타로 게이트가 꺼지면 안 된다).
+   */
+  max_files?: number
 }
 
 /**
@@ -1176,6 +1184,93 @@ export function refundAttempt(state: WorkflowState, kind: ReviewKind, phaseId: s
   if (openIdx < 0) return state
   const next = series.map((r, i) => (i === openIdx ? { ...r, refunded_attempts: (r.refunded_attempts ?? 0) + 1 } : r))
   return { ...state, review_series: next }
+}
+
+// ───────────────────────────── phase 검수 면적 게이트 (REQ-2026-086) ──
+
+/**
+ * `git diff --cached --name-only -z`의 인자(REQ-2026-086).
+ *
+ * 🔴 **`-z`는 필수다.** 기본 `core.quotePath=true`에서 비ASCII 경로는 `"workflow/한글.md"`처럼
+ *    **C-quote된 표시 문자열**로 나온다. 그러면 접두사 비교가 따옴표 때문에 빗나가 티켓 내부 파일이
+ *    코드 변경으로 잘못 세어지고, 코드가 0줄인데 면적 초과로 리뷰가 막힌다(phase-1 r01 P1).
+ *    `-z`는 인용 없이 실제 바이트 경로를 NUL로 구분해 준다 — `req-doctor`의 `STATUS_Z_ARGS`와 같은 이유다.
+ */
+export const STAGED_NAMES_Z_ARGS: readonly string[] = ['diff', '--cached', '--name-only', '-z']
+
+/**
+ * 이 phase의 **코드 변경 파일**(REQ-2026-086 DEC-4, 순수). staged 경로 중 티켓 디렉터리 밖.
+ *
+ * 리뷰 시점에는 D10이 이미 "워킹트리 클린(staged + 스크래치)"을 보장하므로 **staged가 곧 이 phase의
+ * 변경집합**이다. 여기서 티켓 문서·증거(`<ticketRel>/…`)만 빼면 검수 면적이 나온다.
+ *
+ * 🔴 입력은 **`-z` 출력을 NUL로 나눈 것**이어야 한다(`STAGED_NAMES_Z_ARGS` 참조). 표시용 문자열을 넣으면
+ *    비ASCII 경로에서 오판한다.
+ * 🔴 `req-doctor`의 `codeChanges` 분류를 **복제하지 않는다** — 저쪽은 unstaged/untracked까지 보는
+ *    다른 전제 위에서 동작한다. 두 벌로 두면 갈라지고, 갈라지면 어느 쪽이 정본인지 알 수 없게 된다.
+ */
+export function phaseCodeFiles(stagedPaths: readonly string[], ticketRel: string): string[] {
+  const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/`
+  // 🔴 `trim()`을 쓰지 않는다 — 공백으로 시작·끝나는 경로는 git에서 합법이고, 다듬으면 접두사가 어긋난다.
+  //    `-z` 출력은 마지막 NUL 뒤 빈 조각만 생기므로 빈 문자열만 거른다.
+  return [...new Set(stagedPaths.map((p) => p.replace(/\\/g, '/')).filter((p) => p !== ''))].filter((p) => !p.startsWith(prefix))
+}
+
+/**
+ * phase가 선언한 검수 면적 임계(REQ-2026-086 DEC-3, 순수). 없으면 `null`.
+ *
+ * 🔴 **fail-closed**: 값이 있는데 1 이상의 정수가 아니면 throw한다. 조용히 무시하면 오타(`"12"`, `0`, `1.5`)
+ *    하나로 게이트가 기본값으로 되돌아가고, 선언자는 자기가 선언했다고 믿는다.
+ */
+export function declaredPhaseMaxFiles(state: WorkflowState, phaseId: string | null): number | null {
+  if (phaseId === null) return null
+  const entry = readPhases(state).find((p) => p.id === phaseId)
+  const v = entry?.max_files
+  if (v === undefined) return null
+  if (!Number.isInteger(v) || (v as number) < 1)
+    throw new Error(
+      `phases[].max_files 비유효(${JSON.stringify(v)}) — phase "${phaseId}"의 검수 면적 선언은 1 이상의 정수여야 합니다. ` +
+        '값을 고치거나 항목을 지우세요(지우면 config 기본값을 씁니다).',
+    )
+  return v as number
+}
+
+/** 검수 면적 판정 결과(순수). `over=false`면 통과. */
+export interface PhaseAreaVerdict {
+  over: boolean
+  count: number
+  limit: number
+  /** 임계의 출처 — 메시지가 "무엇을 고쳐야 하는지"를 정확히 가리키게 한다. */
+  source: 'declared' | 'config'
+}
+
+/**
+ * 검수 면적 판정(REQ-2026-086, 순수). `phases[].max_files` 선언이 있으면 그것이, 없으면 config 기본이 임계다.
+ *
+ * **왜 이 판정이 리뷰 호출 전에 있는가**: 우리가 아끼려는 것은 리뷰 라운드다(실측: >8파일 평균 2.39R vs
+ * ≤8파일 1.38R). 커밋 직전(D18)에 알려주면 시정이 "이미 짠 코드를 되돌려 나누기"라 리뷰 한 번 더 받는 것보다
+ * 비싸서 무시된다 — 실제로 phase의 69%가 그렇게 초과했다. 리뷰 직전이면 시정이 **staging 재구성**이라 싸다.
+ */
+export function judgePhaseArea(codeFileCount: number, declared: number | null, configMax: number): PhaseAreaVerdict {
+  const limit = declared ?? configMax
+  return { over: codeFileCount > limit, count: codeFileCount, limit, source: declared === null ? 'config' : 'declared' }
+}
+
+/** 초과 안내(순수). **두 탈출구를 모두** 제시한다 — 하나만 주면 그것이 사실상 유일한 길이 된다. */
+export function phaseAreaMessage(v: PhaseAreaVerdict, phaseId: string): string {
+  return [
+    `phase 검수 면적 초과: 코드 변경 ${v.count}파일 > ${v.limit}(${v.source === 'declared' ? `phases[].max_files 선언` : 'granularityMaxFiles'})`,
+    '리뷰 라운드는 면적에 비례해 늘어납니다(실측: >8파일 평균 2.4R vs ≤8파일 1.4R). 리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다.',
+    '',
+    '둘 중 하나를 선택하세요.',
+    '  A. 지금 나눈다 (권장 — 코드는 한 줄도 바뀌지 않습니다)',
+    '     git restore --staged <이번 phase에서 뺄 파일들>',
+    `     빼낸 파일은 다음 phase로 — state.json의 phases[]에 항목을 추가하세요.`,
+    '  B. 이 phase는 원래 크다고 선언한다 (기계적 일괄 변경 등)',
+    `     state.json의 phases[]에서 "${phaseId}" 항목에  "max_files": ${v.count}  을 추가하세요.`,
+    '',
+    '(정책 자체를 끄려면 req.config.json에 "granularityGate": "warn" — 경고만 내고 진행합니다.)',
+  ].join('\n')
 }
 
 /**
@@ -2412,6 +2507,19 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   //    이것은 우회 플래그가 아니다(사용자 argv로 끌 수 없다 — 주입은 programmatic 경로 전용).
   if (opts.run && (opts2?.probes !== undefined || opts2?.reviewer === undefined))
     assertReviewerReady(opts2?.probes ?? createReviewerProbes())
+
+  // 🔴 REQ-2026-086 DEC-1: phase 검수 면적 게이트 — **예산 gate·attempt 기록·pre-call 원장 커밋보다 앞**이다.
+  //    뒤에 두면 attempt가 열리고 부기 커밋이 남은 뒤 막혀 "아무것도 소모하지 않고 되돌린다"가 거짓이 된다.
+  //    design 리뷰는 대상이 아니다(DEC-7) — 권위 아티팩트가 설계 문서이고 그 크기는 이 정책 밖이다.
+  if (opts.kind === 'phase') {
+    const codeFiles = phaseCodeFiles(git([...STAGED_NAMES_Z_ARGS]).split('\0'), ticketRel)
+    const verdict = judgePhaseArea(codeFiles.length, declaredPhaseMaxFiles(state, phaseId), cfg.granularityMaxFiles)
+    if (verdict.over) {
+      const msg = phaseAreaMessage(verdict, phaseId ?? '(phase)')
+      if (cfg.granularityGate === 'block') throw new Error(msg)
+      console.warn(`[req:review-codex] ⚠️ ${msg}`) // granularityGate:'warn' — 이전 동작(경고만).
+    }
+  }
 
   // DEC-A6 step 3: 예산/예외 gate + attempt-opened 기록(state.json scratch). 반환 state가 이후 base(R9).
   const { state: afterAttempt, attempt: attemptInfo } = gateAndRecordAttempt({

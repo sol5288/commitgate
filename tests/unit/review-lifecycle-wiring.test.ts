@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { packageRoot } from '../../scripts/req/lib/config'
-import { main as reviewCodexMain, type SeriesRecord } from '../../scripts/req/review-codex'
+import { main as reviewCodexMain, captureDesignBinding, phaseCodeFiles, STAGED_NAMES_Z_ARGS, type SeriesRecord } from '../../scripts/req/review-codex'
 import { createFakeReviewerAdapter } from '../../scripts/req/lib/adapters'
 import { ReviewCallError } from '../../scripts/req/lib/adapters'
 
@@ -214,5 +214,177 @@ describe('[REQ-2026-054] dispatch lifecycle 배선(실 git near-e2e)', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
+  })
+})
+
+// ───────────────── REQ-2026-086: phase 검수 면적 게이트 (실 git near-e2e) ──
+describe('[REQ-2026-086] granularity 게이트 — 리뷰 호출 전 차단', () => {
+  /** 티켓 밖에 코드 파일 n개를 staged 상태로 만든다. */
+  const stageCode = (repo: string, git: (a: string[]) => string, n: number): void => {
+    mkdirSync(join(repo, 'src'), { recursive: true })
+    for (let i = 0; i < n; i++) writeFileSync(join(repo, 'src', `f${i}.ts`), `export const f${i} = ${i}\n`)
+    git(['add', '--', 'src'])
+  }
+  const phaseState = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    evidence_durability_required: true,
+    design_approved: true,
+    current_phase: 'phase-1-a',
+    phases: [{ id: 'phase-1-a', approved: false }],
+    ...over,
+  })
+  /**
+   * setupRepo + **실제 design 결속 해시** 주입. phase 리뷰는 designValid를 먼저 요구하므로
+   * 그것을 통과시켜야 granularity 게이트에 도달한다(게이트 순서 자체를 검증하려면 앞 관문을 열어야 한다).
+   */
+  const setupPhaseRepo = (over: Record<string, unknown> = {}): { repo: string; ticket: string; head: string } => {
+    const r = setupRepo(phaseState(over))
+    const git = gitOf(r.repo)
+    const st = JSON.parse(readFileSync(join(r.ticket, 'state.json'), 'utf8')) as Record<string, unknown>
+    st.design_approved_hash = captureDesignBinding('workflow/REQ-2026-001', git).designHash
+    writeFileSync(join(r.ticket, 'state.json'), `${JSON.stringify(st, null, 2)}\n`)
+    return r
+  }
+  const runPhase = (repo: string): { threw: boolean; msg: string } => {
+    try {
+      reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1-a', '--run', '--root', repo], {
+        reviewer: createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' }),
+      })
+      return { threw: false, msg: '' }
+    } catch (e) {
+      return { threw: true, msg: e instanceof Error ? e.message : String(e) }
+    }
+  }
+
+  it('임계 이하(8파일)는 통과한다', () => {
+    const { repo } = setupPhaseRepo()
+    try {
+      stageCode(repo, gitOf(repo), 8)
+      expect(runPhase(repo).msg).not.toContain('검수 면적 초과')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 초과(9파일)하면 throw + 두 탈출구를 모두 안내한다', () => {
+    const { repo } = setupPhaseRepo()
+    try {
+      stageCode(repo, gitOf(repo), 9)
+      const r = runPhase(repo)
+      expect(r.threw).toBe(true)
+      expect(r.msg).toContain('검수 면적 초과')
+      expect(r.msg).toContain('git restore --staged') // 탈출구 A
+      expect(r.msg).toContain('"max_files": 9') // 탈출구 B(실제 개수를 제시)
+      expect(r.msg).toContain('granularityGate') // 정책을 끄는 법
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 DEC-1 순서: 차단되면 attempt·원장 행·부기 커밋이 하나도 생기지 않는다', () => {
+    const { repo, ticket, head } = setupPhaseRepo()
+    try {
+      stageCode(repo, gitOf(repo), 12)
+      expect(runPhase(repo).threw).toBe(true)
+      expect(readLedger(ticket)).toEqual([]) // 원장 행 0
+      expect(readSeries(ticket)).toEqual([]) // attempt 0 (예산 미소모)
+      expect(gitOf(repo)(['rev-parse', 'HEAD']).trim()).toBe(head) // 커밋 0
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('DEC-3: phases[].max_files 선언이 그 phase의 임계를 올린다', () => {
+    const { repo } = setupPhaseRepo({ phases: [{ id: 'phase-1-a', approved: false, max_files: 12 }] })
+    try {
+      stageCode(repo, gitOf(repo), 12)
+      expect(runPhase(repo).msg).not.toContain('검수 면적 초과')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('🔴 max_files는 fail-closed — 1 이상의 정수가 아니면 거부한다(오타로 게이트가 꺼지지 않는다)', () => {
+    for (const bad of [0, -1, 1.5, '12']) {
+      const { repo } = setupPhaseRepo({ phases: [{ id: 'phase-1-a', approved: false, max_files: bad }] })
+      try {
+        stageCode(repo, gitOf(repo), 20)
+        const r = runPhase(repo)
+        expect(r.threw, `max_files=${JSON.stringify(bad)}`).toBe(true)
+        expect(r.msg).toContain('max_files 비유효')
+      } finally {
+        rmSync(repo, { recursive: true, force: true })
+      }
+    }
+  })
+
+  it('DEC-6: granularityGate:"warn"이면 초과해도 진행한다(이전 동작)', () => {
+    const { repo } = setupPhaseRepo()
+    try {
+      writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null, granularityGate: 'warn' }))
+      stageCode(repo, gitOf(repo), 20)
+      expect(runPhase(repo).msg).not.toContain('검수 면적 초과')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('DEC-7: design 리뷰는 면적을 보지 않는다', () => {
+    const { repo, ticket } = setupPhaseRepo()
+    try {
+      stageCode(repo, gitOf(repo), 30)
+      reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo], { reviewer: undefined as never })
+      expect(readFileSync(join(ticket, '.review-preview.txt'), 'utf8')).toContain('# Review Context')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('DEC-4: 티켓 문서·증거는 면적에 세지 않는다', () => {
+    const { repo } = setupPhaseRepo()
+    const git = gitOf(repo)
+    try {
+      // 티켓 안 파일 20개를 staged로 — 전부 제외돼야 한다.
+      mkdirSync(join(repo, 'workflow', 'REQ-2026-001', 'responses'), { recursive: true })
+      for (let i = 0; i < 20; i++) writeFileSync(join(repo, 'workflow', 'REQ-2026-001', 'responses', `x${i}.json`), '{}')
+      git(['add', '--', 'workflow/REQ-2026-001'])
+      stageCode(repo, git, 3)
+      expect(runPhase(repo).msg).not.toContain('검수 면적 초과')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+})
+
+// ── REQ-2026-086 phase-1 r01 P1: 비ASCII 경로가 C-quote돼 면적 판정이 빗나가면 안 된다 ──
+describe('[REQ-2026-086] 비ASCII 경로 회귀(core.quotePath 기본값)', () => {
+  it('🔴 티켓 안 한글 파일명이 코드 변경으로 잘못 세어지지 않는다', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'req086-quote-'))
+    const git = gitOf(repo)
+    try {
+      git(['init', '-q'])
+      git(['config', 'user.email', 't@t.t'])
+      git(['config', 'user.name', 't'])
+      // 🔴 기본값을 명시적으로 켠다 — 이 결함이 나타나는 정확한 조건이다.
+      git(['config', 'core.quotePath', 'true'])
+      const ticketRel = 'workflow/REQ-2026-001'
+      mkdirSync(join(repo, ticketRel, 'responses'), { recursive: true })
+      // 티켓 안 한글 파일 12개(임계 8 초과) — 전부 제외돼야 한다.
+      for (let i = 0; i < 12; i++) writeFileSync(join(repo, ticketRel, 'responses', `설계응답-${i}.json`), '{}')
+      writeFileSync(join(repo, 'seed.txt'), 'x\n')
+      git(['add', '-A'])
+
+      // 표시 문자열(-z 없음)은 실제로 C-quote된다 — 전제 자체를 고정한다(이 단언이 깨지면 회귀가 무의미).
+      expect(git(['diff', '--cached', '--name-only'])).toContain('"')
+
+      const zPaths = git([...STAGED_NAMES_Z_ARGS]).split('\0')
+      const code = phaseCodeFiles(zPaths, ticketRel)
+      expect(code).toEqual(['seed.txt']) // 한글 티켓 파일 12개가 전부 빠진다
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('공백이 있는 경로도 접두사가 어긋나지 않는다', () => {
+    expect(phaseCodeFiles(['workflow/REQ-1/ a.md', 'src/b .ts', ''], 'workflow/REQ-1')).toEqual(['src/b .ts'])
   })
 })

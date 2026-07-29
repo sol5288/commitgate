@@ -389,6 +389,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   setup: null,
   stopGate: 'phase',
   trunkBranch: 'main',
+  granularityGate: 'block',
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,
