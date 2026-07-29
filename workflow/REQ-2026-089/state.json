@@ -2,16 +2,63 @@
   "id": "REQ-2026-089",
   "branch": "feat/req-2026-089-granularity-measurement",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fae56-c035-7971-a1fd-d210047ba256",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "109775d0e9f756dc4026a0e5b66955f8ac5b5822bad72c3f10e3db6c5a42a42a",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-log-area",
+      "approved": false
+    },
+    {
+      "id": "phase-2-changelog",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "dfc2567c92f99303a0e20ee169b0615c7bcf3de4",
+    "design": "adee2953158cd39bdd2982c773ff2ca9ccb192ca",
+    "plan": "b987d9e910e57586793c48ecd8565f856c4ce968"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-089/responses/design-r01-approved.json",
+    "response_sha256": "811635f2343fd54e77bfb53d7ec90ebb4c8150679f18957f15e32b1430c5528c",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "aae39c83e0e349013a9d3dd7361c3b959cf5525b",
+    "codex_thread_id": "019fae56-c035-7971-a1fd-d210047ba256",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-29T14:46:37.592Z",
+    "design_hash": "109775d0e9f756dc4026a0e5b66955f8ac5b5822bad72c3f10e3db6c5a42a42a"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "9bf606829ad7ecb87162dd9268eab6e6799936117f179744c6a682ed98176da3",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-29T14:46:37.592Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
