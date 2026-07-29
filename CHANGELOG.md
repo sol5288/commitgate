@@ -2,7 +2,14 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.13.0 (2026-07-29)
+
+> ⚠️ **업그레이드 시 확인**: 이 릴리스는 **동작을 좁힙니다**(REQ-2026-086 — 8파일 초과 phase가 리뷰 전에 막힙니다).
+> 되돌리려면 `req.config.json`에 `"granularityGate": "warn"` 한 줄입니다.
+> 또한 `machine.schema.json`·`req.config.schema.json`이 모두 바뀌었으므로, 업그레이드 후 `req:doctor`가
+> **D20 WARN**(자산 skew)을 내면 **`npx commitgate sync`**로 재동기화하세요(FAIL 아니며 게이트를 막지 않습니다).
+>
+> 이 릴리스의 세 REQ는 모두 소비 repo의 **0.11.0 운영 이력 실측**(리뷰 호출 68회)에서 출발했습니다.
 
 > **REQ-2026-086은 두 커밋으로 나뉘어 들어왔습니다.** 아래 항목의 구현은 이 커밋이 아니라 **같은 브랜치의 앞선 커밋**에 있습니다.
 >
