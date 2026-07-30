@@ -54,6 +54,8 @@ import {
   buildPreviousFindingsBlock,
   reviewPolicyVersion,
   buildReviewCallLogRow,
+  committedPhaseIds,
+  shippedPhasesBlock,
   appendReviewCallLog,
   assembledPromptBytes,
   previousFindingsCount,
@@ -5057,5 +5059,81 @@ describe('[REQ-2026-089] 측정 로그에 phase 검수 면적을 남긴다', () 
     // 값 타입도 고정 — 배열이 끼면 목록이 샌 것이다.
     expect(Array.isArray(row.code_file_count)).toBe(false)
     expect(typeof row.code_file_count).toBe('number')
+  })
+})
+
+// ───────────── REQ-2026-091: 이미 커밋된 phase를 설계 리뷰어에게 알린다 ──
+describe('[REQ-2026-091] committedPhaseIds / shippedPhasesBlock (순수)', () => {
+  const line = (o: Record<string, unknown>): string => JSON.stringify(o)
+  const manifest =
+    [
+      line({ kind: 'design', design_hash: 'AAA' }),
+      line({ kind: 'phase', phase_id: 'p2', phase_design_ref: 'AAA' }),
+      line({ kind: 'phase', phase_id: 'p1', phase_design_ref: 'AAA' }),
+      line({ kind: 'design', design_hash: 'BBB' }), // 재승인 → p1·p2는 좌초
+    ].join('\n') + '\n'
+
+  it('커밋된 phase id를 정렬·중복 제거해 낸다', () => {
+    expect(committedPhaseIds(manifest)).toEqual(['p1', 'p2'])
+  })
+
+  it('🔴 DEC-1: 결속이 끊긴 phase도 포함한다 — 관심사는 "커밋됐는가"뿐이다', () => {
+    // 위 매니페스트는 design 재승인(BBB) 뒤라 p1·p2가 좌초된 상태다. 그래도 코드는 커밋돼 있다.
+    expect(committedPhaseIds(manifest)).toContain('p1')
+  })
+
+  it('매니페스트 부재·파손 → 빈 배열(fail-safe)', () => {
+    expect(committedPhaseIds(null)).toEqual([])
+    expect(committedPhaseIds(undefined)).toEqual([])
+    expect(committedPhaseIds('')).toEqual([])
+    expect(committedPhaseIds('{not json\n')).toEqual([])
+  })
+
+  it('🔴 DEC-1: 비면 블록이 null — 첫 설계 리뷰에 노이즈를 더하지 않는다', () => {
+    expect(shippedPhasesBlock([])).toBeNull()
+  })
+
+  it('블록에 사실·경로·판단 위임이 모두 들어간다', () => {
+    const b = shippedPhasesBlock(['phase-1-a', 'phase-2-b']) as string
+    expect(b).toContain('- phase-1-a')
+    expect(b).toContain('- phase-2-b')
+    expect(b).toContain('이미 커밋됐다') // 사실
+    expect(b).toContain('후속 REQ') // 경로
+    expect(b).toContain('판단은 당신의 것이다') // 판단 위임
+  })
+
+  it('🔴 DEC-2(design r01 P1): severity를 단정하지 않는다 — 보안 결함이 observations로 새면 안 된다', () => {
+    const b = shippedPhasesBlock(['p1']) as string
+    expect(b).not.toContain('막는 근거가 아니다')
+    expect(b).not.toContain('observations에 적고')
+    expect(b).not.toContain('findings가 아니')
+  })
+})
+
+describe('[REQ-2026-091] assembleReviewPrompt — 블록 삽입과 바이트 무회귀', () => {
+  const base = {
+    reviewBaseSha: 'BASE',
+    requestBody: '# req\n리뷰 포인트\n',
+    reviewKind: 'design' as const,
+    designDocs: { requirement: 'R', design: 'D', plan: 'P' },
+  }
+
+  it('🔴 R3: shippedPhaseIds가 비면 프롬프트가 인자 없을 때와 바이트 동일하다', () => {
+    const without = assembleReviewPrompt(base)
+    expect(assembleReviewPrompt({ ...base, shippedPhaseIds: [] })).toBe(without)
+    expect(assembleReviewPrompt({ ...base, shippedPhaseIds: undefined })).toBe(without)
+  })
+
+  it('값이 있으면 권위 아티팩트 **뒤**에 블록이 붙는다', () => {
+    const p = assembleReviewPrompt({ ...base, shippedPhaseIds: ['p1'] })
+    expect(p).toContain('# 이미 승인·커밋된 phase (참고 사실)')
+    expect(p.indexOf('# 권위 아티팩트')).toBeLessThan(p.indexOf('# 이미 승인·커밋된 phase'))
+    // 대조군: 블록만 추가되고 앞부분은 그대로다.
+    expect(p.startsWith(assembleReviewPrompt(base))).toBe(true)
+  })
+
+  it('🔴 phase 리뷰는 무영향 — 값을 줘도 블록이 붙지 않는다', () => {
+    const phaseBase = { reviewBaseSha: 'B', requestBody: 'r\n', reviewKind: 'phase' as const, stagedDiff: 'diff' }
+    expect(assembleReviewPrompt({ ...phaseBase, shippedPhaseIds: ['p1'] })).toBe(assembleReviewPrompt(phaseBase))
   })
 })

@@ -35,7 +35,7 @@ import { bookkeepingMessage } from './lib/bookkeeping'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
-import { archiveBaseName, durableDesignEvidence, isValidIsoInstant } from './lib/evidence'
+import { archiveBaseName, durableDesignEvidence, isValidIsoInstant, parseManifestEntries } from './lib/evidence'
 export { archiveBaseName, isValidIsoInstant } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
 import {
@@ -123,6 +123,11 @@ export interface ReviewPromptInput {
   // REQ-2026-033 B-2a: delta 표시(design kind 전용). 있으면 authority 블록을 문서별 [변경됨]/[승인 baseline]
   // 태그로 렌더. 없으면(full 모드·phase) 기존 플레인 블록 그대로(바이트 무변경). persona는 안 바꾼다.
   designDelta?: { changed: DesignDocKey[]; unchanged: DesignDocKey[] } | null
+  /**
+   * REQ-2026-091: **이미 승인·커밋된 phase id**(design kind 전용). 있으면 권위 아티팩트 블록 **뒤**에
+   * 참고 블록을 붙인다. 미지정/빈 배열이면 블록 없음 → 프롬프트가 이 REQ 이전과 **바이트 동일**하다.
+   */
+  shippedPhaseIds?: readonly string[]
 }
 
 /**
@@ -134,8 +139,55 @@ export interface ReviewPromptInput {
  * persona가 맨 앞인 이유(REQ-2026-010 D1): 리뷰어의 **역할 정의**는 컨텍스트·판정 대상보다 먼저 와야 한다.
  * ⚠️ 이 함수는 파일을 읽지 않는다 — persona는 이미 읽힌 **본문**이다. 읽기·부재 판정은 `loadReviewPersona`가 한다.
  */
+/**
+ * 커밋된 매니페스트에서 **이미 승인·커밋된 phase id**(REQ-2026-091 DEC-1·3·4, 순수).
+ *
+ * 🔴 **결속(binding) 여부는 보지 않는다.** 관심사는 "그 코드가 이미 커밋됐는가"뿐이다 —
+ *    설계 재승인으로 좌초됐든 아니든 코드는 이미 커밋돼 있고, 설계 문서를 고쳐도 바뀌지 않는다.
+ * 🔴 파서를 재구현하지 않는다(`parseManifestEntries` 위임) — 두 벌이 되면 갈라진다.
+ * 읽을 수 없거나 phase 행이 없으면 빈 배열.
+ */
+export function committedPhaseIds(manifestText: string | null | undefined): string[] {
+  if (!manifestText) return []
+  try {
+    return [
+      ...new Set(
+        parseManifestEntries(manifestText)
+          .filter((e) => e.kind === 'phase' && typeof e.phase_id === 'string' && e.phase_id !== '')
+          .map((e) => e.phase_id as string),
+      ),
+    ].sort()
+  } catch {
+    return [] // 손상 매니페스트의 fail-closed 처리는 intake·D17의 몫이다.
+  }
+}
+
+/**
+ * design 프롬프트의 "이미 커밋된 phase" 블록(REQ-2026-091 DEC-1·2, 순수). 비면 `null`.
+ *
+ * **왜 필요한가**: 프롬프트에는 설계 문서만 들어가므로 리뷰어는 어느 phase가 이미 커밋됐는지 알 수 없다.
+ * 실측(REQ-2026-090 r05)에서 리뷰어가 **이미 커밋된 phase-1의 계획**을 P1으로 지적했고, 그 P1을 닫으려
+ * 계획을 고치자 설계 재승인 → 앞선 phase 전량 좌초 → `req:rebind`로 이어졌다.
+ *
+ * 🔴 **severity를 정해주지 않는다**(DEC-2, design r01 P1). "승인을 막는 근거가 아니다"라고 쓰면 이미 커밋된
+ *    phase의 **보안 구멍·정상 경로 요구 위반**도 observations로 새어 P1 분류가 우회된다. 주는 것은
+ *    **사실**(이미 커밋됨·설계 수정으로 안 바뀜)과 **경로**(후속 REQ)뿐이고, 판단은 리뷰어의 것이다.
+ * 🔴 비었으면 `null` → 호출부가 블록을 넣지 않는다. 첫 설계 리뷰(가장 흔한 경로)의 프롬프트는 **바이트 동일**하다.
+ */
+export function shippedPhasesBlock(phaseIds: readonly string[]): string | null {
+  if (phaseIds.length === 0) return null
+  return [
+    '---\n# 이미 승인·커밋된 phase (참고 사실)',
+    ...phaseIds.map((id) => `- ${id}`),
+    '',
+    '이 phase들의 코드는 **이미 커밋됐다** — 설계 문서를 수정해도 그 코드는 바뀌지 않는다.',
+    '따라서 이 phase의 결함을 **실제로 고치는 경로는 후속 REQ**다.',
+    '이 사실을 severity 판단에 반영하라. **판단은 당신의 것이다** — 이 블록은 무엇이 findings인지 정하지 않는다.',
+  ].join('\n')
+}
+
 export function assembleReviewPrompt(input: ReviewPromptInput): string {
-  const { persona, handoff, reviewContext, reviewBaseSha, requestBody, stagedDiff, designDocs, designDelta } = input
+  const { persona, handoff, reviewContext, reviewBaseSha, requestBody, stagedDiff, designDocs, designDelta, shippedPhaseIds } = input
   const kind: ReviewKind = input.reviewKind ?? 'phase'
   if (!reviewBaseSha) throw new Error('reviewBaseSha 필요')
   if (!requestBody || !requestBody.trim()) throw new Error('codex-request.md 본문이 비어 있음')
@@ -192,6 +244,10 @@ export function assembleReviewPrompt(input: ReviewPromptInput): string {
         ].join('\n'),
       )
     }
+    // REQ-2026-091 DEC-1: 권위 아티팩트 **뒤**에 참고 블록. 없으면(첫 설계 리뷰) 아무것도 넣지 않는다 —
+    // 그 경로의 프롬프트는 이 REQ 이전과 바이트 동일하다.
+    const shipped = shippedPhasesBlock(shippedPhaseIds ?? [])
+    if (shipped) blocks.push(shipped)
   } else {
     blocks.push(`---\n# 권위 아티팩트 = staged diff (리뷰 대상 = 바인딩 대상)\n${stagedDiff ?? ''}`)
   }
@@ -2438,6 +2494,13 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   const effectivePersona = applyDeltaPersona(persona, designDelta !== undefined)
 
   // ── REQ-2026-052 DEC-A6 step 1: semantic identity 후보(원장 커밋 **전**, binding 무관) ──
+  // 🔴 REQ-2026-091 DEC-3: 커밋된 매니페스트(HEAD blob)에서 이미 커밋된 phase를 읽는다 — intake·D26·
+  //    staleBindingNotice와 **같은 원천**이다. design 리뷰만 대상(DEC-1의 블록도 design 분기에서만 붙는다).
+  const shippedPhaseIds =
+    opts.kind === 'design'
+      ? committedPhaseIds(createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(`${ticketRel}/responses/approvals.jsonl`))
+      : []
+
   const semanticIdentity = computeReviewSemanticIdentity(ticketRel, git)
   const isDurable = !isLegacyTicket(state) // pre-call 커밋은 durable 티켓만 — legacy는 기존 경로 그대로.
 
@@ -2473,6 +2536,8 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       stagedDiff,
       designDocs,
       designDelta, // REQ-2026-033 B-2a: design 재리뷰(baseline 有)일 때만 값. 없으면 full 플레인 블록(무회귀).
+      // REQ-2026-091: design 리뷰일 때만 값이 있다(phase는 무영향). 비면 블록 없음 → 바이트 무회귀.
+      shippedPhaseIds,
     })
   }
 
