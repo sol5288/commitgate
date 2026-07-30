@@ -2,7 +2,13 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.14.1 (2026-07-30)
+
+> 🔴 **0.14.0 이하를 쓰는 Stage B 설치본은 이 버전으로 올리세요.** `req:rebind`·`req:confirm`이
+> `commitgate <verb>` 경로에서 **실행 즉시 죽었습니다.** 그 둘은 각각 "설계 재승인으로 막힌 티켓"과
+> "HIGH 위험 티켓의 커밋 차단"을 푸는 **유일한 명령**입니다.
+>
+> Stage A 설치본(`tsx scripts/…` 직접 실행)은 영향이 없었습니다. 스키마 무변경 → `commitgate sync` 불요.
 
 > **REQ-2026-090은 두 커밋으로 나뉘어 들어왔습니다.**
 >
