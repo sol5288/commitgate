@@ -1369,11 +1369,20 @@ describe('[REQ-2026-088] staleBindingNotice — 진행 중 사전 안내', () =>
     expect(lines.join('\n')).not.toContain('--phase p3') // 현재 design_ref에 결속된 것은 대상 아님
   })
 
+  // 🔴 REQ-2026-091 DEC-5: "지금"이라고 말하면 조기 재결속을 유도하는데, 그건 이후 재승인 시 무효가 되어 헛일이다.
+  it('🔴 [REQ-091 R5] "지금"이 아니라 "닫기 전에"를 말하고, 조기 실행이 무효가 됨을 알린다', () => {
+    const head = staleBindingNotice('REQ-2026-091', strandedManifest)[0] as string
+    expect(head).not.toContain('지금 재결속')
+    expect(head).toContain('닫기 전에')
+    expect(staleBindingNotice('REQ-2026-091', strandedManifest).join('\n')).toContain('안정된 뒤')
+  })
+
   it('🔴 R5: 안내 문구가 recoveryGuidance 산출과 동일하다(재구현 금지)', () => {
     const expected = recoveryGuidance({ ticketId: 'REQ-2026-088', unboundPhaseIds: ['p1', 'p2'], rebindablePhaseIds: ['p1', 'p2'] }).lines
     const got = staleBindingNotice('REQ-2026-088', strandedManifest)
     // 첫 줄은 이 REQ가 얹는 도입부, 나머지는 생성기 산출 그대로여야 한다.
-    expect(got.slice(1)).toEqual(expected)
+    // 도입부 **2줄**(사실 + 시점 안내) 뒤부터는 생성기 산출 그대로여야 한다(REQ-2026-091로 1줄 → 2줄).
+    expect(got.slice(2)).toEqual(expected)
   })
 
   it('🔴 R7: 결속이 온전하면 한 줄도 추가하지 않는다', () => {

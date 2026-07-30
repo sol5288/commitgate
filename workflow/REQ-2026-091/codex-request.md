@@ -32,3 +32,13 @@
 - **판정 범위**: 결속이 끊긴 phase도 포함하는가(관심사는 "커밋됐는가"뿐 — 결속 여부가 아니다).
 - **안전 속성 보존**: D13·`design_hash`·phase 결속 모델이 그대로인가. 이 REQ는 재승인 **빈도**를 줄이는 것이고, 재승인이 앞선 phase를 좌초시키는 것(REQ-2026-052 DEC-B5)은 유지돼야 한다.
 - **문구 정정의 근거**: 조기 재결속이 실제로 무효가 되는가(rebind 행의 `to_design_ref` 매칭 규칙 확인).
+
+## 🔴 진행 상태 — 이 diff는 phase-2만 담는다
+
+| phase | 상태 | 커밋 | 확인할 파일 |
+|---|---|---|---|
+| phase-1 shipped-phases-block | ✅ 커밋됨 | `852c0576` | `scripts/req/review-codex.ts`의 `committedPhaseIds`·`shippedPhasesBlock`·`ReviewPromptInput.shippedPhaseIds`·design 분기 삽입·`mainImpl` 주입 · `tests/unit/req-review-codex.test.ts` |
+| **phase-2 notice-timing** | **🔎 지금 리뷰 대상** | (이 diff) | `scripts/req/req-next.ts`의 `staleBindingNotice` · `tests/unit/req-next.test.ts` · `CHANGELOG.md` |
+
+phase-1은 1라운드 승인. 설계 r01 P1(단정 문구가 P1 분류를 우회시킨다)은 설계 문서를 고쳐 r02 승인받았고,
+그 결정이 phase-1 구현과 테스트에 반영됐다(단정 문구 부재를 테스트로 고정).

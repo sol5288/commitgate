@@ -596,7 +596,16 @@ export function staleBindingNotice(ticketId: string, committedManifestText: stri
   if (split.unbound.length === 0) return []
   const g = recoveryGuidance({ ticketId, unboundPhaseIds: split.unbound, rebindablePhaseIds: split.rebindable })
   if (g.lines.length === 0) return []
-  return ['⚠️ 설계 재승인으로 앞선 phase의 결속이 끊겼습니다 — 지금 재결속하지 않으면 마지막 phase를 마쳐도 티켓이 닫히지 않습니다.', ...g.lines]
+  /**
+   * 🔴 REQ-2026-091 DEC-5: "**지금** 재결속하라"고 말하지 않는다. rebind 행의 `to_design_ref`는 **그때의**
+   *    design_ref이므로, 이후 설계가 또 재승인되면 그 행은 산입되지 않아 **다시 재결속해야 한다** —
+   *    조기 실행은 커밋 1개와 확인 문장 1개를 버리는 것이다. 설계가 안정된 뒤 한 번에 하는 것이 맞다.
+   */
+  return [
+    '⚠️ 설계 재승인으로 앞선 phase의 결속이 끊겼습니다 — 티켓을 닫기 전에 재결속해야 dev-complete가 발행됩니다.',
+    '   (설계가 또 재승인되면 지금 한 재결속은 무효가 되니, 설계가 안정된 뒤 한 번에 하세요.)',
+    ...g.lines,
+  ]
 }
 
 /**
