@@ -2,16 +2,63 @@
   "id": "REQ-2026-091",
   "branch": "feat/req-2026-091-design-review-shipped-phases",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fb0d3-2ddd-7db2-975d-6a72f1e157fd",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "861b95796c01b2ec837b1dc90c03784005b85250a83f01e284bcdc734e3dbd77",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-shipped-phases-block",
+      "approved": false
+    },
+    {
+      "id": "phase-2-notice-timing",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "8dbdbe53f1b33540040df1d0e74b8c5b4d1a495c1641910df1387ddef37d672c",
+    "count": 1,
+    "errors": [],
+    "at": "2026-07-30T02:21:37.299Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "f351534381d45680922cbdbfc2b06e35578fd539",
+    "design": "d9fa113c9d186145e6d95906f655c651c609b1bb",
+    "plan": "6f4dd8884b01e7d02d7b5be0c546bc894ab5cb6e"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-091/responses/design-r02-approved.json",
+    "response_sha256": "15ddbfed0fb29d23275d7bb1594923894be83b0b9d9d5d88c67873f970c9ce61",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "e6d1f06787d5430a089f9c817e5a8ab3f0552b76",
+    "codex_thread_id": "019fb0d3-2ddd-7db2-975d-6a72f1e157fd",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-07-30T02:21:37.299Z",
+    "design_hash": "861b95796c01b2ec837b1dc90c03784005b85250a83f01e284bcdc734e3dbd77"
+  }
 }
