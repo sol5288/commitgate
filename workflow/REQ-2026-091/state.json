@@ -2,14 +2,14 @@
   "id": "REQ-2026-091",
   "branch": "feat/req-2026-091-design-review-shipped-phases",
   "risk_level": "LOW",
-  "codex_thread_id": "019fb0e5-f393-7f52-b0cc-53263e763a5e",
-  "review_base_sha": "40b6c152ebd16ef86762e04a25bc676df0643c7c",
-  "review_diff_hash": "e6b1de2de01289d78a9ca4286fdcbf483649ed87",
+  "codex_thread_id": "019fb0f0-2c7c-7cb0-98a4-c53a75cb17af",
+  "review_base_sha": "d4a6df21b857aa9e279b6c7ef04bce978d442f3c",
+  "review_diff_hash": "62585eae8c42633973d5de23267f1b4be891a5e1",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "861b95796c01b2ec837b1dc90c03784005b85250a83f01e284bcdc734e3dbd77",
-  "current_phase": "phase-1-shipped-phases-block",
+  "current_phase": "phase-2-notice-timing",
   "phases": [
     {
       "id": "phase-1-shipped-phases-block",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-notice-timing",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -37,16 +37,24 @@
       "phase_id": "phase-1-shipped-phases-block",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-notice-timing#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-notice-timing",
+      "attempts": 2,
+      "closed_reason": "approved",
+      "void_attempts": 1
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-shipped-phases-block",
+    "phase_id": "phase-2-notice-timing",
     "outcome": "approved",
-    "compare_hash": "239cd0a22a12df5b2ed2db9694dc8c303bc88c214785a60c17a87d12b9a3b586",
-    "count": 1,
+    "compare_hash": "73804f0334bfb8eb7fa15fa11b64b08a18c8fa90f3c1140dced4e7166f99aef0",
+    "count": 2,
     "errors": [],
-    "at": "2026-07-30T02:42:21.793Z",
+    "at": "2026-07-30T02:53:05.357Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,6 +82,12 @@
       "phase_id": "phase-1-shipped-phases-block",
       "consumed_by_commit_sha": "852c05766f232cc610a2ffc56cc468d057754203",
       "approval_consumed_at": "2026-07-30T02:42:32.805Z"
+    },
+    {
+      "approved_tree": "62585eae8c42633973d5de23267f1b4be891a5e1",
+      "phase_id": "phase-2-notice-timing",
+      "consumed_by_commit_sha": "f233b63d13659139d2f2be1f3acbe95172276da5",
+      "approval_consumed_at": "2026-07-30T02:53:16.866Z"
     }
   ],
   "user_commit_confirmed": null
