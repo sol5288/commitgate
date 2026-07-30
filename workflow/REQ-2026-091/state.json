@@ -2,18 +2,18 @@
   "id": "REQ-2026-091",
   "branch": "feat/req-2026-091-design-review-shipped-phases",
   "risk_level": "LOW",
-  "codex_thread_id": "019fb0d3-2ddd-7db2-975d-6a72f1e157fd",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fb0e5-f393-7f52-b0cc-53263e763a5e",
+  "review_base_sha": "40b6c152ebd16ef86762e04a25bc676df0643c7c",
+  "review_diff_hash": "e6b1de2de01289d78a9ca4286fdcbf483649ed87",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "861b95796c01b2ec837b1dc90c03784005b85250a83f01e284bcdc734e3dbd77",
-  "current_phase": null,
+  "current_phase": "phase-1-shipped-phases-block",
   "phases": [
     {
       "id": "phase-1-shipped-phases-block",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-notice-timing",
@@ -30,16 +30,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-shipped-phases-block#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-shipped-phases-block",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-shipped-phases-block",
     "outcome": "approved",
-    "compare_hash": "8dbdbe53f1b33540040df1d0e74b8c5b4d1a495c1641910df1387ddef37d672c",
+    "compare_hash": "239cd0a22a12df5b2ed2db9694dc8c303bc88c214785a60c17a87d12b9a3b586",
     "count": 1,
     "errors": [],
-    "at": "2026-07-30T02:21:37.299Z",
+    "at": "2026-07-30T02:42:21.793Z",
     "findings": [],
     "elided_count": 0
   },
@@ -60,5 +67,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-07-30T02:21:37.299Z",
     "design_hash": "861b95796c01b2ec837b1dc90c03784005b85250a83f01e284bcdc734e3dbd77"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "e6b1de2de01289d78a9ca4286fdcbf483649ed87",
+      "phase_id": "phase-1-shipped-phases-block",
+      "consumed_by_commit_sha": "852c05766f232cc610a2ffc56cc468d057754203",
+      "approval_consumed_at": "2026-07-30T02:42:32.805Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
