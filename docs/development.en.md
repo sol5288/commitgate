@@ -7,8 +7,15 @@ Current verification:
 - GitHub Actions runs a `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 20/22/24 matrix.
 - `npm run smoke` installs the packed tarball into a throwaway project and asserts that the target has **no** `scripts/req/`, that `tsx`/`ajv`/`cross-spawn` are **not** injected, that all five `req:*` scripts point at the package bin, and that `npm run req:doctor` actually dispatches into the module inside the package. It verifies `migrate`'s non-destructiveness the same way.
 - A Windows `.cmd` wrapper injection regression test protects package-manager and Codex wrapper paths.
-- `npm test` runs the **whole suite**, and that is what the gate judges (we do not run only-changed tests —
-  impact analysis lets through the regressions it failed to predict).
+- `npm test` runs the **whole suite**. That run is the authority for regressions.
+  **We do not auto-select only-changed tests** — impact analysis lets through the regressions it failed
+  to predict. Measured (2026-08-01): `vitest run --changed HEAD~1` selected **all 50 files** and took
+  **513s** (slower than the 295s full run). One root file (`package.json`) invalidates the whole graph,
+  and the module graph is wide (17 test files depend on `review-codex.ts` alone).
+
+  🔴 **The gate does not run tests.** Neither `req:doctor` nor `req:commit` contains any code that runs
+  them, and `req.config.json` has no test-related setting. When to run tests is **human/agent
+  discipline**; the canonical guidance is [AGENTS.template.md](../AGENTS.template.md) §1-1.
 
 ### CI jobs have a 20-minute cap
 

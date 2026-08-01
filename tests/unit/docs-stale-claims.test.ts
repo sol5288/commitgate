@@ -64,6 +64,21 @@ export const STALE_CLAIMS: readonly { text: string; why: string }[] = [
     text: 'never committed or integrated without a human confirmation',
     why: 'reads as a per-commit guarantee — confirmation is required only at the stopGate point',
   },
+  /**
+   * 🔴 REQ-2026-100 — `docs/development.md`가 "전체 스위트를 돌리고 **게이트 판정도 이것을 본다**"고
+   *    적고 있었다. 사실이 아니다: `req:doctor`·`req:commit` 어디에도 테스트를 실행하는 코드가 없고
+   *    `req.config.json`에 테스트 설정도 없다. 게이트를 테스트 검증자로 오해하게 만드는 문장이라
+   *    REQ-2026-073이 정리한 것과 **같은 결함 class**다.
+   *    (같은 문장 뒤쪽의 "변경분만 돌리지 않는다"는 **참이며 유지**한다 — 실측이 그 근거를 강화했다.)
+   */
+  {
+    text: '게이트 판정도 이것을 봅니다',
+    why: '게이트는 테스트를 실행하지 않는다 (development.md · REQ-2026-100)',
+  },
+  {
+    text: 'that is what the gate judges',
+    why: 'the gate does not run tests (development.en.md · REQ-2026-100)',
+  },
 ]
 
 /** 검사 대상: 저장소 루트의 README 2종 + `docs/*.md` 전부. */

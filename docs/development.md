@@ -7,8 +7,15 @@
 - GitHub Actions에서 `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 20/22/24 매트릭스를 실행합니다.
 - `npm run smoke`는 pack tarball을 임시 프로젝트에 실제로 설치해, 대상에 `scripts/req/`가 **없고** `tsx`·`ajv`·`cross-spawn`이 **주입되지 않으며** 다섯 `req:*`가 패키지 bin을 가리키는지, 그리고 `npm run req:doctor`가 실제로 패키지 안의 모듈까지 dispatch되는지 확인합니다. `migrate` 비파괴성도 같은 방식으로 검증합니다.
 - Windows `.cmd` 래퍼 주입 회귀 테스트가 패키지 매니저와 Codex wrapper 경로를 보호합니다.
-- `npm test`는 **전체 스위트**를 돌리고, 게이트 판정도 이것을 봅니다(변경분만 돌리는 방식은 쓰지 않습니다 —
-  영향 분석이 놓친 회귀를 통과시킵니다).
+- `npm test`는 **전체 스위트**를 돌립니다. 이것이 회귀 판정의 권위입니다.
+  **변경분만 자동으로 골라 돌리는 방식은 쓰지 않습니다** — 영향 분석이 놓친 회귀를 통과시킵니다.
+  실측(2026-08-01): `vitest run --changed HEAD~1`이 **50파일 전부**를 골라 **513초**가 걸렸습니다
+  (전체 실행 295초보다 느림). 루트 파일 하나(`package.json`)가 전 그래프를 무효화하고, 모듈 그래프가
+  넓기 때문입니다(`review-codex.ts` 하나에 17개 테스트 파일이 의존).
+
+  🔴 **게이트는 테스트를 실행하지 않습니다.** `req:doctor`·`req:commit` 어디에도 테스트를 돌리는
+  코드가 없고 `req.config.json`에 테스트 설정도 없습니다. 테스트를 언제 돌릴지는 **사람·에이전트의
+  규율**이며, 그 권고는 [AGENTS.template.md](../AGENTS.template.md) §1-1이 정본입니다.
 
 ### CI 잡에는 20분 상한이 있습니다
 

@@ -288,6 +288,40 @@ describe('req:new — 레거시 scratch만 허용하는 clean-tree 판정', () =
     }
   }, 60_000)
 
+  /**
+   * REQ-2026-100 — 스캐폴드가 **테스트 실행 계층**을 말한다.
+   *
+   * 🔴 왜 고정하는가: 이 문구가 소비자에게 닿는 **실질 경로**다. `02-plan.md`는 에이전트가 매 phase
+   *    읽는 문서이고, 예전 문구(`Exit: eslint0·typecheck0 · 단위 그린`)는 범위·시점이 없어 "매 phase
+   *    전체 스위트"로 부풀었다(이 저장소에서 실제로 그랬다 — REQ 4건에 전체 5회·1475초).
+   *    그리고 스캐폴드 텍스트를 검사하는 테스트가 그때까지 **0건**이라 조용히 되돌아갈 수 있었다.
+   */
+  it('[REQ-2026-100] 스캐폴드 02-plan.md가 테스트 실행 계층을 명시한다', () => {
+    const dir = fixture()
+    try {
+      const result = spawnSync(process.execPath, [TSX_CLI, REQ_NEW_CLI, 'tiering-scaffold', '--root', dir, '--run'], {
+        cwd: PACKAGE_ROOT,
+        encoding: 'utf8',
+      })
+      expect(result.status, result.stderr).toBe(0)
+      const branch = git(dir, ['branch', '--show-current']).trim()
+      const reqId = /^feat\/req-(\d{4}-\d{3})-/.exec(branch)?.[1]
+      const plan = readFileSync(join(dir, TICKET_ROOT, `REQ-${reqId}`, '02-plan.md'), 'utf8')
+
+      // 두 시점이 모두 있어야 한다 — 하나만 있으면 계층이 아니다.
+      expect(plan).toContain('phase 진행 중')
+      expect(plan).toContain('통합(main 병합) 직전 1회')
+      // 범위 한정이 전체를 대체하지 않는다는 한계 고지(REQ-098 교훈: 안내가 보장보다 강하면 안 된다).
+      expect(plan).toContain('대체하지 않는다')
+      // 게이트가 테스트를 실행한다는 오해를 남기지 않는다.
+      expect(plan).toContain('게이트는 테스트를 **실행하지 않는다**')
+      // 없는 도구를 Exit 조건으로 심지 않는다(이 저장소·기본 소비자에 eslint 스크립트 없음).
+      expect(plan).not.toContain('eslint0')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it("실제 req:new --run은 ticketRoot='.'도 canonical Git 경로로 판정한다", () => {
     const dir = fixture()
     try {
