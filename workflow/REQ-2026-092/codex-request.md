@@ -1,76 +1,97 @@
-# REQ-2026-092 phase-1 리뷰 요청 (r03) — 술어 SSOT + 리뷰 전 게이트
+# REQ-2026-092 phase-2 리뷰 요청 — 문서 + CHANGELOG
 
 ## 배경
 
-소비자 저장소(`0.15.0`)에서 **phase 승인이 존재하는데도 티켓을 종결할 수 없는 영구 교착**이 보고됐다.
-한 티켓의 교착이 `req:new` intake 게이트를 통해 저장소 전체를 막았다.
+phase-1(`26ee07fc`)이 **커밋할 수 없는 승인**을 리뷰 시작 전에 차단하는 게이트를 넣었다.
+이 phase는 그 변경을 사용자에게 설명하는 문서만 담는다. **코드 변경은 없다.**
 
-원인은 두 명령이 "유효한 staged tree"를 다르게 정의하는 것이다. `captureGitBinding()`은 `git write-tree`
-(인덱스 전체)를 **무검사** 승인 바인딩으로 삼는데, `req:commit`은 source 커밋 직전에 **(a) tree 일치**와
-**(b) `<ticket>/state.json`·`responses/**` staged 금지**를 동시에 요구한다. 리뷰 시점 인덱스에
-`state.json`이 있으면 (a)와 (b)는 동시에 참이 될 수 없다. D10은 판정식이
-`e.index === '?' || e.worktree !== ' '`라 **staged·worktree-clean을 아예 보지 않아** 막지 못한다.
+> 🔴 **diff에 없는 것을 확인하는 법**: 이 phase의 diff는 문서 3개뿐이라, 여기서 서술하는 런타임 동작은
+> 앞 phase의 커밋에 있다. CHANGELOG의 «확인할 파일» 표가 그 커밋 SHA와 심볼을 가리킨다.
+>
+> | phase | 커밋 | 확인할 파일 |
+> |---|---|---|
+> | phase-1 | `26ee07fc` | `lib/scratch.ts`의 `sourceCommitForbiddenStaged` · `review-codex.ts`의 `forbiddenStagedMessage`·`quotePathspec`·`mainImpl` 게이트 · `req-commit.ts`의 `stagedNames` |
+> | phase-2 | **이 커밋** | `docs/troubleshooting.md`·`.en.md` · `CHANGELOG.md` |
 
-설계는 r02 승인 상태다(r02에서 이 phase의 P1을 반영해 문서를 정정하고 재승인받았다).
+## r04에 대하여 — 내용 변경 없음(바인딩 갱신)
 
-## 이번 라운드에서 고친 것 (r02 P1 2건)
+r03이 이 phase를 **승인**했으나, HIGH 확인을 기록하는 `req:confirm`이 `state.json`을 인덱스에 add·커밋해
+`git write-tree`가 바뀌었고 D9가 stale 승인으로 판정했다. 승인 tree와 현재 인덱스의 차이는
+**`workflow/REQ-2026-092/state.json` 단 하나**이며(확인 기록), 리뷰 대상 문서는 **바이트 동일**하다.
 
-**P1-a — `stagedNames()`의 판독이 phase 게이트와 갈렸다.**
-리뷰어가 교착을 구성했다: 다른 파일인 ` workflow/REQ-x/state.json`(선행 공백)을 stage하면 phase 게이트는
-`-z` 원문을 보고 통과·승인하는데, `req:commit`은 `trim()` 후 현재 티켓 것으로 오인해 금지 → unstage하면
-승인 tree가 깨져 커밋 불가 = **이 REQ가 없애려던 교착의 재현**.
+```
+$ git diff --name-status <r03-approved-tree> $(git write-tree)
+M   workflow/REQ-2026-092/state.json
+```
 
-→ `stagedNames()`를 `STAGED_NAMES_Z_ARGS`(`diff --cached --name-only -z`) 기반·공백 보존으로 교정했다.
-설계 문서(00 §5 완료기준 · 01 DEC-1b · 02 범위)도 **"동작 무변경" 철회**로 정정하고 **재승인받았다**.
+기지 마찰("HIGH 확인은 리뷰 前에 해야 한다")을 실제로 밟은 것이다 — 이번 REQ의 범위 밖이지만
+**후속 REQ 후보로 기록**한다(확인 기록이 자기 승인을 무효화하는 순환).
 
-**P1-b — 복구 명령이 실행 가능하지 않았다.**
-`…/foo bar.json`을 그대로 이어 붙이면 셸이 두 경로로 쪼갠다.
+## r02 P1 대응 (직전 라운드)
 
-→ 순수 헬퍼 `quotePathspec()` 신설(안전 문자만이면 그대로, 아니면 큰따옴표+이스케이프) + 호출부에
-**`--` 경계** 추가. 크로스-셸 완전 인용이 불가능하다는 한계는 JSDoc·설계에 명시했다.
+**지적**: r01 수정에서 쓴 우산 문구 "`--name-only`가 원래 경로 바이트를 그대로 내주지 못하는 경로뿐"이
+**표의 첫 행(앞뒤 공백)을 배제한다**. 선행 공백 경로는 `--name-only`가 공백을 그대로 출력했고,
+뭉갠 것은 **옛 코드의 `trim()`** 이다. 우산 문구와 표가 모순이라 소비자가 우산 문구만 읽고
+영향 없다고 오판할 수 있다.
 
-**r01 P1(직전 라운드)**: 술어의 `trim()` 제거 — 앞뒤 공백은 Git 경로의 일부다.
+**수정**: 타당하다. 하나의 성질로 묶으려던 것이 애초에 잘못이었다 — **원인이 둘이고 서로 독립**이다.
 
-**설계 r02 observation 반영**: 판정이 갈리는 입력을 "공백·비ASCII"보다 넓게(제어문자 포함)
-`stagedNames()` JSDoc에 정확히 적었다.
+- **① `trim()`**: git 출력은 원본 그대로였는데 **코드가** 바꿨다(앞뒤 공백 경로).
+- **② `-z` 부재**: **git 출력 자체가** 원본이 아니었다(C-인용: `"`·`\`·제어문자·비ASCII).
 
-## 변경 요약 (6파일 — 코드 3 · 테스트 3)
+CHANGELOG 표를 "경로군"이 아니라 **"원인"** 기준으로 다시 세우고, 둘을 뭉뚱그릴 수 없는 이유를
+본문에 적었다. `stagedNames()` JSDoc도 같은 구조로 고쳤다(주석만 — 코드 변경 없음).
 
-**`scripts/req/lib/scratch.ts`** — `sourceCommitForbiddenStaged()` 신설. `req-commit`에 인라인이던 필터를
-옮기고, 역슬래시 정규화 + **빈 조각만** 제거(🔴 `trim()` 없음). 모듈 헤더에 **의도된 비대칭**을 명시:
-`reviewScratchPaths`는 같은 `state.json`을 **관용**(워킹트리 축), 이 술어는 **금지**(인덱스 축).
+## r01 P1 대응 (직전 라운드)
 
-**`scripts/req/review-codex.ts`** — `forbiddenStagedMessage()` + `quotePathspec()` 순수 빌더,
-`mainImpl`의 `if (!opts.run)` 분기 **앞**에 게이트 1개소(`opts.kind === 'phase'`만).
+**지적**: CHANGELOG의 `stagedNames()` 호환성 서술이 **누락된 경로군 때문에 사실과 다르다**.
+Git은 큰따옴표 `"`·역슬래시 `\`가 든 경로도 C-인용하므로(예: `src/a"b.ts`), 그 경로군도 판독이
+바뀐다. "공백·제어문자·비ASCII에서만 바뀐다"고 단정하면 소비자가 영향 없음으로 오판한다.
 
-**`scripts/req/req-commit.ts`** — 인라인 필터를 공유 술어로 교체, 메시지를
-`forbiddenSourceStagedMessage()`로 분리, `stagedNames()`를 `-z` 기반으로 교정(테스트 위해 export).
+**수정**: 열거를 **성질**로 바꿨다 — "`--name-only`가 원래 경로 바이트를 그대로 내주지 못하는 경로".
+그 아래에 경로군 2개를 표로 정리하고(앞뒤 공백 / Git이 C-인용하는 문자), C-인용 대상에 `"`·`\`를
+명시했다. `"`·`\`는 `core.quotePath`와 **무관하게 항상** 인용된다는 사실도 적었다.
 
-**테스트 3종** — 술어 케이스 표(16) · 실-git e2e(9) · 파리티/바이트 파리티(5).
+🔴 **범위 밖 파일 1개를 함께 고쳤다**: `scripts/req/req-commit.ts`의 `stagedNames()` **JSDoc**이
+같은 불완전한 열거를 갖고 있었다. 코드 변경은 **없고 주석만** 고쳤다 — 같은 부정확을 문서에서만
+고치고 코드에 남겨 두는 것이 더 나쁘다고 판단했다. 계획(02-plan)의 phase-2 범위는 문서 3개였으므로
+이 1개는 **의도적 범위 확장**이며, 여기에 밝힌다.
 
-전체 스위트 그린(49파일 2372건) · typecheck 0.
+## 변경 요약 (3파일 + 주석 1파일)
 
-## 실측 확인
+**`docs/troubleshooting.md` / `.en.md`** — 기존 항목 *"`state.json`이나 `responses/`는 왜 stage하면
+안 되나요?"* 를 앵커로 삼아 두 가지를 더했다.
 
-실제 진입점(`npx tsx scripts/req/review-codex.ts`)으로 이 저장소에서 확인했다.
-staged `state.json` + `--kind phase` → 거부(exit 1, 경로·복구 명령 출력) · 같은 상태 `--kind design` → 통과.
+1. 기존 항목에 "도구가 별도 부기 커밋으로 남기므로 **사용자가 stage할 일이 없다**"를 보강.
+2. 새 증상 항목: *"phase 리뷰가 «승인해도 커밋할 수 없는 staged 구성입니다»라며 시작조차 안 됩니다."*
+   → 원인(`git add -A`) · 복구(`git restore --staged --`) · **예산 미차감** · unstage 후 dirty로 남아도
+   D10이 관용한다는 보장 · 0.15.0 이하에서 이 상황이 어떤 결과였는지(교착·저장소 전체 차단).
+
+**`CHANGELOG.md`** — `Unreleased` 절 신설. 동작이 좁아지는 변경임을 도입부에 명시하고, 원인 구조
+((a)∧(b) 동시 충족 불가), D10이 못 본 이유, 게이트 위치, `stagedNames()` 판독 변경의 정확한 범위
+(정상 ASCII 동일 / 공백·제어문자·비ASCII만 달라지며 이전이 틀렸음), design 제외 근거,
+그리고 **이미 교착에 빠진 티켓은 풀리지 않는다**(예방이지 복구가 아니다)를 적었다.
+
+`docs:lint` 그린 · 전체 스위트 그린(49파일 2372건) · typecheck 0.
 
 ## 리뷰 포인트
 
-**P1. 두 호출부가 이제 정말 같은 바이트를 보는가.** `stagedNames()`와 게이트가 같은
-`STAGED_NAMES_Z_ARGS`·같은 split·같은 정규화를 쓴다. 남은 갈림이 있는가?
+**P1. 사용자가 이 문서만 읽고 실제로 빠져나올 수 있는가.** 증상 문구 → 원인 → 명령이 끊김 없이
+이어지는가. 특히 복구 명령의 `--` 경계와 경로 예시가 실제 출력과 일치하는가.
 
-**P2. 게이트 위치.** `if (!opts.run)` 앞이라 DRY-RUN·LIVE가 같은 판정을 내고, 예산·attempt·pre-call
-원장 커밋·유료 호출보다 모두 앞이다. D10보다도 앞인데 `--cached`는 워킹트리와 무관하므로 전제가
-불필요하다고 판단했다. 맞는가?
+**P2. "unstage 후 dirty로 남아도 괜찮다"가 정확한가.** 이 문장이 틀리면 사용자를 다시 `git add`로
+몰아 원래 사고를 재현시킨다. `state.json`·리뷰 원장이 `reviewScratchPaths`에 있어 D10이 관용한다는
+근거로 적었다. 예외 상황이 있는가?
 
-**P3. `stagedNames()` 변경의 파급.** 이 함수는 `evidence-finalize`의 chore-leak 가드도 쓴다.
-그쪽도 같은 방향(정확)으로 좋아진다고 판단했는데, 내가 못 본 회귀가 있는가?
+**P3. CHANGELOG의 하위호환 서술이 과장·축소 없이 정확한가.** "정상 ASCII 경로에서는 완전히 동일,
+공백·제어문자·비ASCII에서만 달라지고 그 경우들은 이전이 틀렸다"가 `stagedNames()` 변경을 정확히
+요약하는가. 소비자가 이 문단만 읽고 자기 저장소의 영향도를 판단할 수 있는가?
 
-**P4. `quotePathspec`의 규칙.** 안전 문자 집합 `[A-Za-z0-9._/-]`가 적절한가(너무 좁아 흔한 경로를
-불필요하게 인용하지는 않는가). 큰따옴표 선택과 한계 서술이 타당한가?
+**P4. 기대 관리가 정직한가.** "이미 교착에 빠진 티켓은 이 변경으로 풀리지 않는다"를 CHANGELOG에
+적었다. 버그를 보고한 소비자가 이 릴리스를 받고 **자기 문제가 해결됐다고 오해할 여지**가 남아 있는가?
 
-**P5. e2e 오라클.** 호출 0회 + 커밋 수 불변 + 원장 0행을 단언한다. 더 봐야 할 상태가 있는가?
+**P5. 두 언어판이 같은 사실을 말하는가.** 한/영 항목의 내용·강도가 어긋나지 않는가.
 
-**P6. kind 격리(DEC-3)의 사각지대.** design 리뷰에서 staged `state.json`이 통과되면 그 인덱스가 다음
-phase 리뷰까지 이어질 수 있다(그때 phase 게이트가 잡지만 한 라운드 늦다). 감수할 만한가?
+**P6. 넣지 않은 것.** `docs/workflow.md`(phase 진행 절차)에도 이 게이트를 적어야 하는가, 아니면
+troubleshooting만으로 충분한가? 나는 이것이 **예외 상황 안내**이지 정상 절차의 일부가 아니라고 판단해
+troubleshooting에만 넣었다.

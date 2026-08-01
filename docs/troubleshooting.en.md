@@ -68,7 +68,18 @@ being blocked — codex may simply have changed its `login status` output format
 No. If the staged tree changes after approval, CommitGate treats the approval as stale and requires review again.
 
 **Why should I not stage `state.json` or `responses/`?**
-They are workflow state and evidence files. Mixing them into the source commit weakens the approval binding, so `req:commit` blocks it.
+They are workflow state and evidence files. Mixing them into the source commit weakens the approval binding, so `req:commit` blocks it. The tool commits them for you in separate bookkeeping commits (evidence-finalize, state checkpoint), so **you never need to stage them yourself.**
+
+**A phase review refuses to start, saying the staged set could not be committed even if approved.**
+A wide `git add -A` pulled `state.json` (or a file under `responses/`) into the index. Unstage the paths listed in the message. **The review did not run, so no budget was consumed.**
+
+```sh
+git restore --staged -- workflow/REQ-2026-001/state.json
+```
+
+It is **fine for the unstaged file to remain modified** — `state.json` and the review ledger are tolerated as scratch by D10. Re-running `git add` out of worry puts you back where you started.
+
+🔴 **On 0.15.0 and earlier this situation passed review, and the result was unrecoverable.** An approval binds to `git write-tree` (the whole index), while `req:commit` requires *both* "matches the approved tree" *and* "`state.json`/`responses/` are not staged". Once `state.json` is in the approved tree neither keeping nor removing it can satisfy both, the approval row never reaches `approvals.jsonl`, and **the ticket becomes impossible to close** — which in turn blocks `req:new` for the whole repository. That is why the check now runs *before* the review starts.
 
 **What should I do if I see a cross-spawn version warning?**
 It means the target project may already have a `cross-spawn` version below CommitGate's verified floor. Upgrade it with `npm i -D cross-spawn@^7.0.6`. In CI or security-sensitive installs, use `npx commitgate --strict` to treat the warning as a failure.

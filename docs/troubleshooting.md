@@ -67,6 +67,24 @@ npx commitgate check
 
 **`state.json`이나 `responses/`는 왜 stage하면 안 되나요?**
 워크플로 증거와 상태 파일입니다. source 커밋에 섞이면 승인 바인딩이 흐려지므로 `req:commit`이 막습니다.
+도구가 알아서 별도 부기 커밋(evidence-finalize·state checkpoint)으로 남기므로 **사용자가 stage할 일이 없습니다.**
+
+**phase 리뷰가 "승인해도 커밋할 수 없는 staged 구성입니다"라며 시작조차 안 됩니다.**
+`git add -A`처럼 경로를 넓게 잡아 `state.json`(또는 `responses/` 아래 파일)이 인덱스에 들어간 상태입니다.
+안내에 적힌 경로를 unstage하면 됩니다. **리뷰는 실행되지 않았으므로 예산도 깎이지 않았습니다.**
+
+```sh
+git restore --staged -- workflow/REQ-2026-001/state.json
+```
+
+unstage한 파일이 **수정된 채로 남아도 괜찮습니다** — `state.json`과 리뷰 원장은 D10이 스크래치로
+관용합니다. 여기서 걱정이 되어 다시 `git add` 하면 원래 문제로 돌아갑니다.
+
+🔴 **0.15.0 이하에서는 이 상황이 리뷰를 통과했고, 그 결과가 복구 불가능했습니다.** 승인은
+`git write-tree`(인덱스 전체)에 묶이는데 `req:commit`은 "승인 tree와 일치할 것"과 "`state.json`·
+`responses/`가 staged가 아닐 것"을 **동시에** 요구합니다. `state.json`이 승인 tree에 들어가면 유지해도
+빼도 통과할 수 없고, 승인 행이 `approvals.jsonl`에 기록되지 못해 **티켓 자체가 종결 불가**가 됐습니다
+(그 티켓 하나가 저장소 전체의 `req:new`를 막습니다). 그래서 이제 **리뷰를 시작하기 전에** 막습니다.
 
 **cross-spawn 버전 경고가 나오면 어떻게 하나요?**
 대상 프로젝트의 기존 `cross-spawn`이 CommitGate가 검증한 하한보다 낮을 수 있다는 뜻입니다. `npm i -D cross-spawn@^7.0.6`으로 올리세요. CI나 보안 민감 환경에서는 `npx commitgate --strict`를 사용해 경고를 실패로 다루세요.

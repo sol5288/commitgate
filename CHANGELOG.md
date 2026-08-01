@@ -2,6 +2,81 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+> **동작이 좁아지는 변경이 하나 있습니다.** 지금까지 통과하던 staged 구성 하나가 **phase 리뷰 시작 전에
+> 거부**됩니다. 그 구성의 유일한 귀결이 복구 불가능한 교착이었으므로 의도된 차단입니다.
+> 시정은 `git restore --staged` 한 번이고 **코드는 한 줄도 바뀌지 않습니다.**
+> 스키마는 그대로라 **`commitgate sync`가 필요 없습니다.**
+
+> **REQ-2026-092는 두 커밋으로 나뉘어 들어왔습니다.**
+>
+> | phase | 구현 커밋 | 확인할 파일 |
+> |---|---|---|
+> | phase-1 (술어 SSOT + 리뷰 전 게이트) | `26ee07fc` | `scripts/req/lib/scratch.ts`의 `sourceCommitForbiddenStaged` · `scripts/req/review-codex.ts`의 `forbiddenStagedMessage`·`quotePathspec`·`mainImpl` 게이트 · `scripts/req/req-commit.ts`의 `stagedNames` |
+> | phase-2 (문서·CHANGELOG) | **이 커밋** | `docs/troubleshooting.md`·`.en.md` · 이 파일 |
+
+- **커밋할 수 없는 승인이 만들어지지 않습니다** (REQ-2026-092).
+
+  소비 저장소에서 **phase 승인이 실제로 존재하는데도 어떤 명령으로도 티켓을 종결할 수 없는** 교착이
+  보고됐습니다. 그 티켓 하나가 `req:new` intake 게이트를 통해 **저장소 전체의 후속 작업**을 막았고,
+  남은 탈출구는 감사 파일 직접 편집뿐이었습니다.
+
+  원인은 두 명령이 "유효한 staged tree"를 **다르게 정의**한 것입니다.
+
+  ```
+  리뷰:  git write-tree(인덱스 전체)를 무검사로 승인 바인딩
+  커밋:  (a) staged tree == 승인 해시   ∧   (b) state.json·responses/ 는 staged 금지
+  ```
+
+  리뷰 시점 인덱스에 `state.json`이 있으면 그 tree가 그대로 승인되고, 이후 (a)와 (b)는 **동시에 참이 될
+  수 없습니다** — 유지하면 (b) 위반, unstage하면 tree가 달라져 (a) 위반. 승인 행은 `req:commit`의
+  evidence-finalize에서만 기록되므로 **승인 사실이 영원히 매니페스트에 남지 못하고**, 그 행을 유일한
+  증거 출처로 삼는 `req:reconstruct`·`req:rebind`·`req:close --migrate`가 전부 거부합니다.
+
+  중간의 D10이 못 막은 이유는 판정식이 `index === '?' || worktree !== ' '`라 **staged이고 워킹트리가
+  clean한 상태를 아예 보지 않기** 때문입니다. `git add -A`가 이 경계를 조용히 넘었습니다.
+
+  이제 **phase 리뷰를 시작하기 전에** 같은 술어로 검사하고 거부합니다. 유료 호출·예산 차감·attempt
+  기록·부기 커밋 **어느 것도 일어나기 전**입니다.
+
+  ```text
+  phase 리뷰를 시작할 수 없습니다 — 승인해도 커밋할 수 없는 staged 구성입니다.
+  리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다.
+
+  워크플로 파일이 staged에 있습니다(req:commit이 source 커밋에서 금지하는 경로):
+    workflow/REQ-2026-001/state.json
+
+  해소:
+    git restore --staged -- workflow/REQ-2026-001/state.json
+  ```
+
+  판정은 `req:commit`이 쓰는 것과 **같은 순수 술어**(`sourceCommitForbiddenStaged`)이고, 두 명령이
+  **같은 방식으로 얻은 같은 바이트**를 넣습니다. 술어만 공유해서는 부족합니다 — 리뷰 개발 중 실제로,
+  `req:commit`이 staged 경로를 `--name-only`(개행 split + `trim()`)로 읽는 한 선행 공백이 든 **다른
+  파일**을 리뷰는 통과시키고 커밋은 현재 티켓 것으로 오인해 **같은 교착이 재현**된다는 것이
+  드러났습니다. 그래서 `stagedNames()`도 `-z` 기반으로 교정했습니다.
+
+  🔴 **`req:commit`의 staged 경로 판독이 달라집니다.** 예전 구현(`--name-only` + 개행 split +
+  `trim()`)에는 **서로 독립된 두 오류 원인**이 있었고, 판정이 바뀌는 경로는 그 둘 중 하나에
+  걸리는 것뿐입니다. 두 경우 모두 **이전이 틀렸습니다.**
+
+  | 원인 | 걸리는 경로 | 왜 틀렸나 |
+  |---|---|---|
+  | **① `trim()`** — git 출력은 멀쩡한데 코드가 다듬었다 | 앞뒤에 **공백**이 있는 경로 | ` <t>/state.json`은 Git에서 **다른 파일**인데 금지 경로로 오인해 정상 리뷰·커밋을 막음 |
+  | **② `-z` 부재** — git이 경로를 C-인용하거나 split이 깨진다 | 큰따옴표 `"` · 역슬래시 `\` · 개행·탭 등 제어문자 · (`core.quotePath` 기본값에서) 비ASCII | `"a\"b.ts"`처럼 인용된 표시 문자열로 읽혀 접두사 비교가 빗나가 진짜 위반을 **놓침**(fail-open). 개행은 split 자체를 쪼갬 |
+
+  ①은 git 출력이 원본 그대로였는데도 코드가 바꾼 경우이고, ②는 git 출력 자체가 원본이 아니었던
+  경우입니다 — **원인이 다르므로 어느 한쪽으로 뭉뚱그릴 수 없습니다.** `"`·`\`가 든 이름
+  (예: `src/a"b.ts`)도 ②에 **포함**됩니다. 두 원인 어디에도 걸리지 않는 경로 — 실무의 거의 전부 —
+  에서는 판독이 완전히 동일합니다.
+
+  design 리뷰는 대상이 아닙니다. 설계 승인은 `approved_diff_hash`를 설정하지 않아 위 (a)∧(b) 충돌이
+  구조적으로 불가능하고, 게이트를 걸면 설계 문서만 staged인 정상 경로를 막을 위험만 생깁니다.
+
+  ⚠️ **이미 교착에 빠진 티켓은 이 변경으로 풀리지 않습니다.** 이번 릴리스는 **예방**입니다.
+  복구 경로(승인 행 복원)·명시적 포기 경로·`req:doctor` 가시성은 별도 REQ로 이어집니다.
+
 ## 0.15.0 (2026-07-30)
 
 > **동작이 좁아지는 변경은 없습니다.** 설계 리뷰 프롬프트에 참고 블록이 추가되고 재결속 안내 문구가
