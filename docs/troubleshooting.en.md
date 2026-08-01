@@ -114,6 +114,30 @@ passes the ticket while labelling it `abandoned` (it is **not** reported as comp
 It is mutually exclusive with `--migrate`, which means the opposite: `--migrate` confirms *that the work was
 completed*, `--abandon` declares *that it will not be*.
 
+**`req:doctor` reports D27: a consumed approval has no row in the manifest.**
+The approval record for that phase (its row in `responses/approvals.jsonl`) has been **lost**. The tool
+commits that row *before* it marks the approval consumed, so "consumed but no row" means that commit
+disappeared (a revert, a force-push, a bad merge). The ticket cannot be closed in this state.
+
+🔴 **That record cannot be recovered.** The approval pin (`approved_at`, `response_sha256`, …) is deleted
+from `state.json` at the moment of consumption, so nothing is left to rebuild it from. CommitGate does
+**not** offer a restore that guesses those values — that would be fabricating an approval record.
+
+There are two honest paths.
+
+1. **Redo the phase.** Stage the code, get it approved again with `req:review-codex`, and commit. This
+   costs a review call but leaves an accurate audit trail.
+2. **Close it if you cannot finish it.**
+
+   ```sh
+   npx commitgate req:close 2026-004 --abandon \
+     --reason "Approval evidence lost; dropping instead of redoing" \
+     --confirm "Approved by PM 2026-08-01" --run
+   ```
+
+D27 is **a warning only — it blocks nothing** (`req:doctor` still exits PASS), so that the diagnostic
+never creates a new deadlock of its own.
+
 **What should I do if I see a cross-spawn version warning?**
 It means the target project may already have a `cross-spawn` version below CommitGate's verified floor. Upgrade it with `npm i -D cross-spawn@^7.0.6`. In CI or security-sensitive installs, use `npx commitgate --strict` to treat the warning as a failure.
 

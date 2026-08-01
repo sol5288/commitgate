@@ -118,6 +118,30 @@ npx commitgate req:close 2026-004 --abandon \
 `--migrate`와는 의미가 반대라 함께 쓸 수 없습니다: `--migrate`는 "완료됐음을 사후 확인",
 `--abandon`은 "완료되지 않을 것임을 선언"입니다.
 
+**`req:doctor`가 D27로 "소비된 승인인데 매니페스트에 행이 없다"고 합니다.**
+그 phase의 승인 기록(`responses/approvals.jsonl`의 행)이 **유실**된 상태입니다. 도구는 승인을 소비할 때
+그 행을 먼저 커밋하므로, 소비 기록만 남고 행이 없다는 것은 그 커밋이 사라졌다는 뜻입니다
+(revert·force-push·잘못된 병합 등). 이 상태에서는 티켓을 종결할 수 없습니다.
+
+🔴 **그 기록은 복구할 수 없습니다.** 승인 핀(`approved_at`·`response_sha256` 등)은 소비와 동시에
+`state.json`에서 지워지므로 되살릴 근거가 남지 않습니다. CommitGate는 값을 추정해 채우는 복원을
+**제공하지 않습니다** — 그것은 승인 기록의 날조이기 때문입니다.
+
+가능한 경로는 둘입니다.
+
+1. **그 phase를 다시 수행합니다.** 코드를 stage하고 `req:review-codex`로 다시 승인받아 커밋하면
+   진짜 증거가 새로 생깁니다. 리뷰 비용이 들지만 감사 이력이 정확해집니다.
+2. **끝낼 수 없으면 종결합니다.**
+
+   ```sh
+   npx commitgate req:close 2026-004 --abandon \
+     --reason "승인 증거 유실 — 재수행 대신 폐기" \
+     --confirm "PM 승인 2026-08-01" --run
+   ```
+
+D27은 **경고일 뿐 아무것도 막지 않습니다**(`req:doctor`는 계속 PASS로 끝납니다). 진단이 스스로 새
+교착을 만들지 않기 위해서입니다.
+
 **cross-spawn 버전 경고가 나오면 어떻게 하나요?**
 대상 프로젝트의 기존 `cross-spawn`이 CommitGate가 검증한 하한보다 낮을 수 있다는 뜻입니다. `npm i -D cross-spawn@^7.0.6`으로 올리세요. CI나 보안 민감 환경에서는 `npx commitgate --strict`를 사용해 경고를 실패로 다루세요.
 

@@ -20,6 +20,7 @@ import {
   verifyCommittedDesignEvidence,
   verifyCommittedEvidenceIntegrity,
   splitUnboundPhases,
+  consumedApprovalsWithoutRow,
   type EvidencePorts,
 } from '../../scripts/req/lib/evidence'
 import { createEvidencePorts } from '../../scripts/req/lib/evidence-ports'
@@ -981,5 +982,50 @@ describe('[evidence] rebind 행 — 재결속 모델(REQ-2026-069)', () => {
     it('🔴 rebind 행에 승인 전용 필드가 있으면 거부', () => {
       expect(check(rebindRow({ design_hash: D2 })).some((p) => p.includes('승인 전용 필드'))).toBe(true)
     })
+  })
+})
+
+// ── REQ-2026-094: 진단 술어 자체(D27이 주입받는 값의 출처) ──
+//
+// 🔴 phase-2 리뷰 observation: doctor 테스트는 계산 **결과**를 주입하므로 술어의 배선 회귀를 못 잡는다.
+//    여기서 실제 blob 텍스트로 술어를 직접 시험한다.
+describe('[REQ-2026-094] consumedApprovalsWithoutRow — 진단 술어', () => {
+  const T = 'workflow/REQ-2026-001'
+  const OID2 = 'b'.repeat(40)
+  const S = 'a'.repeat(64)
+  const rowFor = (pid: string): string =>
+    serializeManifestLine(buildManifestEntry(
+      { review_kind: 'phase', phase_id: pid, response_path: `${T}/responses/${pid}-r01-approved.json`, response_sha256: S, review_base_sha: OID2, approved_tree: OID2, approved_at: '2026-07-22T00:00:00.000Z' } as Parameters<typeof buildManifestEntry>[0],
+      { consumedAt: '2026-07-22T00:00:01.000Z', consumedByCommitSha: OID2, userCommitConfirmed: null },
+    ))
+  const stateWith = (extra: Record<string, unknown>): string => JSON.stringify({ id: 'REQ-2026-001', ...extra })
+
+  it('🔴 소비 기록은 있는데 행이 없으면 그 phase를 낸다(= D27의 신호)', () => {
+    const st = stateWith({ consumed_approvals: [{ phase_id: 'p1', approved_tree: OID2, consumed_by_commit_sha: OID2 }] })
+    expect(consumedApprovalsWithoutRow(st, '')).toEqual(['p1'])
+    expect(consumedApprovalsWithoutRow(st, null)).toEqual(['p1'])
+  })
+
+  it('행이 있으면 조용하다', () => {
+    const st = stateWith({ consumed_approvals: [{ phase_id: 'p1', approved_tree: OID2, consumed_by_commit_sha: OID2 }] })
+    expect(consumedApprovalsWithoutRow(st, rowFor('p1'))).toEqual([])
+  })
+
+  it('🔴 미소비 승인 핀은 신호가 아니다 — req:confirm 체크포인트가 만드는 정상 상태다', () => {
+    const st = stateWith({ approval_evidence: { review_kind: 'phase', phase_id: 'p2', approved_at: '2026-07-22T00:00:00.000Z' } })
+    expect(consumedApprovalsWithoutRow(st, '')).toEqual([])
+  })
+
+  it('여러 건은 정렬·중복 제거해서 낸다', () => {
+    const st = stateWith({ consumed_approvals: [{ phase_id: 'p2' }, { phase_id: 'p1' }, { phase_id: 'p2' }] })
+    expect(consumedApprovalsWithoutRow(st, '')).toEqual(['p1', 'p2'])
+  })
+
+  it('state 부재·손상·비객체는 조용하다(손상 처리는 intake 소관 — 여기서 추측하지 않는다)', () => {
+    expect(consumedApprovalsWithoutRow(null, '')).toEqual([])
+    expect(consumedApprovalsWithoutRow('{not json', '')).toEqual([])
+    expect(consumedApprovalsWithoutRow('[]', '')).toEqual([])
+    expect(consumedApprovalsWithoutRow(stateWith({ consumed_approvals: 'nope' }), '')).toEqual([])
+    expect(consumedApprovalsWithoutRow(stateWith({ consumed_approvals: [{ phase_id: '' }, {}, null] }), '')).toEqual([])
   })
 })

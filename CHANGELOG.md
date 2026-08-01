@@ -20,7 +20,33 @@
 > | 092 phase-1 (술어 SSOT + 리뷰 전 게이트) | `26ee07fc` | `lib/scratch.ts`의 `sourceCommitForbiddenStaged` · `review-codex.ts`의 `forbiddenStagedMessage`·`quotePathspec`·`mainImpl` 게이트 · `req-commit.ts`의 `stagedNames` |
 > | 092 phase-2 (문서) | `66ce6d3b` | `docs/troubleshooting.md`·`.en.md` |
 > | 093 phase-1 (`abandoned` + `--abandon`) | `97c531ca` | `lib/close-proof.ts`의 `abandoned`·`OPTIONAL_KEYS`·`verifiedTerminalEvent` · `req-close.ts`의 `runAbandon` · `lib/intake.ts` |
-> | 093 phase-2 (문서·CHANGELOG) | **이 커밋** | `docs/troubleshooting.md`·`.en.md` · 이 파일 |
+> | 093 phase-2 (문서) | `9ea57768` | `docs/troubleshooting.md`·`.en.md` |
+> | 094 phase-2 (D27 진단) | `6d485ac4` | `lib/evidence.ts`의 `consumedApprovalsWithoutRow` · `req-doctor.ts`의 D27 |
+> | 094 phase-3 (문서·CHANGELOG) | **이 커밋** | `docs/troubleshooting.md`·`.en.md` · 이 파일 |
+
+- **유실된 승인 기록을 `req:doctor`가 알려 줍니다** (REQ-2026-094).
+
+  승인이 소비될 때 도구는 `responses/approvals.jsonl`에 그 행을 **먼저** 커밋합니다. 그러니 "소비
+  기록은 있는데 행이 없다"는 것은 그 커밋이 사라졌다는 뜻입니다(revert·force-push·잘못된 병합).
+  그 상태에서는 티켓을 종결할 수 없는데, 지금까지 **`req:doctor`는 PASS를 내며 침묵**했습니다 —
+  D26이 매니페스트에 *행이 있는* phase만 보기 때문입니다.
+
+  이제 **D27**이 그것을 봅니다.
+
+  ```text
+  [req:doctor] WARN D27: 🔴 소비된 승인인데 매니페스트에 행이 없습니다 — 증거가 유실됐고
+     이 상태로는 티켓을 종결할 수 없습니다.
+     해당 phase: phase-1b
+  ```
+
+  🔴 **그 기록은 복구할 수 없고, 복원 명령도 제공하지 않습니다.** 승인 핀(`approved_at`·
+  `response_sha256` 등)은 소비와 동시에 `state.json`에서 지워지므로 되살릴 근거가 남지 않습니다.
+  값을 추정해 채우는 복원은 **승인 기록의 날조**입니다. 그래서 D27은 실제로 가능한 두 경로만 안내합니다 —
+  **그 phase를 다시 수행**하거나, 끝낼 수 없으면 **`req:close --abandon`으로 종결**하는 것.
+
+  **경고일 뿐 아무것도 막지 않습니다**(`req:doctor`는 계속 PASS로 끝납니다). 진단이 스스로 새 교착을
+  만들지 않기 위해서입니다. 오탐도 없습니다 — 정상 진행 중인 티켓, 완료된 티켓, 그리고 HIGH 티켓에서
+  `req:confirm`이 남기는 중간 체크포인트 어디에서도 뜨지 않습니다.
 
 - **끝낼 수 없는 티켓을 명시적으로 포기해 종결할 수 있습니다** (REQ-2026-093).
 
