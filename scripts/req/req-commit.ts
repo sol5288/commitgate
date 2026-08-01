@@ -20,11 +20,15 @@ import {
   writeState,
   readPhases,
   appendCloseProofRowToDisk,
+  // REQ-2026-092 r02 P1: staged 경로 획득을 phase 게이트와 **같은 인자**로 맞춘다(같은 바이트를 봐야 한다).
+  STAGED_NAMES_Z_ARGS,
   type ApprovalEvidence,
   type ReviewKind,
   type WorkflowState,
 } from './review-codex'
-import { isArchiveFileName } from './lib/scratch'
+// REQ-2026-092 DEC-1: `sourceCommitForbiddenStaged`는 이 명령과 `req:review-codex`가 **공유하는** 술어다.
+// 여기서만 인라인으로 다시 쓰면 리뷰가 승인한 tree를 커밋이 거부하는 상태가 재발한다.
+import { isArchiveFileName, sourceCommitForbiddenStaged } from './lib/scratch'
 // REQ-2026-085: 도구가 만든 부기 커밋 표식(leaf — 순환 없음).
 import { bookkeepingMessage } from './lib/bookkeeping'
 // REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
@@ -435,12 +439,43 @@ function runDoctor(doctorArgs: string[]): void {
   safeSpawnSync(cmd, rest, { cwd: gitRoot, stdio: 'inherit' })
 }
 
-/** `git diff --cached --name-only`를 정규화 경로 배열로. */
-function stagedNames(): string[] {
-  return git(['diff', '--cached', '--name-only'])
-    .split('\n')
-    .map((p) => p.trim().replace(/\\/g, '/'))
-    .filter(Boolean)
+/**
+ * source 커밋 금지 staged 안내(REQ-2026-092, 순수).
+ *
+ * 🔴 **위반 경로를 전부 나열한다** — 사용자가 무엇을 unstage해야 하는지 알아야 한다. 개수만 알리거나
+ *    첫 항목만 보이면 여러 번 왕복하게 된다. 리뷰 측 `forbiddenStagedMessage`와 같은 취지다.
+ */
+export function forbiddenSourceStagedMessage(paths: readonly string[]): string {
+  return `source 커밋에 비-코드 staged 금지(state/responses): ${paths.join(', ')}`
+}
+
+/**
+ * staged 변경 경로를 정규화 배열로 (`git diff --cached --name-only -z`).
+ *
+ * 🔴 **`-z`와 공백 보존이 정확성 요구다** (REQ-2026-092 phase-1 r02 P1). 예전엔 `-z` 없이 개행 split +
+ *    `trim()`이었고, 그것이 `req:review-codex`의 phase 게이트(`-z` 원문 보존)와 **갈라졌다**. 갈라지면
+ *    이 REQ가 없애려는 교착이 정확히 재현된다:
+ *
+ *      ① 다른 파일인 ` workflow/REQ-x/state.json`(선행 공백)을 코드와 함께 stage한다.
+ *      ② phase 게이트는 `-z` 원문을 보므로 현재 티켓 경로가 **아니라고** 판정 → 통과·승인(tree에 포함).
+ *      ③ `req:commit`은 trim해서 `workflow/REQ-x/state.json`으로 **오인** → 금지.
+ *      ④ unstage하면 승인 tree와 달라져 (a)가 깨진다 → 커밋 불가 = 교착.
+ *
+ *    두 호출부는 **같은 바이트**를 봐야 한다. 그래서 획득 방식까지 맞춘다(술어만 공유해서는 부족하다).
+ *
+ *    🔴 판정이 달라지는 입력은 공백만이 아니다 — **`--name-only`(비-`-z`)가 원래 바이트를 보존하지
+ *    못하는 경로 전부**다(설계 r02 observation):
+ *      - 앞뒤 **공백**: `trim()`이 다른 파일로 뭉갠다.
+ *      - **개행·탭 등 제어문자**: 개행 split이 한 경로를 두 조각으로 쪼개고, C-인용도 겹친다.
+ *      - **비ASCII**: `core.quotePath=true` 기본값에서 `"…\355\225\234…"`로 C-인용되어 접두사 비교가
+ *        빗나가고 **위반을 놓친다(fail-open)**.
+ *    `-z`는 인용 없이 NUL로만 구분하므로 이 세 경우를 한꺼번에 없앤다.
+ */
+export function stagedNames(): string[] {
+  return git([...STAGED_NAMES_Z_ARGS])
+    .split('\0')
+    .map((p) => p.replace(/\\/g, '/'))
+    .filter((p) => p.length > 0)
 }
 
 // 🔴 REQ-2026-052 phase-3b: 매니페스트 순수 파서(parseManifestEntries·evidencedPhaseIdsFromManifest·
@@ -893,8 +928,10 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     throw new Error(`staged tree(${stagedTree}) != approved_diff_hash(${state.approved_diff_hash}) — stale 승인, 재리뷰 필요`)
   const srcStaged = stagedNames()
   if (srcStaged.length === 0) throw new Error('staged 변경 없음 — 승인 코드를 stage 후 실행')
-  const nonCode = srcStaged.filter((p) => p === `${ticketRel}/state.json` || p.startsWith(`${ticketRel}/responses/`))
-  if (nonCode.length) throw new Error(`source 커밋에 비-코드 staged 금지(state/responses): ${nonCode.join(', ')}`)
+  // REQ-2026-092 DEC-1: 판정은 공유 술어 하나로. `req:review-codex`가 리뷰 **전에** 같은 술어로 막으므로
+  // 정상 경로에서는 여기까지 위반이 오지 않는다 — 그래도 fail-closed 최종 방어로 남긴다(구버전 승인·수동 staging).
+  const nonCode = sourceCommitForbiddenStaged(srcStaged, ticketRel)
+  if (nonCode.length) throw new Error(forbiddenSourceStagedMessage(nonCode))
   // REQ-018: 메시지 출처 해소(-m 또는 --message-file/env) — 정상 source-커밋 flow에서만. fail-closed(상호배타·필수·존재검증).
   const msgSource = resolveMessageSource({ message, messageFile }, process.env.REQ_COMMIT_MESSAGE_FILE, existsSync)
   // 3b) evidence preflight(B2-block1/2) — source 커밋 전 잡을 수 있는 evidence 실패 전부 차단. 실패 시 git commit 안 함.

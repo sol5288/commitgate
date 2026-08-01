@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { resolve, isAbsolute } from 'node:path'
+import { describe, it, expect, afterEach } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve, isAbsolute, join } from 'node:path'
 import {
   buildArchiveInventory,
   buildManifestEntry,
@@ -24,7 +27,11 @@ import {
   computeDevCompleteProof,
   evidencedPhaseIdsFromManifest,
   designHashFromManifest,
+  forbiddenSourceStagedMessage,
+  stagedNames,
 } from '../../scripts/req/req-commit'
+import { STAGED_NAMES_Z_ARGS } from '../../scripts/req/review-codex'
+import { sourceCommitForbiddenStaged } from '../../scripts/req/lib/scratch'
 import { finalizeD9Check } from '../../scripts/req/req-doctor'
 import { buildScriptInvocation, type ResolvedConfig } from '../../scripts/req/lib/config'
 import type { ApprovalEvidence, WorkflowState } from '../../scripts/req/review-codex'
@@ -1458,5 +1465,110 @@ describe('[REQ-2026-071] 확인 기록은 커밋 전까지 살아 있다', () =>
     expect(after.user_commit_confirmed).toBeNull()
     // 그리고 그 다음 phase 는 다시 요구한다.
     expect(userConfirmGate(after, 'phase').blocked).toBe(true)
+  })
+})
+
+/**
+ * REQ-2026-092 DEC-1 — source 커밋 금지 술어의 **호출부 파리티**.
+ *
+ * 술어 자체의 경계 케이스는 `scratch.test.ts`가 표로 고정한다. 여기서 지키는 것은 다른 것이다:
+ * 두 호출부가 **서로 다른 형태의 입력**을 같은 함수에 넣는다.
+ *
+ *   - `req:commit`      → `git diff --cached --name-only` (개행 split, 이미 슬래시 정규화됨)
+ *   - `req:review-codex`→ `git diff --cached --name-only -z` (NUL split, 마지막에 빈 조각이 남음)
+ *
+ * 두 형태가 **같은 판정**을 내야 SSOT가 성립한다. 갈라지면 리뷰가 통과시킨 것을 커밋이 거부하는
+ * 원래 버그가 형태만 바꿔 재발한다.
+ */
+describe('[REQ-2026-092] source 커밋 금지 술어 — 두 호출부 입력 형태 파리티', () => {
+  const TICKET = 'workflow/REQ-2026-016'
+  // 실제 phase 커밋에서 나올 법한 혼합: 코드 + 티켓 설계문서 + 워크플로 파일.
+  const NAMES = ['scripts/req/req-commit.ts', `${TICKET}/01-design.md`, `${TICKET}/state.json`, `${TICKET}/responses/approvals.jsonl`]
+
+  it('`--name-only` 형태(req:commit)와 `-z` 형태(req:review-codex)가 같은 판정을 낸다', () => {
+    const fromNameOnly = sourceCommitForbiddenStaged(NAMES.join('\n').split('\n'), TICKET)
+    // `-z`는 각 경로 뒤에 NUL을 붙이므로 split 결과 **마지막에 빈 조각**이 남는다.
+    const fromZ = sourceCommitForbiddenStaged(`${NAMES.join('\0')}\0`.split('\0'), TICKET)
+    expect(fromNameOnly).toEqual(fromZ)
+    expect(fromNameOnly).toEqual([`${TICKET}/state.json`, `${TICKET}/responses/approvals.jsonl`])
+  })
+
+  it('🔴 술어 자신은 두 형태 모두에서 공백을 보존한다 — 갈림이 있다면 원인은 호출부 상류 정규화다', () => {
+    // `stagedNames()`가 상류에서 trim하는 것은 알려진 한계(별도 REQ). 술어는 어느 쪽 입력에서도
+    // 공백 경로를 금지 대상으로 오인하지 않는다 — 그래야 상류를 고칠 때 판정이 저절로 일치한다.
+    const spaced = [` ${TICKET}/state.json`]
+    expect(sourceCommitForbiddenStaged(spaced, TICKET)).toEqual([])
+    expect(sourceCommitForbiddenStaged(`${spaced.join('\0')}\0`.split('\0'), TICKET)).toEqual([])
+  })
+
+  it('🔴 req:commit이 의존하는 계약: 설계문서·코드는 통과시키고 state/responses만 잡는다', () => {
+    // 이 계약이 깨지면 정상 phase 커밋(설계문서 동반)이 통째로 막힌다 — 이 저장소의 관례가 그렇다.
+    expect(sourceCommitForbiddenStaged([`${TICKET}/01-design.md`, `${TICKET}/codex-request.md`, 'src/a.ts'], TICKET)).toEqual([])
+  })
+
+  it('🔴 거부 문구가 위반 경로를 **전부** 나열한다 — 개수만 알리면 사용자가 여러 번 왕복한다', () => {
+    const flagged = sourceCommitForbiddenStaged(NAMES, TICKET)
+    const msg = forbiddenSourceStagedMessage(flagged)
+    expect(msg).toContain('source 커밋에 비-코드 staged 금지')
+    for (const p of flagged) expect(msg).toContain(p)
+  })
+})
+
+/**
+ * REQ-2026-092 phase-1 r02 P1 — `stagedNames()`가 phase 게이트와 **같은 바이트**를 본다(실 git).
+ *
+ * 예전엔 `-z` 없이 개행 split + `trim()`이었다. 그러면 `core.quotePath=true` 기본값에서 비ASCII 경로가
+ * C-인용된 표시 문자열(`"workflow/…/\355\225\234…"`)로 들어와 접두사 비교가 빗나가고, **금지 경로 위반을
+ * 통째로 놓쳤다(fail-open)**. 게다가 phase 게이트는 `-z` 원문을 보므로 두 판정이 갈렸다 — 갈림 자체가
+ * 이 REQ가 없애려는 교착의 재료다.
+ */
+describe('[REQ-2026-092] stagedNames — phase 게이트와 동일한 -z 원문 (실 git)', () => {
+  const TICKET_REL = 'workflow/REQ-2026-001'
+  const repos: string[] = []
+  afterEach(() => {
+    while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true })
+  })
+
+  const setup = (): { repo: string; git: (a: string[]) => string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req092-sn-'))
+    repos.push(repo)
+    const git = (a: string[]): string =>
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd: repo, encoding: 'utf8' }).replace(/\s+$/, '')
+    git(['init', '-q'])
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n')
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    mkdirSync(join(repo, TICKET_REL, 'responses'), { recursive: true })
+    return { repo, git }
+  }
+
+  it('🔴 비ASCII 경로의 금지 위반을 놓치지 않는다(예전 --name-only는 C-인용 때문에 fail-open이었다)', () => {
+    const { repo, git } = setup()
+    // 티켓 responses/ 아래 한글 파일 — 승인 증거가 코드 커밋에 새는 실제 위반.
+    const rel = `${TICKET_REL}/responses/한글-증거.json`
+    writeFileSync(join(repo, rel), '{}\n')
+    writeFileSync(join(repo, 'src.ts'), 'export const a = 1\n')
+    git(['add', '-A'])
+    __setGitForTest(repo)
+    const names = stagedNames()
+    // `-z`라 인용되지 않은 실제 경로가 나온다.
+    expect(names).toContain(rel)
+    expect(names.some((p) => p.includes('\\3'))).toBe(false) // C-인용 8진 이스케이프가 없다
+    // 그래서 금지 술어가 이 위반을 **잡는다**.
+    expect(sourceCommitForbiddenStaged(names, TICKET_REL)).toEqual([rel])
+  })
+
+  it('🔴 phase 게이트와 바이트 파리티 — 같은 인덱스에서 두 호출부가 같은 배열을 얻는다', () => {
+    const { repo, git } = setup()
+    writeFileSync(join(repo, `${TICKET_REL}/state.json`), '{}\n')
+    writeFileSync(join(repo, `${TICKET_REL}/responses/한글-증거.json`), '{}\n')
+    writeFileSync(join(repo, 'src.ts'), 'export const a = 1\n')
+    git(['add', '-A'])
+    __setGitForTest(repo)
+    // review-codex(phase 게이트)가 쓰는 획득 방식 — 같은 인자·같은 split.
+    const fromGate = git([...STAGED_NAMES_Z_ARGS]).split('\0').map((p) => p.replace(/\\/g, '/')).filter((p) => p.length > 0)
+    expect(stagedNames()).toEqual(fromGate)
+    // 판정도 당연히 같다.
+    expect(sourceCommitForbiddenStaged(stagedNames(), TICKET_REL)).toEqual(sourceCommitForbiddenStaged(fromGate, TICKET_REL))
   })
 })

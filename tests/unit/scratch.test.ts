@@ -6,6 +6,7 @@ import {
   isToolOutputScratch,
   isAllowedResponsesScratch,
   isArchiveFileName,
+  sourceCommitForbiddenStaged,
 } from '../../scripts/req/lib/scratch'
 
 /** StatusEntry 조립. */
@@ -13,6 +14,68 @@ const se = (index: string, worktree: string, path: string, origPath?: string): S
   origPath === undefined ? { index, worktree, path } : { index, worktree, path, origPath }
 /** untracked 엔트리(X=Y=`?`). */
 const u = (path: string): StatusEntry => se('?', '?', path)
+
+describe('sourceCommitForbiddenStaged — source 커밋 금지 staged 경로 (REQ-2026-092 DEC-1)', () => {
+  const T = 'workflow/REQ-2026-001'
+  const run = (paths: string[], ticket = T): string[] => sourceCommitForbiddenStaged(paths, ticket)
+
+  it('티켓 state.json을 금지한다(교착의 직접 원인)', () => {
+    expect(run([`${T}/state.json`])).toEqual([`${T}/state.json`])
+  })
+  it('responses/ 하위는 전부 금지한다(승인 증거 누수)', () => {
+    const paths = [`${T}/responses/approvals.jsonl`, `${T}/responses/review-ledger.jsonl`, `${T}/responses/phase-1-r01-approved.json`]
+    expect(run(paths)).toEqual(paths)
+  })
+  it('설계 문서·codex-request는 허용한다 — 이것들은 phase 커밋에 같이 실리는 정상 경로다', () => {
+    expect(run([`${T}/00-requirement.md`, `${T}/01-design.md`, `${T}/02-plan.md`, `${T}/codex-request.md`])).toEqual([])
+  })
+  it('코드는 허용한다', () => {
+    expect(run(['scripts/req/lib/scratch.ts', 'src/app.ts', 'package.json'])).toEqual([])
+  })
+  it('🔴 다른 티켓의 state.json은 대상이 아니다 — 현재 티켓만 본다', () => {
+    expect(run([`workflow/REQ-2026-002/state.json`, `workflow/REQ-2026-002/responses/approvals.jsonl`])).toEqual([])
+  })
+  it('🔴 정확 일치다 — state.json.bak·state.jsonx는 걸리지 않는다', () => {
+    expect(run([`${T}/state.json.bak`, `${T}/state.jsonx`])).toEqual([])
+  })
+  it('🔴 responses는 디렉터리 경계로 판정한다 — responses-old/ 는 다른 디렉터리다', () => {
+    expect(run([`${T}/responses-old/x.json`])).toEqual([])
+  })
+  it('역슬래시 입력을 정규화한다(호출부가 -z와 --name-only로 서로 다르게 값을 얻는다)', () => {
+    expect(run([`${T}\\state.json`.replace(/\//g, '\\')])).toEqual([`${T}/state.json`])
+  })
+  it('ticketDirRel의 후행 슬래시·역슬래시를 정규화한다', () => {
+    expect(run([`${T}/state.json`], 'workflow\\REQ-2026-001\\')).toEqual([`${T}/state.json`])
+  })
+  it('빈 조각을 버린다(-z 출력의 마지막 NUL 뒤 빈 문자열)', () => {
+    expect(run([`${T}/state.json`, ''])).toEqual([`${T}/state.json`])
+  })
+  it('🔴 앞뒤 공백은 경로의 일부다 — 공백 있는 경로를 금지 경로로 오인하지 않는다(phase-1 r01 P1)', () => {
+    // ` <T>/state.json`(선행 공백)은 Git에서 **다른 파일**이다. trim하면 무고한 파일이 차단된다.
+    expect(run([` ${T}/state.json`])).toEqual([])
+    expect(run([`${T}/state.json `])).toEqual([])
+    expect(run([` ${T}/responses/approvals.jsonl`])).toEqual([])
+    // 공백만 있는 조각도 경로로 취급하되 금지 대상은 아니다(빈 문자열만 버린다).
+    expect(run(['  '])).toEqual([])
+  })
+  it('🔴 공백 경로를 걸러도 진짜 위반은 여전히 잡는다(fail-open 아님)', () => {
+    expect(run([` ${T}/state.json`, `${T}/state.json`])).toEqual([`${T}/state.json`])
+  })
+  it('위반이 없으면 빈 배열(통과)', () => {
+    expect(run([])).toEqual([])
+  })
+  it('입력 순서를 유지한다 — 안내 메시지가 사용자가 stage한 순서를 그대로 보여준다', () => {
+    const paths = [`${T}/responses/approvals.jsonl`, `${T}/state.json`]
+    expect(run(['src/a.ts', ...paths])).toEqual(paths)
+  })
+
+  it('🔴 reviewScratchPaths와의 비대칭이 의도된 것임을 고정한다 — 같은 state.json을 한쪽은 관용, 한쪽은 금지', () => {
+    // 이 비대칭이 소비자 교착의 원인이었다. 축이 다르다: scratch=워킹트리 관용, 이 술어=인덱스 금지.
+    // 둘 중 하나만 바꾸면 다시 갈라지므로 두 사실을 한 테스트에 묶어 고정한다.
+    expect(reviewScratchPaths(T)).toContain(`${T}/state.json`)
+    expect(sourceCommitForbiddenStaged([`${T}/state.json`], T)).toEqual([`${T}/state.json`])
+  })
+})
 
 describe('reviewScratchPaths — review/doctor의 4경로', () => {
   it('codex-response.json · .review-preview.txt · state.json · review-ledger.jsonl', () => {

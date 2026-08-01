@@ -52,6 +52,8 @@ import {
   buildFindingsSnapshot,
   validatePersistedSnapshot,
   buildPreviousFindingsBlock,
+  forbiddenStagedMessage,
+  quotePathspec,
   reviewPolicyVersion,
   buildReviewCallLogRow,
   committedPhaseIds,
@@ -5135,5 +5137,157 @@ describe('[REQ-2026-091] assembleReviewPrompt — 블록 삽입과 바이트 무
   it('🔴 phase 리뷰는 무영향 — 값을 줘도 블록이 붙지 않는다', () => {
     const phaseBase = { reviewBaseSha: 'B', requestBody: 'r\n', reviewKind: 'phase' as const, stagedDiff: 'diff' }
     expect(assembleReviewPrompt({ ...phaseBase, shippedPhaseIds: ['p1'] })).toBe(assembleReviewPrompt(phaseBase))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-2026-092: 커밋 불가 승인 차단 (리뷰 전 staged tree 검증)
+//
+// 회귀의 성격: 이 게이트가 없으면 staged `state.json`이 승인 tree에 실려 `req:commit`의 두 조건
+// ("staged tree == approved_diff_hash" ∧ "비-코드 staged 없음")이 **동시에 참이 될 수 없게** 되고,
+// 승인 행이 approvals.jsonl에 append되지 못해 티켓이 영구 교착된다(소비자 리포트 2026-08-01).
+// ─────────────────────────────────────────────────────────────────────────────
+describe('[REQ-2026-092] 리뷰 전 staged 워크플로 파일 차단', () => {
+  const gitOf = (repo: string) => (args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' }).replace(/\s+$/, '')
+  const TICKET_REL = 'workflow/REQ-2026-001'
+  const repos: string[] = []
+  afterEach(() => {
+    while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true })
+  })
+
+  const stateBody = (extra: Record<string, unknown> = {}): string =>
+    JSON.stringify(
+      { id: 'REQ-2026-001', phases: [{ id: 'phase-1', approved: false }], approval_evidence_required: true, review_series_model_version: 1, ...extra },
+      null,
+      2,
+    ) + '\n'
+
+  /** 리뷰 가능한 최소 티켓 + 코드 1파일 staged. design 승인을 **유효하게** 핀해 게이트 순서를 진짜로 시험한다. */
+  const setupRepo = (): { repo: string; ticket: string; git: (a: string[]) => string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req092-'))
+    repos.push(repo)
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    mkdirSync(join(repo, 'workflow'), { recursive: true })
+    writeFileSync(join(repo, 'workflow', 'machine.schema.json'), readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'))
+    writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n')
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticket, { recursive: true })
+    for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), `# ${f}\n본문\n`)
+    writeFileSync(join(ticket, 'codex-request.md'), '# req\n리뷰 포인트\n')
+    writeFileSync(join(ticket, 'state.json'), stateBody())
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    // design 승인은 **커밋 후** 핀한다 — design_hash는 00/01/02의 인덱스 상태에서 나온다.
+    const designHash = captureDesignBinding(TICKET_REL, (a) => git(a)).designHash
+    writeFileSync(join(ticket, 'state.json'), stateBody({ design_approved: true, design_approved_hash: designHash }))
+    git(['add', '--', `${TICKET_REL}/state.json`])
+    git(['commit', '-qm', 'design approved'])
+    // 이번 phase의 코드 변경(정상적으로 staged 되는 것).
+    writeFileSync(join(repo, 'src.ts'), 'export const a = 1\n')
+    git(['add', '--', 'src.ts'])
+    return { repo, ticket, git }
+  }
+
+  const stageState = (git: (a: string[]) => string, ticket: string, extra: Record<string, unknown>): void => {
+    writeFileSync(join(ticket, 'state.json'), stateBody(extra))
+    git(['add', '--', `${TICKET_REL}/state.json`])
+  }
+  const commitCount = (git: (a: string[]) => string): number => Number(git(['rev-list', '--count', 'HEAD']).trim())
+  const ledgerRows = (ticket: string): number => {
+    const f = join(ticket, 'responses', 'review-ledger.jsonl')
+    return existsSync(f) ? readFileSync(f, 'utf8').split('\n').filter((l) => l.trim()).length : 0
+  }
+  const approvedDesign = (h: string): Record<string, unknown> => ({ design_approved: true, design_approved_hash: h })
+  const designHashOf = (git: (a: string[]) => string): string => captureDesignBinding(TICKET_REL, (a) => git(a)).designHash
+
+  it('🔴 staged state.json + phase --run → 거부하고 **유료 호출·부기 커밋·attempt를 하나도 만들지 않는다**', () => {
+    const { repo, ticket, git } = setupRepo()
+    const before = commitCount(git)
+    stageState(git, ticket, { ...approvedDesign(designHashOf(git)), current_phase: 'phase-1' })
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    expect(() =>
+      reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--run', '--root', repo], { reviewer: fake }),
+    ).toThrow(/승인해도 커밋할 수 없는 staged 구성/)
+    // 🔴 이 셋이 R1("아무것도 소모하지 않는다")의 진짜 오라클이다 — throw만 보면 "호출한 뒤 던지기"도 통과한다.
+    expect(fake.requests.length, '유료 리뷰어 호출이 일어나면 안 된다').toBe(0)
+    expect(commitCount(git), 'pre-call 원장 커밋이 생기면 안 된다').toBe(before)
+    expect(ledgerRows(ticket), 'attempt가 기록되면 안 된다(예산 차감 없음)').toBe(0)
+  })
+
+  it('🔴 R3: DRY-RUN도 같은 판정 — 커밋 가능성이 실행 모드에 따라 갈리지 않는다', () => {
+    const { repo, ticket, git } = setupRepo()
+    stageState(git, ticket, { ...approvedDesign(designHashOf(git)), current_phase: 'x' })
+    expect(() => reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--root', repo])).toThrow(
+      /승인해도 커밋할 수 없는 staged 구성/,
+    )
+  })
+
+  it('🔴 r02 P1: 복구 명령이 공백 경로를 인용하고 `--` 경계를 쓴다 — 셸이 두 경로로 쪼개면 안 된다', () => {
+    const p = `${TICKET_REL}/responses/foo bar.json`
+    const msg = forbiddenStagedMessage([p], TICKET_REL)
+    expect(msg).toContain(`git restore --staged -- "${p}"`)
+    // `--` 없이 경로만 이어 붙이면 `-`로 시작하는 경로가 옵션으로 파싱된다.
+    expect(msg).toContain('--staged -- ')
+  })
+
+  it('quotePathspec — 안전 문자는 그대로, 그 외만 인용(불필요한 인용은 복사·붙여넣기를 해친다)', () => {
+    expect(quotePathspec('workflow/REQ-2026-001/state.json')).toBe('workflow/REQ-2026-001/state.json')
+    expect(quotePathspec('a/b c.json')).toBe('"a/b c.json"')
+    expect(quotePathspec('a/한글.json')).toBe('"a/한글.json"')
+    // 내부 큰따옴표·백슬래시는 이스케이프한다.
+    expect(quotePathspec('a/say "hi".json')).toBe('"a/say \\"hi\\".json"')
+    // `-`로 시작하는 경로는 인용해도 옵션 파싱을 막지 못한다 → 호출부의 `--`가 담당한다.
+    expect(forbiddenStagedMessage(['-weird.json'], TICKET_REL)).toContain('--staged -- ')
+  })
+
+  it('안내가 위반 경로와 복구 명령을 함께 준다(R4) — 되돌린 뒤 D10에 막히지 않음도 명시', () => {
+    const { repo, ticket, git } = setupRepo()
+    stageState(git, ticket, { ...approvedDesign(designHashOf(git)), current_phase: 'x' })
+    let msg = ''
+    try {
+      reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--root', repo])
+    } catch (e) {
+      msg = e instanceof Error ? e.message : String(e)
+    }
+    expect(msg).toContain(`${TICKET_REL}/state.json`)
+    expect(msg).toContain(`git restore --staged -- ${TICKET_REL}/state.json`)
+    // 🔴 이 문장이 없으면 사용자는 unstage 후 D10을 걱정해 되레 다시 git add 한다 — 그게 원래 사고다.
+    expect(msg).toContain('스크래치로 관용')
+  })
+
+  it('staged responses/ 도 차단한다(승인 증거 누수 — state.json과 같은 범주)', () => {
+    const { repo, ticket, git } = setupRepo()
+    mkdirSync(join(ticket, 'responses'), { recursive: true })
+    writeFileSync(join(ticket, 'responses', 'approvals.jsonl'), '{"kind":"x"}\n')
+    git(['add', '--', `${TICKET_REL}/responses/approvals.jsonl`])
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    expect(() =>
+      reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--run', '--root', repo], { reviewer: fake }),
+    ).toThrow(/approvals\.jsonl/)
+    expect(fake.requests.length).toBe(0)
+  })
+
+  it('🔴 DEC-3 kind 격리: design 리뷰는 staged state.json이 있어도 막지 않는다', () => {
+    const { repo, ticket, git } = setupRepo()
+    stageState(git, ticket, { current_phase: 'x' })
+    // design 승인은 approved_diff_hash를 설정하지 않아 (a)∧(b) 충돌이 구조적으로 불가능하다 → 게이트 대상 아님.
+    expect(() => reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo])).not.toThrow()
+  })
+
+  it('R5 무회귀: 코드만 staged면 통과한다', () => {
+    const { repo } = setupRepo()
+    expect(() => reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--root', repo])).not.toThrow()
+  })
+
+  it('🔴 기존 scratch 계약 무변경: unstaged·dirty state.json은 여전히 통과(축이 다르다 — 인덱스만 본다)', () => {
+    const { repo, ticket, git } = setupRepo()
+    // stage하지 않는다 — D10이 scratch로 관용하는 상태. 신규 게이트가 이것까지 막으면 정상 워크플로가 죽는다.
+    // design 승인은 유지한다 — 게이트 하나만 격리해 시험하려면 나머지 전제가 성립해 있어야 한다.
+    writeFileSync(join(ticket, 'state.json'), stateBody({ ...approvedDesign(designHashOf(git)), current_phase: 'dirty' }))
+    expect(() => reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--root', repo])).not.toThrow()
   })
 })

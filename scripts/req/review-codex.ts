@@ -55,7 +55,8 @@ import { computeReviewSemanticIdentity } from './lib/review-target'
 import { closeProofPath, appendCloseProofRow, type CloseProofRow } from './lib/close-proof'
 import { summarizeLockfileDiff } from './lib/lockfile-diff'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
-import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
+// REQ-2026-092 DEC-1: `sourceCommitForbiddenStaged`는 `req:commit`과 **공유하는** 술어다(복제 금지).
+import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths, sourceCommitForbiddenStaged } from './lib/scratch'
 // REQ-2026-057: 상태 직렬화 단일 지점 + durable checkpoint(leaf — 여기서 값으로 import해도 순환 없음).
 import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { assertSetupComplete } from './lib/setup-gate'
@@ -1351,6 +1352,57 @@ export function phaseAreaMessage(v: PhaseAreaVerdict, phaseId: string): string {
 }
 
 /**
+ * 워크플로 파일이 staged일 때의 거부 안내(REQ-2026-092 DEC-4, 순수).
+ *
+ * **왜 이 판정이 리뷰 호출 전에 있는가**: 이 구성으로 승인을 받으면 그 승인은 **영원히 커밋할 수 없다.**
+ * `req:commit`은 "staged tree == approved_diff_hash"와 "비-코드 staged 없음"을 동시에 요구하는데,
+ * staged `state.json`이 승인 tree에 실리면 유지해도(뒤가 깨짐) 빼도(앞이 깨짐) 통과할 수 없다.
+ * 승인 행은 `req:commit`의 evidence-finalize에서만 기록되므로 티켓 자체가 교착된다.
+ *
+ * 🔴 **마지막 두 줄이 load-bearing이다.** 이것이 없으면 사용자는 unstage 후 D10에 막힐까 봐 되레 다시
+ *    `git add` 한다 — 그것이 정확히 이 사고를 만든 동작이다. 그 걱정이 근거 없음을 명시한다.
+ */
+export function forbiddenStagedMessage(paths: readonly string[], ticketRel: string): string {
+  const dir = ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')
+  return [
+    'phase 리뷰를 시작할 수 없습니다 — 승인해도 커밋할 수 없는 staged 구성입니다.',
+    '리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다.',
+    '',
+    `워크플로 파일이 staged에 있습니다(req:commit이 source 커밋에서 금지하는 경로):`,
+    ...paths.map((p) => `  ${p}`),
+    '',
+    '해소:',
+    `  git restore --staged -- ${paths.map(quotePathspec).join(' ')}`,
+    '',
+    `unstage 후 파일이 수정된 채로 남아도 괜찮습니다 — ${dir}/state.json과 리뷰 원장은`,
+    'D10이 스크래치로 관용하며, 도구가 승인 시점에 부기 커밋으로 남깁니다.',
+  ].join('\n')
+}
+
+/** 인용 없이 어떤 셸에서도 한 토큰으로 남는 경로 문자. 이 집합 밖이면 인용한다. */
+const SAFE_PATHSPEC_RE = /^[A-Za-z0-9._/-]+$/
+
+/**
+ * 안내 문구에 실을 pathspec 1개를 셸-안전하게 표기한다(REQ-2026-092 phase-1 r02 P1, 순수).
+ *
+ * 문제: `workflow/REQ-x/responses/foo bar.json`을 그대로 이어 붙이면 셸이 **두 경로로 쪼개** 실제 파일을
+ * unstage하지 못한다. 안내가 "정확한 복구 명령"이 아니게 된다(R4 위반).
+ *
+ * 🔴 호출부는 이 함수와 함께 **`--` 경계**를 반드시 붙인다 — `-`로 시작하는 경로가 옵션으로 파싱되는 것은
+ *    인용으로 막을 수 없다.
+ *
+ * ⚠️ **한계를 정직하게 적는다.** 완벽한 크로스-셸 인용은 하나의 문자열로 불가능하다(POSIX sh·PowerShell·
+ *    cmd의 이스케이프 규칙이 서로 다르다). 여기서는 **큰따옴표**를 쓴다 — 셋 모두에서 공백을 한 토큰으로
+ *    묶는 유일한 공통 표기다. 내부 `"`는 백슬래시로 이스케이프한다(POSIX·PowerShell에서 동작).
+ *    `$`·백틱이 든 경로는 POSIX 셸에서 여전히 확장될 수 있다 — 워크플로 티켓 경로(`REQ-YYYY-NNN/…`)에서
+ *    현실적으로 나오는 것은 **공백**뿐이라 그 경우를 정확히 처리하는 데 집중한다.
+ */
+export function quotePathspec(p: string): string {
+  if (SAFE_PATHSPEC_RE.test(p)) return p
+  return `"${p.replace(/(["\\])/g, '\\$1')}"`
+}
+
+/**
  * 예산 게이트 입력(REQ-2026-084 DEC-4). 두 계수를 **각각** 다른 상한에 건다.
  * - `dispatched`  : 실제로 나간 호출 수(`openSeriesAttempts`) → `hardCap`
  * - `productive`  : 그중 판정을 낸 회차 수(`openSeriesProductiveAttempts`) → `autoBudget`
@@ -2539,6 +2591,19 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       // REQ-2026-091: design 리뷰일 때만 값이 있다(phase는 무영향). 비면 블록 없음 → 바이트 무회귀.
       shippedPhaseIds,
     })
+  }
+
+  // 🔴 REQ-2026-092 DEC-2: 커밋 불가 승인 차단 — **DRY-RUN 분기보다 앞**이다. 두 이유가 겹친다.
+  //    ① R3(경로 일관성): DRY-RUN은 아래에서 return하므로, 분기 뒤에 두면 LIVE에서만 돈다. "이 승인이
+  //       커밋 가능한가"가 실행 모드에 따라 갈리면 이 REQ가 없애려는 정의 분기를 그대로 재도입한다.
+  //    ② R1(호출 전 차단): 예산 게이트·attempt 기록·pre-call 원장 커밋·유료 호출은 **전부** 아래에 있다.
+  //       여기서 막으면 "아무것도 소모하지 않고 되돌린다"가 성립한다(REQ-2026-086 DEC-1과 같은 순서 규칙).
+  //    D10(step 2b)보다도 앞이다 — 의도한 것이다. staged 위반은 유료 호출을 낭비시키는 쪽이라 먼저 알린다.
+  //    design 리뷰는 대상이 아니다(DEC-3): `applyVerdict`가 design에서 approved_diff_hash를 설정하지 않아
+  //    (a)∧(b) 충돌이 구조적으로 불가능하고, 걸면 설계 문서만 staged인 정상 경로를 막을 위험만 생긴다.
+  if (opts.kind === 'phase') {
+    const forbidden = sourceCommitForbiddenStaged(git([...STAGED_NAMES_Z_ARGS]).split('\0'), ticketRel)
+    if (forbidden.length) throw new Error(forbiddenStagedMessage(forbidden, ticketRel))
   }
 
   if (!opts.run) {
