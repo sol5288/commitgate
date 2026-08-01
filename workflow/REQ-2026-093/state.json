@@ -76,5 +76,11 @@
       "approval_consumed_at": "2026-08-01T04:20:19.149Z"
     }
   ],
-  "user_commit_confirmed": null
+  "user_commit_confirmed": {
+    "confirmed": true,
+    "method": "Claude Code 대화에서 사용자 승인(AskUserQuestion: 승인 — 기록 후 진행)",
+    "confirmed_at": "2026-08-01T04:33:27.549Z",
+    "note": "phase-2-docs / REQ 완결 / 리뷰 前 기록(D9 stale 회피)",
+    "scope": "req"
+  }
 }
