@@ -151,8 +151,14 @@ function runAbandon(args: {
   const stateText = ports.headText(`${ticketRel}/state.json`)
   if (!isDurabilityRequired(stateText))
     throw new Error(
+      // 🔴 REQ-2026-102: 이전 문구는 "legacy는 intake를 막지 않으므로 **탈출구가 필요 없습니다**"였다.
+      //    REQ-2026-097이 "종결"에 새 효용(doctor 브랜치 축 D2/D3/D11 면제)을 붙이면서 그 결론이
+      //    **거짓이 됐다** — 낡은 문장을 그대로 두면 사용자가 "legacy엔 아무 문제 없다"로 읽는다.
+      //    참인 부분(intake 무차단)은 남기고, 남아 있는 갭을 **사실대로** 알린다. 없는 명령은 안내하지 않는다.
       `${reqId}: durable 티켓이 아닙니다(legacy) — 포기 종결 대상이 아닙니다.\n` +
-        `  legacy 티켓은 req:new intake를 막지 않으므로 탈출구가 필요 없습니다.`,
+        `  legacy 티켓은 req:new intake를 막지 않습니다.\n` +
+        `  ⚠️ 다만 req:doctor의 브랜치 축(D2/D3/D11)은 종결이 검증돼야 면제되는데 legacy는 그 판정이\n` +
+        `     불가능합니다 — 현재 legacy 티켓을 종결로 표시할 경로는 없습니다.`,
     )
 
   const closeText = ports.headText(closeProofPath(ticketRel))

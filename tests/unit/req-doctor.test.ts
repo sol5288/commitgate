@@ -1068,3 +1068,60 @@ describe('[REQ-2026-097] D2·D3·D11 — 종결 티켓은 브랜치 축 면제',
     expect(lv(checks, 'D9')).toBe('FAIL')
   })
 })
+
+/**
+ * REQ-2026-102 — legacy 티켓에서 **왜 면제되지 않는지**를 말한다.
+ *
+ * 🔴 소비자가 "legacy는 조치가 없는데 doctor만 FAIL한다"며 면제를 요청했으나, 실측 결과
+ *    `legacy` 축이 둘이고 겹치지 않는다: intake legacy(`evidence_durability_required`, HEAD)와
+ *    review legacy(`review_series_model_version`, 워킹). 리포터가 든 4건은 **전부 review-OK** —
+ *    즉 리뷰·커밋으로 진행 가능하고 브랜치 축이 그것을 지킨다. `req:commit`이 doctor를 하드
+ *    게이트로 spawn하므로 면제하면 **main 커밋이 열린다.**
+ *
+ * → **동작은 그대로 두고 사유만 말한다.** 아래 ①·⑤가 "게이트가 약해지지 않았음"을 고정한다.
+ */
+describe('[REQ-2026-102] legacy 티켓 — 면제하지 않되 사유를 말한다', () => {
+  const merged = (over: Partial<DoctorInputs> = {}): DoctorInputs => ({
+    ...base,
+    currentBranch: 'main',
+    branchExists: false,
+    ...over,
+  })
+  const AXIS = ['D2', 'D3', 'D11'] as const
+  const lv = (checks: Check[], id: string): string | undefined => checks.find((c) => c.id === id)?.level
+  const ms = (checks: Check[], id: string): string => checks.find((c) => c.id === id)?.msg ?? ''
+
+  it('① legacy는 여전히 FAIL이다 — 면제 집합이 넓어지지 않았다', () => {
+    const checks = runChecks(merged({ ticketTerminalEvent: 'legacy' }))
+    for (const id of AXIS) expect(lv(checks, id), id).toBe('FAIL')
+  })
+
+  it('② 그 FAIL이 사유를 말하고, 없는 해결책을 암시하지 않는다', () => {
+    const checks = runChecks(merged({ ticketTerminalEvent: 'legacy' }))
+    for (const id of AXIS) {
+      expect(ms(checks, id), id).toContain('legacy 티켓')
+      expect(ms(checks, id), id).toContain('해소할 수단이 없습니다') // 🔴 없는 조치를 찾게 만들지 않는다
+    }
+  })
+
+  it('③ 면제 값에는 legacy 문구가 붙지 않는다(오염 없음)', () => {
+    const checks = runChecks(merged({ ticketTerminalEvent: 'dev-complete' }))
+    for (const id of AXIS) {
+      expect(lv(checks, id), id).toBe('OK')
+      expect(ms(checks, id), id).not.toContain('legacy')
+    }
+  })
+
+  it('④ null(진행 중)은 무회귀 — FAIL이되 legacy 문구가 없다', () => {
+    const checks = runChecks(merged({ ticketTerminalEvent: null }))
+    for (const id of AXIS) {
+      expect(lv(checks, id), id).toBe('FAIL')
+      expect(ms(checks, id), id).not.toContain('legacy 티켓')
+    }
+  })
+
+  it('⑤ legacy를 WARN으로 강등하지 않았다 — 리포터 제안 (b)를 채택하지 않았음을 고정', () => {
+    const checks = runChecks(merged({ ticketTerminalEvent: 'legacy' }))
+    for (const id of AXIS) expect(lv(checks, id), id).not.toBe('WARN')
+  })
+})

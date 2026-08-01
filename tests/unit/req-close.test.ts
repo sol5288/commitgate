@@ -400,13 +400,31 @@ describe('[REQ-2026-093] req:close --abandon (실 git)', () => {
     expect(existsSync(join(repo, t, 'responses', 'ticket-close.jsonl'))).toBe(false)
   })
 
-  it('legacy 티켓은 대상이 아니다(intake를 막지 않으므로 탈출구가 필요 없다)', () => {
+  /**
+   * REQ-2026-102 — 거부는 그대로지만 **사유가 바뀌었다**.
+   *
+   * 🔴 이전 문구는 "legacy는 intake를 막지 않으므로 **탈출구가 필요 없습니다**"였다.
+   *    REQ-2026-097이 "종결"에 새 효용(doctor 브랜치 축 D2/D3/D11 면제)을 붙이면서 그 결론이
+   *    거짓이 됐다 — 끝난 legacy 티켓은 이제 종결 표시가 **필요한데 경로가 없다.**
+   *    낡은 문장을 그대로 두면 사용자가 "legacy엔 아무 문제 없다"로 읽는다.
+   */
+  it('legacy 티켓은 대상이 아니다 — 거부 사유가 남은 갭을 사실대로 알린다', () => {
     const repo = mkRepo()
     const ticketRel = 'workflow/REQ-2026-112'
     mkdirSync(join(repo, ticketRel), { recursive: true })
     writeFileSync(join(repo, ticketRel, 'state.json'), JSON.stringify({ id: 'REQ-2026-112', phase: 'INTAKE' })) // durability 마커 없음
     g(repo, ['add', '-A']); g(repo, ['commit', '-qm', 'legacy'])
-    expect(() => closeMain(['2026-112', '--abandon', ...ARGS, '--run', '--root', repo])).toThrow(/legacy/)
+
+    let msg = ''
+    try {
+      closeMain(['2026-112', '--abandon', ...ARGS, '--run', '--root', repo])
+    } catch (e) {
+      msg = e instanceof Error ? e.message : String(e)
+    }
+    expect(msg).toMatch(/legacy/)
+    expect(msg).toContain('req:new intake를 막지 않습니다')          // 참인 부분은 유지
+    expect(msg).toContain('종결로 표시할 경로는 없습니다')            // 남은 갭을 사실대로
+    expect(msg).not.toContain('탈출구가 필요 없습니다')               // 🔴 REQ-097 이후 거짓이 된 결론
   })
 
   it('close-proof에 미커밋 변경이 있으면 거부(HEAD 기반 쓰기가 덮지 않게)', () => {

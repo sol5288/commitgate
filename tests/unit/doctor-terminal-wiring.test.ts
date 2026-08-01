@@ -8,12 +8,12 @@
  * 재현 조건은 소비자 리포트 그대로다: 티켓이 종결됐고, 병합 후 `main`에 있으며, feature 브랜치는 없다.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { writeFileSync, readFileSync } from 'node:fs'
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { main as doctorMain } from '../../scripts/req/req-doctor'
 import { main as rebindMain } from '../../scripts/req/req-rebind'
 import { scanTicketIntake } from '../../scripts/req/lib/intake'
-import { commitStaleTicket, mkRepo, D_OLD, type StaleTicketSpec } from './fixtures/stale-devcomplete'
+import { commitStaleTicket, mkRepo, git, D_OLD, type StaleTicketSpec } from './fixtures/stale-devcomplete'
 
 const TICKET_ID = 'REQ-2026-088'
 const SHORT = '2026-088'
@@ -80,6 +80,37 @@ describe('[REQ-2026-097] req:doctor main() 배선 — 종결 티켓의 브랜치
       const line = lineFor(lines, id)
       expect(line, id).toContain(`FAIL ${id}:`)
       expect(line, id).not.toContain('종결 티켓')
+    }
+  })
+})
+
+/**
+ * REQ-2026-102 — `main()`이 **legacy를 별도 값으로 주입**하는지(배선).
+ *
+ * 🔴 순수 테스트는 이 배선을 못 잡는다 — `runChecks`에 `'legacy'`를 손으로 넣는 테스트는
+ *    `main()`이 그 값을 계산해 넘기지 않아도(=`null`로 떨어져도) 통과한다. REQ-097·100·101에서
+ *    3연속 실증된 패턴이라 실제 진입점을 돌린다.
+ */
+describe('[REQ-2026-102] req:doctor main() 배선 — legacy 티켓의 사유 (실 git)', () => {
+  it('durability marker 없는 티켓에서 D2/D3가 FAIL이면서 legacy 사유를 단다', () => {
+    const repo = mkRepo('req102-doctor-legacy-')
+    const ticketRel = 'workflow/REQ-2026-088'
+    mkdirSync(join(repo, ticketRel, 'responses'), { recursive: true })
+    // durability marker(`evidence_durability_required`) 없음 = intake legacy.
+    writeFileSync(
+      join(repo, ticketRel, 'state.json'),
+      JSON.stringify({ id: TICKET_ID, phase: 'INTAKE', branch: GONE_BRANCH, phases: [] }),
+    )
+    git(repo, ['add', '-A'])
+    git(repo, ['commit', '-qm', 'legacy ticket'])
+    expect(scanTicketIntake(repo, ticketRel, TICKET_ID).baseState).toBe('legacy')
+
+    const lines = runDoctorLines(repo)
+    for (const id of ['D2', 'D3']) {
+      const line = lineFor(lines, id)
+      expect(line, id).toContain(`FAIL ${id}:`)          // 🔴 면제되지 않는다
+      expect(line, id).toContain('legacy 티켓')            // 사유가 배선을 타고 나온다
+      expect(line, id).toContain('해소할 수단이 없습니다')
     }
   })
 })

@@ -164,12 +164,15 @@ export interface DoctorInputs {
    *   - `undefined` = 미계산(legacy·2-arg 호출) → 현행 동작
    *   - `null`      = 계산했으나 종결 아님(`developing`·`needs-recovery`·`corrupt`·`legacy`) → 현행 동작
    *   - 이벤트 값    = 종결 → D2·D3·D11 면제 + 그 이벤트를 사유 문구에 쓴다
+   *   - `'legacy'`  = **면제하지 않는다**(REQ-2026-102) → FAIL은 그대로 두되 **왜 면제 못 하는지**를 말한다.
+   *                  durability marker가 없어 종결 검증이 불가능하고, 그 티켓은 여전히 리뷰·커밋으로
+   *                  진행 가능하므로(intake-legacy ≠ review-legacy) 브랜치 축이 지킬 것이 남아 있다.
    *
    * 🔴 **boolean이 아닌 이유**: `runChecks`는 `DoctorInputs`만 보는 순수 함수라, boolean이면
    *    `abandoned`인지 `dev-complete`인지 몰라 면제 사유를 적을 수 없다(설계 r01 P1). 두 필드로 쪼개면
    *    `terminal=true & event=null` 같은 모순 조합이 타입으로 표현 가능해지므로 값 하나가 둘 다 나른다.
    */
-  ticketTerminalEvent?: CloseProofEvent | null
+  ticketTerminalEvent?: CloseProofEvent | 'legacy' | null
   /**
    * D25(REQ-2026-085): 종결됐지만 trunk에 도달하지 않은 티켓 id들. `undefined` = 판정 불가·미계산 → OK.
    * `[]` = 전부 반영됨 → OK. 비어있지 않음 → WARN(**절대 FAIL 아님**).
@@ -354,6 +357,31 @@ function evidenceProblems(
 // statusPaths는 lib/porcelain의 entryPaths로 대체(REQ-2026-012). `-z`가 rename의 src·dest를
 // 필드로 확실히 주므로 ` -> ` 분할과 인용 해제가 필요 없다.
 
+/**
+ * D2·D3·D11 면제 여부(REQ-2026-102 DEC-3). **allow-list이며 exhaustive다.**
+ *
+ * 🔴 `v !== null && v !== 'legacy'`(deny-list)로 쓰면 **fail-open**이 된다 — 나중에 새 비면제 값
+ *    (`'corrupt'` 등)을 타입에 추가하는 순간 그 값이 **조용히 면제 쪽으로 샌다.** 아래 `default`의
+ *    `never` 대입이 그것을 **컴파일 시점에** 막는다(REQ-2026-099에서 D_CHECK_IDS로 얻은 교훈:
+ *    권위는 관찰이 아니라 타입이 강제해야 한다).
+ */
+function isExemptTerminal(v: CloseProofEvent | 'legacy' | null): boolean {
+  switch (v) {
+    case null:
+    case 'legacy': // 종결 검증 불가 + 여전히 진행 가능 → 면제하지 않는다
+      return false
+    case 'series-terminal':
+    case 'dev-complete':
+    case 'migrated-complete':
+    case 'abandoned':
+      return true
+    default: {
+      const exhaustive: never = v
+      return Boolean(exhaustive) && false
+    }
+  }
+}
+
 /** 순수: 입력으로부터 1차 최소셋 점검 결과 산출(부수효과 없음 — 테스트 용이). */
 export function runChecks(inp: DoctorInputs): Check[] {
   const c: Check[] = []
@@ -371,17 +399,36 @@ export function runChecks(inp: DoctorInputs): Check[] {
    *    위조 한 줄로 게이트가 풀리지 않는다. 워킹트리 축(D10·D13)은 종결과 독립이라 건드리지 않는다.
    */
   const terminal = inp.ticketTerminalEvent ?? null
+  /**
+   * 🔴 면제 축(REQ-2026-102 DEC-3). `'legacy'`는 값이 있지만 **면제하지 않는다** — 사유를 나를 뿐이다.
+   *    이 상수가 예전 `terminal`의 자리를 그대로 대체하므로 **분기 구조와 면제 집합이 바뀌지 않는다.**
+   */
+  const exempt = isExemptTerminal(terminal)
   const terminalMsg = (what: string): string => `종결 티켓(${terminal}) — ${what} 점검 불요`
+  /**
+   * 🔴 legacy 티켓이 왜 면제되지 않는지(REQ-2026-102 DEC-4). 세 검사가 **같은 문장**을 공유한다
+   *    — 세 번 적으면 갈라진다.
+   *
+   * 🔴 **마지막 문장이 load-bearing이다**: 없는 해결책을 암시하지 않는다(REQ-2026-094 교훈 —
+   *    없는 명령을 안내하면 사용자를 막다른 길로 보낸다). 소비자가 정확히 이 지점에서 조치를
+   *    찾다가 개선 요청을 썼다. 불친절해 보여도 "해소할 수단이 없다"가 사실이다.
+   */
+  const legacyNote =
+    terminal === 'legacy'
+      ? ' (legacy 티켓 — durability marker가 없어 종결을 검증할 수 없습니다.' +
+        ' 아직 진행 중이면 자기 feature 브랜치에서 작업하세요.' +
+        ' 이미 끝난 티켓이면 현재 이 FAIL을 해소할 수단이 없습니다.)'
+      : ''
 
   // D2: state.branch == 현재 브랜치
-  if (terminal) c.push({ id: 'D2', level: 'OK', msg: terminalMsg('브랜치 일치') })
+  if (exempt) c.push({ id: 'D2', level: 'OK', msg: terminalMsg('브랜치 일치') })
   else if (branch && inp.currentBranch !== branch)
-    c.push({ id: 'D2', level: 'FAIL', msg: `state.branch(${branch}) != current(${inp.currentBranch})` })
+    c.push({ id: 'D2', level: 'FAIL', msg: `state.branch(${branch}) != current(${inp.currentBranch})${legacyNote}` })
   else c.push({ id: 'D2', level: 'OK', msg: 'branch 일치' })
 
   // D3: state.branch 로컬 존재
-  if (terminal) c.push({ id: 'D3', level: 'OK', msg: terminalMsg('브랜치 존재') })
-  else if (branch && !inp.branchExists) c.push({ id: 'D3', level: 'FAIL', msg: `state.branch 로컬에 없음: ${branch}` })
+  if (exempt) c.push({ id: 'D3', level: 'OK', msg: terminalMsg('브랜치 존재') })
+  else if (branch && !inp.branchExists) c.push({ id: 'D3', level: 'FAIL', msg: `state.branch 로컬에 없음: ${branch}${legacyNote}` })
   else c.push({ id: 'D3', level: 'OK', msg: 'branch 존재' })
 
   // D5: codex_thread_id 형식(설정 시 UUID)
@@ -450,12 +497,12 @@ export function runChecks(inp: DoctorInputs): Check[] {
   // 🔴 REQ-2026-097: 종결 티켓은 면제한다(위 `terminal` 주석). 이 면제는 커밋 경로를 열지 않는다 —
   //    실제 커밋 게이트는 `commit_allowed`(D6·D9·D16)이고 dev-complete 발행 시점에 소비된다.
   //    그 사실은 `req-doctor.test.ts`가 테스트로 고정한다(주장으로 두지 않는다).
-  if (terminal) c.push({ id: 'D11', level: 'OK', msg: terminalMsg('feature 브랜치') })
+  if (exempt) c.push({ id: 'D11', level: 'OK', msg: terminalMsg('feature 브랜치') })
   else if (inp.currentBranch === 'main' || !branch.startsWith(inp.branchPrefix))
     c.push({
       id: 'D11',
       level: 'FAIL',
-      msg: `REQ 작업이 자기 feature 브랜치 밖(current=${inp.currentBranch}, state.branch=${branch || '(없음)'})`,
+      msg: `REQ 작업이 자기 feature 브랜치 밖(current=${inp.currentBranch}, state.branch=${branch || '(없음)'})${legacyNote}`,
     })
   else c.push({ id: 'D11', level: 'OK', msg: 'feature 브랜치 OK' })
 
@@ -1062,10 +1109,13 @@ export function main(argv: string[] = process.argv.slice(2)): void {
    *
    * 실패는 조용히 `null`(= 종결 아님) — fail-closed. 판정 못 하면 현행 동작이 기본값이다.
    */
-  const ticketTerminalEvent: CloseProofEvent | null = (() => {
+  const ticketTerminalEvent: CloseProofEvent | 'legacy' | null = (() => {
     try {
       const base = scanTicketIntake(cfg.root, ticketRel, String(state.id ?? '')).baseState
-      return base === 'series-terminal' || base === 'dev-complete' || base === 'migrated-complete' || base === 'abandoned' ? base : null
+      if (base === 'series-terminal' || base === 'dev-complete' || base === 'migrated-complete' || base === 'abandoned') return base
+      // 🔴 REQ-2026-102: `legacy`만 따로 나른다 — 면제하지는 않지만 사유를 말할 수 있어야 한다.
+      //    나머지(`developing`·`needs-recovery`·`corrupt`)는 사유가 자명하거나 다른 검사가 다룬다.
+      return base === 'legacy' ? 'legacy' : null
     } catch {
       return null
     }
