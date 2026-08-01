@@ -2,16 +2,63 @@
   "id": "REQ-2026-093",
   "branch": "feat/req-2026-093-ticket-abandon-escape-hatch",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fbb74-4cf8-7bf2-8576-d5ede7723598",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "d44217dca4fc0ee93d92d4f64adb3f1bafe50a84ce01f2507f9d3570d6eb691a",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-abandon",
+      "approved": false
+    },
+    {
+      "id": "phase-2-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "5b26a4495ff88222fd007bd4d7d11c3d8ff662d66f2d3079bb9b7ffe9070d5b9",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-01T03:53:54.548Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "0b989444ba45c594741e1362a4141d5530fa0f38",
+    "design": "f834b25347494e690fedf0b80c4aaaf0396488d7",
+    "plan": "fc69d496df90298fc5cee7873b239987fc0693cf"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-093/responses/design-r03-approved.json",
+    "response_sha256": "c9279f664fb3bf303ed7b8d40ebdff7d1d1618fc569ca1e966812448136ed1c4",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "757c35fb8ee144d894cf2269020db47f9fc3d412",
+    "codex_thread_id": "019fbb74-4cf8-7bf2-8576-d5ede7723598",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T03:53:54.548Z",
+    "design_hash": "d44217dca4fc0ee93d92d4f64adb3f1bafe50a84ce01f2507f9d3570d6eb691a"
+  }
 }
