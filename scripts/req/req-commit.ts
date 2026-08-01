@@ -356,9 +356,11 @@ export function parseArgs(argv: string[]): CommitArgs {
     else if (a === '--ticket') ticket = argv[++i] ?? null
     else if (a === '--run') run = true
     else if (a === '--message' || a === '-m') message = argv[++i] ?? null
-    else if (a === '--message-file') {
+    // REQ-2026-095 DEC-3: `-F`는 `git commit -F`와 같은 규약의 별칭이다(학습 비용 0).
+    // 동작·검증은 전부 `resolveMessageSource` 재사용 — 여기서는 같은 자리에 담기만 한다.
+    else if (a === '--message-file' || a === '-F') {
       const v = argv[++i]
-      if (v === undefined) throw new Error('--message-file 값 필요')
+      if (v === undefined) throw new Error(`${a} 값 필요`)
       messageFile = v
     } else if (a === '--finalize') finalize = true
     else if (a === '--finalize-design') finalizeDesign = true
@@ -437,6 +439,36 @@ function runDoctor(doctorArgs: string[]): void {
   if (!cmd) throw new Error('buildScriptInvocation: 빈 호출(패키지매니저 설정 오류)')
   // shell 없이 안전 실행(P1): pkg manager는 Windows에서 .cmd라 과거 shell:true였고 doctorArgs(reqId·root 경로)의 메타문자로 주입 가능했음.
   safeSpawnSync(cmd, rest, { cwd: gitRoot, stdio: 'inherit' })
+}
+
+/**
+ * 🔴 **한 줄로 붕괴한 메시지로 의심되는가**(REQ-2026-095 DEC-4, 순수).
+ *
+ * 조건은 **둘 다**여야 한다: (1) 리터럴 두 글자 `\n`을 포함하고 (2) **실제 개행이 하나도 없다**.
+ * 이것이 `pnpm <script> -m "…"`가 argv를 재직렬화한 흔적이다.
+ *
+ * 🔴 **자동 복원하지 않는다.** 리터럴 `\n`을 개행으로 되돌리면 대부분 맞겠지만, 본문에 정말 `\n`이라고
+ *    적은 경우(이 저장소의 CHANGELOG·문서가 실제로 그런다)를 **조용히 망가뜨린다.**
+ *    "대부분 맞음"보다 "절대 망가뜨리지 않음"을 택한다 — 커밋 메시지는 감사 기록이다.
+ *
+ * 🔴 **이 판정은 반쪽이다.** npm·npx는 개행 **이후를 통째로 버리므로** 흔적이 남지 않는다 —
+ *    받은 문자열이 그냥 짧을 뿐이라 원리적으로 탐지할 수 없다. 경고가 없다고 안전한 것이 아니다.
+ */
+export function looksLikeCollapsedMessage(message: string | null): boolean {
+  if (typeof message !== 'string' || message === '') return false
+  if (message.includes('\n')) return false // 실제 개행이 있으면 정상적으로 전달된 것이다
+  return message.includes('\\n')
+}
+
+/** 붕괴 의심 경고 문구(순수). 탐지의 한계를 함께 적어 "경고 없음 = 안전"으로 읽히지 않게 한다. */
+export function collapsedMessageWarning(): string {
+  return [
+    '⚠️  커밋 메시지에 리터럴 `\\n`이 있고 실제 개행이 없습니다 — 여러 줄 메시지가 한 줄로 붕괴했을 수 있습니다.',
+    '   npm·pnpm·npx는 argv의 개행을 잘라내거나 `\\n`으로 바꿉니다(Windows). 여러 줄이면 파일로 넘기세요:',
+    '     req:commit <REQ> --run --message-file <경로>   (또는 -F <경로>)',
+    '   의도한 것이라면 이 경고는 무시해도 됩니다 — 도구는 메시지를 고치지 않습니다.',
+    '   ※ npm·npx는 개행 뒤를 조용히 버려 흔적이 남지 않습니다. 이 경고가 없어도 안전하다는 뜻은 아닙니다.',
+  ].join('\n')
 }
 
 /**
@@ -790,6 +822,11 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const opts = parseArgs(argv)
   // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
   assertSetupComplete({ root: opts.root })
+  // 🔴 REQ-2026-095 DEC-4: 붕괴 의심 경고는 **doctor·게이트보다 앞**에서 낸다. 두 근거가 같은 자리를 지지한다 —
+  //    ① 자문이므로 커밋 성사 여부와 무관하게 사용자에게 보여야 하고,
+  //    ② 뒤 단계가 실패해도 관측되므로 **배선 자체를 테스트할 수 있다**(02-plan 가드 9).
+  //    차단하지 않고 메시지도 고치지 않는다 — 판정이 오탐일 수 있고, 커밋 메시지는 감사 기록이다.
+  if (looksLikeCollapsedMessage(opts.message)) console.warn(collapsedMessageWarning())
   const cfg = loadConfig({ root: opts.root })
   gitRoot = cfg.root // runDoctor(pnpm/npm) cwd
   pkgManager = cfg.packageManager

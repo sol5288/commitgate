@@ -76,11 +76,17 @@ npm run req:commit -- 2026-001 --run -m "feat: my feature"
 
 중요: source 커밋에는 내가 만든 코드와 문서만 stage하세요. `state.json`과 `responses/`는 도구가 관리합니다.
 
-여러 줄 커밋 메시지는 `-m` 대신 파일을 사용하세요.
+🔴 **여러 줄 커밋 메시지는 `-m`으로 넘기면 안 됩니다.** 패키지 매니저와 `npx`가 인자를 셸 명령
+문자열로 다시 조립하면서 **개행 이후를 버리거나**(npm·npx) **리터럴 `\n` 두 글자로 바꿉니다**(pnpm).
+CommitGate가 받는 시점에 이미 망가져 있어 복원할 수 없습니다. 파일로 넘기세요.
 
 ```sh
 npm run req:commit -- 2026-001 --run --message-file commit-message.txt
+npm run req:commit -- 2026-001 --run -F commit-message.txt   # 같은 뜻(git commit -F 규약)
 ```
+
+한 줄 메시지는 `-m`으로 계속 써도 안전합니다. 자세한 실측표는
+[문제 해결](./troubleshooting.md)에 있습니다.
 
 ## delivery set — 여러 REQ를 한 묶음으로
 

@@ -138,6 +138,39 @@ There are two honest paths.
 D27 is **a warning only — it blocks nothing** (`req:doctor` still exits PASS), so that the diagnostic
 never creates a new deadlock of its own.
 
+**My commit message loses its body, or newlines turn into a literal `\n`.**
+You passed a **multi-line** message with `-m`. Package managers and `npx` re-serialize arguments into a
+shell command string, and newlines are dropped or escaped along the way. **The message is already
+corrupted by the time CommitGate sees it, so it cannot be recovered.**
+
+Measured directly on Windows 11 / Node 24 / npm 11 / pnpm 9:
+
+| Invocation | Multi-line `-m` |
+|---|---|
+| `npm run … -- -m` | 🔴 everything after the newline is **dropped** |
+| `pnpm <script> -m` | 🔴 becomes a literal two-character `\n` |
+| `npx <cmd> -m` · `pnpm exec <cmd> -m` | 🔴 dropped after the newline |
+| **`--message-file`** (every path) | ✅ **intact** |
+
+🔴 **npm is the more dangerous one.** pnpm escapes, so the content survives and is visible; npm and npx
+**drop it silently**. The tool cannot detect that either — it simply receives a shorter string.
+
+**Fix: pass multi-line messages as a file.**
+
+```sh
+# after writing the message to a file
+npm run req:commit -- 2026-001 --run --message-file .commit-msg.txt
+# -F means the same thing (the git commit -F convention)
+npm run req:commit -- 2026-001 --run -F .commit-msg.txt
+```
+
+The `REQ_COMMIT_MESSAGE_FILE` environment variable points at the same thing. **Single-line messages are
+still safe with `-m`** — with no newline there is nothing for the re-serialization to break.
+
+If a message contains a literal `\n` and no real newline, `req:commit` warns. It does **not** repair it —
+that case is indistinguishable from a message that genuinely contains `\n`. And as noted above, npm's
+silent truncation is **not** caught by that warning.
+
 **What should I do if I see a cross-spawn version warning?**
 It means the target project may already have a `cross-spawn` version below CommitGate's verified floor. Upgrade it with `npm i -D cross-spawn@^7.0.6`. In CI or security-sensitive installs, use `npx commitgate --strict` to treat the warning as a failure.
 

@@ -78,11 +78,18 @@ npm run req:commit -- 2026-001 --run -m "feat: my feature"
 
 Important: only stage code and documents you authored for the source commit. `state.json` and `responses/` are managed by the tool.
 
-For multi-line commit messages, use a file instead of `-m`.
+🔴 **Never pass a multi-line commit message with `-m`.** Package managers and `npx` re-serialize
+arguments into a shell command string, which **drops everything after the newline** (npm, npx) or turns it
+into a **literal two-character `\n`** (pnpm). The message is already corrupted by the time CommitGate sees it, so it
+cannot be recovered. Pass it as a file instead.
 
 ```sh
 npm run req:commit -- 2026-001 --run --message-file commit-message.txt
+npm run req:commit -- 2026-001 --run -F commit-message.txt   # same thing (the git commit -F convention)
 ```
+
+Single-line messages remain safe with `-m`. The measured breakdown is in
+[Troubleshooting](./troubleshooting.en.md).
 
 ## delivery set — several REQs as one group
 

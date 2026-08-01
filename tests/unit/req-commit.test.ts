@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -29,6 +29,9 @@ import {
   designHashFromManifest,
   forbiddenSourceStagedMessage,
   stagedNames,
+  looksLikeCollapsedMessage,
+  collapsedMessageWarning,
+  main as reqCommitMain,
 } from '../../scripts/req/req-commit'
 import { STAGED_NAMES_Z_ARGS } from '../../scripts/req/review-codex'
 import { sourceCommitForbiddenStaged } from '../../scripts/req/lib/scratch'
@@ -1570,5 +1573,110 @@ describe('[REQ-2026-092] stagedNames — phase 게이트와 동일한 -z 원문 
     expect(stagedNames()).toEqual(fromGate)
     // 판정도 당연히 같다.
     expect(sourceCommitForbiddenStaged(stagedNames(), TICKET_REL)).toEqual(sourceCommitForbiddenStaged(fromGate, TICKET_REL))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-2026-095: -F 별칭 + 붕괴 의심 경고
+// ─────────────────────────────────────────────────────────────────────────────
+describe('[REQ-2026-095] -F 별칭', () => {
+  it('-F 가 --message-file 과 같은 자리에 담긴다(git commit -F 규약)', () => {
+    expect(parseArgs(['2026-001', '-F', 'msg.txt'])).toMatchObject({ messageFile: 'msg.txt', message: null })
+    expect(parseArgs(['2026-001', '--message-file', 'msg.txt'])).toMatchObject({ messageFile: 'msg.txt' })
+  })
+
+  it('값 누락은 어느 표기든 거부하고, 오류가 실제 쓴 표기를 말한다', () => {
+    expect(() => parseArgs(['2026-001', '-F'])).toThrow(/-F 값 필요/)
+    expect(() => parseArgs(['2026-001', '--message-file'])).toThrow(/--message-file 값 필요/)
+  })
+
+  it('-m 과 함께 쓰면 기존 상호배타 규칙이 그대로 적용된다', () => {
+    const o = parseArgs(['2026-001', '-m', 'x', '-F', 'msg.txt'])
+    expect(() => resolveMessageSource({ message: o.message, messageFile: o.messageFile }, undefined, () => true)).toThrow(
+      /동시 지정 불가/,
+    )
+  })
+})
+
+describe('[REQ-2026-095] looksLikeCollapsedMessage — 붕괴 의심 판정', () => {
+  it('🔴 리터럴 \\n 있고 실제 개행 없음 → true (pnpm 재직렬화 흔적)', () => {
+    expect(looksLikeCollapsedMessage('subject\\n\\nbody')).toBe(true)
+    expect(looksLikeCollapsedMessage('a\\nb')).toBe(true)
+  })
+
+  it('🔴 실제 개행이 하나라도 있으면 false — 정상 전달된 여러 줄이다', () => {
+    expect(looksLikeCollapsedMessage('subject\n\nbody')).toBe(false)
+    // 리터럴과 실제가 섞여 있으면 전달은 성공한 것이므로 경고하지 않는다.
+    expect(looksLikeCollapsedMessage('subject\nbody with literal \\n inside')).toBe(false)
+  })
+
+  it('리터럴 \\n 이 없으면 false · 빈 값·null·한 줄 평문도 false', () => {
+    expect(looksLikeCollapsedMessage('fix(x): 한 줄 메시지')).toBe(false)
+    expect(looksLikeCollapsedMessage('')).toBe(false)
+    expect(looksLikeCollapsedMessage(null)).toBe(false)
+  })
+
+  it('경고 문구가 탐지의 한계를 밝힌다 — "경고 없음 = 안전"으로 읽히면 안 된다', () => {
+    const w = collapsedMessageWarning()
+    expect(w).toContain('--message-file')
+    expect(w).toContain('-F')
+    expect(w).toContain('npm')
+    expect(w).toMatch(/안전하다는 뜻은 아닙니다/) // npm의 조용한 절단은 탐지 불가
+    expect(w).toMatch(/고치지 않습니다/) // 자동 복원 금지를 사용자에게 명시
+  })
+})
+
+describe('[REQ-2026-095] 경고 배선 — 실제 진입점에서 관측 (실 git)', () => {
+  const repos: string[] = []
+  afterEach(() => {
+    while (repos.length) rmSync(repos.pop() as string, { recursive: true, force: true })
+  })
+
+  /** setup 마커만 갖춘 최소 저장소. 경고는 doctor·게이트보다 앞이라 뒤 단계가 실패해도 관측된다. */
+  const mkMinimalRepo = (): string => {
+    const repo = mkdtempSync(join(tmpdir(), 'req095-'))
+    repos.push(repo)
+    execFileSync('git', ['init', '-q'], { cwd: repo })
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    writeFileSync(
+      join(repo, 'req.config.json'),
+      JSON.stringify({ setup: { completedVersion: '0.0.0-test', completedAt: '2026-01-01T00:00:00Z' }, packageManager: 'npm' }),
+    )
+    return repo
+  }
+
+  it('🔴 붕괴 조건의 -m 이면 경고가 **실제로 나온다** — 순수 판정만 고정하면 배선이 빠져도 통과한다', () => {
+    const repo = mkMinimalRepo()
+    const warns: string[] = []
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => void warns.push(a.join(' ')))
+    try {
+      // 티켓이 없어 뒤에서 실패하지만, 경고는 그보다 **앞**에서 나온다(설계 DEC-4).
+      try { reqCommitMain(['2026-999', '-m', 'subject\\n\\nbody', '--root', repo]) } catch { /* 뒤 단계 실패는 무관 */ }
+    } finally {
+      spy.mockRestore()
+    }
+    expect(warns.join('\n')).toContain('한 줄로 붕괴했을 수 있습니다')
+  })
+
+  it('🔴 정상 한 줄 메시지에는 경고가 나오지 않는다(오탐 대조군)', () => {
+    const repo = mkMinimalRepo()
+    const warns: string[] = []
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => void warns.push(a.join(' ')))
+    try {
+      try { reqCommitMain(['2026-999', '-m', 'fix(x): 한 줄', '--root', repo]) } catch { /* 무관 */ }
+    } finally {
+      spy.mockRestore()
+    }
+    expect(warns.join('\n')).not.toContain('붕괴')
+  })
+
+  it('🔴 경고는 차단하지 않고 메시지를 고치지도 않는다', () => {
+    // 판정이 true여도 예외를 던지지 않는다(경고는 자문이다).
+    expect(() => looksLikeCollapsedMessage('a\\nb')).not.toThrow()
+    // 그리고 어떤 함수도 메시지를 변형하지 않는다 — 입력이 그대로 유지된다.
+    const msg = 'subject\\n\\nbody'
+    const o = parseArgs(['2026-001', '-m', msg])
+    expect(o.message).toBe(msg)
+    expect(resolveMessageSource({ message: o.message, messageFile: null }, undefined, () => true).message).toBe(msg)
   })
 })

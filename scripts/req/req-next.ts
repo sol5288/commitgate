@@ -399,7 +399,29 @@ function reviewCmd(pm: PackageManager, target: NextTarget, kind: ReviewKind, pha
  * (합성해서도 안 된다 — 커밋 메시지는 사람·Builder의 판단이다). 그래서 자리표시자를 실어 보내고
  * 실행자가 그 자리를 메운다. 두 경로가 문자열을 각자 들고 있으면 갈라지므로 상수 하나를 공유한다.
  */
-export const COMMIT_MESSAGE_PLACEHOLDER = '"<이 phase의 conventional 커밋 메시지>"'
+export const COMMIT_MESSAGE_PLACEHOLDER = '"<이 phase의 conventional 커밋 메시지(한 줄)>"'
+
+/**
+ * 🔴 여러 줄 메시지 안내(REQ-2026-095 DEC-1·2·5, 순수). `-m`을 싣는 **모든** 커밋 액션의
+ *    `diagnostics`에 붙는다 — 한쪽만 붙이면 다른 쪽이 조용히 함정으로 남는다.
+ *
+ * **왜 필요한가(실측)**: Windows에서 `npm run … -- -m "a<개행>b"`는 개행 **이후를 통째로 버리고**,
+ * `pnpm <script> -m`은 리터럴 두 글자 `\n`으로 바꾼다. `npx <bin>`·`pnpm exec <bin>`·`npx tsx <script>`도
+ * 같다 — `.cmd` shim이 argv를 셸 문자열로 재직렬화하기 때문이다. 안전한 것은 `--message-file`뿐이다.
+ *
+ * 🔴 **"pnpm 버그"라고 쓰지 않는다.** npm 쪽이 더 나쁘다(조용히 잃어 탐지조차 안 된다). 범인을 좁게
+ *    지목하면 npm 사용자가 자기는 안전하다고 오해한다.
+ * 🔴 RUN 명령 자체는 **바꾸지 않는다** — 자리표시자만 채우면 그대로 실행 가능해야 한다(F-3 계약).
+ *    이 안내는 그 **옆에** 붙는 별도 줄이다.
+ */
+export function multiLineMessageHint(pm: PackageManager, target: NextTarget): string[] {
+  const fileCmd = buildScriptInvocation(pm, 'req:commit', [...targetArgs(target), '--run', '--message-file', '<경로>']).join(' ')
+  return [
+    '여러 줄 메시지(본문 포함)는 -m 으로 넘기지 마세요 — npm·pnpm·npx가 argv의 개행을 잘라내거나 ' +
+      '리터럴 \\n 으로 바꿉니다(Windows 실측). 메시지를 파일에 쓴 뒤 파일로 넘기세요:',
+    `  ${fileCmd}`,
+  ]
+}
 
 /**
  * 사람 승인(AWAIT_HUMAN) 경로의 커밋 명령.
@@ -672,6 +694,8 @@ function resolveNextCore(input: NextInput): NextAction {
         kind: 'RUN',
         detail: 'phase 승인이 살아 있다(LOW · 자동 커밋). 이 phase의 conventional 커밋 메시지를 작성해 실행하라.',
         command: autoCommitCmd(pm, target),
+        // REQ-2026-095 DEC-5: 사람 확인 경로와 **같은** 안내를 받는다(한쪽만 고치면 나머지가 함정으로 남는다).
+        diagnostics: multiLineMessageHint(pm, target),
       }
     // 복구 가드(R4): 승인이 살아 있는데 staged가 비었으면 부분 커밋(source 커밋 후 consume 전)일 수 있다.
     // 정상 커밋을 지시하면 req:commit이 `staged 변경 없음`으로 죽어 자동 루프가 스핀한다 → --finalize로 복구.
@@ -715,6 +739,8 @@ function resolveNextCore(input: NextInput): NextAction {
       command: commitCmd(pm, target),
       controlPoint: 'req:commit --run 직전',
       approvalSentence: 'req:commit --run 승인',
+      // REQ-2026-095 DEC-5: 자동 커밋 경로와 **같은** 안내.
+      diagnostics: multiLineMessageHint(pm, target),
     }
   }
 

@@ -23,6 +23,7 @@ import {
   READONLY_GIT_SUBCOMMANDS,
   NEXT_EXIT_CODES,
   COMMIT_MESSAGE_PLACEHOLDER,
+  multiLineMessageHint,
   type NextInput,
   type NextTarget,
 } from '../../scripts/req/req-next'
@@ -1436,5 +1437,61 @@ describe('[REQ-2026-088] resolveNext — 액션은 그대로, 진단만 얹는�
   it('committedManifestText 미지정이면 현행과 완전히 동일하다(무회귀)', () => {
     const base = baseInput({ hasStagedChanges: true })
     expect(resolveNext(base)).toEqual(resolveNext({ ...base, committedManifestText: undefined }))
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-2026-095: 여러 줄 커밋 메시지 안내
+//
+// 실측(Windows): `npm run … -- -m "a<개행>b"`는 개행 **이후를 통째로 버리고**, `pnpm <script> -m`은
+// 리터럴 `\n`으로 바꾼다. `npx <bin>`·`pnpm exec <bin>`·`npx tsx`도 같다. 안전한 것은 --message-file 뿐.
+// 정본 경로(`req:next` RUN/AWAIT_HUMAN)가 그것을 가리키지 않으면 사용자는 반드시 함정을 밟는다.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('[REQ-2026-095] 여러 줄 메시지 안내', () => {
+  const humanAction = (): ReturnType<typeof resolveNext> =>
+    resolveNext(baseInput({ state: baseState({ commit_allowed: true }), hasStagedChanges: true }))
+  const autoAction = (): ReturnType<typeof resolveNext> =>
+    resolveNext(
+      baseInput({
+        state: baseState({ commit_allowed: true, risk_level: 'LOW' }),
+        hasStagedChanges: true,
+        phaseCommitAutoApprove: 'low-only',
+      }),
+    )
+
+  it('🔴 사람 확인 경로와 LOW 자동 경로가 **둘 다** 안내를 받는다(한쪽만 고치면 나머지가 함정으로 남는다)', () => {
+    for (const [name, a] of [['human', humanAction()], ['auto', autoAction()]] as const) {
+      const d = (a.diagnostics ?? []).join('\n')
+      expect(d, `${name} 경로에 안내가 없다`).toContain('--message-file')
+      expect(d, `${name} 경로에 이유가 없다`).toContain('개행')
+    }
+  })
+
+  it('🔴 RUN 명령은 여전히 -m 자리표시자를 쓴다 — 그대로 실행 가능해야 한다(F-3 계약 무회귀)', () => {
+    for (const a of [humanAction(), autoAction()]) {
+      expect(a.command).toContain(COMMIT_MESSAGE_PLACEHOLDER)
+      expect(a.command).toContain(' -m ')
+      // 명령 자체가 --message-file 로 바뀌면 에이전트가 파일을 먼저 써야 해 자기완결적이지 않게 된다.
+      expect(a.command).not.toContain('--message-file')
+    }
+  })
+
+  it('자리표시자가 한 줄 제약을 스스로 말한다(diagnostics를 안 읽어도 보이게)', () => {
+    expect(COMMIT_MESSAGE_PLACEHOLDER).toContain('한 줄')
+  })
+
+  it('🔴 안내가 npm을 함께 지목한다 — "pnpm 버그"로 좁히면 npm 사용자가 안전하다고 오해한다', () => {
+    // 실측상 npm 쪽이 더 나쁘다(조용히 잃어 탐지조차 안 된다).
+    const d = (humanAction().diagnostics ?? []).join('\n')
+    expect(d).toContain('npm')
+    expect(d).toContain('pnpm')
+  })
+
+  it('안내 명령이 현재 packageManager로 조립된다(소비자가 그대로 쓸 수 있게)', () => {
+    const npmHint = multiLineMessageHint('npm', { kind: 'req', reqId: '2026-001' }).join('\n')
+    expect(npmHint).toContain('npm run req:commit --')
+    const pnpmHint = multiLineMessageHint('pnpm', { kind: 'req', reqId: '2026-001' }).join('\n')
+    expect(pnpmHint).toContain('pnpm req:commit')
+    expect(pnpmHint).not.toContain('npm run req:commit --')
   })
 })
