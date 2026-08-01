@@ -39,7 +39,7 @@ import { createEvidencePorts } from './lib/evidence-ports'
 import { scanTicketIntake } from './lib/intake'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
-import { missingQuickstartFiles } from '../../bin/quickstart'
+import { quickstartBackfillTargets, type QuickstartBackfillTarget } from '../../bin/quickstart'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — config 부재 시 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -135,10 +135,17 @@ export interface DoctorInputs {
   packageRootDiffers?: boolean
   schemaPathIsDefault?: boolean
   installedVersion?: string | null
-  // D21(REQ-2026-040): 기존 always-loaded 파일 중 Quick Start 블록이 없는 것(bin/quickstart.missingQuickstartFiles).
-  //   undefined = 미계산(2-arg/legacy) → OK. [] = 없음/최신/대상없음 → OK. 비어있지 않음 → WARN.
-  //   dev/dogfood(packageRootDiffers===false)면 D20처럼 skip. optional이어야 테스트 base 리터럴이 안 깨진다.
-  quickstartMissing?: string[]
+  /**
+   * D21: 백필이 필요한 always-loaded 파일과 사유(`bin/quickstart.quickstartBackfillTargets`).
+   *
+   * 🔴 REQ-2026-101: 이전에는 **부재만**(`quickstartMissing: string[]`) 봤다. 그래서 블록 내용을
+   *    개정해도 이미 설치된 소비자는 신호를 못 받았다 — 갱신 기계는 있는데 탐지가 없었다.
+   *    이제 `insert`(부재)와 `replace`(드리프트)를 구분해 받는다.
+   *
+   *   undefined = 미계산(2-arg/legacy)·판정 불가 → OK. [] = 전부 최신/대상없음 → OK. 비어있지 않음 → WARN.
+   *   dev/dogfood(packageRootDiffers===false)면 D20처럼 skip. optional이어야 테스트 base 리터럴이 안 깨진다.
+   */
+  quickstartBackfill?: QuickstartBackfillTarget[]
   // D22(REQ-2026-047): repo-root 런타임 스크래치 경로 중 **ignore도 tracked도 아닌** 것(= 다음 review가 만들면 D10이 막는 것).
   //   런타임이 소비 repo 루트에 만드는 스크래치(현재 `workflow/.review-calls.jsonl`)는 티켓 밖이라 `/REQ-*/` 앵커에
   //   걸리지 않고 `reviewScratchPaths` 허용목록에도 없다 → **gitignore가 유일한 방어**다. 0.9.6 이하 설치본은 배포
@@ -581,15 +588,28 @@ export function runChecks(inp: DoctorInputs): Check[] {
   // seed-once라 REQ-2026-039 이전 설치본/기존 파일엔 신규 블록이 닿지 않는다 — 백필 필요를 알릴 뿐 막지 않는다.
   if (inp.packageRootDiffers === false) {
     c.push({ id: 'D21', level: 'OK', msg: 'Quick Start 백필 점검 불요(dev repo/dogfood — packageRoot === config root)' })
-  } else if (inp.quickstartMissing === undefined) {
-    c.push({ id: 'D21', level: 'OK', msg: 'Quick Start 백필 점검 불요(2-arg/미계산)' })
-  } else if (inp.quickstartMissing.length === 0) {
-    c.push({ id: 'D21', level: 'OK', msg: '기존 always-loaded 파일에 Quick Start 블록 있음(또는 대상 없음)' })
+  } else if (inp.quickstartBackfill === undefined) {
+    // 판정 불가(shipped 블록 조회 실패·2-arg/미계산) → 조용히 통과(REQ-2026-101 DEC-7).
+    // D19 `undefined→OK`·D20 "조회 불가→OK"·D24 "미계산→OK"와 같은 선례다.
+    c.push({ id: 'D21', level: 'OK', msg: 'Quick Start 백필 점검 불요(2-arg/미계산·shipped 블록 조회 불가)' })
+  } else if (inp.quickstartBackfill.length === 0) {
+    c.push({ id: 'D21', level: 'OK', msg: '기존 always-loaded 파일의 Quick Start 블록이 설치된 버전과 일치(또는 대상 없음)' })
   } else {
+    // 🔴 REQ-2026-101 DEC-2: 부재와 드리프트는 사용자에게 **다른 사건**이다. 한 줄에 뭉치면
+    //    무엇을 해야 하는지도, 무엇을 잃는지도 알 수 없다. 드리프트에는 덮어쓰기 경고가 붙는다.
+    const missing = inp.quickstartBackfill.filter((t) => t.action === 'insert').map((t) => t.rel)
+    const stale = inp.quickstartBackfill.filter((t) => t.action === 'replace').map((t) => t.rel)
+    const parts: string[] = []
+    if (missing.length) parts.push(`${missing.join(', ')} 에 Quick Start 블록이 없습니다(seed-once라 신규 블록이 기존 파일엔 자동으로 닿지 않습니다 — REQ-2026-040).`)
+    if (stale.length)
+      parts.push(
+        `${stale.join(', ')} 의 Quick Start 블록이 설치된 commitgate와 다릅니다(드리프트) — 갱신하면 최신 워크플로 규칙이 반영됩니다. ` +
+          `⚠️ 마커(\`<!-- commitgate:quickstart -->\`) **안쪽을 직접 수정했다면 그 수정은 덮어써집니다** — 마커 안은 도구 관리 영역입니다.`,
+      )
     c.push({
       id: 'D21',
       level: 'WARN',
-      msg: `${inp.quickstartMissing.join(', ')} 에 Quick Start 블록이 없습니다 — \`commitgate quickstart --apply\` 로 백필하세요. seed-once라 신규 블록이 기존 파일엔 자동으로 닿지 않습니다(REQ-2026-040).`,
+      msg: `${parts.join(' ')} \`commitgate quickstart --apply\` 로 해소하세요.`,
     })
   }
 
@@ -1111,7 +1131,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     packageRootDiffers: packageRoot() !== cfg.root,
     schemaPathIsDefault: cfg.schemaPathAbs === resolve(cfg.root, DEFAULTS.schemaPath), // 정규화 절대경로 비교(동치 상대경로 포함)
     installedVersion: safeReadVersion(join(packageRoot(), 'package.json')),
-    quickstartMissing: missingQuickstartFiles(cfg.root),
+    quickstartBackfill: quickstartBackfillTargets(cfg.root),
     // D22(REQ-2026-047): 현재 repo-root 런타임 스크래치 축은 review-call 측정 로그 1건.
     // 새 축이 생기면 이 배열에 추가하고 packed-consumer smoke 단언도 함께 늘린다(docs 인벤토리 표의 유지 규칙).
     repoRootScratchUnprotected: unprotectedRepoRootScratch([REVIEW_CALL_LOG_REL], git),

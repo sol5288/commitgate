@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import {
   extractQuickstartBlock,
   injectQuickstart,
-  missingQuickstartFiles,
+  quickstartBackfillTargets,
   runQuickstart,
   shippedQuickstartBlock,
 } from '../../bin/quickstart'
@@ -141,7 +141,7 @@ describe('[REQ-2026-040] injectQuickstart', () => {
   })
 })
 
-// ─────────────── phase-2: verb + missingQuickstartFiles 통합 (temp repo) ───────────────
+// ─────────────── phase-2: verb + quickstartBackfillTargets 통합 (temp repo) ───────────────
 
 function tmpRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'cg-qs-'))
@@ -157,14 +157,17 @@ function cleanup(dir: string): void {
 const SHIPPED = shippedQuickstartBlock() // 실제 배포되는 Quick Start 블록
 const MARK = 'commitgate:quickstart'
 
-describe('[REQ-2026-040] missingQuickstartFiles', () => {
+/** REQ-2026-101: 진단이 반환하는 rel 목록(사유 무시) — 기존 단언을 그대로 옮기기 위한 보조. */
+const rels = (dir: string): string[] => (quickstartBackfillTargets(dir) ?? []).map((t) => t.rel)
+
+describe('[REQ-2026-040] quickstartBackfillTargets — 부재 탐지(무회귀)', () => {
   it('CLAUDE.md 블록 없음 → 목록에, 있음 → 제외', () => {
     const dir = tmpRepo()
     try {
       writeFileSync(join(dir, 'CLAUDE.md'), '# 지침\n내용\n')
-      expect(missingQuickstartFiles(dir)).toContain('CLAUDE.md')
+      expect(rels(dir)).toContain('CLAUDE.md')
       writeFileSync(join(dir, 'CLAUDE.md'), `# 지침\n\n${SHIPPED}\n\n내용\n`)
-      expect(missingQuickstartFiles(dir)).not.toContain('CLAUDE.md')
+      expect(rels(dir)).not.toContain('CLAUDE.md')
     } finally {
       cleanup(dir)
     }
@@ -174,9 +177,9 @@ describe('[REQ-2026-040] missingQuickstartFiles', () => {
     const dir = tmpRepo()
     try {
       writeFileSync(join(dir, 'AGENTS.md'), '# 일반 지침\n계약 아님\n') // 마커 없음 → 미접촉
-      expect(missingQuickstartFiles(dir)).not.toContain('AGENTS.md')
+      expect(rels(dir)).not.toContain('AGENTS.md')
       writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 계약\n`) // 마커 有·블록 無
-      expect(missingQuickstartFiles(dir)).toContain('AGENTS.md')
+      expect(rels(dir)).toContain('AGENTS.md')
     } finally {
       cleanup(dir)
     }
@@ -185,7 +188,7 @@ describe('[REQ-2026-040] missingQuickstartFiles', () => {
   it('부재 파일은 목록에 없다', () => {
     const dir = tmpRepo()
     try {
-      expect(missingQuickstartFiles(dir)).toEqual([])
+      expect(rels(dir)).toEqual([])
     } finally {
       cleanup(dir)
     }
@@ -255,5 +258,75 @@ describe('[REQ-2026-040] runQuickstart (verb)', () => {
 
   it('대상이 CommitGate 패키지 자신이면 거부(fail-closed)', () => {
     expect(() => runQuickstart({ dir: PACKAGE_ROOT, apply: false })).toThrow(/패키지 자신/)
+  })
+})
+
+/**
+ * REQ-2026-101 — **드리프트 탐지**. 블록이 있지만 설치된 버전과 다른 상태를 알린다.
+ *
+ * 🔴 왜 없었나: `injectQuickstart`는 처음부터 낡은 블록을 **치환**했지만(`updated`), 진단
+ *    (`missingQuickstartFiles`)은 **마커 부재만** 봤다. 그래서 블록을 개정해도 이미 설치된
+ *    소비자는 신호를 못 받았고, 신호가 없으니 아무도 `quickstart --apply`를 실행하지 않았다.
+ *    지금까지 블록을 한 번도 개정하지 않아 드러나지 않았을 뿐이다.
+ */
+describe('[REQ-2026-101] quickstartBackfillTargets — 드리프트 탐지', () => {
+  /** shipped 블록의 본문 한 줄을 바꾼 "낡은 블록"(마커는 그대로 유지해야 탐지 축이 성립한다). */
+  const STALE = SHIPPED.replace('CommitGate REQ 워크플로로만 처리한다', 'CommitGate 워크플로로 처리한다(옛 문구)')
+
+  it('픽스처 자체 점검 — STALE은 마커를 유지하면서 내용만 다르다', () => {
+    expect(STALE).toContain(MARK)          // 부재 탐지로 잡히는 게 아님을 보장
+    expect(STALE).not.toBe(SHIPPED)
+  })
+
+  it('마커 有 + 내용 다름 → replace(드리프트)로 잡힌다', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), `# 지침\n\n${STALE}\n\n내용\n`)
+      expect(quickstartBackfillTargets(dir)).toEqual([{ rel: 'CLAUDE.md', action: 'replace' }])
+    } finally { cleanup(dir) }
+  })
+
+  it('마커 有 + 내용 동일 → 대상 아님', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), `# 지침\n\n${SHIPPED}\n\n내용\n`)
+      expect(quickstartBackfillTargets(dir)).toEqual([])
+    } finally { cleanup(dir) }
+  })
+
+  it('마커 無 → insert(부재)로 잡힌다 — 두 사유가 구분된다', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), '# 지침\n내용\n')
+      expect(quickstartBackfillTargets(dir)).toEqual([{ rel: 'CLAUDE.md', action: 'insert' }])
+    } finally { cleanup(dir) }
+  })
+
+  it('skip 사유는 계획기가 처리한다 — 계약 마커 없는 AGENTS.md는 드리프트여도 미접촉', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), `# 일반 지침\n\n${STALE}\n`) // 계약 마커 없음
+      expect(quickstartBackfillTargets(dir)).toEqual([])
+    } finally { cleanup(dir) }
+  })
+
+  /**
+   * 🔴 **핵심(DEC-6 ⑥)**: 진단과 적용이 같은 계획기에서 나오므로 정의상 일치해야 한다.
+   *    진단이 지목 → `--apply` → 재진단이 **빈 목록**. 이 왕복이 깨지면 사용자는 영원히 WARN을 본다.
+   */
+  it('진단 ↔ 적용 왕복: 지목된 파일을 --apply가 쓰고, 재진단이 clean해진다', () => {
+    const dir = tmpRepo()
+    try {
+      writeFileSync(join(dir, 'CLAUDE.md'), `# 지침\n\n${STALE}\n\n내용\n`)
+      writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 계약\n`) // 계약 有·블록 無
+      const before = quickstartBackfillTargets(dir) ?? []
+      expect(before.map((t) => `${t.rel}:${t.action}`).sort()).toEqual(['AGENTS.md:insert', 'CLAUDE.md:replace'])
+
+      runQuickstart({ dir, apply: true })
+
+      expect(quickstartBackfillTargets(dir)).toEqual([])                       // 재진단 clean
+      expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8')).toContain(SHIPPED)  // 낡은 블록이 실제로 교체됨
+      expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf8')).toContain('내용')    // 마커 밖은 보존
+    } finally { cleanup(dir) }
   })
 })

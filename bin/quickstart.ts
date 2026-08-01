@@ -173,16 +173,41 @@ function readSafeTarget(root: string, rel: string): TargetState {
   return { kind: 'file', content: readFileSync(abs, 'utf8') }
 }
 
-/** 소비 repo에서 Quick Start 블록이 없는 always-loaded 파일 목록(doctor D21용). 부재·계약아님·최신은 제외. */
-export function missingQuickstartFiles(root: string): string[] {
-  const missing: string[] = []
-  for (const rel of TARGET_FILES) {
-    const st = readSafeTarget(root, rel)
-    if (st.kind !== 'file') continue
-    if (rel === 'AGENTS.md' && !st.content.includes(AGENTS_CONTRACT_MARKER)) continue // 계약 아님 → 미접촉
-    if (!st.content.includes(QUICKSTART_MARKER_OPEN)) missing.push(rel)
+/** 백필이 필요한 파일과 그 사유. `insert`=블록 부재 · `replace`=블록은 있으나 shipped와 다름(드리프트). */
+export interface QuickstartBackfillTarget {
+  rel: string
+  action: 'insert' | 'replace'
+}
+
+/**
+ * 소비 repo에서 **백필이 필요한** always-loaded 파일(doctor D21 입력, REQ-2026-101 DEC-1).
+ *
+ * 🔴 **판정을 재구현하지 않고 `planQuickstart`에서 파생한다** — verb(`quickstart --apply`)가 쓰는
+ *    바로 그 계획기다. 그래서 "진단이 필요하다고 한 파일"과 "적용이 실제로 쓰는 파일"이 **정의상
+ *    같다.** skip 사유(부재·symlink·계약 마커 없음)도 계획기가 이미 처리하므로 여기서 다시 적지 않는다.
+ *
+ * 🔴 **이전 구현(`missingQuickstartFiles`)은 마커 부재만 봤다.** 그래서 블록 내용을 개정해도 이미
+ *    설치된 소비자는 아무 신호를 받지 못했고, 신호가 없으니 아무도 `quickstart --apply`를 실행하지
+ *    않았다. 갱신 기계(`injectQuickstart`의 `updated` 경로)는 처음부터 있었는데 **탐지만 없었다.**
+ *
+ * `undefined` = 판정 불가(shipped 블록 조회 실패 등). 호출부는 **조용히 통과**시킨다(DEC-7) —
+ * D19/D20/D24의 "미계산·조회 불가 → OK" 선례와 같다. 이 검사는 advisory이고 어떤 게이트도 여기
+ * 서 있지 않다. doctor는 `req:commit`의 하드 게이트라 여기서 throw가 새면 커밋이 벽돌이 된다.
+ */
+export function quickstartBackfillTargets(root: string): QuickstartBackfillTarget[] | undefined {
+  let block: string
+  try {
+    block = shippedQuickstartBlock()
+  } catch {
+    return undefined
   }
-  return missing
+  try {
+    return planQuickstart(root, block).files
+      .filter((f): f is typeof f & { action: 'insert' | 'replace' } => f.action === 'insert' || f.action === 'replace')
+      .map((f) => ({ rel: f.rel, action: f.action }))
+  } catch {
+    return undefined
+  }
 }
 
 /** 백필 계획(순수 판정 — 쓰기 없음). 파일별 action + 삽입 위치 + skip 사유. */

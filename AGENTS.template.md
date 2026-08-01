@@ -26,6 +26,8 @@
 5. `state.json`·`responses/`는 직접 `git add` 하지 않는다 — 도구가 관리한다.
 6. 커밋은 `req:next`가 `RUN`으로 지시할 때 `req:commit`으로만 한다. 스스로 `req:commit`을 호출하지 않는다.
    직접 `git commit`은 CommitGate 자체 스캐폴딩 산출물(`init`·`migrate`·`sync`가 쓴 파일)을 커밋할 때만 쓴다.
+7. 테스트는 phase 진행 중엔 **변경한 소스를 import하는 것만**, **전체 스위트는 통합 직전 1회** 돌린다.
+   게이트는 테스트를 실행하지 않는다 — 이건 비용 규칙이다(매 phase 전량은 티켓 시간을 크게 늘린다).
 <!-- /commitgate:quickstart -->
 
 > 위는 빠른 시작 요약이다. 아래가 정본 계약(절대 규칙·통제점·승인 문장)이다.

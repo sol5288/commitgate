@@ -86,17 +86,55 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     expect(fails).toEqual([])
   })
 
-  it('D21(REQ-2026-040): Quick Start 블록 부재는 WARN — dev/dogfood·미계산·최신은 OK, 절대 FAIL 아님', () => {
+  it('D21(REQ-2026-040): Quick Start 백필 필요는 WARN — dev/dogfood·미계산·최신은 OK, 절대 FAIL 아님', () => {
+    const ins = [{ rel: 'CLAUDE.md', action: 'insert' as const }]
     // dev/dogfood(packageRootDiffers=false) → OK skip
-    expect(lvl(runChecks(mk({ packageRootDiffers: false, quickstartMissing: ['CLAUDE.md'] })), 'D21')).toBe('OK')
-    // 미계산(undefined) → OK
+    expect(lvl(runChecks(mk({ packageRootDiffers: false, quickstartBackfill: ins })), 'D21')).toBe('OK')
+    // 🔴 미계산·판정 불가(undefined) → OK (REQ-2026-101 DEC-7: 판정할 근거가 없으면 알리지 않는다)
     expect(lvl(runChecks(mk({ packageRootDiffers: true })), 'D21')).toBe('OK')
-    // 없음/최신([]) → OK
-    expect(lvl(runChecks(mk({ packageRootDiffers: true, quickstartMissing: [] })), 'D21')).toBe('OK')
-    // 소비 repo + 블록 부재 → WARN
-    const warned = runChecks(mk({ packageRootDiffers: true, quickstartMissing: ['CLAUDE.md', 'AGENTS.md'] }))
+    // 전부 최신([]) → OK
+    expect(lvl(runChecks(mk({ packageRootDiffers: true, quickstartBackfill: [] })), 'D21')).toBe('OK')
+    // 소비 repo + 백필 필요 → WARN
+    const warned = runChecks(mk({ packageRootDiffers: true, quickstartBackfill: [...ins, { rel: 'AGENTS.md', action: 'insert' as const }] }))
     expect(lvl(warned, 'D21')).toBe('WARN')
     expect(warned.filter((c) => c.level === 'FAIL')).toEqual([]) // 게이트를 벽돌로 만들지 않는다
+  })
+
+  /**
+   * REQ-2026-101 — 부재와 드리프트는 사용자에게 **다른 사건**이다. 한 줄에 뭉치면 무엇을 해야 하는지도,
+   * 무엇을 잃는지도 알 수 없다. 특히 드리프트 갱신은 마커 안쪽 수정을 덮어쓴다.
+   */
+  it('[REQ-2026-101] D21이 부재와 드리프트를 구분하고, 드리프트엔 덮어쓰기 경고가 붙는다', () => {
+    const msg = (inp: Parameters<typeof mk>[0]): string => runChecks(mk(inp)).find((c) => c.id === 'D21')?.msg ?? ''
+
+    const onlyMissing = msg({ packageRootDiffers: true, quickstartBackfill: [{ rel: 'CLAUDE.md', action: 'insert' }] })
+    expect(onlyMissing).toContain('Quick Start 블록이 없습니다')
+    expect(onlyMissing).not.toContain('덮어써집니다')       // 부재엔 덮어쓸 것이 없다
+
+    const onlyStale = msg({ packageRootDiffers: true, quickstartBackfill: [{ rel: 'AGENTS.md', action: 'replace' }] })
+    expect(onlyStale).toContain('드리프트')
+    expect(onlyStale).toContain('덮어써집니다')             // 무엇을 잃는지 말한다
+    expect(onlyStale).not.toContain('블록이 없습니다')       // 사유를 섞지 않는다
+
+    // 둘 다면 둘 다 말하고, 해소 명령은 한 번만 붙는다.
+    const both = msg({
+      packageRootDiffers: true,
+      quickstartBackfill: [{ rel: 'CLAUDE.md', action: 'insert' }, { rel: 'AGENTS.md', action: 'replace' }],
+    })
+    expect(both).toContain('CLAUDE.md 에 Quick Start 블록이 없습니다')
+    expect(both).toContain('AGENTS.md 의 Quick Start 블록이 설치된 commitgate와 다릅니다')
+    expect(both.match(/quickstart --apply/g)?.length).toBe(1)
+  })
+
+  it('[REQ-2026-101] D21은 어떤 입력에서도 WARN 상한이다(커밋 게이트를 벽돌로 만들지 않는다)', () => {
+    for (const backfill of [
+      [{ rel: 'CLAUDE.md', action: 'insert' as const }],
+      [{ rel: 'AGENTS.md', action: 'replace' as const }],
+      [{ rel: 'CLAUDE.md', action: 'replace' as const }, { rel: 'AGENTS.md', action: 'insert' as const }],
+    ]) {
+      const checks = runChecks(mk({ packageRootDiffers: true, quickstartBackfill: backfill }))
+      expect(checks.find((c) => c.id === 'D21')?.level).not.toBe('FAIL')
+    }
   })
 
   it('D22(REQ-2026-047): repo-root 스크래치 미보호는 WARN — dev/dogfood·미계산·보호됨은 OK, 절대 FAIL 아님', () => {
