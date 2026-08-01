@@ -2,18 +2,18 @@
   "id": "REQ-2026-102",
   "branch": "feat/req-2026-102-legacy-diagnosis-honesty",
   "risk_level": "LOW",
-  "codex_thread_id": "019fbf57-73f3-7c63-9ece-c5f6fec3a348",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fbf58-5e81-7b83-9e8f-cd96917b93f5",
+  "review_base_sha": "508d7a735dedeb4777e75fc82ea0a560722796db",
+  "review_diff_hash": "a3410bd1ed54b9a429daced4e2289b04486e0c88",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "01c3564399a1e7741966ea20eee3383ae9b03e22e5d91c49ed3ecf5acd21c8d3",
-  "current_phase": null,
+  "current_phase": "phase-1-legacy-honesty",
   "phases": [
     {
       "id": "phase-1-legacy-honesty",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -33,6 +33,13 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-legacy-honesty#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-legacy-honesty",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -41,13 +48,13 @@
     "plan": "25baa883987095323ae8b8c923a25aaa2e9809e3"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-legacy-honesty",
     "outcome": "approved",
     "compare_hash": "1f4328b877e84ca34496b74e59bd6400ad67bced8d66edc8bb7a60340b6865a5",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T22:00:33.583Z",
+    "at": "2026-08-01T22:01:46.305Z",
     "findings": [],
     "elided_count": 0
   },
@@ -63,5 +70,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-01T22:00:33.583Z",
     "design_hash": "01c3564399a1e7741966ea20eee3383ae9b03e22e5d91c49ed3ecf5acd21c8d3"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "a3410bd1ed54b9a429daced4e2289b04486e0c88",
+      "phase_id": "phase-1-legacy-honesty",
+      "consumed_by_commit_sha": "c856b20dfc3987e437db3d6bb9dcc6a5133db354",
+      "approval_consumed_at": "2026-08-01T22:03:20.449Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
