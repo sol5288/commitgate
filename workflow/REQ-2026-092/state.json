@@ -2,14 +2,14 @@
   "id": "REQ-2026-092",
   "branch": "feat/req-2026-092-approval-tree-staging-guard",
   "risk_level": "HIGH",
-  "codex_thread_id": "019fbb49-bdf5-72a3-9c32-d33e75df9d49",
-  "review_base_sha": "423a8a6f36b1b22e54ef8108a5a46bb34ca38285",
-  "review_diff_hash": "0e287a5bac12b5f210978387bca3d7e0f3310c7c",
-  "approved_diff_hash": null,
-  "commit_allowed": false,
+  "codex_thread_id": "019fbb62-9063-78e0-ac30-61cdb1733ef5",
+  "review_base_sha": "042c6551d7c8972d2ebcff491ce810977d4ef52c",
+  "review_diff_hash": "8dd5db7d97e1595531ff1f44c94ff73075918bbd",
+  "approved_diff_hash": "8dd5db7d97e1595531ff1f44c94ff73075918bbd",
+  "commit_allowed": true,
   "design_approved": true,
   "design_approved_hash": "37110a27c354c6c1a10b80e4c19928e59707b6e3c21cafb4ef37df97c9cb12ca",
-  "current_phase": "phase-1-staged-guard",
+  "current_phase": "phase-2-docs",
   "phases": [
     {
       "id": "phase-1-staged-guard",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -44,6 +44,14 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-docs",
+      "attempts": 4,
+      "closed_reason": "approved",
+      "void_attempts": 1
     }
   ],
   "design_baseline": {
@@ -53,12 +61,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-staged-guard",
+    "phase_id": "phase-2-docs",
     "outcome": "approved",
-    "compare_hash": "e04bff3d7e4af4dd3a2c1c6638c66dc6c2c65623b5e727063fb3cfffd1fc8ae4",
-    "count": 1,
+    "compare_hash": "bf0ad7c5c88f0a55793854f55e56ff974fdbe7e397eb8c098eb01e7582c6a68d",
+    "count": 2,
     "errors": [],
-    "at": "2026-08-01T03:07:33.916Z",
+    "at": "2026-08-01T03:34:19.777Z",
     "findings": [],
     "elided_count": 0
   },
@@ -83,5 +91,25 @@
       "approval_consumed_at": "2026-08-01T03:11:41.660Z"
     }
   ],
-  "user_commit_confirmed": null
+  "user_commit_confirmed": {
+    "confirmed": true,
+    "method": "Claude Code 대화에서 사용자 승인(AskUserQuestion: 승인 — 커밋 실행)",
+    "confirmed_at": "2026-08-01T03:36:26.473Z",
+    "note": "phase-2-docs / approved_tree=8dd5db7d / REQ 완결",
+    "scope": "req"
+  },
+  "approval_evidence": {
+    "response_path": "workflow/REQ-2026-092/responses/phase-2-docs-r03-approved.json",
+    "response_sha256": "a5f414cb2009c44bb5ab002f2850073706149d329ceb037aeca1e59df462cd9a",
+    "review_kind": "phase",
+    "phase_id": "phase-2-docs",
+    "review_base_sha": "042c6551d7c8972d2ebcff491ce810977d4ef52c",
+    "codex_thread_id": "019fbb62-9063-78e0-ac30-61cdb1733ef5",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T03:34:19.777Z",
+    "approved_tree": "8dd5db7d97e1595531ff1f44c94ff73075918bbd",
+    "phase_design_ref": "37110a27c354c6c1a10b80e4c19928e59707b6e3c21cafb4ef37df97c9cb12ca"
+  }
 }
