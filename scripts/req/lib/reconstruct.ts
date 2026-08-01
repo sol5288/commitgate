@@ -9,6 +9,10 @@
  *   - **series-terminal(replace)**: 커밋된 **successor** 티켓의 `successor_of`(parent_series_id 포함)가
  *     이 티켓 replace 종결을 완전히 증명할 때만.
  *   - **series-terminal(terminate)**: successor를 만들지 않아 증거가 없다 → 불가.
+ *   - **abandoned**(REQ-2026-093 DEC-6): 🔴 **절대 산출하지 않는다.** 포기는 사람의 결정이고 사유·승인
+ *     문장·시각은 그 사람만 안다 — HEAD 증거로 유도할 수 있는 값이 하나도 없다. 추측해 복원하면
+ *     "누가 왜 포기했는가"를 도구가 지어내는 것이 된다(series-terminal(terminate)와 같은 이유).
+ *     포기 행이 유실됐다면 사람이 `req:close --abandon`을 다시 실행하는 것이 유일한 경로다.
  *
  * fs·git·review-codex를 모르는 leaf(부작용·evidence 추출은 CLI가 한다).
  */

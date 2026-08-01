@@ -419,3 +419,155 @@ describe('[close-proof] 소스 위생 — 제어문자 리터럴 없음', () => 
     expect(bad).toEqual([])
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-2026-093: `abandoned` — 사람의 명시적 포기 종결
+//
+// 존재 이유: `req:new` intake는 `developing`인 durable 티켓 하나로 **저장소 전체**를 막는데, 완료할 수
+// 없는 티켓에는 출구가 없었다(dev-complete=완료 필요 · migrated-complete=부분완료 거부 ·
+// series-terminal=열린 series 필요 + CLI 미배선). 이 이벤트가 그 출구다.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('[REQ-2026-093] abandoned 이벤트', () => {
+  const abandoned = (over: Partial<CloseProofRow> = {}): CloseProofRow => ({
+    ticket_id: 'REQ-2026-004',
+    event: 'abandoned',
+    series_id: null,
+    resolution: null,
+    phase_inventory: null,
+    design_ref: null,
+    at: '2026-08-01T05:00:00.000Z',
+    reconstructed: false,
+    evidence_basis: null,
+    abandon_reason: '요구가 철회됨',
+    method: 'PM 승인 2026-08-01',
+    ...over,
+  })
+
+  it('정상 행은 문제가 없다', () => {
+    expect(closeProofRowProblems(abandoned())).toEqual([])
+  })
+
+  it('🔴 사유·승인 문장은 필수 — 부재·빈 문자열·공백만은 거부(이 행의 존재 이유가 감사다)', () => {
+    expect(closeProofRowProblems(abandoned({ abandon_reason: '' })).join(';')).toContain('abandon_reason이 비어 있음')
+    expect(closeProofRowProblems(abandoned({ abandon_reason: '   ' })).join(';')).toContain('abandon_reason이 비어 있음')
+    expect(closeProofRowProblems(abandoned({ method: '' })).join(';')).toContain('method가 비어 있음')
+    expect(closeProofRowProblems(abandoned({ method: '  ' })).join(';')).toContain('method가 비어 있음')
+    const { abandon_reason: _r, ...noReason } = abandoned()
+    expect(closeProofRowProblems(noReason).join(';')).toContain('abandon_reason이 비어 있음')
+  })
+
+  it('티켓 단위 사건이라 series 축·완료 주장 필드는 전부 null이어야 한다', () => {
+    expect(closeProofRowProblems(abandoned({ series_id: 's#1' })).join(';')).toContain('series_id가 null이 아님')
+    expect(closeProofRowProblems(abandoned({ resolution: 'replace' })).join(';')).toContain('resolution이 null이 아님')
+    expect(closeProofRowProblems(abandoned({ phase_inventory: ['p1'] })).join(';')).toContain('phase_inventory가 null이 아님')
+    expect(closeProofRowProblems(abandoned({ design_ref: 'd'.repeat(64) })).join(';')).toContain('design_ref가 null이 아님')
+  })
+
+  it('🔴 복원 행으로 위장할 수 없다(DEC-6) — 포기는 증거로 유도할 수 없는 사람의 결정이다', () => {
+    expect(
+      closeProofRowProblems(abandoned({ reconstructed: true, evidence_basis: ['x'] })).join(';'),
+    ).toContain('reconstructed가 false가 아님')
+  })
+
+  it('자연키는 discriminator 없음 — 티켓당 1행(두 번 포기해도 멱등 duplicate)', () => {
+    expect(closeProofRowKey(abandoned())).toBe(closeProofRowKey(abandoned({ at: '2027-01-01T00:00:00.000Z' })))
+    const first = appendCloseProofRow('', abandoned())
+    expect(first.outcome).toBe('appended')
+    expect(appendCloseProofRow(first.content, abandoned()).outcome).toBe('duplicate')
+  })
+
+  it('같은 자연키에 다른 사유가 오면 conflict(덮어쓰지 않는다)', () => {
+    const first = appendCloseProofRow('', abandoned())
+    expect(appendCloseProofRow(first.content, abandoned({ abandon_reason: '다른 사유' })).outcome).toBe('conflict')
+  })
+
+  // ── DEC-2 우선순위: 완료 증거가 항상 이긴다 ──
+  it('🔴 dev-complete(검증됨)가 abandoned를 이긴다 — 포기 한 줄이 완료 사실을 가리면 안 된다', () => {
+    const input = baseInput({
+      closeProofRows: [abandoned(), devComplete()],
+      evidencedPhaseIds: ['phase-1-a', 'phase-2-b'],
+      committedDesignRef: 'd'.repeat(64),
+    })
+    expect(verifiedTerminalEvent(input)).toBe('dev-complete')
+    expect(deriveBaseState(input)).toBe('dev-complete')
+  })
+
+  it('migrated-complete도 abandoned를 이긴다', () => {
+    const input = baseInput({ closeProofRows: [abandoned(), migratedComplete()] })
+    expect(verifiedTerminalEvent(input)).toBe('migrated-complete')
+  })
+
+  it('🔴 abandoned는 needs-recovery를 이긴다 — 사람의 명시적 결정이 자동 판정보다 위다(그래야 탈출구다)', () => {
+    const input = baseInput({
+      closeProofRows: [abandoned()],
+      ledgerHasApprovedClose: true,
+      committedEvidenceComplete: false, // 이 조합이 needs-recovery 조건
+    })
+    expect(deriveBaseState(input)).toBe('abandoned')
+  })
+
+  it('🔴 abandoned는 intake를 막지 않는다(= 이 REQ의 목적)', () => {
+    expect(baseStateBlocksIntake('abandoned')).toBe(false)
+    expect(baseStateBlocksIntake(deriveBaseState(baseInput({ closeProofRows: [abandoned()] })))).toBe(false)
+    // 대조군: 포기 행이 없으면 여전히 막힌다.
+    expect(baseStateBlocksIntake(deriveBaseState(baseInput()))).toBe(true)
+  })
+
+  it('포기 행은 reconstructed 오버레이를 켜지 않는다(원본 결정이지 복원본이 아니다)', () => {
+    expect(isReconstructed([abandoned()])).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔴 REQ-2026-093 DEC-3a — 기존 커밋 행 호환. 설계 r01 P1이 지목한 회귀를 고정한다.
+//
+// `CLOSE_PROOF_KEYS`는 직렬화 순서 겸 **필수 키 목록**이다. 새 키를 그냥 넣으면 그 키가 **없는**
+// 기존 커밋 행이 전부 "필수 키 누락"으로 invalid → `classifyIntake`가 corrupt → **완료된 티켓조차
+// intake를 통과하지 못한다.** 업그레이드만으로 저장소가 멈추는 회귀다.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('[REQ-2026-093] DEC-3a 기존 행 호환 — 새 키의 부재는 정상이다', () => {
+  /** 업그레이드 전에 커밋된 행 그대로: 새 두 키가 **아예 없다**. */
+  const legacyRowJson = (event: string): Record<string, unknown> => ({
+    ticket_id: 'REQ-2026-052',
+    event,
+    series_id: event === 'series-terminal' ? 'design:-#1' : null,
+    resolution: event === 'series-terminal' ? 'replace' : null,
+    phase_inventory: event === 'series-terminal' ? null : ['phase-1-a'],
+    design_ref: event === 'series-terminal' ? null : 'd'.repeat(64),
+    at: '2026-07-24T05:00:00.000Z',
+    reconstructed: event === 'migrated-complete',
+    evidence_basis: event === 'migrated-complete' ? ['workflow/x/responses/approvals.jsonl'] : null,
+  })
+
+  for (const event of ['series-terminal', 'dev-complete', 'migrated-complete']) {
+    it(`🔴 ${event}: 새 키가 없는 기존 행이 valid로 남는다`, () => {
+      expect(closeProofRowProblems(legacyRowJson(event))).toEqual([])
+    })
+  }
+
+  it('명시적 null도 정상(부재와 동등)', () => {
+    expect(closeProofRowProblems({ ...legacyRowJson('dev-complete'), abandon_reason: null, method: null })).toEqual([])
+  })
+
+  it('🔴 값이 있으면 거부 — abandoned 전용 필드다(kind 격리)', () => {
+    expect(
+      closeProofRowProblems({ ...legacyRowJson('dev-complete'), abandon_reason: '몰래' }).join(';'),
+    ).toContain('abandon_reason이 있음')
+    expect(closeProofRowProblems({ ...legacyRowJson('dev-complete'), method: '몰래' }).join(';')).toContain('method가 있음')
+  })
+
+  it('🔴 기존 행의 직렬화가 바이트 그대로다 — 새 키는 undefined라 JSON에서 생략된다(멱등 비교 보존)', () => {
+    const line = serializeCloseProofRow(devComplete())
+    expect(line).not.toContain('abandon_reason')
+    expect(line).not.toContain('method')
+    // 파싱 → 재직렬화가 동일해야 `appendCloseProofRow`의 duplicate 판정이 유지된다.
+    const parsed = parseCloseProof(line)
+    expect(parsed.problems).toEqual([])
+    expect(serializeCloseProofRow(parsed.rows[0] as CloseProofRow)).toBe(line)
+  })
+
+  it('새 키는 화이트리스트에 있다(알 수 없는 키로 거부되지 않는다)', () => {
+    expect(CLOSE_PROOF_KEYS).toContain('abandon_reason')
+    expect(CLOSE_PROOF_KEYS).toContain('method')
+  })
+})

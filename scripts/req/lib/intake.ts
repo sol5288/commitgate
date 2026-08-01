@@ -114,7 +114,11 @@ export function classifyIntake(facts: IntakeFacts): IntakeTicketResult {
           //    명령(req:close)과 이 reason 케이스만 추가한다. 종결→pass 전 파이프라인은 req-close.test.ts ⑮가 실증.
           state === 'migrated-complete'
           ? '개발 완료(마이그레이션 종결·migrated-complete)'
-          : String(state)
+          : // 🔴 REQ-2026-093(DEC-8): 통과시키되 **상태를 말한다**. 포기는 완료가 아니므로 문구가
+            //    그것을 감추면 안 된다 — 나중에 이력을 읽는 사람이 "완료됐다"로 오해한다.
+            state === 'abandoned'
+            ? '사람이 포기 선언(abandoned) — 완료가 아니며, 커밋된 증거는 그대로 남아 있습니다'
+            : String(state)
   return {
     ...head,
     baseState: state,

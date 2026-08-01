@@ -32,7 +32,7 @@ export function closeProofPath(ticketRel: string): string {
  *
  * 🔴 `integrated`는 여기 없다 — git ancestry로 관측하는 오버레이이지 커밋되는 전이가 아니다(DEC-B).
  */
-export type CloseProofEvent = 'series-terminal' | 'dev-complete' | 'migrated-complete'
+export type CloseProofEvent = 'series-terminal' | 'dev-complete' | 'migrated-complete' | 'abandoned'
 
 /** series-terminal의 종결 사유(사람 결정). */
 export type TerminalResolution = 'replace' | 'human-resolution'
@@ -62,6 +62,16 @@ export interface CloseProofRow {
    * 🔴 본문이 아니라 **경로/식별자 목록**이다 — 민감 데이터를 담지 않는다.
    */
   evidence_basis: string[] | null
+  /**
+   * `abandoned`일 때 **사람이 적은 포기 사유**(REQ-2026-093 DEC-3). 그 외 이벤트에서는 없거나 null.
+   *
+   * 🔴 **선택 필드다**(`?`). 기존에 커밋된 행에는 이 키가 **아예 없고**, 그 행들은 계속 유효해야 한다
+   *    (DEC-3a). 필수로 만들면 업그레이드만으로 완료 티켓이 corrupt가 되어 intake가 전부 막힌다.
+   *    `serializeCloseProofRow`가 `undefined`를 JSON에서 생략하므로 기존 행은 **바이트 그대로** 유지된다.
+   */
+  abandon_reason?: string | null
+  /** `abandoned`일 때 승인 문장(누가 어떻게 승인했나). 그 외 이벤트에서는 없거나 null. 선택 필드(위와 동일 이유). */
+  method?: string | null
 }
 
 /** 직렬화 키 순서(고정 — deterministic) + 허용키 화이트리스트(여기 없는 top-level 키 = 오염 → 거부). */
@@ -75,9 +85,25 @@ export const CLOSE_PROOF_KEYS = [
   'at',
   'reconstructed',
   'evidence_basis',
+  // 🔴 REQ-2026-093: **끝에** 붙인다. 기존 9키의 순서가 바뀌면 커밋된 행과 재직렬화 결과가 달라져
+  //    `appendCloseProofRow`의 멱등 비교(직렬화 문자열 동일성)가 깨진다.
+  'abandon_reason',
+  'method',
 ] as const
 
-const EVENTS: readonly string[] = ['series-terminal', 'dev-complete', 'migrated-complete']
+/**
+ * 🔴 **필수가 아닌 키**(REQ-2026-093 DEC-3a). `CLOSE_PROOF_KEYS`는 두 역할을 겸한다 —
+ * (i) 직렬화 순서·허용키 화이트리스트, (ii) `closeProofRowProblems`의 **필수 키 검사 목록**.
+ *
+ * 새 필드를 (i) 때문에 그 배열에 넣으면 (ii)가 따라와 **기존 커밋 행이 전부 "필수 키 누락"으로 invalid**가
+ * 된다(그 행들에는 키가 아예 없다). 그러면 `classifyIntake`가 corrupt로 판정해 **완료된 티켓조차 intake를
+ * 통과하지 못한다** — 업그레이드만으로 저장소가 멈추는 회귀다(설계 r01 P1이 지목한 실패, 다른 경로).
+ *
+ * 그래서 두 역할을 분리한다: 허용은 하되 **부재를 정상으로 본다**.
+ */
+const OPTIONAL_KEYS: ReadonlySet<string> = new Set(['abandon_reason', 'method'])
+
+const EVENTS: readonly string[] = ['series-terminal', 'dev-complete', 'migrated-complete', 'abandoned']
 const RESOLUTIONS: readonly string[] = ['replace', 'human-resolution']
 
 /** 한 줄 직렬화(JSONL): 고정 키 순서 JSON + 끝 개행. */
@@ -102,7 +128,8 @@ const KEY_SEP = String.fromCharCode(31)
  */
 export function closeProofRowKey(row: Pick<CloseProofRow, 'ticket_id' | 'event' | 'series_id' | 'design_ref'>): string {
   // dev-complete: design_ref(재승인 supersede). series-terminal: series_id(series별 1행).
-  // migrated-complete(REQ-2026-053): discriminator 없음 — 티켓당 1행(마이그레이션은 일회성).
+  // migrated-complete(REQ-2026-053)·abandoned(REQ-2026-093): discriminator 없음 — 티켓당 1행
+  // (마이그레이션도 포기도 일회성 결정이다. 같은 티켓을 두 번 포기할 일은 없고, 두 번 실행하면 멱등 duplicate).
   const discriminator =
     row.event === 'dev-complete' ? (row.design_ref ?? '') : row.event === 'series-terminal' ? (row.series_id ?? '') : ''
   return [row.ticket_id, row.event, discriminator].join(KEY_SEP)
@@ -134,7 +161,8 @@ export function closeProofRowProblems(raw: unknown): string[] {
 
   const allowed = new Set<string>(CLOSE_PROOF_KEYS)
   for (const k of Object.keys(r)) if (!allowed.has(k)) p.push(`알 수 없는 키: ${k}`)
-  for (const k of CLOSE_PROOF_KEYS) if (!(k in r)) p.push(`필수 키 누락: ${k}`)
+  // 🔴 REQ-2026-093 DEC-3a: `OPTIONAL_KEYS`는 부재가 정상이다 — 기존 커밋 행에는 그 키가 아예 없다.
+  for (const k of CLOSE_PROOF_KEYS) if (!OPTIONAL_KEYS.has(k) && !(k in r)) p.push(`필수 키 누락: ${k}`)
   if (p.length) return p
 
   if (typeof r.ticket_id !== 'string' || r.ticket_id === '') p.push('ticket_id가 비어 있음')
@@ -163,6 +191,29 @@ export function closeProofRowProblems(raw: unknown): string[] {
     if (typeof r.design_ref !== 'string' || r.design_ref === '') p.push('migrated-complete인데 design_ref가 비어 있음')
     // 🔴 마이그레이션은 항상 사후 스탬프 — reconstructed:true 필수(evidence_basis 비-빔은 아래 공통 규칙이 강제).
     if (r.reconstructed !== true) p.push('migrated-complete인데 reconstructed가 true가 아님(마이그레이션은 사후 스탬프)')
+  } else if (r.event === 'abandoned') {
+    // 🔴 REQ-2026-093(DEC-1·3): 사람이 티켓 전체를 포기한 기록. **티켓 단위 사건**이라 series 축 필드는 전부 null.
+    if (r.series_id !== null) p.push('abandoned인데 series_id가 null이 아님')
+    if (r.resolution !== null) p.push('abandoned인데 resolution이 null이 아님')
+    // phase_inventory/design_ref도 null — 포기는 "무엇이 완료인가"를 주장하지 않는다.
+    if (r.phase_inventory !== null) p.push('abandoned인데 phase_inventory가 null이 아님')
+    if (r.design_ref !== null) p.push('abandoned인데 design_ref가 null이 아님')
+    // 사유·승인 문장은 **필수**이고 공백만이어서는 안 된다 — 이 행의 존재 이유가 감사이기 때문이다(R3·R5).
+    if (typeof r.abandon_reason !== 'string' || r.abandon_reason.trim() === '')
+      p.push('abandoned인데 abandon_reason이 비어 있음(포기 사유는 필수)')
+    if (typeof r.method !== 'string' || r.method.trim() === '')
+      p.push('abandoned인데 method가 비어 있음(승인 문장은 필수)')
+    // 🔴 DEC-6: 포기는 사람의 결정이라 독립 증거로 복원할 수 없다 → 복원 행으로 위장 금지.
+    if (r.reconstructed !== false) p.push('abandoned인데 reconstructed가 false가 아님(포기는 복원 대상이 아니다)')
+  }
+
+  // 🔴 REQ-2026-093 DEC-3a: `abandoned` 외의 이벤트에서 새 두 필드는 **부재이거나 null**이어야 한다.
+  //    `!== null`로 쓰면 안 된다 — 기존 커밋 행에는 키가 없어 `undefined`이고, 그러면 전부 invalid가 된다.
+  if (r.event !== 'abandoned') {
+    if (r.abandon_reason !== undefined && r.abandon_reason !== null)
+      p.push(`${String(r.event)}인데 abandon_reason이 있음(abandoned 전용 필드)`)
+    if (r.method !== undefined && r.method !== null)
+      p.push(`${String(r.event)}인데 method가 있음(abandoned 전용 필드)`)
   }
 
   if (r.evidence_basis !== null) {
@@ -273,7 +324,7 @@ export interface CloseStateInput {
 }
 
 /** 기본 상태(배타·완결). `migrated-complete`(REQ-2026-053)는 dev-complete 아래·needs-recovery 위의 비차단 종결. */
-export type CloseBaseState = 'legacy' | 'series-terminal' | 'dev-complete' | 'migrated-complete' | 'needs-recovery' | 'developing'
+export type CloseBaseState = 'legacy' | 'series-terminal' | 'dev-complete' | 'migrated-complete' | 'abandoned' | 'needs-recovery' | 'developing'
 
 /**
  * 🔴 terminal 판정에 필요한 입력만 뽑은 것(REQ-2026-072 DEC-1). `deriveBaseState`는 `CloseStateInput`
@@ -317,12 +368,17 @@ export function verifiedTerminalEvent(input: TerminalStateInput): CloseProofEven
   if (isDevCompleteVerified(input)) return 'dev-complete'
   // 🔴 REQ-2026-053(DEC-M1): 마이그레이션 종결 — dev-complete **아래**(정상 완료가 이김).
   if (hasEvent('migrated-complete')) return 'migrated-complete'
+  // 🔴 REQ-2026-093(DEC-2): 사람의 명시적 포기 — **가장 아래**. 완료 증거가 항상 이긴다. 실수로 포기 행이
+  //    남아도 실제로 완료된 티켓은 dev-complete로 보고된다. 반대로 두면 포기 한 줄이 완료 사실을 가린다.
+  //    migrated-complete와 같이 **존재 자체가 종결**이다 — 사람 결정의 기록이지 증거에서 재검증되는 사실이
+  //    아니다(self-verify는 dev-complete 전용이라는 기존 경계 유지).
+  if (hasEvent('abandoned')) return 'abandoned'
   return null
 }
 
 /**
  * 기본 상태 파생(순수·배타·완결 — 항상 정확히 하나). 우선순위:
- * `legacy` > `series-terminal` > `dev-complete` > `migrated-complete` > `needs-recovery` > `developing`(기본값).
+ * `legacy` > `series-terminal` > `dev-complete` > `migrated-complete` > `abandoned` > `needs-recovery` > `developing`(기본값).
  *
  * 🔴 워킹 state·워킹 승인을 절대 입력으로 받지 않는다(design-r01 P1·B4). `integrated`는 여기서 내지 않는다
  *    — git ancestry 오버레이라 순수 파생 밖이다(design-r02 P1).

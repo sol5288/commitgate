@@ -4,7 +4,7 @@
  * 🔴 HEAD-committed 증거 + integrated(본선 조상)만 근거 · dry-run 기본·--run write · 재실행 no-op ·
  *    close-proof clean 가드 · mainline override 없음. 종결 후 intake가 그 티켓을 'pass'로 본다.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -243,5 +243,193 @@ describe('[REQ-2026-072] 낡은 dev-complete — 술어 일치·재결속 안내
     const repo = mkRepo072()
     commitStaleTicket(repo, staleSpec({ ticketId: 'REQ-2026-087', staleDevComplete: false }))
     expect(() => closeMain(['2026-087', '--migrate', '--run', '--root', repo])).toThrow(/req:rebind/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-2026-093 — req:close --abandon (실 git)
+//
+// 이 명령의 존재 이유: 완료할 수 없는 durable 티켓 **하나**가 `req:new` intake를 통해 저장소의 모든
+// 후속 작업을 막는데, 지금까지 그 상태에서 빠져나오는 길이 **완료뿐**이었다.
+// 따라서 진짜 오라클은 "행이 써졌는가"가 아니라 **"그 뒤 req:new가 통과하는가"** 다.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('[REQ-2026-093] req:close --abandon (실 git)', () => {
+  const R = '--reason'
+  const C = '--confirm'
+  const ARGS = [R, '요구가 철회됨', C, 'PM 승인(대화)']
+
+  /** (a) 리뷰 이력이 전혀 없는 durable 티켓 — responses/ 자체가 없다. */
+  const commitBareTicket = (repo: string, id: string): string => {
+    const ticketRel = `workflow/${id}`
+    mkdirSync(join(repo, ticketRel), { recursive: true })
+    writeFileSync(
+      join(repo, ticketRel, 'state.json'),
+      JSON.stringify({ id, phase: 'INTAKE', review_series_model_version: 1, phases: [], evidence_durability_required: true }),
+    )
+    g(repo, ['add', '-A'])
+    g(repo, ['commit', '-qm', `bare ${id}`])
+    return ticketRel
+  }
+
+  /** (c) 설계 승인만 있고 phase 0개. */
+  const commitDesignOnlyTicket = (repo: string, id: string): string => commitDevelopingTicket(repo, id, [])
+
+  const abandonedRows = (repo: string, t: string): ReturnType<typeof parseCloseProof>['rows'] => {
+    const cp = headBlob(repo, `${t}/responses/ticket-close.jsonl`)
+    return cp === null ? [] : parseCloseProof(cp).rows
+  }
+
+  it('🔴 (a) 리뷰 이력 없는 티켓 — 포기 후 intake가 통과한다', () => {
+    const repo = mkRepo()
+    const t = commitBareTicket(repo, 'REQ-2026-101')
+    expect(scanTicketIntake(repo, t, 'REQ-2026-101').verdict).toBe('block')
+    closeMain(['2026-101', '--abandon', ...ARGS, '--run', '--root', repo])
+    const after = scanTicketIntake(repo, t, 'REQ-2026-101')
+    expect(after.baseState).toBe('abandoned')
+    expect(after.verdict).toBe('pass')
+    expect(after.reason).toContain('포기')
+  })
+
+  it('🔴 (b) 모든 phase 승인·일부만 커밋된 티켓(소비자 사례) — 포기 후 intake가 통과한다', () => {
+    const repo = mkRepo()
+    const t = commitDevelopingTicket(repo, 'REQ-2026-102', [{ pid: 'p1', ref: D1 }, { pid: 'p2', ref: D1 }])
+    expect(scanTicketIntake(repo, t, 'REQ-2026-102').verdict).toBe('block')
+    closeMain(['2026-102', '--abandon', ...ARGS, '--run', '--root', repo])
+    expect(scanTicketIntake(repo, t, 'REQ-2026-102').verdict).toBe('pass')
+  })
+
+  it('🔴 (c) 설계 승인만 있고 phase 0개 — 포기 후 intake가 통과한다', () => {
+    const repo = mkRepo()
+    const t = commitDesignOnlyTicket(repo, 'REQ-2026-103')
+    expect(scanTicketIntake(repo, t, 'REQ-2026-103').verdict).toBe('block')
+    closeMain(['2026-103', '--abandon', ...ARGS, '--run', '--root', repo])
+    expect(scanTicketIntake(repo, t, 'REQ-2026-103').verdict).toBe('pass')
+  })
+
+  it('행의 내용 — 사유·승인 문장이 그대로 남고 시각은 도구가 찍는다(원본 행)', () => {
+    const repo = mkRepo()
+    const t = commitBareTicket(repo, 'REQ-2026-104')
+    closeMain(['2026-104', '--abandon', R, '설계 전제가 무너짐', C, 'PM 승인 2026-08-01', '--run', '--root', repo])
+    const rows = abandonedRows(repo, t)
+    expect(rows.length).toBe(1)
+    expect(rows[0]!.event).toBe('abandoned')
+    expect(rows[0]!.abandon_reason).toBe('설계 전제가 무너짐')
+    expect(rows[0]!.method).toBe('PM 승인 2026-08-01')
+    expect(rows[0]!.reconstructed).toBe(false)
+    expect(rows[0]!.phase_inventory).toBeNull()
+    // 시각은 주입이 아니라 실시계 — 형식만 고정한다(값 고정은 tautology).
+    expect(rows[0]!.at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+  })
+
+  it('🔴 증거를 건드리지 않는다(DEC-5) — 매니페스트·아카이브 blob 불변 + 커밋 diff가 close-proof 한 경로뿐', () => {
+    const repo = mkRepo()
+    const t = commitDevelopingTicket(repo, 'REQ-2026-105', [{ pid: 'p1', ref: D1 }])
+    const manifestBefore = headBlob(repo, `${t}/responses/approvals.jsonl`)
+    const archiveBefore = headBlob(repo, `${t}/responses/p1-r01-approved.json`)
+    closeMain(['2026-105', '--abandon', ...ARGS, '--run', '--root', repo])
+    expect(headBlob(repo, `${t}/responses/approvals.jsonl`)).toBe(manifestBefore)
+    expect(headBlob(repo, `${t}/responses/p1-r01-approved.json`)).toBe(archiveBefore)
+    // 포기 커밋이 만진 경로가 정확히 하나여야 한다.
+    const touched = g(repo, ['show', '--name-only', '--format=', 'HEAD']).split('\n').map((s) => s.trim()).filter(Boolean)
+    expect(touched).toEqual([`${t}/responses/ticket-close.jsonl`])
+  })
+
+  it('기본 dry-run — --run 없으면 커밋도 파일도 생기지 않는다', () => {
+    const repo = mkRepo()
+    const t = commitBareTicket(repo, 'REQ-2026-106')
+    const before = commitCount(repo)
+    closeMain(['2026-106', '--abandon', ...ARGS, '--root', repo])
+    expect(commitCount(repo)).toBe(before)
+    expect(existsSync(join(repo, t, 'responses', 'ticket-close.jsonl'))).toBe(false)
+    expect(scanTicketIntake(repo, t, 'REQ-2026-106').verdict).toBe('block')
+  })
+
+  it('🔴 커밋된 phase가 있으면 경고를 내고, 없으면 내지 않는다(대조군 — 항상 뜨는 문구는 안 읽힌다)', () => {
+    const repo = mkRepo()
+    const withPhases = commitDevelopingTicket(repo, 'REQ-2026-107', [{ pid: 'p1', ref: D1 }])
+    void withPhases
+    const bare = commitBareTicket(repo, 'REQ-2026-108')
+    void bare
+    const logs: string[] = []
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void logs.push(a.join(' ')))
+    try {
+      closeMain(['2026-107', '--abandon', ...ARGS, '--root', repo])
+      const withText = logs.join('\n')
+      expect(withText).toContain('이미 커밋된 phase가 1개')
+      expect(withText).toContain('지워지지 않고')
+      logs.length = 0
+      closeMain(['2026-108', '--abandon', ...ARGS, '--root', repo])
+      expect(logs.join('\n')).not.toContain('이미 커밋된 phase가')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('멱등 — 두 번 실행해도 행 1개, 두 번째는 성공 종료', () => {
+    const repo = mkRepo()
+    const t = commitBareTicket(repo, 'REQ-2026-109')
+    closeMain(['2026-109', '--abandon', ...ARGS, '--run', '--root', repo])
+    const after1 = commitCount(repo)
+    closeMain(['2026-109', '--abandon', ...ARGS, '--run', '--root', repo]) // 재실행
+    expect(commitCount(repo)).toBe(after1)
+    expect(abandonedRows(repo, t).length).toBe(1)
+  })
+
+  it('이미 종결된 티켓(migrated-complete)에는 no-op — 포기 행을 덧붙이지 않는다', () => {
+    const repo = mkRepo()
+    const t = commitDevelopingTicket(repo, 'REQ-2026-110', [{ pid: 'p1', ref: null }, { pid: 'p2', ref: null }])
+    closeMain(['2026-110', '--migrate', '--run', '--root', repo])
+    const before = commitCount(repo)
+    closeMain(['2026-110', '--abandon', ...ARGS, '--run', '--root', repo])
+    expect(commitCount(repo)).toBe(before)
+    const rows = abandonedRows(repo, t)
+    expect(rows.map((r) => r.event)).toEqual(['migrated-complete'])
+  })
+
+  it('🔴 fail-closed 인자 — 사유·승인 문장 부재/공백, 모드 충돌, 모드 부재는 전부 거부하고 아무것도 쓰지 않는다', () => {
+    const repo = mkRepo()
+    const t = commitBareTicket(repo, 'REQ-2026-111')
+    const before = commitCount(repo)
+    expect(() => closeMain(['2026-111', '--abandon', C, 'ok', '--run', '--root', repo])).toThrow(/--reason/)
+    expect(() => closeMain(['2026-111', '--abandon', R, 'ok', '--run', '--root', repo])).toThrow(/--confirm/)
+    expect(() => closeMain(['2026-111', '--abandon', R, '   ', C, 'ok', '--run', '--root', repo])).toThrow(/--reason/)
+    expect(() => closeMain(['2026-111', '--abandon', R, 'ok', C, '  ', '--run', '--root', repo])).toThrow(/--confirm/)
+    expect(() => closeMain(['2026-111', '--abandon', '--migrate', ...ARGS, '--run', '--root', repo])).toThrow(/함께 쓸 수 없습니다/)
+    expect(() => closeMain(['2026-111', '--run', '--root', repo])).toThrow(/모드가 필요합니다/)
+    expect(commitCount(repo)).toBe(before)
+    expect(existsSync(join(repo, t, 'responses', 'ticket-close.jsonl'))).toBe(false)
+  })
+
+  it('legacy 티켓은 대상이 아니다(intake를 막지 않으므로 탈출구가 필요 없다)', () => {
+    const repo = mkRepo()
+    const ticketRel = 'workflow/REQ-2026-112'
+    mkdirSync(join(repo, ticketRel), { recursive: true })
+    writeFileSync(join(repo, ticketRel, 'state.json'), JSON.stringify({ id: 'REQ-2026-112', phase: 'INTAKE' })) // durability 마커 없음
+    g(repo, ['add', '-A']); g(repo, ['commit', '-qm', 'legacy'])
+    expect(() => closeMain(['2026-112', '--abandon', ...ARGS, '--run', '--root', repo])).toThrow(/legacy/)
+  })
+
+  it('close-proof에 미커밋 변경이 있으면 거부(HEAD 기반 쓰기가 덮지 않게)', () => {
+    const repo = mkRepo()
+    const t = commitBareTicket(repo, 'REQ-2026-113')
+    mkdirSync(join(repo, t, 'responses'), { recursive: true })
+    writeFileSync(join(repo, t, 'responses', 'ticket-close.jsonl'), '{"x":1}\n')
+    expect(() => closeMain(['2026-113', '--abandon', ...ARGS, '--run', '--root', repo])).toThrow(/미커밋 변경/)
+  })
+
+  it('parseArgs — 값이 `-`로 시작해도 삼키지 않고, 값 부재는 즉시 거부', () => {
+    expect(parseArgs(['2026-1', '--abandon', '--reason', '-이유', '--confirm', '-승인'])).toMatchObject({
+      abandon: true, reason: '-이유', confirm: '-승인',
+    })
+    expect(() => parseArgs(['2026-1', '--abandon', '--reason'])).toThrow(/--reason 값이 필요/)
+    expect(() => parseArgs(['2026-1', '--abandon', '--confirm'])).toThrow(/--confirm 값이 필요/)
+  })
+
+  it('🔴 parseArgs — 기존 플래그가 그대로 산다(새 분기를 끼워 넣다 `--run`을 떨어뜨린 실수를 고정)', () => {
+    // 개발 중 실제로 `--run` 분기를 잃어 `알 수 없는 옵션: --run`이 났다. 기존 migrate 테스트가 잡았지만
+    // 파서 자신의 계약으로도 고정해 둔다 — 다음 모드를 더할 때 같은 실수가 조용히 지나가지 않게.
+    expect(parseArgs(['2026-1', '--migrate', '--run'])).toMatchObject({ reqId: '2026-1', migrate: true, run: true })
+    expect(parseArgs(['2026-1', '--abandon', '--run'])).toMatchObject({ reqId: '2026-1', abandon: true, run: true })
+    expect(parseArgs(['2026-1', '--abandon', '--root', '/tmp/x'])).toMatchObject({ abandon: true, root: '/tmp/x' })
   })
 })
