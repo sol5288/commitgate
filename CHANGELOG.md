@@ -13,7 +13,19 @@
 > |---|---|---|
 > | 096 phase-1 (문자 집합 SSOT + 호출 전 가드) | `3a691d5` | `lib/scratch.ts`의 `ARCHIVE_BASE_RE`·`ARCHIVE_NAME_RE` · `req-next.ts`의 `PHASE_ID_RE`·`phaseModelProblems` · `review-codex.ts`의 `resolvePhaseTarget` |
 > | 097 phase-1 (종결 티켓 브랜치 축 면제) | `53025bd` | `req-doctor.ts`의 `ticketTerminalEvent`·D2/D3/D11 · `docs/ssot-design/07-…md` §3.0 · `tests/unit/doctor-terminal-wiring.test.ts` |
-> | 098 phase-1 (면적 경고 문구 정직성) | **이 커밋** | `review-codex.ts`의 `phaseAreaMessage`(+`gate` 인자)와 그 호출부 · `tests/unit/review-lifecycle-wiring.test.ts`의 REQ-098 배선 테스트 |
+> | 098 phase-1 (면적 경고 문구 정직성) | `dffa896` | `review-codex.ts`의 `phaseAreaMessage`(+`gate` 인자)와 그 호출부 · `tests/unit/review-lifecycle-wiring.test.ts`의 REQ-098 배선 테스트 |
+> | 099 phase-1 (D-체크 표 정합 + 등록부) | **이 커밋** | `req-doctor.ts`의 `D_CHECK_IDS`·`CheckId` · `docs/ssot-design/07-…md` §3 표 · `tests/unit/docs-stale-claims.test.ts`의 REQ-099 가드 |
+
+- **`req:doctor` 진단 목록 문서가 8건 누락돼 있던 것을 채우고, 재발을 막는 가드를 넣었습니다** (REQ-2026-099).
+
+  설계 문서의 D-체크 정본 표가 "구현된 검사는 13개뿐이다"라고 적고 있었는데 실제로는 **21개**였습니다.
+  D20~D27(자산 skew·Quick Start 백필·스크래치 보호·lockfile 위생·setup 게이트·미병합 종결 티켓·
+  결속 끊긴 phase·승인 증인 불일치)이 표에 통째로 없었습니다. 여덟 건 모두 WARN 전용이라 차단 동작이
+  잘못 적힌 것은 아니지만, 존재하는 진단을 문서로 알 수 없었습니다.
+
+  이제 D-체크 id의 권위는 `req-doctor.ts`의 `D_CHECK_IDS` 등록부이고 **타입이 등재를 강제합니다** —
+  등록부에 없는 id로는 검사를 추가할 수 없습니다. 여기에 등록부와 문서 표의 일치를 검사하는 테스트를
+  더해, 다음에 검사가 추가될 때 문서가 조용히 뒤처지지 않습니다. **런타임 동작 변경은 없습니다.**
 
 - **검수 면적 경고가 과금 여부를 거짓으로 안내하던 것을 고쳤습니다** (REQ-2026-098).
 

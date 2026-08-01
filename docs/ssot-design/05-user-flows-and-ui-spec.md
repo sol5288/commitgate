@@ -72,7 +72,7 @@ flowchart LR
 - **표시**: 각 D-체크를 `[req:doctor] <OK|WARN|FAIL> <id>: <msg>`로 출력 후 `FAIL N건` 또는 `PASS (REQ=<id>)`.
 - **exit code**: FAIL 1건 이상이면 `1`, 아니면 `0`. 자동 수정 없음.
 - **`--finalize`**: D9를 staged tree 대신 소스 커밋 트리 기준으로 비교(evidence 복구용).
-- **D-체크 목록**: D2·D3·D5·D6·D9·D10·D11·D13·D15·D16·D17·D18·D19(각 의미는 [07-business-rules-and-state-machines.md](07-business-rules-and-state-machines.md) §3).
+- **D-체크 목록**: 전수와 각 의미는 [07-business-rules-and-state-machines.md](07-business-rules-and-state-machines.md) §3이 정본이다(여기서 복제하지 않는다 — REQ-2026-099).
 - **D19 — 설치 모드 진단**: `package.json`의 `req:*` **값의 형태만** 보고 5종으로 분류해 한 줄로 보고한다([scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `classifyInstallMode`).
 
   | 상태 | 표시 | level |

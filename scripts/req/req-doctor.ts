@@ -49,8 +49,34 @@ function git(args: string[]): string {
 }
 
 export type Level = 'OK' | 'WARN' | 'FAIL'
+/**
+ * 🔴 **D-체크 id의 권위 등록부**(REQ-2026-099 DEC-3a). 여기 없는 id는 **타입이 거부한다.**
+ *
+ * 왜 필요한가: `07-business-rules-and-state-machines.md` §3이 D-체크 정본 표인데, REQ-2026-014
+ * (D19 신설) 이후 8개 REQ가 D20~D27을 추가하는 동안 **아무도 그 표로 돌아오지 않아** 문서가
+ * "구현된 검사는 13개뿐이다"라고 거짓을 말하고 있었다. 사람의 성실성에 기대는 구조라 반복된다.
+ *
+ * 왜 **타입**인가: 앞선 두 설계안은 권위를 "관찰"에서 구했다가 각각 반려됐다 — 소스 정규식은
+ * `const id = 'D28'`을 못 뽑고, 런타임 관찰은 그 변형에서 발화하지 않는 검사를 못 본다. 관찰은
+ * 관찰되지 않은 것을 놓친다. **타입 검사는 코드 경로가 아니라 코드 자체를 본다** — 표기와 발화
+ * 조건 모두와 무관하게 등록부 등재를 강제한다.
+ *
+ * 🔴 등재 후에는 `docs-stale-claims.test.ts`가 **§3 표와의 일치**를 강제한다. 즉 새 검사를 넣으려면
+ *    (1) 여기 등재하고 (2) 문서 표에 행을 추가해야 한다. 둘 중 하나만 하면 빌드·테스트가 막는다.
+ *
+ * ⚠️ 한계: `as CheckId`·`as Check`·`any` 단언은 타입 검사를 의도적으로 우회한다(설계 r03 관찰).
+ *    현재 그런 사용은 0건이다. **새 D-체크를 넣으면서 단언으로 이 등록부를 피하지 말 것.**
+ */
+export const D_CHECK_IDS = [
+  'D2', 'D3', 'D5', 'D6', 'D9', 'D10', 'D11', 'D13', 'D15', 'D16', 'D17', 'D18', 'D19',
+  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27',
+] as const
+
+/** D-체크 id — `D_CHECK_IDS` 등재분만. 새 id는 등록부에 먼저 추가해야 컴파일된다. */
+export type CheckId = (typeof D_CHECK_IDS)[number]
+
 export interface Check {
-  id: string
+  id: CheckId
   level: Level
   msg: string
 }

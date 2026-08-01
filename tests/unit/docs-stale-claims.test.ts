@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { D_CHECK_IDS, runChecks, type DoctorInputs } from '../../scripts/req/req-doctor'
+import type { WorkflowState } from '../../scripts/req/review-codex'
 
 /**
  * REQ-2026-073 phase-1 — **알려진 거짓 보장이 문서로 되돌아오지 않는다**.
@@ -91,4 +93,78 @@ describe('[REQ-2026-073] 알려진 거짓 보장이 문서에 없다', () => {
       expect(hits).toEqual([])
     })
   }
+})
+
+/**
+ * REQ-2026-099 — **D-체크 정본 표가 구현보다 뒤처지지 않는다.**
+ *
+ * 🔴 배경: `07 §3`은 D-체크 정본 표라고 스스로 선언하는데, REQ-2026-014(D19 신설) 이후 8개 REQ가
+ *    D20~D27을 추가하는 동안 아무도 그 표로 돌아오지 않아 "구현된 검사는 13개뿐이다"라는 거짓이
+ *    남아 있었다. 사람의 성실성에 기대는 구조라 반복된다.
+ *
+ * 🔴 **권위는 `D_CHECK_IDS` 등록부다**(관찰이 아니다). 설계 두 차례가 관찰에서 권위를 구했다가
+ *    반려됐다 — 소스 정규식은 `const id = 'D28'`을 못 뽑고, 런타임 관찰은 그 변형에서 발화하지
+ *    않는 검사를 못 본다. 등록부 등재는 **타입이 강제**하므로(`Check.id: CheckId`) 관찰의 사각지대가
+ *    없다. 여기서는 그 등록부와 문서를 대조한다.
+ *
+ * 🔴 **이 테스트가 하지 않는 것**: 표 행의 *내용*(검사 이름·FAIL 조건 서술)이 정확한지는 판정하지
+ *    않는다. 오라클은 "id 집합이 같은가" 하나뿐이다 — REQ-2026-044가 일반 문서 스캐너를 설계했다가
+ *    오라클을 명세하지 못해 폐기한 전례를 반복하지 않는다.
+ */
+describe('[REQ-2026-099] D-체크 정본 표 ↔ 등록부', () => {
+  const DOC_REL = join('docs', 'ssot-design', '07-business-rules-and-state-machines.md')
+  /** §3 표의 행 머리(`| **Dnn** |`)에서 id를 뽑는다. */
+  const docIds = (): Set<string> => {
+    const text = readFileSync(join(ROOT, DOC_REL), 'utf8')
+    return new Set([...text.matchAll(/^\|\s*\*\*(D\d+[a-z]?)\*\*\s*\|/gm)].map((m) => m[1] as string))
+  }
+  const only = (a: Set<string>, b: Set<string>): string[] =>
+    [...a].filter((x) => !b.has(x)).sort((x, y) => Number(x.slice(1)) - Number(y.slice(1)))
+
+  it('오라클 자체가 살아 있다 — 표에서 id를 실제로 뽑는다', () => {
+    // 정규식이 아무것도 못 뽑는데 "일치"로 통과하는 것을 막는다(빈 집합끼리는 항상 같다).
+    expect(docIds().size).toBeGreaterThan(10)
+    expect(D_CHECK_IDS.length).toBeGreaterThan(10)
+  })
+
+  it('문서 표에 등록부의 모든 D-체크가 있다(새 검사를 문서에 안 적으면 실패)', () => {
+    expect(only(new Set<string>(D_CHECK_IDS), docIds())).toEqual([])
+  })
+
+  it('문서 표에 유령 행이 없다(제거된 검사가 문서에 남으면 실패)', () => {
+    expect(only(docIds(), new Set<string>(D_CHECK_IDS))).toEqual([])
+  })
+
+  /**
+   * 보조(DEC-3c) — 등록부에만 있고 **어떤 입력에서도 발화하지 않는** 죽은 항목을 드러낸다.
+   * 발화 조건이 넓어져 이 변형들로 못 덮게 되면 결과는 **실패**다(조용한 통과가 아니다) —
+   * 그때는 변형을 늘려야 한다.
+   */
+  it('등록부의 모든 D-체크가 실제로 발화한다(죽은 항목 탐지)', () => {
+    const base: DoctorInputs = {
+      state: { id: 'REQ-2026-001', branch: 'feat/req-2026-001-x', commit_allowed: false } as WorkflowState,
+      currentBranch: 'feat/req-2026-001-x',
+      branchExists: true,
+      branchPrefix: 'feat/req-',
+      stagedTree: 'TREE',
+      statusEntries: [],
+      scratch: [],
+      responseVerdict: null,
+      responseStructureOk: false,
+      designApproved: false,
+      designApprovedHash: null,
+      currentDesignHash: null,
+      ticketDocs: [],
+      ticketRel: 'workflow/REQ-2026-001',
+    }
+    const variants: DoctorInputs[] = [
+      base,
+      { ...base, state: { ...base.state, commit_allowed: true, approved_diff_hash: 'TREE' } as WorkflowState },
+      { ...base, designApproved: true, designApprovedHash: 'H', currentDesignHash: 'H' },
+      { ...base, granularityMaxFiles: 1, statusEntries: [{ index: 'M', worktree: ' ', path: 'a.ts' }] },
+    ]
+    const runtime = new Set<string>()
+    for (const v of variants) for (const c of runChecks(v)) runtime.add(c.id)
+    expect(only(new Set<string>(D_CHECK_IDS), runtime)).toEqual([])
+  })
 })

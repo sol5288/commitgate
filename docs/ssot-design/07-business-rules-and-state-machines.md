@@ -43,7 +43,11 @@ CommitGate의 "업무 규칙"은 커밋을 통과/차단하는 fail-closed 게�
 
 ## 3. D-체크 전수([scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `runChecks`)
 
-레벨: `OK`/`WARN`/`FAIL`. FAIL 1건 이상이면 exit 1. 구현된 검사는 아래 표의 13개(`D2`·`D3`·`D5`·`D6`·`D9`·`D10`·`D11`·`D13`·`D15`~`D19`)뿐이다. **`D1`/`D4`/`D4a`/`D7`/`D7b`/`D8`/`D12`/`D14`는 예약된 결번**이며 재사용하지 않는다 — D1/D7/D4a 등 레지스트리·머지 의존 검사가 후속 단계로 유보되면서 비었다. **`D19`(설치 모드)가 REQ-2026-014에서 신설된 번호**다(직전 구현 최대는 D18).
+레벨: `OK`/`WARN`/`FAIL`. FAIL 1건 이상이면 exit 1. 구현된 검사는 아래 표의 **21개**(`D2`·`D3`·`D5`·`D6`·`D9`·`D10`·`D11`·`D13`·`D15`~`D27`)다. **`D1`/`D4`/`D4a`/`D7`/`D7b`/`D8`/`D12`/`D14`는 예약된 결번**이며 재사용하지 않는다 — D1/D7/D4a 등 레지스트리·머지 의존 검사가 후속 단계로 유보되면서 비었다.
+
+🔴 **이 표가 D-체크의 정본이며, 코드가 그것을 강제한다**(REQ-2026-099). id는 [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts)의 `D_CHECK_IDS` 등록부에만 존재할 수 있고(타입 강제), [tests/unit/docs-stale-claims.test.ts](../../tests/unit/docs-stale-claims.test.ts)가 등록부와 이 표의 id 집합이 같은지 검사한다. 새 검사를 넣으려면 **등록부 등재와 이 표의 행 추가를 둘 다** 해야 한다.
+
+> D20~D27은 REQ-2026-038 이후 8개 REQ가 추가한 것인데 **이 표가 REQ-2026-014 시점에 고정돼 누락돼 있었다**(REQ-2026-099에서 정정). 8건 모두 WARN 상한이라 차단 동작이 오기되지는 않았다. 위 가드가 그 재발을 막는다.
 
 > **번호 공간 주의**: 설계 결정 ID와 doctor D-체크 ID는 번호가 겹치지만 다른 개념이다([00-document-control.md](00-document-control.md) 용어표 하단 주의). 특히 [bin/init.ts](../../bin/init.ts) `runInit` preflight 순서를 가리키는 "D19 → D14"는 **REQ-2026-014의 설계 결정 ID**이고, 아래 표의 doctor D19와 같은 것이 아니다(doctor 공간에서 D14는 결번).
 
@@ -62,6 +66,14 @@ CommitGate의 "업무 규칙"은 커밋을 통과/차단하는 fail-closed 게�
 | **D17** | design 증거 아카이브(when `design_approved`) | D16과 동형(design_hash 기준) |
 | **D18** | granularity | (WARN 전용, FAIL 아님) 변경 파일 > `granularityMaxFiles`(기본 8) |
 | **D19** | 설치 모드(`req:*` 값의 형태) | **(WARN 상한, FAIL 아님) 없음.** `mixed`(Stage A·Stage B 형태 혼재)만 WARN + `commitgate migrate` 안내. `stage-a`/`stage-b`/`none`/`custom`은 OK |
+| **D20** | vendored 자산 skew(content-hash) | **(WARN 상한, FAIL 아님) 없음.** 패키지본과 소비 repo 사본의 sha 불일치만 WARN + `commitgate sync` 안내. dev/dogfood(`packageRoot === config root`)면 점검 불요 (REQ-2026-038) |
+| **D21** | Quick Start 백필 | **(WARN 상한, FAIL 아님) 없음.** 기존 always-loaded 파일에 Quick Start 블록이 없으면 WARN. dev/dogfood면 점검 불요 (REQ-2026-040) |
+| **D22** | repo-root 스크래치 보호 | **(WARN 상한, FAIL 아님) 없음.** 런타임이 repo 루트에 만드는 스크래치가 ignore도 tracked도 아니면 WARN(다음 리뷰 뒤 D10이 커밋을 막는다). dev/dogfood면 점검 불요 (REQ-2026-047) |
+| **D23** | lockfile 위생 | **(WARN 상한, FAIL 아님) 없음.** lockfile 부재·미tracked면 WARN(`--frozen-lockfile` 재현 불가) (REQ-2026-056) |
+| **D24** | setup 완료 게이트 | **(WARN 상한, FAIL 아님) 없음.** 차단은 doctor가 아니라 워크플로 verb의 preflight가 한다. 기존 설치본은 grandfathered WARN (REQ-2026-062) |
+| **D25** | 종결 티켓 trunk 미도달 | **(WARN 상한, FAIL 아님) 없음.** 종결됐는데 trunk에 없는 티켓이 있으면 WARN. 판정 불가(trunk ref 없음 등)는 OK (REQ-2026-085) |
+| **D26** | 결속 끊긴 phase 사전 경고 | **(WARN 상한, FAIL 아님) 없음.** design 재승인으로 현재 design 승인에 결속되지 않은 phase 증거가 있으면 WARN + `req:rebind` 안내 (REQ-2026-088) |
+| **D27** | 승인 증인 불일치 | **(WARN 상한, FAIL 아님) 없음.** 소비된 승인 중 매니페스트 행이 없는 것이 있으면 WARN(복구 불가 — 재수행 또는 `req:close --abandon` 안내) (REQ-2026-094) |
 
 증거 검증 세부(`evidenceProblems`): 경로 confinement(`<ticketRel>/responses/` 직속·아카이브명), `archive.sha256===ev.response_sha256`, 구조 OK, verdict가 같은 kind의 승인, `review_base_sha` 일치, phase면 `approved_tree===state.approved_diff_hash`, **live `codex-response.json` sha===ev.response_sha256**(손편집 탐지, phase), design이면 `design_hash===state.design_approved_hash`.
 
