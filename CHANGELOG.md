@@ -2,14 +2,19 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.18.0 (2026-08-02)
+
+> 이번 묶음은 **"적용한 프로젝트에서 변경 하나마다 수십 분이 걸린다"**는 제보에서 나왔습니다.
+> 원인을 실측했더니 CommitGate가 테스트를 강제한 적은 없었고, 계획서 문구에 **범위와 시점이
+> 없어서** 매 phase마다 전체 스위트를 돌리게 된 것이었습니다. 실행 시점을 규정하고(100),
+> 그 규칙이 이미 설치된 저장소에도 닿도록 전달 경로를 고쳤습니다(101).
 
 > **확인할 파일** — 각 항목이 어느 커밋에서 왔는지.
 >
 > | REQ · phase | 구현 커밋 | 확인할 파일 |
 > |---|---|---|
 > | 100 phase-1 (테스트 실행 계층 규정) | `2219264` | `req-new.ts` 스캐폴드 · `AGENTS.template.md` §1-1 · `docs/development.md`·`.en.md` |
-> | 101 phase-1 (Quick Start 드리프트 탐지 + 계층 한 줄) | **이 커밋** | `bin/quickstart.ts`의 `quickstartBackfillTargets` · `req-doctor.ts` D21 분기 · `templates/CLAUDE.template.md`·`AGENTS.template.md` 블록 7번 |
+> | 101 phase-1 (Quick Start 드리프트 탐지 + 계층 한 줄) | `a8b5bca` | `bin/quickstart.ts`의 `quickstartBackfillTargets` · `req-doctor.ts` D21 분기 · `templates/CLAUDE.template.md`·`AGENTS.template.md` 블록 7번 |
 
 - **Quick Start 블록이 낡았을 때 알려줍니다 — 그리고 그 블록에 테스트 실행 규칙을 넣었습니다** (REQ-2026-101).
 
