@@ -2,14 +2,14 @@
   "id": "REQ-2026-094",
   "branch": "feat/req-2026-094-approval-row-witness-recovery",
   "risk_level": "HIGH",
-  "codex_thread_id": "019fbbde-cf5d-7850-b039-4e3447e2444c",
-  "review_base_sha": "e71e9dffe08aae1df57747dc496c8f4dd2d362c4",
-  "review_diff_hash": "406e440e06f52cd993a84f99184919f181d59e34",
+  "codex_thread_id": "019fbbe0-7331-7de0-8ba6-60bf70196cce",
+  "review_base_sha": "da2f2124608083efb0e0cb24d0c89b0c29c4d359",
+  "review_diff_hash": "52b6c7872d81fe75ab4aef4ae60e71409f7a5b67",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "9b2338e1b7dc1cd1bbaf3aca8df7ec10b0f9a917f167dc101e9c263313e45a2c",
-  "current_phase": "phase-1-witness-model",
+  "current_phase": "phase-2-diagnose-restore",
   "phases": [
     {
       "id": "phase-1-witness-model",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-diagnose-restore",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-docs",
@@ -48,6 +48,13 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-diagnose-restore#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-diagnose-restore",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -56,13 +63,13 @@
     "plan": "b9ccc4638cdec6f423c64368d1385d238874d196"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-2-diagnose-restore",
     "outcome": "approved",
-    "compare_hash": "ccc6f7aa09847b07fb20dfd6b713fe16fe9febe935a1fd74c7c6bbc281d607f5",
+    "compare_hash": "fe6586666b08afa6df3401d19cadfed82ee5a0f468cd3f8d4b3e26a30075aa07",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T05:50:29.607Z",
+    "at": "2026-08-01T05:52:05.489Z",
     "findings": [],
     "elided_count": 0
   },
@@ -72,6 +79,12 @@
       "phase_id": "phase-1-witness-model",
       "consumed_by_commit_sha": "f172505acb02717b97e57d6466a68a95c3008bf7",
       "approval_consumed_at": "2026-08-01T05:02:31.476Z"
+    },
+    {
+      "approved_tree": "52b6c7872d81fe75ab4aef4ae60e71409f7a5b67",
+      "phase_id": "phase-2-diagnose-restore",
+      "consumed_by_commit_sha": "6d485ac44c315c9ffc758e0203db69ede2adbbc5",
+      "approval_consumed_at": "2026-08-01T05:52:53.949Z"
     }
   ],
   "user_commit_confirmed": null,
