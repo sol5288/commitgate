@@ -2,18 +2,18 @@
   "id": "REQ-2026-098",
   "branch": "feat/req-2026-098-granularity-warn-message-accuracy",
   "risk_level": "LOW",
-  "codex_thread_id": "019fbd72-4afe-7dc0-b961-f0806d6771de",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fbd7d-303e-7941-852f-5da27ee165b7",
+  "review_base_sha": "03fca9a34c4590ca05385a34dc1297d244a785fb",
+  "review_diff_hash": "b53051ece89903a583b7fb4f4cc74e148378b104",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "bbed19988788e46cb6698b7cb2e42f4ceda0dcc8289611e308ff3fdd182fb90e",
-  "current_phase": null,
+  "current_phase": "phase-1-warn-message-accuracy",
   "phases": [
     {
       "id": "phase-1-warn-message-accuracy",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -24,6 +24,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-warn-message-accuracy#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-warn-message-accuracy",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -47,14 +54,23 @@
     "design_hash": "bbed19988788e46cb6698b7cb2e42f4ceda0dcc8289611e308ff3fdd182fb90e"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-warn-message-accuracy",
     "outcome": "approved",
-    "compare_hash": "25d6c63374b0ab67e71cb450ac3e05cd88f9b0a030903ce6699ee2d5ae69678e",
+    "compare_hash": "1c6f6afe5b8995f6df352f8ba2b7123cc5a0971c5f6bc0371984e0c14eddb427",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T13:10:43.521Z",
+    "at": "2026-08-01T13:22:37.757Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "b53051ece89903a583b7fb4f4cc74e148378b104",
+      "phase_id": "phase-1-warn-message-accuracy",
+      "consumed_by_commit_sha": "dffa89617df93ccc9448df7ae415db7f996dc368",
+      "approval_consumed_at": "2026-08-01T13:23:48.711Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
