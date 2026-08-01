@@ -4,7 +4,10 @@
 
 > **Granularity 정책(REQ-2026-016 Phase C)**: phase 1개는 리뷰 가능한 크기로 — 코드 변경 8파일 이하 권고. 초과 시 req:doctor가 D18 WARN(분할 권고·FAIL 아님). 큰 phase는 런타임 분할(예: B→B1/B2/B3)로 검수 면적을 줄인다.
 
-## Phase 1 — 매니페스트 어휘 + 복원 판정(순수) (`phase-1-witness-model`)
+## Phase 1 — 매니페스트 어휘 + 복원 판정(순수) (`phase-1-witness-model`) — 🔴 **커밋됐으나 phase-2가 되돌림**
+
+> 설계 r03 P1로 복원이 폐기되면서(DEC-3) 이 phase의 산출물은 **쓰이는 곳이 없어졌다.**
+> 아래 원래 범위·가드는 이력으로 남기고, 실제 최종 상태는 Phase 2가 정한다.
 
 범위(4파일):
 
@@ -33,32 +36,36 @@
 
 Exit: typecheck0 · **전체 스위트 그린** · Codex phase 리뷰 승인.
 
-## Phase 2 — doctor D27 + `req:reconstruct --approvals` (`phase-2-diagnose-restore`)
+## Phase 2 — 진단(D27) + phase-1 복원 어휘 원복 (`phase-2-diagnose-restore`)
 
-범위(4파일):
+🔴 **범위가 설계 r03 P1로 바뀌었다**(DEC-3): 복원은 정직하게 불가능함이 확정돼 폐기됐다.
+이 phase는 **진단을 넣고, phase-1이 넣은 복원 어휘를 되돌린다.**
 
-- `scripts/req/req-doctor.ts` — **D27 WARN**(DEC-1·2). 신호는 증인 불일치 두 종.
-  메시지에 어긋난 phase와 **다음 행동**(`req:reconstruct --approvals` 또는 `req:close --abandon`).
-- `scripts/req/req-reconstruct.ts` — `--approvals` 모드 배선. HEAD 포트로 W1~W4 수집 → 순수 판정 →
-  dry-run 출력 → `--run`이면 매니페스트 append + pathspec 커밋. 거부 시 증인별 사유 + 탈출구 안내(DEC-7).
-- `tests/unit/req-doctor.test.ts` — D27 실 git.
-- `tests/unit/reconstruct.test.ts` — 명령 e2e.
+범위(6파일):
+
+- `scripts/req/lib/evidence.ts` — `approvalWitnessMismatch()` 진단 술어 **추가**(`consumedWithoutRow`만
+  산출 — `pendingWithoutRow`는 쓰이는 곳이 없으므로 만들지 않는다). phase-1이 넣은
+  `reconstructed`·`evidence_basis` 어휘와 복원 행 검증 분기는 **제거**(DEC-3a).
+- `scripts/req/lib/reconstruct.ts` — `planApprovalRestore` 및 관련 타입 **제거**(원복).
+- `scripts/req/req-doctor.ts` — **D27 WARN**. 경고 신호는 `consumedWithoutRow` 하나뿐.
+  안내는 **정직한 두 경로**를 준다: phase 재수행 또는 `req:close --abandon`.
+  🔴 복원 명령을 안내하지 **않는다**(존재하지 않는다).
+- `tests/unit/req-doctor.test.ts` — D27 가드.
+- `tests/unit/evidence-module.test.ts`·`reconstruct.test.ts` — phase-1 테스트 원복.
 
 회귀 가드:
 
-1. 🔴 **오탐 0 대조군**(R1): 정상 진행 중 티켓(승인 직후 state가 dirty·미커밋)에서 **D27이 조용하다**.
-   완료 티켓·리뷰 이력 없는 티켓에서도 조용하다.
+1. 🔴 **오탐 0 대조군**(R1): 정상 진행 중 티켓에서 **D27이 조용하다**. 완료 티켓·리뷰 이력 없는
+   티켓도 조용하다. 🔴 **미소비 `approval_evidence`만 커밋된 상태에서도 조용하다** — `req:confirm`
+   체크포인트가 만드는 정상 상태다(DEC-1a, REQ-2026-092 `a3b4c99`로 반증된 초안 가정).
 2. **D27이 실제로 본다**: `consumed_approvals`에 항목이 있는데 매니페스트 행이 없는 티켓 → WARN.
-   `approval_evidence`가 커밋돼 있는데 행이 없는 티켓 → WARN.
-3. 🔴 **D27은 FAIL이 아니다**: 그 티켓에서 `req:doctor`가 여전히 PASS로 끝난다(게이트를 새로 막지 않음).
-4. 🔴 **복원 e2e**: 증인 완비 티켓 → `--approvals --run` → 매니페스트에 행 추가 →
-   그 phase가 `evidencedPhaseIdsFromManifest`에 들어간다 → **D27이 조용해진다**.
-5. **복원은 승인을 부여하지 않는다**(DEC-6·R6): 복원 후에도 `commit_allowed`·`approved_diff_hash`가
-   변하지 않는다(state 무변경) · 복원 커밋 diff가 `responses/approvals.jsonl` **한 경로뿐**.
-6. **거부 안내**(DEC-7): 증인이 없는 티켓에서 거부 메시지가 **없는 증인을 지목**하고
-   `req:close --abandon`을 안내한다.
-7. **기본 dry-run**: `--run` 없으면 커밋·파일 무변경.
-8. **무회귀**: 기존 close-proof 복원 경로(`--approvals` 없음)가 그대로 동작한다.
+3. 🔴 **D27은 FAIL이 아니다**: 어떤 입력에서도 FAIL이 없다(게이트를 새로 막지 않음).
+4. **안내가 정직하다**: 메시지가 phase 재수행과 `req:close --abandon`을 말하고,
+   🔴 **복원 명령을 언급하지 않는다**(없는 명령을 안내하면 사용자를 막다른 길로 보낸다).
+5. 🔴 **원복 완결성**: `MANIFEST_KEYS`에 `reconstructed`·`evidence_basis`가 **없다** ·
+   `planApprovalRestore`가 export되지 **않는다** · `--approvals` 플래그가 **없다**.
+   (남겨 두면 죽은 기능이 되고 다음 사람이 "복원할 수 있나 보다"라고 오해한다.)
+6. **매니페스트 검증 무변경**: 기존 행 검증 결과가 phase-1 이전과 동일하다.
 
 Exit: typecheck0 · 전체 스위트 그린 · Codex phase 리뷰 승인.
 
@@ -66,9 +73,11 @@ Exit: typecheck0 · 전체 스위트 그린 · Codex phase 리뷰 승인.
 
 범위(3파일):
 
-- `docs/troubleshooting.md` / `.en.md` — "승인은 있었는데 행이 없다" 증상 → D27이 알려 줌 → 복원 시도 →
-  안 되면 포기. **복원이 승인을 만들어 내지 않는다**는 점 명시.
-- `CHANGELOG.md` — Unreleased에 합류 + **확인할 파일 표**(phase-1·2 실제 SHA).
+- `docs/troubleshooting.md` / `.en.md` — "승인은 있었는데 행이 없다" 증상 → D27이 알려 줌 →
+  🔴 **증거는 복구할 수 없다**는 사실과 그 이유(승인 핀은 소비와 함께 지워진다) → 정직한 두 경로
+  (phase 재수행 / `req:close --abandon`).
+- `CHANGELOG.md` — Unreleased에 합류 + **확인할 파일 표**(phase-2 실제 SHA — phase-1은 phase-2가
+  되돌리므로 사용자에게 보이는 순변화가 없다).
 
 Exit: typecheck0 · 전체 스위트 그린 · `docs:lint` 그린 · Codex phase 리뷰 승인.
 

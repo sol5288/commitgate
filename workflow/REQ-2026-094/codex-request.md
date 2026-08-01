@@ -1,62 +1,63 @@
-# REQ-2026-094 phase-1 리뷰 요청 — 매니페스트 어휘 + 복원 판정(순수)
+# REQ-2026-094 phase-2 리뷰 요청 — 진단(D27) + phase-1 복원 어휘 원복
 
 ## 배경
 
-"승인은 실제로 있었는데 매니페스트 행이 비어 버린" 티켓은 하류 전부가 거부해 종결 불가가 된다.
-설계는 r03 승인 상태다. 이 phase는 **순수 부분만** 넣는다 — 어휘(매니페스트 `reconstructed` 표시)와
-복원 가능성 판정(W1~W4). 사용자에게 보이는 효과는 phase-2(doctor D27 + `--approvals` 배선)에서 붙는다.
+설계 r03 P1이 복원 명령의 fail-closed 우회로를 지목했고, 조건을 조이다 **복원 자체가 정직하게
+불가능함**이 확정됐다(두 증인의 상호 배타성 — `consumeState`가 소비와 동시에 `approval_evidence`를
+제거한다). 사용자가 **진단만 남기고 복원 폐기**를 결정했고, 설계는 r04로 재승인됐다.
 
-## 변경 요약 (4파일 — 코드 2 · 테스트 2)
+이 phase는 **한 커밋 안에서** 두 가지를 한다: 진단(D27)을 넣고, phase-1(`f172505a`)이 넣은
+복원 어휘를 **되돌린다**(설계 r04 observation이 같은 커밋에서 끝내라고 요구).
+
+## 변경 요약 (6파일)
 
 **`lib/evidence.ts`**
-- `MANIFEST_KEYS`에 `reconstructed`·`evidence_basis` 추가(**허용 화이트리스트일 뿐 필수화 아님**).
-- 복원 행(`reconstructed:true`) 규칙: `consumed_at`·`user_commit_confirmed`가 **없어야** 하고,
-  `evidence_basis`는 비어 있으면 안 된다. phase 전용(design 행 금지).
-- 원본 행(부재/`false`) 규칙 **무변경**: 두 필드 여전히 필수 + `evidence_basis` 금지.
-- `ManifestEntry`의 `consumed_at`·`user_commit_confirmed`를 선택으로 완화(복원 행 표현용).
+- `consumedApprovalsWithoutRow()` 진단 술어 **추가** — "소비 기록은 있는데 매니페스트 행이 없는 phase".
+- phase-1이 넣은 `reconstructed`·`evidence_basis` 어휘와 복원 행 검증 분기 **제거**(원복).
 
-**`lib/reconstruct.ts`** — `planApprovalRestore()` 순수 판정 신설. W1(HEAD `approval_evidence`)·
-W2(아카이브 blob sha 일치)·W3(tree가 `approved_tree`와 같은 HEAD 조상 커밋이 **정확히 하나**)·
-W4(선택 교차검증)가 모두 성립할 때만 후보. 후보 행에는 `consumed_at`·`user_commit_confirmed`가 **없다**.
+**`lib/reconstruct.ts`** — `planApprovalRestore` 및 관련 타입·import **제거**(원복).
 
-**테스트** — 어휘/호환 6건 + 판정 표 9건. 전체 스위트 그린(49파일 **2419**건, +15) · typecheck 0.
+**`req-doctor.ts`** — **D27 WARN**. 안내가 **정직한 두 경로**만 준다(phase 재수행 / `req:close --abandon`).
+🔴 존재하지 않는 복원 명령을 언급하지 않는다.
 
-## 설계 r01 observation 2건 반영
+**테스트 3파일** — phase-1 테스트 원복 + D27 가드 4건.
 
-1. **W4 교차검증 강화** — `approved_tree`뿐 아니라 **`consumed_by_commit_sha`가 W3으로 결정된 커밋과
-   같은지도** 비교한다. 테스트로 두 방향 모두 고정했다.
-2. (phase-2 e2e에서 복원 후 `req:rebind`·완료 경로까지 검증하라는 관찰은 **phase-2에서** 반영한다.
-   계획 문서의 가드 목록보다 강한 검증을 넣는 것이라 설계 변경이 아니다.)
+## 원복 완결성 (실측)
 
-## 🔴 설계 문구와 다른 판단 하나 — 확인 부탁
+| 확인 | 결과 |
+|---|---|
+| `MANIFEST_KEYS`의 `reconstructed`·`evidence_basis` | **0건** |
+| `planApprovalRestore` (lib·CLI) | **0건** |
+| `--approvals` 플래그 | **없음** |
+| `req-reconstruct.ts`의 `approvals` 문자열 | 1건 — `approvals.jsonl` 경로(정상) |
 
-설계 DEC-4a는 "직전 REQ에서 `CLOSE_PROOF_KEYS`가 필수 키 목록을 겸해 지뢰가 있었으니 `validateManifest`가
-필수 키를 어떻게 강제하는지 **구현 시 반드시 확인**하라"고 적었다. 확인한 결과 **매니페스트에는 그런
-필수 키 루프가 없었다** — `MANIFEST_KEYS`는 순수 화이트리스트이고, 필수성은 필드별 타입 검사
-(`if (!isValidIsoInstant(e.consumed_at))` 등)가 만든다. 그래서 키 추가만으로는 기존 행이 깨지지 않는다.
+전체 스위트 그린(49파일 **2408**건) · typecheck 0 · 이 저장소 `req:doctor`에서 `OK D27`(오탐 없음).
 
-대신 실제 위험은 다른 자리였다: `consumed_at`·`user_commit_confirmed`의 **필드별 검사**가
-부재를 무효로 본다. 그 둘을 복원 행에서만 분기시켰다. 회귀 가드 1번이 이것을 고정한다.
+## 🔴 이 phase의 핵심 계약
+
+**최종 순변화는 읽기 전용 진단 하나뿐이다.** 매니페스트 어휘·검증·게이트는 phase-1 이전과 동일하다.
+쓰기 명령을 하나도 추가하지 않는다.
 
 ## 리뷰 포인트
 
-**P1. 복원 행에서 두 필드를 "부재 허용"이 아니라 "부재 강제"로 했다.** 값이 있으면 거부한다.
-근거: 복원본에 `consumed_at`이 있으면 그 값은 반드시 지어낸 것이고, 한 번 기록되면 원본과 구별되지
-않는다. 너무 엄격한가? (`--run`으로 복원한 뒤 나중에 진짜 값을 알게 되는 경로가 있는가?)
+**P1. 원복이 완전한가.** phase-1이 만든 것 중 남은 것이 있는가? 특히 `ManifestEntry` 타입의
+`consumed_at`·`user_commit_confirmed` optional 완화가 되돌아갔는지(필수로 복귀) 봐 달라.
+남으면 복원 행이 없는데 타입만 느슨해져 **런타임 계약이 조용히 약해진다.**
 
-**P2. `ManifestEntry` 타입 완화의 파급.** `consumed_at`·`user_commit_confirmed`를 optional로 바꿨다.
-이 타입을 **읽는** 코드가 그 부재를 견디는가? typecheck는 통과했지만, 런타임에서 `entry.consumed_at`을
-무조건 문자열로 쓰는 자리가 있으면 복원 행에서 깨진다. **이것이 이 phase에서 가장 불안한 지점이다** —
-전체 스위트는 그린이지만 복원 행이 아직 만들어지지 않으므로 그 경로가 실행되지 않았을 수 있다.
-(설계 D3의 불확실성과 같은 것이고, phase-2 e2e가 실증할 예정이다.)
+**P2. D27의 신호가 정말 "확정"인가.** `consumeState`는 `finalizeEvidenceAndConsume` 안에서 매니페스트
+append **뒤에** 호출된다. 따라서 "소비 기록 있음 + 행 없음"은 증거 유실이라고 봤다. 이 추론이
+깨지는 정상 경로가 있는가? (`--finalize` 복구 경로·멱등 재시도에서 순서가 달라지는가?)
 
-**P3. W3의 전제.** `req:commit`이 인덱스를 커밋하므로 source 커밋의 tree == `approved_tree`라고 봤다.
-0개·2개 이상이면 거부한다. 부기 커밋(ledger·state checkpoint)이 사이에 끼면 tree가 달라지므로 충돌
-가능성이 낮다고 판단했는데, 빈 phase(코드 변경 0)나 rebase 후 tree 재사용에서 문제가 되는가?
+**P3. 안내 문구가 정직하면서도 과하지 않은가.** "이 기록은 복구할 수 없습니다"라고 단정하고
+이유를 붙였다. 사용자가 도구 결함으로 오해하지 않겠는가? 반대로 너무 단정적이어서 실제로는 가능한
+경로(예: reflog·백업)를 막지는 않는가?
 
-**P4. `evidence_basis`의 내용.** `<ticket>/state.json#approval_evidence` 같은 **경로+앵커** 표기를 썼다.
-close-proof는 순수 경로만 쓴다. 앵커를 붙인 것이 어휘를 흐리는가, 아니면 "그 파일의 어느 부분이
-근거인지"를 말해 주는 편이 나은가?
+**P4. 테스트가 "말하지 않는 것"을 고정하는가.** 가드 4번이 `req:reconstruct`·`--approvals` 문자열이
+메시지에 **없음**을 단언한다. 부재를 단언하는 테스트가 적절한가, 아니면 취약한가?
 
-**P5. phase 경계.** 이 phase만으로는 사용자 효과가 0이다(어휘와 순수 함수뿐). 리뷰 가능한 단위로
-적절한가, 아니면 phase-2와 합쳤어야 하는가?
+**P5. 술어의 조회 범위.** `evidencedPhaseIdsFromManifest`를 **design 결속 인자 없이** 부른다.
+"행이 있기라도 한가"만 묻기 때문이고 결속은 D26 소관이라고 봤다. 이 분업이 맞는가?
+
+**P6. phase-1 커밋이 이력에 남는 것.** 되돌렸지만 `f172505a`는 히스토리에 있다. 나중에 이력을 읽는
+사람이 "복원 기능이 있었다가 사라졌다"고 오해할 수 있다. CHANGELOG(phase-3)에서 어떻게 다루는 것이
+좋은가 — 아예 언급하지 않는 편이 나은가, 아니면 폐기 이유를 남기는 편이 나은가?

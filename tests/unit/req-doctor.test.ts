@@ -917,3 +917,38 @@ describe('[REQ-2026-088] D26 — 결속이 끊긴 phase 사전 경고', () => {
     expect(msg).toContain('--confirm "rebind REQ-2026-001 p1"') // 실행 가능한 명령 그대로
   })
 })
+
+// ───────────── D27: 소비된 승인의 행 유실 (REQ-2026-094) ──
+//
+// 🔴 이 검사가 **말하지 않는 것**이 설계의 절반이다: 미소비 승인 핀(`approval_evidence`)은
+//    `req:confirm` 체크포인트가 만드는 정상 상태와 구별할 수 없어 신호로 쓰지 않는다.
+describe('[REQ-2026-094] D27 — 소비된 승인인데 매니페스트 행이 없다', () => {
+  it('🔴 DEC-2: 어떤 입력에서도 FAIL이 아니다 — 진단이 스스로 새 교착을 만들면 안 된다', () => {
+    for (const v of [undefined, [], ['p1'], ['p1', 'p2', 'p3']]) {
+      const checks = runChecks(mk({ consumedWithoutRow: v }))
+      expect(lvl(checks, 'D27'), `consumedWithoutRow=${JSON.stringify(v)}`).not.toBe('FAIL')
+      expect(checks.filter((c) => c.id === 'D27' && c.level === 'FAIL')).toEqual([])
+    }
+  })
+
+  it('🔴 오탐 0: 미계산(undefined)·빈 배열은 OK — 진행 중 정상 티켓이 경고를 받지 않는다', () => {
+    expect(lvl(runChecks(mk({})), 'D27')).toBe('OK')
+    expect(lvl(runChecks(mk({ consumedWithoutRow: [] })), 'D27')).toBe('OK')
+  })
+
+  it('소비 기록만 있고 행이 없으면 WARN + 해당 phase를 지목한다', () => {
+    const checks = runChecks(mk({ consumedWithoutRow: ['phase-1b'] }))
+    expect(lvl(checks, 'D27')).toBe('WARN')
+    expect(checks.find((c) => c.id === 'D27')?.msg ?? '').toContain('phase-1b')
+  })
+
+  it('🔴 안내가 정직하다 — 복구 불가를 말하고, 존재하지 않는 복원 명령을 안내하지 않는다', () => {
+    const msg = runChecks(mk({ consumedWithoutRow: ['p1'], state: { id: 'REQ-2026-004' } })).find((c) => c.id === 'D27')?.msg ?? ''
+    expect(msg).toContain('복구할 수 없습니다')
+    expect(msg).toContain('다시 수행')                    // 경로 1
+    expect(msg).toContain('req:close 2026-004 --abandon') // 경로 2 — 그대로 실행 가능한 형태
+    // 🔴 없는 명령을 안내하면 사용자를 막다른 길로 보낸다(설계 r03 P1로 복원은 폐기됐다).
+    expect(msg).not.toContain('req:reconstruct')
+    expect(msg).not.toContain('--approvals')
+  })
+})

@@ -32,7 +32,8 @@ import { setupGateVerdict, collectGateFacts, type GateVerdict } from './lib/setu
 // REQ-2026-085 D25: 종결 증거 파일명(trunk 트리에서 이 경로의 존재로 "도달했는가"를 판정한다).
 import { CLOSE_PROOF_BASENAME, recoveryGuidance } from './lib/close-proof'
 // REQ-2026-088 DEC-1: 판정은 intake와 같은 술어로. 재구현하면 두 안내가 갈라진다.
-import { splitUnboundPhases, designHashFromManifest } from './lib/evidence'
+// REQ-2026-094 D27: 증인 불일치 판정은 `lib/evidence`가 정본(여기서 재구현 금지).
+import { splitUnboundPhases, designHashFromManifest, consumedApprovalsWithoutRow } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
@@ -135,6 +136,12 @@ export interface DoctorInputs {
    * 🔴 여기서 판정하지 않는다 — main()이 intake와 같은 술어로 계산해 넣는다(재구현 금지, DEC-1).
    */
   staleBindingLines?: string[]
+  /**
+   * D27(REQ-2026-094): **소비된 승인인데 매니페스트 행이 없는** phase들. `undefined` = 미계산
+   * (HEAD state 없음) → 점검 불요. 🔴 판정은 `lib/evidence`의 `consumedApprovalsWithoutRow`
+   * **하나**가 한다 — doctor가 재구현하지 않는다.
+   */
+  consumedWithoutRow?: string[]
   // D23(REQ-2026-056): frozen-lockfile 위생. 감지된 PM의 lockfile이 없거나 untracked면 재현 가능한 설치
   //   (`<pm> ci`/`--frozen-lockfile`)가 불가하다. undefined = 미계산(2-arg/legacy) → OK.
   //   'no-package-json'/'ok' → OK. 'missing'/'untracked' → **WARN**(FAIL 아님 — D19~D22 근거 동일).
@@ -634,6 +641,42 @@ export function runChecks(inp: DoctorInputs): Check[] {
     c.push({ id: 'D26', level: 'WARN', msg: inp.staleBindingLines.join('\n   ') })
   }
 
+  // D27(REQ-2026-094): 승인 증인 불일치 — "승인이 있었다는 HEAD 증거는 있는데 매니페스트 행이 없다".
+  //
+  // 🔴 **WARN이 상한이다**(DEC-2). doctor는 `req:commit`이 하드 게이트로 spawn하므로 FAIL이면
+  //    이 검사가 오작동할 때 **건강한 저장소를 새로 브릭**한다. 이 상태의 티켓은 이미 막혀 있으므로
+  //    FAIL이 얻는 것은 없고 잃을 것만 있다(D20·D24와 같은 태도, REQ-2026-084 block→warn 정정 이력).
+  // 🔴 진단은 **다음 행동까지** 말한다 — 그러지 않으면 리포트가 지적한 막다른 길이 그대로 남는다.
+  // 🔴 **경고 신호는 "소비됐는데 행이 없다" 하나뿐**이다(DEC-1a). 미소비 승인 핀은 `req:confirm`
+  //    체크포인트가 만드는 정상 상태와 구별할 수 없어 신호로 쓰지 않는다.
+  //
+  // 🔴 **WARN이 상한이다**(DEC-2). doctor는 `req:commit`이 하드 게이트로 spawn하므로 FAIL이면
+  //    이 검사가 오작동할 때 **건강한 저장소를 새로 브릭**한다. 이 상태의 티켓은 이미 막혀 있으므로
+  //    FAIL이 얻는 것은 없고 잃을 것만 있다(D20·D24와 같은 태도).
+  //
+  // 🔴 안내는 **정직해야 한다**(DEC-3). 유실된 승인 기록은 **복구할 수 없다** — 승인 핀은 소비와 함께
+  //    지워지므로 `approved_at` 등을 되살릴 방법이 없고, 지어내면 그것이 곧 승인 날조다.
+  //    그래서 복원 명령을 안내하지 않고 **실제로 가능한 두 경로**만 말한다.
+  const cw = inp.consumedWithoutRow ?? []
+  if (inp.consumedWithoutRow === undefined || cw.length === 0) {
+    c.push({ id: 'D27', level: 'OK', msg: '승인 증인 일치(소비된 승인 중 매니페스트에 빠진 것 없음)' })
+  } else {
+    const id = String(inp.state.id ?? '<REQ>').replace(/^REQ-/, '')
+    c.push({
+      id: 'D27',
+      level: 'WARN',
+      msg: [
+        '🔴 소비된 승인인데 매니페스트에 행이 없습니다 — 증거가 유실됐고 이 상태로는 티켓을 종결할 수 없습니다.',
+        `해당 phase: ${cw.join(', ')}`,
+        '🔴 이 기록은 복구할 수 없습니다 — 승인 핀(approved_at·response_sha256 …)은 소비와 함께 지워지므로',
+        '   되살릴 근거가 없습니다. 값을 지어내는 복원은 제공하지 않습니다.',
+        '가능한 경로는 둘입니다.',
+        '  1) 그 phase를 게이트를 통해 **다시 수행**한다 — 진짜 증거가 새로 생깁니다.',
+        `  2) 끝낼 수 없으면 종결한다: npx commitgate req:close ${id} --abandon --reason "<사유>" --confirm "<승인 문장>" --run`,
+      ].join('\n   '),
+    })
+  }
+
   return c
 }
 
@@ -944,6 +987,18 @@ export function main(argv: string[] = process.argv.slice(2)): void {
         return recoveryGuidance({ ticketId: String(state.id ?? ''), unboundPhaseIds: split.unbound, rebindablePhaseIds: split.rebindable }).lines
       } catch {
         return undefined // 손상 매니페스트의 fail-closed 처리는 intake·D17의 몫이다.
+      }
+    })(),
+    // 🔴 REQ-2026-094 D27: intake·복원과 **같은 원천(HEAD blob)**. 워킹트리 state를 보지 않는다 —
+    //    승인 직후 dirty state는 정상이고, 그것을 신호로 읽으면 진행 중 티켓이 전부 오탐이 된다.
+    consumedWithoutRow: (() => {
+      const ports = createEvidencePorts(cfg.root, `${ticketRel}/responses`)
+      const stateText = ports.headText(`${ticketRel}/state.json`)
+      if (!stateText) return undefined
+      try {
+        return consumedApprovalsWithoutRow(stateText, ports.headText(`${ticketRel}/responses/approvals.jsonl`))
+      } catch {
+        return undefined // 손상 매니페스트의 fail-closed는 intake·D17 소관.
       }
     })(),
     unmergedClosedTickets: unmerged,
