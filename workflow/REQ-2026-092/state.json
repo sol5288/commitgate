@@ -2,18 +2,18 @@
   "id": "REQ-2026-092",
   "branch": "feat/req-2026-092-approval-tree-staging-guard",
   "risk_level": "HIGH",
-  "codex_thread_id": "019fbb43-8e2f-7ab1-b5e6-8b094709002d",
-  "review_base_sha": "da36d7e9eb6468cc25b0acf6dee9680ba96fdad7",
-  "review_diff_hash": "048e397d30437f50f2968858b3e7f9b7ce74776f",
+  "codex_thread_id": "019fbb49-bdf5-72a3-9c32-d33e75df9d49",
+  "review_base_sha": "423a8a6f36b1b22e54ef8108a5a46bb34ca38285",
+  "review_diff_hash": "0e287a5bac12b5f210978387bca3d7e0f3310c7c",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "37110a27c354c6c1a10b80e4c19928e59707b6e3c21cafb4ef37df97c9cb12ca",
-  "current_phase": null,
+  "current_phase": "phase-1-staged-guard",
   "phases": [
     {
       "id": "phase-1-staged-guard",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-docs",
@@ -35,8 +35,8 @@
       "series_id": "phase:phase-1-staged-guard#1",
       "review_kind": "phase",
       "phase_id": "phase-1-staged-guard",
-      "attempts": 2,
-      "closed_reason": null
+      "attempts": 3,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#2",
@@ -52,13 +52,13 @@
     "plan": "a6d285e5389dbd67f967a48fe451b7387dbb438b"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-staged-guard",
     "outcome": "approved",
-    "compare_hash": "6f902dbfb9603778fe5ba31d3cefe874250f6c71eb63c3fec411181db76ccfe3",
+    "compare_hash": "e04bff3d7e4af4dd3a2c1c6638c66dc6c2c65623b5e727063fb3cfffd1fc8ae4",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T03:00:25.001Z",
+    "at": "2026-08-01T03:07:33.916Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,5 +74,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-01T03:00:25.001Z",
     "design_hash": "37110a27c354c6c1a10b80e4c19928e59707b6e3c21cafb4ef37df97c9cb12ca"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "0e287a5bac12b5f210978387bca3d7e0f3310c7c",
+      "phase_id": "phase-1-staged-guard",
+      "consumed_by_commit_sha": "26ee07fc632b50cc86886af5ef466bee9aca1b84",
+      "approval_consumed_at": "2026-08-01T03:11:41.660Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
