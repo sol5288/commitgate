@@ -2,13 +2,13 @@
   "id": "REQ-2026-094",
   "branch": "feat/req-2026-094-approval-row-witness-recovery",
   "risk_level": "HIGH",
-  "codex_thread_id": "019fbbb2-2ddf-72c2-b166-9d0351263586",
+  "codex_thread_id": "019fbbde-cf5d-7850-b039-4e3447e2444c",
   "review_base_sha": "e71e9dffe08aae1df57747dc496c8f4dd2d362c4",
   "review_diff_hash": "406e440e06f52cd993a84f99184919f181d59e34",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "38bbb48fba9c0c83edb0b8ab43395098e9d57d0e5c46ff16c592e75333f1e36b",
+  "design_approved_hash": "9b2338e1b7dc1cd1bbaf3aca8df7ec10b0f9a917f167dc101e9c263313e45a2c",
   "current_phase": "phase-1-witness-model",
   "phases": [
     {
@@ -41,34 +41,28 @@
       "phase_id": "phase-1-witness-model",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
-    "requirement": "f829930b6c168fc0aba2b4953ae11058bc44a455",
-    "design": "094ac04745b8f552f3d7e4d3973ce05fbca97780",
-    "plan": "abbb99f1c99dd414b03c1c3fc3c3a4146972bd70"
-  },
-  "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-094/responses/design-r01-approved.json",
-    "response_sha256": "b6ddd5e3b7fb93e2aede6d0d8f8e2b4aa4d6b337e2dc15a2e75eab6033d25dde",
-    "review_kind": "design",
-    "phase_id": null,
-    "review_base_sha": "62f7b962d8334f80eae8955410f43bc46099b7cd",
-    "codex_thread_id": "019fbba6-33fe-7db0-a6b1-abfe01e04413",
-    "machine_schema_version": "1.1",
-    "status": "STEP_COMPLETE",
-    "commit_approved": "yes",
-    "approved_at": "2026-08-01T04:48:45.748Z",
-    "design_hash": "38bbb48fba9c0c83edb0b8ab43395098e9d57d0e5c46ff16c592e75333f1e36b"
+    "requirement": "360c8f0fbf96cc84c2229875cdf85fc4ebd29b2f",
+    "design": "09a739a1b3da1b2aaad37fe9a8aba1472176d77d",
+    "plan": "b9ccc4638cdec6f423c64368d1385d238874d196"
   },
   "last_review": {
-    "review_kind": "phase",
-    "phase_id": "phase-1-witness-model",
+    "review_kind": "design",
+    "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "6f347c573fc6d7d75392fbf5d74e0a9bc75e972ab29c721a5b4c68ef24040e33",
+    "compare_hash": "ccc6f7aa09847b07fb20dfd6b713fe16fe9febe935a1fd74c7c6bbc281d607f5",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T05:01:51.930Z",
+    "at": "2026-08-01T05:50:29.607Z",
     "findings": [],
     "elided_count": 0
   },
@@ -80,5 +74,18 @@
       "approval_consumed_at": "2026-08-01T05:02:31.476Z"
     }
   ],
-  "user_commit_confirmed": null
+  "user_commit_confirmed": null,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-094/responses/design-r04-approved.json",
+    "response_sha256": "30925be5ebad731c546329a672794dba578f168c9d1e548ab05a56b816d4df9c",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "e06026836507bd899be2c130a84dba3274ff39f0",
+    "codex_thread_id": "019fbbde-cf5d-7850-b039-4e3447e2444c",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T05:50:29.607Z",
+    "design_hash": "9b2338e1b7dc1cd1bbaf3aca8df7ec10b0f9a917f167dc101e9c263313e45a2c"
+  }
 }
