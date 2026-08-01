@@ -2,16 +2,63 @@
   "id": "REQ-2026-092",
   "branch": "feat/req-2026-092-approval-tree-staging-guard",
   "risk_level": "HIGH",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fbb1f-143c-7123-8bfc-d1b7c85913c3",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "59cbe231a7d4a3f0da8883122611b397aff78797d7de7340eb6b0df812bab2ab",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-staged-guard",
+      "approved": false
+    },
+    {
+      "id": "phase-2-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "57f6ecfadc6c40e2f2521c29b4ff9575bb980040",
+    "design": "399d02e1ceec1457afae7108758d47a6f1db6fd7",
+    "plan": "21039af209a4cee0baa423f7a48051f1ea88ecab"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-092/responses/design-r01-approved.json",
+    "response_sha256": "a855bf435cbf6bdaf1b8e982a586be20780220b9f39025c1d9e1c91741ae2ee1",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "bfe51c9281ab4fca57d039af438bab3c032f3e74",
+    "codex_thread_id": "019fbb1f-143c-7123-8bfc-d1b7c85913c3",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T02:20:43.607Z",
+    "design_hash": "59cbe231a7d4a3f0da8883122611b397aff78797d7de7340eb6b0df812bab2ab"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "309fd35f414bd0ba0205b4ad991474e1f6e96f8e490027a69e86399086f6c2a4",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-01T02:20:43.607Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
