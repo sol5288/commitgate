@@ -17,6 +17,8 @@
  * fs·git·review-codex를 모르는 leaf(부작용·evidence 추출은 CLI가 한다).
  */
 import { type CloseProofRow, closeProofRowKey } from './close-proof'
+// REQ-2026-094: 승인 행 복원의 산출 타입. type-only import라 순환 없음(evidence는 이 모듈을 모른다).
+import type { ManifestEntry } from './evidence'
 
 /** 이 티켓을 replace 부모로 지목하는 committed successor의 추출 증거(CLI가 HEAD blob에서 뽑아 넣는다). */
 export interface SuccessorEvidence {
@@ -119,4 +121,135 @@ export function planReconstruction(args: {
     candidates.push({ row, evidenceBasis })
   }
   return { candidates, refusals, conflicts }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-2026-094: 승인 행(approvals.jsonl) 복원 판정 — 순수
+//
+// 🔴 이 모듈의 기존 원칙을 **그대로** 적용한다: HEAD-committed immutable evidence가 행의 **모든** 필드를
+//    명확·모호없이 결정할 때만 후보를 낸다. 결정되지 않는 값은 **비운다**(채우면 그 자체가 날조다).
+//
+// 실측 근거(REQ-2026-094 §2): 소비 기록(`consumed_approvals[]`)만으로는 `approved_at`을 알 수 없고,
+// `consumed_at`은 `approval_consumed_at`과 **다른 스탬프**다(같은 phase에서 …41.497Z vs …41.660Z).
+// 그래서 1차 증인은 HEAD-committed `state.json.approval_evidence`다 — 승인 절반을 원본 값 그대로 담는다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** W1 — HEAD `state.json.approval_evidence`에서 뽑은 phase 승인 핀(호출부가 파싱해 넣는다). */
+export interface ApprovalEvidenceWitness {
+  phase_id: string
+  response_path: string
+  response_sha256: string
+  review_base_sha: string
+  approved_tree: string
+  approved_at: string
+  /** 선택 — 있으면 그대로 옮긴다(부재는 레거시 무회귀, `phase_design_ref`는 매니페스트에서도 선택이다). */
+  phase_design_ref?: string
+}
+
+/** W4 — HEAD `state.json.consumed_approvals[]`의 해당 항목(있을 수도, 없을 수도). */
+export interface ConsumedWitness {
+  approved_tree: string | null
+  consumed_by_commit_sha: string
+}
+
+/** 승인 행 복원의 입력. 🔴 전부 **HEAD-committed 사실**. CLI가 포트로 채운다(이 모듈은 fs·git를 모른다). */
+export interface ApprovalRestoreInput {
+  ticketRel: string
+  /** W1. 없으면 복원 불가(승인 절반을 결정할 수 없다). */
+  evidence: ApprovalEvidenceWitness | null
+  /** W2 — `evidence.response_path` blob의 HEAD 실제 sha256. 파일이 없으면 null. */
+  archiveSha256AtHead: string | null
+  /** W3 — tree가 `evidence.approved_tree`와 같은 **HEAD 조상 커밋**들. 정확히 하나여야 한다. */
+  treeMatchCommits: readonly string[]
+  /** W4(선택) — 소비 기록. 있으면 W1·W3와 일치해야 한다. */
+  consumed: ConsumedWitness | null
+  /** 이미 HEAD 매니페스트에 이 phase의 승인 행이 있는가(있으면 복원 불필요). */
+  hasManifestRow: boolean
+}
+
+export interface ApprovalRestorePlan {
+  /** 복원할 행. 증인이 하나라도 어긋나면 null. */
+  candidate: ManifestEntry | null
+  /** 왜 낼 수 없는지(또는 낼 필요가 없는지). 사용자에게 그대로 보여 준다. */
+  refusals: string[]
+}
+
+/**
+ * 승인 행 복원 판정(순수, REQ-2026-094 DEC-3). 증인 W1~W4가 **모두** 성립할 때만 후보를 낸다.
+ *
+ * 🔴 후보 행에는 `consumed_at`·`user_commit_confirmed`가 **없다**. 그 둘을 결정하는 HEAD 증거가
+ *    존재하지 않기 때문이다 — 복원 시각 따위로 채우면 "언제 소비됐나"에 대한 거짓 진술이 된다.
+ *    대신 `reconstructed:true` + `evidence_basis`로 **복원본임을 명시**한다(close-proof와 같은 어휘).
+ *
+ * 🔴 이 함수는 **승인을 부여하지 않는다**(DEC-6). 산출은 매니페스트 행 하나뿐이고, `commit_allowed`·
+ *    `approved_diff_hash` 같은 승인 상태는 호출부도 건드리지 않는다.
+ */
+export function planApprovalRestore(input: ApprovalRestoreInput): ApprovalRestorePlan {
+  const refusals: string[] = []
+  if (input.hasManifestRow) return { candidate: null, refusals: ['이미 HEAD 매니페스트에 승인 행이 있습니다 — 복원 불필요(no-op)'] }
+
+  const w1 = input.evidence
+  if (!w1) {
+    return {
+      candidate: null,
+      refusals: [
+        'W1 없음: HEAD의 state.json에 이 phase의 approval_evidence가 없습니다.',
+        '  승인 절반(approved_at·response_sha256·approved_tree …)을 결정할 방법이 없어 복원할 수 없습니다.',
+        '  값을 추정해 채우지 않습니다 — 그것은 승인 기록의 날조입니다.',
+      ],
+    }
+  }
+
+  // W2 — 아카이브가 HEAD에 있고 내용이 핀과 일치해야 한다.
+  if (input.archiveSha256AtHead === null)
+    refusals.push(`W2 없음: 승인 아카이브가 HEAD에 없습니다(${w1.response_path}).`)
+  else if (input.archiveSha256AtHead !== w1.response_sha256)
+    refusals.push(
+      `W2 불일치: 아카이브 내용이 핀과 다릅니다 — HEAD=${input.archiveSha256AtHead.slice(0, 12)} ≠ 핀=${w1.response_sha256.slice(0, 12)}.`,
+    )
+
+  // W3 — 승인 tree와 같은 tree를 가진 HEAD 조상 커밋이 **정확히 하나**. 그것이 source 커밋이다.
+  //      `req:commit`은 인덱스를 커밋하므로 source 커밋의 tree가 곧 approved_tree다(검증 가능한 사실).
+  const matches = [...new Set(input.treeMatchCommits)]
+  if (matches.length === 0)
+    refusals.push(
+      `W3 없음: 승인 tree(${w1.approved_tree.slice(0, 12)})와 같은 커밋이 HEAD 이력에 없습니다 — 승인된 코드가 커밋되지 않았습니다.`,
+    )
+  else if (matches.length > 1)
+    refusals.push(`W3 모호: 같은 tree를 가진 커밋이 ${matches.length}개입니다(${matches.map((c) => c.slice(0, 8)).join(', ')}) — 어느 것이 source인지 결정할 수 없습니다.`)
+
+  // W4(선택) — 소비 기록이 있으면 W1·W3와 **둘 다** 일치해야 한다(설계 r01 observation).
+  const w4 = input.consumed
+  if (w4) {
+    if (w4.approved_tree !== null && w4.approved_tree !== w1.approved_tree)
+      refusals.push(`W4 불일치: 소비 기록의 approved_tree가 승인 핀과 다릅니다(${String(w4.approved_tree).slice(0, 12)} ≠ ${w1.approved_tree.slice(0, 12)}).`)
+    if (matches.length === 1 && w4.consumed_by_commit_sha !== matches[0])
+      refusals.push(
+        `W4 불일치: 소비 기록의 consumed_by_commit_sha(${w4.consumed_by_commit_sha.slice(0, 8)})가 tree로 결정된 커밋(${(matches[0] as string).slice(0, 8)})과 다릅니다.`,
+      )
+  }
+
+  if (refusals.length) return { candidate: null, refusals }
+
+  const sourceSha = matches[0] as string
+  const candidate: ManifestEntry = {
+    kind: 'phase',
+    phase_id: w1.phase_id,
+    response_path: w1.response_path,
+    response_sha256: w1.response_sha256,
+    review_base_sha: w1.review_base_sha,
+    approved_tree: w1.approved_tree,
+    ...(w1.phase_design_ref === undefined ? {} : { phase_design_ref: w1.phase_design_ref }),
+    approved_at: w1.approved_at,
+    consumed_by_commit_sha: sourceSha,
+    // 🔴 consumed_at·user_commit_confirmed는 **넣지 않는다**(결정 불가). 아래 두 필드가 그 사실을 기록한다.
+    reconstructed: true,
+    evidence_basis: [
+      `${input.ticketRel}/state.json#approval_evidence`,
+      w1.response_path,
+      `commit:${sourceSha}`,
+      ...(w4 ? [`${input.ticketRel}/state.json#consumed_approvals`] : []),
+    ],
+  }
+  return { candidate, refusals: [] }
 }

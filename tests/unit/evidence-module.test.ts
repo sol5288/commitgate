@@ -154,6 +154,61 @@ describe('[REQ-2026-048] 이동한 술어 — 새 경로에서 동작 동일', (
     expect(bad.some((p) => /phase_design_ref 비-64hex/.test(p))).toBe(true)
   })
 
+  // ── REQ-2026-094 DEC-4·4a: 복원 행 어휘 ──
+  //
+  // 🔴 이 블록의 첫 테스트가 가장 중요하다. 새 키를 어휘에 더하면서 기존 커밋 행을 깨면
+  //    업그레이드만으로 모든 티켓이 corrupt가 되어 req:new가 전부 막힌다(직전 REQ에서 같은 자리 지뢰).
+  const vp1 = { ticketRel: t, validPhaseIds: ['p1'] }
+  /** 복원 행: consumed_at·user_commit_confirmed **없음** + reconstructed/evidence_basis 있음. */
+  const reconRow = (over: Record<string, unknown> = {}): Record<string, unknown> => {
+    const { consumed_at: _c, user_commit_confirmed: _u, ...rest } = phaseEv({}) as unknown as Record<string, unknown>
+    return { ...rest, reconstructed: true, evidence_basis: [`${t}/state.json#approval_evidence`], ...over }
+  }
+
+  it('🔴 REQ-2026-094: 새 키가 **없는** 기존 행이 그대로 유효하다(업그레이드 무회귀)', () => {
+    const legacy = phaseEv({}) as unknown as Record<string, unknown>
+    expect('reconstructed' in legacy).toBe(false)
+    expect('evidence_basis' in legacy).toBe(false)
+    expect(validateManifest(`${JSON.stringify(legacy)}\n`, vp1)).toEqual([])
+    // 명시적 false도 원본 행으로 유효(consumed_at·ucc는 여전히 필수).
+    expect(validateManifest(`${JSON.stringify({ ...legacy, reconstructed: false })}\n`, vp1)).toEqual([])
+  })
+
+  it('🔴 REQ-2026-094: 복원 행은 consumed_at·user_commit_confirmed **없이** 유효하다', () => {
+    expect(validateManifest(`${JSON.stringify(reconRow())}\n`, vp1)).toEqual([])
+  })
+
+  it('🔴 REQ-2026-094: 복원 행에 consumed_at·user_commit_confirmed를 채우면 거부(모르는 값 날조 금지)', () => {
+    const withConsumed = validateManifest(`${JSON.stringify(reconRow({ consumed_at: '2026-07-22T00:00:01.000Z' }))}\n`, vp1)
+    expect(withConsumed.some((p) => /복원 행에 consumed_at 금지/.test(p))).toBe(true)
+    const withUcc = validateManifest(`${JSON.stringify(reconRow({ user_commit_confirmed: null }))}\n`, vp1)
+    expect(withUcc.some((p) => /복원 행에 user_commit_confirmed 금지/.test(p))).toBe(true)
+  })
+
+  it('🔴 REQ-2026-094: 근거 없는 복원 금지 — evidence_basis가 비면 거부', () => {
+    expect(validateManifest(`${JSON.stringify(reconRow({ evidence_basis: [] }))}\n`, vp1).some((p) => /evidence_basis가 비어 있음/.test(p))).toBe(true)
+    const { evidence_basis: _e, ...noBasis } = reconRow()
+    expect(validateManifest(`${JSON.stringify(noBasis)}\n`, vp1).some((p) => /evidence_basis가 비어 있음/.test(p))).toBe(true)
+    expect(validateManifest(`${JSON.stringify(reconRow({ evidence_basis: [''] }))}\n`, vp1).some((p) => /비지 않은 문자열/.test(p))).toBe(true)
+  })
+
+  it('🔴 REQ-2026-094: 원본 행에 evidence_basis 금지(원본과 복원의 구별이 무너지면 안 된다)', () => {
+    const legacy = phaseEv({}) as unknown as Record<string, unknown>
+    const problems = validateManifest(`${JSON.stringify({ ...legacy, evidence_basis: ['x'] })}\n`, vp1)
+    expect(problems.some((p) => /원본 행.*evidence_basis 금지/.test(p))).toBe(true)
+  })
+
+  it('REQ-2026-094: reconstructed는 phase 전용(design 행에 금지) · boolean이어야', () => {
+    const designRow = buildManifestEntry(
+      { review_kind: 'design', phase_id: null, response_path: `${t}/responses/design-r01-approved.json`, response_sha256: sha, review_base_sha: oid, design_hash: sha, approved_at: '2026-07-22T00:00:00.000Z' } as Parameters<typeof buildManifestEntry>[0],
+      { consumedAt: '2026-07-22T00:00:01.000Z', consumedByCommitSha: oid, userCommitConfirmed: null },
+    ) as unknown as Record<string, unknown>
+    const { consumed_at: _c, user_commit_confirmed: _u, ...d } = designRow
+    const problems = validateManifest(`${JSON.stringify({ ...d, reconstructed: true, evidence_basis: ['x'] })}\n`, { ticketRel: t, validPhaseIds: [] })
+    expect(problems.some((p) => /design 행에는 reconstructed 금지/.test(p))).toBe(true)
+    expect(validateManifest(`${JSON.stringify(reconRow({ reconstructed: 'yes' }))}\n`, vp1).some((p) => /reconstructed는 boolean/.test(p))).toBe(true)
+  })
+
   it('㊾ validateManifest: design 행에 phase_design_ref 금지(kind 격리)', () => {
     const designRow = buildManifestEntry(
       { review_kind: 'design', phase_id: null, response_path: `${t}/responses/design-r01-approved.json`, response_sha256: sha, review_base_sha: oid, design_hash: sha, approved_at: '2026-07-22T00:00:00.000Z' } as Parameters<typeof buildManifestEntry>[0],

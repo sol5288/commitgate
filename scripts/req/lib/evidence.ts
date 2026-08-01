@@ -126,9 +126,27 @@ export interface ManifestEntry {
    */
   phase_design_ref?: string
   approved_at: string
-  consumed_at: string
+  /**
+   * 소비 시각. 🔴 **복원 행(`reconstructed:true`)에서는 부재**한다 — 소비 시각을 결정하는 HEAD 증거가
+   *   없기 때문이다(REQ-2026-094 DEC-4). 원본 행에서는 필수.
+   */
+  consumed_at?: string
   consumed_by_commit_sha: string
-  user_commit_confirmed: UserCommitConfirmed | null
+  /** 🔴 복원 행에서는 부재(위와 같은 이유). 원본 행에서는 `null` 또는 유효 감사 기록. */
+  user_commit_confirmed?: UserCommitConfirmed | null
+  /**
+   * 사후 복원 행인지 (REQ-2026-094 DEC-4). **선택 필드** — 부재/`false` = 원본.
+   *
+   * 🔴 `close-proof`의 같은 이름 필드와 **같은 어휘·같은 취지**다: 복원본이 원본으로 위장하면 감사가
+   *   무너진다. `true`이면 `evidence_basis`가 비어 있으면 안 되고, `consumed_at`·`user_commit_confirmed`는
+   *   **없어야** 한다(모르는 값을 채우지 않는다 — 채우면 그 자체가 날조다).
+   */
+  reconstructed?: boolean
+  /**
+   * 복원 행일 때 그 행을 유도한 근거(경로·식별자 목록 — 본문 금지). 원본 행에는 **금지**.
+   * 🔴 `close-proof`와 동일 규칙: 근거 없는 복원을 만들지 않는다.
+   */
+  evidence_basis?: string[]
   /**
    * REQ-2026-048 DEC-2 — 이 승인 시점의 라운드 아카이브 전부(needs-fix 포함, 승인본 자기 자신 포함).
    *
@@ -164,6 +182,11 @@ const MANIFEST_KEYS = new Set([
   'to_design_ref',
   'confirmation',
   'confirmed_at',
+  // 🔴 REQ-2026-094 DEC-4·4a: 복원 행 표시. **어휘에 존재**한다는 뜻일 뿐 필수화가 아니다 —
+  //    이 집합은 허용 화이트리스트이고 필수성은 아래 필드별 검사가 정한다. 두 키가 **아예 없는**
+  //    기존 커밋 행은 그대로 유효하다(= 원본 행). phase 행 전용(design 행에는 금지).
+  'reconstructed',
+  'evidence_basis',
 ])
 
 /**
@@ -419,7 +442,23 @@ export function validateManifest(content: string, opts: { ticketRel: string; val
     if (typeof e.review_base_sha !== 'string' || !GIT_OID_RE.test(e.review_base_sha)) problems.push(`line ${ln}: review_base_sha 비-OID`)
     if (typeof e.consumed_by_commit_sha !== 'string' || !GIT_OID_RE.test(e.consumed_by_commit_sha)) problems.push(`line ${ln}: consumed_by_commit_sha 비-OID`)
     if (!isValidIsoInstant(e.approved_at)) problems.push(`line ${ln}: approved_at 비-ISO`)
-    if (!isValidIsoInstant(e.consumed_at)) problems.push(`line ${ln}: consumed_at 비-ISO`)
+    // 🔴 REQ-2026-094 DEC-4: 복원 행은 소비 시각을 **모른다**. 그 사실을 부재로 기록하고, 값이 있으면
+    //    거부한다 — 복원 시각 등을 채우면 "언제 소비됐나"에 대한 거짓 진술이 된다.
+    //    부재/`false`(= 원본 행)에서는 기존 규칙 그대로 필수다(무회귀).
+    const recon = e.reconstructed
+    const isRecon = recon === true
+    if (recon !== undefined && typeof recon !== 'boolean') problems.push(`line ${ln}: reconstructed는 boolean`)
+    if (isRecon && kind !== 'phase') problems.push(`line ${ln}: ${String(kind)} 행에는 reconstructed 금지(phase 전용)`)
+    if (isRecon) {
+      if ('consumed_at' in e) problems.push(`line ${ln}: 복원 행에 consumed_at 금지(결정할 수 없는 값을 채우지 않는다)`)
+      if ('user_commit_confirmed' in e) problems.push(`line ${ln}: 복원 행에 user_commit_confirmed 금지(같은 이유)`)
+      const eb = e.evidence_basis
+      if (!Array.isArray(eb) || eb.length === 0) problems.push(`line ${ln}: 복원 행인데 evidence_basis가 비어 있음(근거 없는 복원 금지)`)
+      else if (!eb.every((x) => typeof x === 'string' && x !== '')) problems.push(`line ${ln}: evidence_basis 항목은 비지 않은 문자열`)
+    } else {
+      if (!isValidIsoInstant(e.consumed_at)) problems.push(`line ${ln}: consumed_at 비-ISO`)
+      if ('evidence_basis' in e) problems.push(`line ${ln}: 원본 행(reconstructed 부재/false)에 evidence_basis 금지`)
+    }
     // kind별 strict 바인딩(반대 kind 필드 금지).
     if (kind === 'phase') {
       if (typeof e.phase_id !== 'string' || !e.phase_id || !opts.validPhaseIds.includes(e.phase_id))
@@ -441,10 +480,13 @@ export function validateManifest(content: string, opts: { ticketRel: string; val
       for (const p of archiveInventoryProblems(e.archive_inventory, opts.ticketRel)) problems.push(`line ${ln}: ${p}`)
     }
     // user_commit_confirmed: null 또는 유효 감사 기록(confirmed=true·method·ISO confirmed_at)만. (B2-block3)
-    const ucc = e.user_commit_confirmed
-    if (ucc !== null) {
-      const p = userConfirmProblem(ucc)
-      if (p) problems.push(`line ${ln}: user_commit_confirmed ${p}(null 또는 confirmed=true·method·ISO confirmed_at)`)
+    // 🔴 복원 행은 위에서 **부재**를 강제했으므로 여기서 건너뛴다(부재를 무효값으로 오판하지 않게).
+    if (!isRecon) {
+      const ucc = e.user_commit_confirmed
+      if (ucc !== null) {
+        const p = userConfirmProblem(ucc)
+        if (p) problems.push(`line ${ln}: user_commit_confirmed ${p}(null 또는 confirmed=true·method·ISO confirmed_at)`)
+      }
     }
     // 중복: (kind/phase/sha) + response_path 두 기준 모두.
     const key = `${String(kind)}:${String(e.phase_id)}:${String(e.response_sha256)}`

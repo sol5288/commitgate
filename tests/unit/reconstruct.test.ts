@@ -5,6 +5,11 @@
  *    lineage(parent_series_id)로만 · 손상 티켓 fail-closed · dry-run 기본·--run+--confirm 후 write·자연키 멱등.
  */
 import { describe, it, expect } from 'vitest'
+import {
+  planApprovalRestore,
+  type ApprovalEvidenceWitness,
+  type ApprovalRestoreInput,
+} from '../../scripts/req/lib/reconstruct'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -353,5 +358,112 @@ describe('[REQ-2026-052 phase-4] planReconstruction (순수·DEC-D2 multi-witnes
     expect(parseArgs(['2026-001', '--run', '--confirm'])).toMatchObject({ reqId: '2026-001', run: true, confirm: true })
     expect(parseArgs(['2026-001'])).toMatchObject({ run: false, confirm: false })
     expect(() => parseArgs(['--bad'])).toThrow(/알 수 없는 옵션/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-2026-094: 승인 행 복원 판정(순수) — 증인 W1~W4
+//
+// 🔴 핵심 계약: **결정되지 않는 값을 채우지 않는다.** 후보 행에 consumed_at·user_commit_confirmed가
+//    있으면 그 자체가 실패다(실측: consumed_at은 approval_consumed_at과 다른 스탬프이고,
+//    approved_at은 소비 시 제거되어 HEAD 어디에도 없다).
+// ─────────────────────────────────────────────────────────────────────────────
+describe('[REQ-2026-094] planApprovalRestore — 승인 행 복원 판정', () => {
+  const T = 'workflow/REQ-2026-001'
+  const SHA = 'a'.repeat(64)
+  const TREE = 'b'.repeat(40)
+  const SRC = 'c'.repeat(40)
+  const DREF = 'd'.repeat(64)
+
+  const w1 = (over: Partial<ApprovalEvidenceWitness> = {}): ApprovalEvidenceWitness => ({
+    phase_id: 'p1',
+    response_path: `${T}/responses/p1-r01-approved.json`,
+    response_sha256: SHA,
+    review_base_sha: 'e'.repeat(40),
+    approved_tree: TREE,
+    approved_at: '2026-07-22T00:00:00.000Z',
+    phase_design_ref: DREF,
+    ...over,
+  })
+  const input = (over: Partial<ApprovalRestoreInput> = {}): ApprovalRestoreInput => ({
+    ticketRel: T,
+    evidence: w1(),
+    archiveSha256AtHead: SHA,
+    treeMatchCommits: [SRC],
+    consumed: null,
+    hasManifestRow: false,
+    ...over,
+  })
+
+  it('증인 완비 → 후보 1건. 승인 절반이 원본 값 그대로 옮겨진다', () => {
+    const p = planApprovalRestore(input())
+    expect(p.refusals).toEqual([])
+    const c = p.candidate as unknown as Record<string, unknown>
+    expect(c).toBeTruthy()
+    expect(c.kind).toBe('phase')
+    expect(c.phase_id).toBe('p1')
+    expect(c.response_sha256).toBe(SHA)
+    expect(c.approved_tree).toBe(TREE)
+    expect(c.approved_at).toBe('2026-07-22T00:00:00.000Z')
+    expect(c.phase_design_ref).toBe(DREF)
+    expect(c.consumed_by_commit_sha).toBe(SRC) // W3이 결정
+  })
+
+  it('🔴 후보 행에 consumed_at·user_commit_confirmed가 **없다**(결정 불가 → 비운다)', () => {
+    const c = planApprovalRestore(input()).candidate as unknown as Record<string, unknown>
+    expect('consumed_at' in c).toBe(false)
+    expect('user_commit_confirmed' in c).toBe(false)
+    expect(c.reconstructed).toBe(true)
+    expect((c.evidence_basis as string[]).length).toBeGreaterThan(0)
+  })
+
+  it('🔴 W1 없음 → 거부(승인 절반을 결정할 수 없다). 값을 추정하지 않는다', () => {
+    const p = planApprovalRestore(input({ evidence: null }))
+    expect(p.candidate).toBeNull()
+    expect(p.refusals.join(';')).toMatch(/W1 없음/)
+    expect(p.refusals.join(';')).toMatch(/날조/)
+  })
+
+  it('W2 부재·불일치 → 거부', () => {
+    expect(planApprovalRestore(input({ archiveSha256AtHead: null })).refusals.join(';')).toMatch(/W2 없음/)
+    expect(planApprovalRestore(input({ archiveSha256AtHead: 'f'.repeat(64) })).refusals.join(';')).toMatch(/W2 불일치/)
+  })
+
+  it('🔴 W3 0개/2개 이상 → 거부(모호하면 복원하지 않는다)', () => {
+    expect(planApprovalRestore(input({ treeMatchCommits: [] })).refusals.join(';')).toMatch(/W3 없음/)
+    const two = planApprovalRestore(input({ treeMatchCommits: [SRC, 'd'.repeat(40)] }))
+    expect(two.candidate).toBeNull()
+    expect(two.refusals.join(';')).toMatch(/W3 모호/)
+  })
+
+  it('W3 중복 입력은 같은 커밋이면 모호가 아니다(중복 제거)', () => {
+    expect(planApprovalRestore(input({ treeMatchCommits: [SRC, SRC] })).candidate).toBeTruthy()
+  })
+
+  it('🔴 W4 교차검증 — approved_tree·consumed_by_commit_sha 둘 다 일치해야 한다', () => {
+    // 일치하면 통과하고 evidence_basis에 소비 기록이 더해진다.
+    const ok = planApprovalRestore(input({ consumed: { approved_tree: TREE, consumed_by_commit_sha: SRC } }))
+    expect(ok.candidate).toBeTruthy()
+    expect((ok.candidate as unknown as Record<string, unknown>).evidence_basis as string[]).toContain(`${T}/state.json#consumed_approvals`)
+    // tree 불일치
+    expect(
+      planApprovalRestore(input({ consumed: { approved_tree: 'f'.repeat(40), consumed_by_commit_sha: SRC } })).refusals.join(';'),
+    ).toMatch(/W4 불일치.*approved_tree/)
+    // 커밋 불일치(설계 r01 observation)
+    expect(
+      planApprovalRestore(input({ consumed: { approved_tree: TREE, consumed_by_commit_sha: 'f'.repeat(40) } })).refusals.join(';'),
+    ).toMatch(/W4 불일치.*consumed_by_commit_sha/)
+  })
+
+  it('이미 매니페스트 행이 있으면 no-op(복원 불필요)', () => {
+    const p = planApprovalRestore(input({ hasManifestRow: true }))
+    expect(p.candidate).toBeNull()
+    expect(p.refusals.join(';')).toMatch(/복원 불필요/)
+  })
+
+  it('phase_design_ref가 없으면 후보에도 키가 없다(레거시 무회귀·바이트)', () => {
+    const { phase_design_ref: _d, ...noRef } = w1()
+    const c = planApprovalRestore(input({ evidence: noRef as ApprovalEvidenceWitness })).candidate as unknown as Record<string, unknown>
+    expect('phase_design_ref' in c).toBe(false)
   })
 })
