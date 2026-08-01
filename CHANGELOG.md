@@ -2,10 +2,11 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.17.0 (2026-08-01)
 
-> 이번 묶음은 소비 저장소가 보고한 **두 건의 버그 리포트**에서 나왔습니다. 하나는 교착(승인이 나도
-> 커밋할 수 없음)이고, 하나는 종결된 티켓의 진단이 영원히 실패하는 문제입니다.
+> 이번 묶음은 소비 저장소가 보고한 **두 건의 버그 리포트**에서 시작했습니다. 하나는 교착(승인이 나도
+> 커밋할 수 없음)이고, 하나는 종결된 티켓의 진단이 영원히 실패하는 문제입니다. 그 둘을 고치는
+> 과정에서 **도구 스스로가 거짓을 말하던 곳 두 군데**를 더 찾아 함께 고쳤습니다(REQ-098·099).
 
 > **확인할 파일** — 각 항목이 어느 커밋에서 왔는지.
 >
@@ -14,7 +15,7 @@
 > | 096 phase-1 (문자 집합 SSOT + 호출 전 가드) | `3a691d5` | `lib/scratch.ts`의 `ARCHIVE_BASE_RE`·`ARCHIVE_NAME_RE` · `req-next.ts`의 `PHASE_ID_RE`·`phaseModelProblems` · `review-codex.ts`의 `resolvePhaseTarget` |
 > | 097 phase-1 (종결 티켓 브랜치 축 면제) | `53025bd` | `req-doctor.ts`의 `ticketTerminalEvent`·D2/D3/D11 · `docs/ssot-design/07-…md` §3.0 · `tests/unit/doctor-terminal-wiring.test.ts` |
 > | 098 phase-1 (면적 경고 문구 정직성) | `dffa896` | `review-codex.ts`의 `phaseAreaMessage`(+`gate` 인자)와 그 호출부 · `tests/unit/review-lifecycle-wiring.test.ts`의 REQ-098 배선 테스트 |
-> | 099 phase-1 (D-체크 표 정합 + 등록부) | **이 커밋** | `req-doctor.ts`의 `D_CHECK_IDS`·`CheckId` · `docs/ssot-design/07-…md` §3 표 · `tests/unit/docs-stale-claims.test.ts`의 REQ-099 가드 |
+> | 099 phase-1 (D-체크 표 정합 + 등록부) | `7b1a9b1` | `req-doctor.ts`의 `D_CHECK_IDS`·`CheckId` · `docs/ssot-design/07-…md` §3 표 · `tests/unit/docs-stale-claims.test.ts`의 REQ-099 가드 |
 
 - **`req:doctor` 진단 목록 문서가 8건 누락돼 있던 것을 채우고, 재발을 막는 가드를 넣었습니다** (REQ-2026-099).
 
