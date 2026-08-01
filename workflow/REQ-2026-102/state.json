@@ -2,16 +2,59 @@
   "id": "REQ-2026-102",
   "branch": "feat/req-2026-102-legacy-diagnosis-honesty",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fbf4b-ef6d-74b0-bd9d-ed90f5c29026",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "4e73453af8ed4f8623c6d889d7f55c111b726d6a242e0235ac6c51706045f81f",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-legacy-honesty",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "f21696d1a61cc6f26648b666bd4c961573ee9dec",
+    "design": "d959b4133096afe89c3ac9cf29a86037e9ca0645",
+    "plan": "25baa883987095323ae8b8c923a25aaa2e9809e3"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-102/responses/design-r01-approved.json",
+    "response_sha256": "9bf7dc57937ea21250a9400bb6f4273304605a048ba288c636ea4f7e76682ac2",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "ac19350be6bf5e80da998ae44b6f04f2f10a174e",
+    "codex_thread_id": "019fbf4b-ef6d-74b0-bd9d-ed90f5c29026",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T21:48:04.554Z",
+    "design_hash": "4e73453af8ed4f8623c6d889d7f55c111b726d6a242e0235ac6c51706045f81f"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "dd77d2d248df3815b875fdae50125084621d4d036b683d3da1878d084449ef7f",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-01T21:48:04.554Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
