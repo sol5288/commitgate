@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"9485c6d784e3213dd0e28a322102e9b7cea3e45b","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계 승인 후 Phase 1을 구현하고 단위 테스트·typecheck·lint를 실행한 뒤 phase 리뷰를 요청하세요.","observations":[]}
