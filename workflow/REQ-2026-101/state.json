@@ -2,16 +2,59 @@
   "id": "REQ-2026-101",
   "branch": "feat/req-2026-101-quickstart-drift-delivery",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fbf11-9527-7e03-89c5-662628568270",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "6dd5ae36052215310a35a059ce5e2cc09652bd066881cad564c10069f19edb60",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-drift-detection",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "e30b1dea704b4995f7ca08c8dcf4243a40174322",
+    "design": "1b1ba585d93450e14ebfabfbd6f2368b100864cc",
+    "plan": "8c0ad10e48750a3087a5726922f8d96c3535f139"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-101/responses/design-r01-approved.json",
+    "response_sha256": "7fc7de6b40dd5dc76af01b7e1a3e401fb030c2731c553978bff77fb5011a09d4",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "d6406a2772e2adabc3a41c308ac0ed3aedc6deb4",
+    "codex_thread_id": "019fbf11-9527-7e03-89c5-662628568270",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T20:44:25.952Z",
+    "design_hash": "6dd5ae36052215310a35a059ce5e2cc09652bd066881cad564c10069f19edb60"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "f25a435292753d8b7e28227202e9cedf71c1072a99e7b457bf264108e62dc757",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-01T20:44:25.952Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
