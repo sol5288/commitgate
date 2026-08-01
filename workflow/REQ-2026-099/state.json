@@ -2,18 +2,18 @@
   "id": "REQ-2026-099",
   "branch": "feat/req-2026-099-docs-dcheck-table-alignment",
   "risk_level": "LOW",
-  "codex_thread_id": "019fbd8a-150c-7260-97a3-19fb25bf75f4",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fbd93-c703-7763-90c7-cada7b69319e",
+  "review_base_sha": "e091cba98ab51d2857fbe319a9e580615b35f10c",
+  "review_diff_hash": "044fadbc141ccbe150e8621504148230ba6ef196",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "374c11aec194aa4cbfdcf4c1cffe41c0aa3320c026de4554e5e248c9e899ce93",
-  "current_phase": null,
+  "current_phase": "phase-1-dcheck-table-alignment",
   "phases": [
     {
       "id": "phase-1-dcheck-table-alignment",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -26,16 +26,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-dcheck-table-alignment#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-dcheck-table-alignment",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-dcheck-table-alignment",
     "outcome": "approved",
-    "compare_hash": "8720596b2dd805d1ad0bb868e9ec37f62eea03ad56c9d1989babbe980f573f70",
+    "compare_hash": "24d162b9dabb326f1c577fe5b47e8cd1ff831b58031126dd321861ec494e89af",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T13:36:49.364Z",
+    "at": "2026-08-01T13:47:22.536Z",
     "findings": [],
     "elided_count": 0
   },
@@ -56,5 +63,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-01T13:36:49.364Z",
     "design_hash": "374c11aec194aa4cbfdcf4c1cffe41c0aa3320c026de4554e5e248c9e899ce93"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "044fadbc141ccbe150e8621504148230ba6ef196",
+      "phase_id": "phase-1-dcheck-table-alignment",
+      "consumed_by_commit_sha": "7b1a9b1527a87e36bbf95c275fbb0641bf44551d",
+      "approval_consumed_at": "2026-08-01T13:49:30.228Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
