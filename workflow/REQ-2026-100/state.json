@@ -2,18 +2,18 @@
   "id": "REQ-2026-100",
   "branch": "feat/req-2026-100-test-tiering-contract",
   "risk_level": "LOW",
-  "codex_thread_id": "019fbdc3-e192-7031-8938-b5ef239e9800",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fbdc9-dd8f-7340-a051-dddda0517ca4",
+  "review_base_sha": "8502694adab0d82b9cb38da4e39ebc895cbc9248",
+  "review_diff_hash": "d70dcb0b483e57e11a7d919412da6518c6914639",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "7bc71697bea184ffabe76f63264485cdb6676d91402ebf0f36b6afacad992c2a",
-  "current_phase": null,
+  "current_phase": "phase-1-tiering-contract",
   "phases": [
     {
       "id": "phase-1-tiering-contract",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -24,6 +24,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-tiering-contract#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-tiering-contract",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -47,14 +54,23 @@
     "design_hash": "7bc71697bea184ffabe76f63264485cdb6676d91402ebf0f36b6afacad992c2a"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-tiering-contract",
     "outcome": "approved",
-    "compare_hash": "d876f51004d18b6f86bcda111a5795d460c16a07c403bdc28a6541215952ffa6",
+    "compare_hash": "38f70c51a11082add4467dfb8fa4a1380965e82d7629fd4e06eaabd2f4244ee0",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T14:39:54.102Z",
+    "at": "2026-08-01T14:46:21.840Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "d70dcb0b483e57e11a7d919412da6518c6914639",
+      "phase_id": "phase-1-tiering-contract",
+      "consumed_by_commit_sha": "2219264092707b96a60ca48505f81a435728bdda",
+      "approval_consumed_at": "2026-08-01T20:13:41.259Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
