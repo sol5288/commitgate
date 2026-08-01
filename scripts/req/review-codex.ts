@@ -56,7 +56,7 @@ import { closeProofPath, appendCloseProofRow, type CloseProofRow } from './lib/c
 import { summarizeLockfileDiff } from './lib/lockfile-diff'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 // REQ-2026-092 DEC-1: `sourceCommitForbiddenStaged`는 `req:commit`과 **공유하는** 술어다(복제 금지).
-import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths, sourceCommitForbiddenStaged } from './lib/scratch'
+import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths, sourceCommitForbiddenStaged, ARCHIVE_BASE_RE } from './lib/scratch'
 // REQ-2026-057: 상태 직렬화 단일 지점 + durable checkpoint(leaf — 여기서 값으로 import해도 순환 없음).
 import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { assertSetupComplete } from './lib/setup-gate'
@@ -1832,6 +1832,27 @@ export function resolvePhaseTarget(
       ok: false,
       phaseId: null,
       error: `--phase "${phaseOpt}" 가 state.phases[].id와 불일치(유효 id: ${ids.join(', ') || '(없음)'})`,
+    }
+  /**
+   * 🔴 아카이브 base 안전성(REQ-2026-096 DEC-4) — **호출 전** fail-closed.
+   *
+   * `archiveBaseName`은 이 id를 무해화 없이 승인 아카이브 파일명 base로 쓴다. `_`·`.`가 섞이면
+   * 파일은 **쓰이지만** `isArchiveFileName`·`isAllowedResponsesScratch`·`isConfinedArchivePath`·
+   * `expectedArchivePaths`가 전부 거부한다 → D10이 영구히 더럽고, evidence chore가 아무것도 stage하지
+   * 못하며, 매니페스트 행도 쓸 수 없다. 즉 **승인은 나는데 커밋할 수 없다.**
+   *
+   * 여기서 막는 이유는 위 `phases[]` 빈 배열 가드와 같다 — 막지 않으면 호출은 나가고 예산은 쓰이고
+   * 승인은 못 쓴다. 승인해도 커밋할 수 없는 리뷰는 **시작하지 않는다**.
+   */
+  if (!ARCHIVE_BASE_RE.test(phaseOpt))
+    return {
+      ok: false,
+      phaseId: null,
+      error:
+        `--phase "${phaseOpt}" 는 승인 아카이브 파일명의 base로 쓸 수 없습니다(${String(ARCHIVE_BASE_RE)} 형식 필요). ` +
+        `승인 아카이브는 \`${phaseOpt}-r01-approved.json\` 으로 쓰이는데 '_'·'.'가 들어간 이름은 도구가 ` +
+        `자기 아카이브로 인식하지 못해, 리뷰가 승인돼도 커밋할 수 없습니다. ` +
+        `02-plan.md와 state.json의 phases[].id에서 '_'·'.'를 '-'로 바꾼 뒤 다시 실행하세요(리뷰 호출은 아직 나가지 않았습니다).`,
     }
   return { ok: true, phaseId: phaseOpt }
 }

@@ -28,7 +28,7 @@ import { createEvidencePorts } from './lib/evidence-ports'
 import { splitUnboundPhases, designHashFromManifest } from './lib/evidence'
 import { recoveryGuidance } from './lib/close-proof'
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
-import { reviewScratchPaths } from './lib/scratch'
+import { reviewScratchPaths, ARCHIVE_BASE_RE } from './lib/scratch'
 import { deliveryGateVerdict, deliveryRecordProblems, type DeliveryRecord } from './lib/delivery'
 import { REQUIRED_CONFIRM_SCOPE } from './lib/evidence'
 import { wouldCompleteReq } from './req-commit'
@@ -249,8 +249,17 @@ export function nextPhaseId(state: WorkflowState): string | null {
  */
 export const CLI_SAFE_ARG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
-/** phase id는 argv 토큰이다. `CLI_SAFE_ARG_RE`와 같은 계약. */
-export const PHASE_ID_RE = CLI_SAFE_ARG_RE
+/**
+ * phase id는 argv 토큰이자 **승인 아카이브 파일명의 base**다(REQ-2026-096 DEC-2).
+ *
+ * 🔴 `CLI_SAFE_ARG_RE`의 별칭이 **아니다**. 후자는 `.`·`_`를 허용하는데 `archiveBaseName`이 phase id를
+ *    무해화 없이 파일명 base로 쓰므로, 그 문자가 들어가면 도구가 쓴 아카이브를 `isArchiveFileName`·
+ *    `isAllowedResponsesScratch`·`isConfinedArchivePath`·`expectedArchivePaths`가 전부 거부한다
+ *    → 승인이 났는데 커밋할 수 없는 교착. 두 제약 중 **좁은 쪽이 계약**이다.
+ *
+ * 불변식: 아카이브 안전 ⊂ CLI 안전(`[A-Za-z0-9-]` ⊂ `[A-Za-z0-9._-]`) — `scratch.test.ts`가 고정한다.
+ */
+export const PHASE_ID_RE = ARCHIVE_BASE_RE
 
 /** REQ id(`REQ-` 접두 제거 후)도 positional argv 토큰이다. */
 export const REQ_ID_RE = CLI_SAFE_ARG_RE
@@ -351,7 +360,12 @@ export function phaseModelProblems(state: WorkflowState): string[] {
   const unsafe = parsed.filter((p) => p.id.trim() !== '' && !PHASE_ID_RE.test(p.id)).map((p) => JSON.stringify(p.id))
   if (unsafe.length)
     problems.push(
-      `phases[].id가 CLI 인자로 안전하지 않다: ${unsafe.join(', ')} — ${String(PHASE_ID_RE)} 형식이어야 한다(선행 '-'는 --phase 값 누락으로, 공백은 argv 깨짐으로 이어진다)`,
+      `phases[].id를 쓸 수 없다: ${unsafe.join(', ')} — ${String(PHASE_ID_RE)} 형식이어야 한다. ` +
+        `이 id는 argv 토큰이면서(선행 '-'는 --phase 값 누락으로, 공백은 argv 깨짐으로 이어진다) ` +
+        `동시에 승인 아카이브 파일명의 base(\`<id>-rNN-approved.json\`)로 그대로 쓰인다 — ` +
+        `'_'나 '.'가 들어가면 승인 아카이브를 도구가 인식하지 못해 커밋할 수 없다. ` +
+        `02-plan.md와 state.json의 phases[].id에서 '_'·'.'를 '-'로 바꾸세요. ` +
+        `그 id로 이미 쓰인 responses/의 아카이브가 있으면 지우세요(인식되지 않아 리뷰를 다시 받아야 한다).`,
     )
 
   const seen = new Set<string>()

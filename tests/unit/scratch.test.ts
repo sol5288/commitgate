@@ -7,7 +7,11 @@ import {
   isAllowedResponsesScratch,
   isArchiveFileName,
   sourceCommitForbiddenStaged,
+  ARCHIVE_BASE_RE,
 } from '../../scripts/req/lib/scratch'
+import { PHASE_ID_RE, CLI_SAFE_ARG_RE, REQ_ID_RE } from '../../scripts/req/req-next'
+import { archiveBaseName, isConfinedArchivePath, expectedArchivePaths } from '../../scripts/req/lib/evidence'
+import { archiveFileName, resolvePhaseTarget } from '../../scripts/req/review-codex'
 
 /** StatusEntry 조립. */
 const se = (index: string, worktree: string, path: string, origPath?: string): StatusEntry =>
@@ -198,5 +202,65 @@ describe('isArchiveFileName — review-codex에서 이동', () => {
     expect(isArchiveFileName('approvals.jsonl')).toBe(false)
     expect(isArchiveFileName('codex-response.json')).toBe(false)
     expect(isArchiveFileName('design-r1-approved.json')).toBe(false) // r 한자리 거부
+  })
+})
+
+/**
+ * REQ-2026-096 — phase id와 아카이브 파일명의 문자 집합이 갈라지면 **도구가 쓴 승인 아카이브를 도구
+ * 자신이 인식하지 못한다**(0.16.0 소비자 교착). 여기서 그 통일을 property로 고정한다.
+ *
+ * ⚠️ 기대값을 SUT 상수로 만들지 않는다(tautology 방지 — REQ-B 교훈). 샘플은 아래 리터럴이 정본이다.
+ */
+describe('phase id ↔ 아카이브 base 문자 집합 통일 (REQ-2026-096)', () => {
+  const T = 'workflow/REQ-2026-999'
+  /** `req:next`가 통과시켜야 하고, 아카이브 경로 전 구간이 인식해야 하는 id. */
+  const SAFE_PHASE_IDS = ['phase-1-charset-parity', 'phase-1a-persona-install', 'phase-2-req-next', 'p1', 'A0', 'phase-3b-entrypoint-uninstall']
+  /** 파일명 base로 쓸 수 없어 교착을 만드는 id — 이제 진입 자체가 거부돼야 한다. */
+  const UNSAFE_PHASE_IDS = ['phase_1', 'phase.1', 'phase_1_schema', 'phase-3b.entrypoint_uninstall', '-phase', 'phase 1']
+
+  it('왕복: PHASE_ID_RE를 통과한 id로 쓴 아카이브는 전 구간이 인식한다', () => {
+    for (const id of SAFE_PHASE_IDS) {
+      expect(PHASE_ID_RE.test(id), `PHASE_ID_RE: ${id}`).toBe(true)
+      const name = archiveFileName(archiveBaseName('phase', id), 1, 'approved')
+      const path = `${T}/responses/${name}`
+      expect(isArchiveFileName(name), `isArchiveFileName: ${name}`).toBe(true)
+      expect(isAllowedResponsesScratch(u(path), T), `scratch: ${path}`).toBe(true)
+      expect(isConfinedArchivePath(path, T), `confined: ${path}`).toBe(true)
+      expect(expectedArchivePaths([name], 'phase', id, T), `staged: ${name}`).toEqual([path])
+    }
+  })
+
+  it('음성: 파일명 base로 못 쓰는 id는 PHASE_ID_RE가 거부한다(0.16.0에선 통과했다)', () => {
+    for (const id of UNSAFE_PHASE_IDS) expect(PHASE_ID_RE.test(id), `PHASE_ID_RE: ${id}`).toBe(false)
+  })
+
+  it('포함관계: 아카이브 안전 ⊂ CLI 안전 (좁히기만 했고 argv 안전성은 유지된다)', () => {
+    for (const id of SAFE_PHASE_IDS) {
+      expect(ARCHIVE_BASE_RE.test(id), `archive-safe: ${id}`).toBe(true)
+      expect(CLI_SAFE_ARG_RE.test(id), `cli-safe: ${id}`).toBe(true)
+    }
+    // 역은 성립하지 않는다 — CLI 안전하지만 아카이브 base로는 못 쓰는 값이 존재한다(그것이 이 REQ의 결함).
+    expect(CLI_SAFE_ARG_RE.test('phase_1')).toBe(true)
+    expect(ARCHIVE_BASE_RE.test('phase_1')).toBe(false)
+  })
+
+  it('CLI_SAFE_ARG_RE·REQ_ID_RE는 좁히지 않았다(모델명 등 `.`이 필요한 값이 있다)', () => {
+    expect(CLI_SAFE_ARG_RE.test('gpt-5.6-terra')).toBe(true)
+    expect(REQ_ID_RE.test('2026-096')).toBe(true)
+  })
+
+  it('유료 호출 전 차단: resolvePhaseTarget이 base로 못 쓰는 --phase를 거부한다', () => {
+    const state = { id: 'REQ-2026-999', phases: [{ id: 'phase_1' }], review_series_model_version: 1 } as never
+    const r = resolvePhaseTarget(state, 'phase', 'phase_1')
+    expect(r.ok).toBe(false)
+    expect(r.phaseId).toBe(null)
+    // 왜 거부됐는지가 메시지에 있어야 한다 — 그래야 D10 더러움으로 오진하지 않는다.
+    expect(r.error).toContain('승인 아카이브')
+    expect(r.error).toContain('커밋할 수 없습니다')
+  })
+
+  it('design base와 레거시 폴백 base는 영향받지 않는다', () => {
+    expect(isArchiveFileName(archiveFileName(archiveBaseName('design', 'phase_1'), 1, 'approved'))).toBe(true)
+    expect(isArchiveFileName(archiveFileName(archiveBaseName('phase', null), 2, 'needs-fix'))).toBe(true)
   })
 })

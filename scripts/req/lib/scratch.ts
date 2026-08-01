@@ -147,8 +147,24 @@ export function isToolOutputScratch(entry: StatusEntry, ticketRoot: string): boo
 
 // ─────────────────────────────────── 승인 증거 아카이브 (REQ-016 A1, review-codex에서 이동) ──
 
+/**
+ * 아카이브 base(=`design` 또는 phase id)에 허용되는 문자 — **파일명 규칙과 phase id 계약의 단일 원천**
+ * (REQ-2026-096 DEC-1).
+ *
+ * 🔴 이 상수가 존재하는 이유: `archiveBaseName`(lib/evidence.ts)은 phase id를 **무해화 없이** 파일명
+ *    base로 쓴다. 그래서 "phase id로 허용되는 문자"와 "아카이브 파일명으로 인식되는 문자"는 **같은 사실**이다.
+ *    0.16.0까지 둘이 갈라져 있었고(`PHASE_ID_RE`는 `.`·`_` 허용, 여기는 불허), 그 결과 도구가 쓴 승인
+ *    아카이브를 도구 자신이 인식하지 못해 **승인이 났는데 커밋할 수 없는 교착**이 났다(소비자 리포트).
+ *    `req-next.ts`의 `PHASE_ID_RE`가 여기서 파생된다 — 다시 갈라질 수 없게.
+ *
+ * ⚠️ 설계 D7의 "정규식 보간 금지"는 **런타임 값** 보간 금지다(`isTicketDirName`이 문자열 분해를 쓰는 이유).
+ *    아래는 모듈 내부 **리터럴 상수 하나**를 결합할 뿐이라 외부 입력이 닿지 않는다.
+ */
+const ARCHIVE_BASE_BODY = '[A-Za-z0-9][A-Za-z0-9-]*'
+export const ARCHIVE_BASE_RE = new RegExp(`^${ARCHIVE_BASE_BODY}$`)
+
 /** 아카이브 파일명 패턴: `<base>-rNN-(approved|needs-fix).json`(NN≥2자리). approvals.jsonl 등은 불일치. */
-const ARCHIVE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9-]*-r\d{2,}-(approved|needs-fix)\.json$/
+const ARCHIVE_NAME_RE = new RegExp(`^${ARCHIVE_BASE_BODY}-r\\d{2,}-(approved|needs-fix)\\.json$`)
 export function isArchiveFileName(name: string): boolean {
   return ARCHIVE_NAME_RE.test(name)
 }

@@ -139,7 +139,7 @@ BOM 없는 UTF-8, 2-space 들여쓰기([scripts/req/review-codex.ts](../../scrip
 ## 5. 응답 아카이브·증거 원장
 
 ### 5.1 `responses/<base>-rNN-<outcome>.json`
-- `base` = `design` 또는 phase id(예: `phase-2-init-cli`).
+- `base` = `design` 또는 phase id(예: `phase-2-init-cli`). phase id는 **무해화 없이** 그대로 base가 되므로 `ARCHIVE_BASE_RE`(`^[A-Za-z0-9][A-Za-z0-9-]*$`)를 만족해야 한다 — `_`·`.`는 불허다. `req-next.ts`의 `PHASE_ID_RE`가 같은 상수에서 파생돼 두 술어가 갈라질 수 없다(REQ-2026-096). 갈라져 있던 0.16.0까지는 그런 id로 쓴 승인 아카이브를 도구가 인식하지 못해 커밋 불가 교착이 났다.
 - `rNN` = 라운드(≥2자리, `nextArchiveRound` = 기존 max+1).
 - `outcome` = `approved`\|`needs-fix`. 내용 = `machine.schema.json` 페이로드 1줄.
 - 명명 정규식 `^[A-Za-z0-9][A-Za-z0-9-]*-r\d{2,}-(approved|needs-fix)\.json$`([scripts/req/lib/scratch.ts](../../scripts/req/lib/scratch.ts) `ARCHIVE_NAME_RE`).

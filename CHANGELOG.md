@@ -2,6 +2,32 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+- **phase id에 `_`나 `.`를 쓰면 승인이 나도 커밋할 수 없던 교착을 없앴습니다** (REQ-2026-096).
+
+  소비 저장소(0.16.0)의 보고입니다. `req:next`가 통과시키는 phase id의 문자 집합(`_`·`.` 허용)과
+  승인 아카이브 파일명의 문자 집합(`_`·`.` 불허)이 어긋나 있었고, phase id는 **무해화 없이** 그대로
+  아카이브 파일명의 base가 됩니다. 그래서 `phase_1` 같은 id를 쓰면 도구가 `phase_1-r01-approved.json`을
+  **쓰고 나서 그 파일을 자기 것으로 인식하지 못했습니다** — `req:doctor` D10이 워킹트리를 영원히
+  더럽다고 보고, evidence 커밋이 아무것도 stage하지 못하며, `approvals.jsonl` 행도 쓸 수 없었습니다.
+  증상이 D10으로 나타나 원인이 phase id 문자라는 것을 추적하기 어려웠습니다.
+
+  이제 두 술어가 `lib/scratch.ts`의 **한 상수(`ARCHIVE_BASE_RE`)에서 파생**되어 갈라질 수 없습니다.
+
+  **동작이 좁아지는 변경입니다.** `_`·`.`가 든 phase id는 이제 거부됩니다. 다만 그런 id로는 애초에
+  커밋 가능한 승인을 만들 수 없었으므로(위 세 경로가 전부 막혔습니다) 동작하던 워크플로는 깨지지
+  않습니다. 바뀌는 것은 **실패 지점과 메시지**입니다 — 추적 불가능한 D10 교착 대신, `req:review-codex`가
+  **유료 리뷰 호출이 나가기 전에** 이유와 고치는 법을 말하고 멈춥니다. 시정은 `02-plan.md`와
+  `state.json`의 `phases[].id`에서 `_`·`.`를 `-`로 바꾸는 것입니다.
+  스키마는 그대로라 **`commitgate sync`가 필요 없습니다.**
+
+  > **확인할 파일**
+  >
+  > | REQ · phase | 확인할 파일 |
+  > |---|---|
+  > | 096 phase-1 (문자 집합 SSOT + 호출 전 가드) | `lib/scratch.ts`의 `ARCHIVE_BASE_RE`·`ARCHIVE_NAME_RE` · `req-next.ts`의 `PHASE_ID_RE`·`phaseModelProblems` · `review-codex.ts`의 `resolvePhaseTarget` |
+
 ## 0.16.0 (2026-08-01)
 
 > 이번 묶음은 소비 저장소가 보고한 **한 건의 교착 사고**에서 나왔습니다. 승인이 실제로 있는데도 티켓을

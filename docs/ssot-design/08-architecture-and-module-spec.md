@@ -69,7 +69,7 @@ flowchart TB
 
 ### 2.4 `lib/scratch.ts` — scratch 판정 SSOT
 - **책임**: clean-tree에서 무시할 도구 산출물 정의(두 범위: 현재 티켓 리뷰 scratch vs req:new 넓은 예외).
-- **공개(export)**: `reviewScratchPaths`, `TOOL_OUTPUT_BASENAMES`, `isToolOutputScratch`, `isAllowedResponsesScratch`, `isArchiveFileName`. (`ARCHIVE_NAME_RE`은 export되지 않는 모듈 내부 `const`이며 `isArchiveFileName`을 통해서만 노출된다.)
+- **공개(export)**: `reviewScratchPaths`, `TOOL_OUTPUT_BASENAMES`, `isToolOutputScratch`, `isAllowedResponsesScratch`, `isArchiveFileName`, `sourceCommitForbiddenStaged`, `REVIEW_LEDGER_RELNAME`, `ARCHIVE_BASE_RE` (2026-08-01 전수 검증). (`ARCHIVE_NAME_RE`은 export되지 않는 모듈 내부 `const`이며 `isArchiveFileName`을 통해서만 노출된다. `ARCHIVE_BASE_RE`는 두 술어의 단일 원천이라 export된다 — `req-next.ts`의 `PHASE_ID_RE`와 `review-codex.ts`의 호출 전 가드가 이것을 쓴다, REQ-2026-096.)
 - **핵심 안전**: `state.json`·`responses/**`는 req:new 예외에서 **제외**(증거 변조 구멍 차단). responses/ scratch는 미추적 아카이브 1개만 허용.
 
 ### 2.5 `req-new.ts` — 티켓 생성

@@ -293,12 +293,21 @@ describe('[req:next] phases[] 무결성 — 판정 전에 fail-closed', () => {
     const s = baseState({ phases: [{ id, approved: false }] } as Partial<WorkflowState>)
     const a = resolveNext(baseInput({ state: s, hasStagedChanges: true }))
     expect(a.kind).toBe('BLOCKED')
-    expect(a.diagnostics?.join('\n')).toContain('안전하지 않다')
+    expect(a.diagnostics?.join('\n')).toContain('phases[].id를 쓸 수 없다')
   })
 
   it('실제 사용 중인 phase id 형식은 안전하다', () => {
-    for (const id of ['phase-1a-persona-install', 'phase-2-req-next', 'p1', 'phase-3b.entrypoint_uninstall'])
-      expect(PHASE_ID_RE.test(id)).toBe(true)
+    for (const id of ['phase-1a-persona-install', 'phase-2-req-next', 'p1']) expect(PHASE_ID_RE.test(id)).toBe(true)
+  })
+
+  /**
+   * REQ-2026-096 — 이 케이스는 원래 위 목록에 `phase-3b.entrypoint_uninstall`로 들어 있었고
+   * "실제 사용 중인 형식"이라고 적혀 있었다. 사실이 아니었다(`_`·`.`를 base로 가진 아카이브는 0건).
+   * 그 계약이 곧 교착이었다 — 파일명 base로 못 쓰는 id를 통과시켜, 승인 아카이브를 도구가 인식하지 못했다.
+   * 방향을 뒤집어 **거부**를 고정한다. 전 구간 통일 property는 `scratch.test.ts`에 있다.
+   */
+  it('파일명 base로 못 쓰는 id는 거부한다', () => {
+    for (const id of ['phase-3b.entrypoint_uninstall', 'phase_1', 'phase.1']) expect(PHASE_ID_RE.test(id)).toBe(false)
   })
 
   /**

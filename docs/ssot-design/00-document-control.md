@@ -49,6 +49,7 @@
 - REQ id: `REQ-<4자리연도>-<0채움3자리>` (예: `REQ-2026-001`). 채번은 연도별 max+1([scripts/req/req-new.ts](../../scripts/req/req-new.ts) `nextReqId`).
 - 브랜치: `<branchPrefix><reqId 소문자>-<slug>` (기본 prefix `feat/req-`).
 - 아카이브 파일: `<base>-r<NN>-<approved|needs-fix>.json` (`base`=`design` 또는 phase id; `NN`≥2자리 라운드)([scripts/req/lib/scratch.ts](../../scripts/req/lib/scratch.ts) `ARCHIVE_NAME_RE`).
+- 아카이브 base(= phase id): `[A-Za-z0-9][A-Za-z0-9-]*` — `_`·`.` **불허**([scripts/req/lib/scratch.ts](../../scripts/req/lib/scratch.ts) `ARCHIVE_BASE_RE`). phase id가 무해화 없이 이 base로 쓰이므로 `PHASE_ID_RE`가 여기서 파생된다(REQ-2026-096).
 - 코드 식별자: JS/TS 표준 camelCase. 설정 키·스키마 필드는 snake_case(`review_base_sha`)와 camelCase(`branchPrefix`)가 층위별로 다르다 — 상태/응답 필드는 snake_case, 설정 키는 camelCase.
 
 ## 4. 사실 / 추론 / 미확인 표기 규칙
