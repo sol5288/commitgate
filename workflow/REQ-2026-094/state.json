@@ -87,7 +87,13 @@
       "approval_consumed_at": "2026-08-01T05:52:53.949Z"
     }
   ],
-  "user_commit_confirmed": null,
+  "user_commit_confirmed": {
+    "confirmed": true,
+    "method": "Claude Code 대화에서 사용자 승인(AskUserQuestion: 승인 — 기록 후 진행)",
+    "confirmed_at": "2026-08-01T06:04:14.150Z",
+    "note": "phase-3-docs / REQ 완결 / 리뷰 前 기록",
+    "scope": "req"
+  },
   "design_approval_evidence": {
     "response_path": "workflow/REQ-2026-094/responses/design-r04-approved.json",
     "response_sha256": "30925be5ebad731c546329a672794dba578f168c9d1e548ab05a56b816d4df9c",
