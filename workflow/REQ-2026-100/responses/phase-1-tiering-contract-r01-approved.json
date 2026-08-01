@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"8502694adab0d82b9cb38da4e39ebc895cbc9248","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"이 phase를 커밋하세요. main 통합 직전에 전체 스위트를 1회 실행하세요.","observations":[]}
