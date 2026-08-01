@@ -2,14 +2,14 @@
   "id": "REQ-2026-093",
   "branch": "feat/req-2026-093-ticket-abandon-escape-hatch",
   "risk_level": "HIGH",
-  "codex_thread_id": "019fbb8b-99f4-7fb2-9202-bc704f2e50d7",
-  "review_base_sha": "fdbfc483ca7fc2f1d489894f2292167541dfd6d5",
-  "review_diff_hash": "13084fbe4fce02a16ac98413e24777f90fe3a955",
+  "codex_thread_id": "019fbb99-565a-7ec0-a5c0-ba2239c55eaa",
+  "review_base_sha": "6f146028e1f1a4115c78892eb211f1b98cfd92ec",
+  "review_diff_hash": "87b9cf2f6574fcae29d247f2f8653c4ff0765a76",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "d44217dca4fc0ee93d92d4f64adb3f1bafe50a84ce01f2507f9d3570d6eb691a",
-  "current_phase": "phase-1-abandon",
+  "current_phase": "phase-2-docs",
   "phases": [
     {
       "id": "phase-1-abandon",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -37,16 +37,23 @@
       "phase_id": "phase-1-abandon",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-abandon",
+    "phase_id": "phase-2-docs",
     "outcome": "approved",
-    "compare_hash": "de36626569c99e48069cb95f9146697a44e1a27c52927df7fd3b621193d6a188",
+    "compare_hash": "f64d1606b1713256e2215cb1d01e7745d63199348dd23867607daa42b47411a0",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T04:19:36.391Z",
+    "at": "2026-08-01T04:34:11.764Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,13 +81,13 @@
       "phase_id": "phase-1-abandon",
       "consumed_by_commit_sha": "97c531ca04f17ebbedf8833fb862b90c62342144",
       "approval_consumed_at": "2026-08-01T04:20:19.149Z"
+    },
+    {
+      "approved_tree": "87b9cf2f6574fcae29d247f2f8653c4ff0765a76",
+      "phase_id": "phase-2-docs",
+      "consumed_by_commit_sha": "9ea5776894c29f6a918b9d276df370d52d4b5e15",
+      "approval_consumed_at": "2026-08-01T04:34:20.650Z"
     }
   ],
-  "user_commit_confirmed": {
-    "confirmed": true,
-    "method": "Claude Code 대화에서 사용자 승인(AskUserQuestion: 승인 — 기록 후 진행)",
-    "confirmed_at": "2026-08-01T04:33:27.549Z",
-    "note": "phase-2-docs / REQ 완결 / 리뷰 前 기록(D9 stale 회피)",
-    "scope": "req"
-  }
+  "user_commit_confirmed": null
 }
