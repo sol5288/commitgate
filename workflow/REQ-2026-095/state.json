@@ -2,16 +2,59 @@
   "id": "REQ-2026-095",
   "branch": "feat/req-2026-095-commit-message-argv-safety",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fbc0c-93d3-7ff1-9288-fa1de84f32bf",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "3220259038675112e02a7c84b71e9e28857359541c6e06b1e0cebc78e0ea6ed4",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-message-guidance",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "e52e25e8779e878bede17f72dbe925865d491c191619d39facd94c1d0501a262",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-01T06:40:30.390Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "ad19a6e9ab085141ad1365817cbf42b886c902e2",
+    "design": "b617bf9175ea59e1b7ce986d67326430c6264d99",
+    "plan": "daec5492d7407751e12840ee93330f9c9a44ec20"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-095/responses/design-r03-approved.json",
+    "response_sha256": "01697457c0831fdc53ea8e841245d954cb9fe1b11bc0cc2d97b809b82e17bab2",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "275cd1c06a6b9c718ceff8d0f09e21ad8eafb973",
+    "codex_thread_id": "019fbc0c-93d3-7ff1-9288-fa1de84f32bf",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T06:40:30.390Z",
+    "design_hash": "3220259038675112e02a7c84b71e9e28857359541c6e06b1e0cebc78e0ea6ed4"
+  }
 }
