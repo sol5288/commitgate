@@ -2,18 +2,18 @@
   "id": "REQ-2026-097",
   "branch": "feat/req-2026-097-doctor-terminal-ticket-branch-axis",
   "risk_level": "LOW",
-  "codex_thread_id": "019fbd5b-5e91-7071-928d-085177e49fb9",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fbd66-f3a2-7431-bbdb-d50c521a6fbc",
+  "review_base_sha": "502422e1e10156e28a4b3e8bdf6e439ee7b9e7ba",
+  "review_diff_hash": "25a53759d2d5927e07b694625c43350b12c93e9a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "79862081e6e6c7af382d27bd3efb2209d36b7315687277f5ffa627605f176c62",
-  "current_phase": null,
+  "current_phase": "phase-1-terminal-branch-axis",
   "phases": [
     {
       "id": "phase-1-terminal-branch-axis",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -26,16 +26,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-terminal-branch-axis#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-terminal-branch-axis",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-terminal-branch-axis",
     "outcome": "approved",
-    "compare_hash": "67424522fe00465aeaaed258c78e3c1f87131fc27f786f7796d679b5773bc4e3",
+    "compare_hash": "470edd2a61f2cc2bf60896a59b50da146701a490cdf89c2bd0a0c10b5fb2131f",
     "count": 1,
     "errors": [],
-    "at": "2026-08-01T12:45:51.726Z",
+    "at": "2026-08-01T12:58:30.449Z",
     "findings": [],
     "elided_count": 0
   },
@@ -56,5 +63,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-01T12:45:51.726Z",
     "design_hash": "79862081e6e6c7af382d27bd3efb2209d36b7315687277f5ffa627605f176c62"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "25a53759d2d5927e07b694625c43350b12c93e9a",
+      "phase_id": "phase-1-terminal-branch-axis",
+      "consumed_by_commit_sha": "53025bdea6d110ba9bcc65542d704d2ad69daf8e",
+      "approval_consumed_at": "2026-08-01T13:02:28.125Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
