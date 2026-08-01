@@ -32,7 +32,7 @@ import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
 import { bookkeepingMessage } from './lib/bookkeeping'
-import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget } from './lib/config'
+import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget, type GranularityGate } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
 import { archiveBaseName, durableDesignEvidence, isValidIsoInstant, parseManifestEntries } from './lib/evidence'
@@ -1334,20 +1334,40 @@ export function judgePhaseArea(codeFileCount: number, declared: number | null, c
   return { over: codeFileCount > limit, count: codeFileCount, limit, source: declared === null ? 'config' : 'declared' }
 }
 
-/** 초과 안내(순수). **두 탈출구를 모두** 제시한다 — 하나만 주면 그것이 사실상 유일한 길이 된다. */
-export function phaseAreaMessage(v: PhaseAreaVerdict, phaseId: string): string {
+/**
+ * 초과 안내(순수). **두 탈출구를 모두** 제시한다 — 하나만 주면 그것이 사실상 유일한 길이 된다.
+ *
+ * 🔴 **문구는 `gate`에 종속된다**(REQ-2026-098). `granularityGate`의 **기본값은 `warn`**이고 그때
+ *    리뷰는 그대로 실행·과금된다. 그런데 이 문구는 원래 `block` 전용으로 쓰였고 호출부는 두 모드
+ *    모두에 썼다 — 기본 설정 사용자 전부가 "리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다"라는
+ *    **비용에 관한 거짓 진술**과 "정책을 끄려면 `warn`"(이미 warn)이라는 무의미한 조치를 받았다.
+ *
+ * 같은 원칙을 `req-doctor.ts`의 `phaseGranularityWarnings`가 이미 지키고 있다(REQ-2026-086 r01 P1:
+ * "안내가 거짓이면 사람은 안내를 믿지 않게 된다"). 그때 doctor만 고치고 이 표면을 빠뜨렸다.
+ * 시그니처 형태를 그쪽과 맞춘다 — 두 표면이 같은 모양이어야 다음 사람이 한쪽만 고치지 않는다.
+ *
+ * 🔴 warn 문구는 **"호출이 나간다"고 말하지 않는다**. 이 경고 뒤에 `gateAndRecordAttempt`가 오고
+ *    예산 소진·예외 필요로 `throw`할 수 있다. 이 검사가 주장할 수 있는 것은 자기 자신에 대한
+ *    사실뿐이다 — "이 검사는 멈추지 않는다". 이후 게이트의 판단은 그 게이트가 자기 문구로 말한다.
+ */
+export function phaseAreaMessage(v: PhaseAreaVerdict, phaseId: string, gate: GranularityGate = DEFAULTS.granularityGate): string {
+  const blocking = gate === 'block'
   return [
     `phase 검수 면적 초과: 코드 변경 ${v.count}파일 > ${v.limit}(${v.source === 'declared' ? `phases[].max_files 선언` : 'granularityMaxFiles'})`,
-    '리뷰 라운드는 면적에 비례해 늘어납니다(실측: >8파일 평균 2.4R vs ≤8파일 1.4R). 리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다.',
+    blocking
+      ? '리뷰 라운드는 면적에 비례해 늘어납니다(실측: >8파일 평균 2.4R vs ≤8파일 1.4R). 리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다.'
+      : '리뷰 라운드는 면적에 비례해 늘어납니다(실측: >8파일 평균 2.4R vs ≤8파일 1.4R). granularityGate="warn"이라 이 검사는 리뷰를 멈추지 않습니다.',
     '',
-    '둘 중 하나를 선택하세요.',
-    '  A. 지금 나눈다 (권장 — 코드는 한 줄도 바뀌지 않습니다)',
+    blocking ? '둘 중 하나를 선택하세요.' : '다음 리뷰 전에 면적을 줄이는 방법은 둘입니다.',
+    blocking ? '  A. 지금 나눈다 (권장 — 코드는 한 줄도 바뀌지 않습니다)' : '  A. 나눈다 (권장 — 코드는 한 줄도 바뀌지 않습니다)',
     '     git restore --staged <이번 phase에서 뺄 파일들>',
     `     빼낸 파일은 다음 phase로 — state.json의 phases[]에 항목을 추가하세요.`,
     '  B. 이 phase는 원래 크다고 선언한다 (기계적 일괄 변경 등)',
     `     state.json의 phases[]에서 "${phaseId}" 항목에  "max_files": ${v.count}  을 추가하세요.`,
     '',
-    '(정책 자체를 끄려면 req.config.json에 "granularityGate": "warn" — 경고만 내고 진행합니다.)',
+    blocking
+      ? '(정책 자체를 끄려면 req.config.json에 "granularityGate": "warn" — 경고만 내고 진행합니다.)'
+      : '(초과 시 리뷰 전에 실제로 멈추게 하려면 req.config.json에 "granularityGate": "block".)',
   ].join('\n')
 }
 
@@ -2690,7 +2710,8 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
     const verdict = judgePhaseArea(codeFiles.length, declaredPhaseMaxFiles(state, phaseId), cfg.granularityMaxFiles)
     phaseArea = verdict
     if (verdict.over) {
-      const msg = phaseAreaMessage(verdict, phaseId ?? '(phase)')
+      // 🔴 REQ-2026-098: `gate`를 **명시 전달**한다. 기본값에 기대면 배선 누락이 조용히 통과한다.
+      const msg = phaseAreaMessage(verdict, phaseId ?? '(phase)', cfg.granularityGate)
       if (cfg.granularityGate === 'block') throw new Error(msg)
       console.warn(`[req:review-codex] ⚠️ ${msg}`) // granularityGate:'warn' — 이전 동작(경고만).
     }

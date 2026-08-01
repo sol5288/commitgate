@@ -21,6 +21,7 @@ import {
   designDocPaths,
   readDesignDocsFromIndex,
   validateVerdict,
+  phaseAreaMessage,
   loadState,
   validateResponseStructure,
   applyVerdict,
@@ -5289,5 +5290,65 @@ describe('[REQ-2026-092] 리뷰 전 staged 워크플로 파일 차단', () => {
     // design 승인은 유지한다 — 게이트 하나만 격리해 시험하려면 나머지 전제가 성립해 있어야 한다.
     writeFileSync(join(ticket, 'state.json'), stateBody({ ...approvedDesign(designHashOf(git)), current_phase: 'dirty' }))
     expect(() => reviewCodexMain(['2026-001', '--kind', 'phase', '--phase', 'phase-1', '--root', repo])).not.toThrow()
+  })
+})
+
+/**
+ * REQ-2026-098 — granularity 초과 안내가 **설정에 종속**돼야 한다.
+ *
+ * 🔴 `granularityGate`의 기본값은 `warn`이고 그때 리뷰는 그대로 실행·과금된다. 그런데 이 문구는
+ *    `block` 전용으로 쓰였고 호출부가 두 모드 모두에 썼다 — 기본 설정 사용자 전부가
+ *    "리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다"라는 **비용에 관한 거짓 진술**을 받았다.
+ *
+ * 같은 원칙을 `req-doctor.ts`의 `phaseGranularityWarnings`가 이미 지킨다(REQ-2026-086 r01 P1).
+ * 기대 문자열은 **여기 리터럴이 정본**이다 — SUT 상수를 참조하면 tautology가 된다.
+ */
+describe('[REQ-2026-098] phaseAreaMessage — 문구가 granularityGate에 종속된다', () => {
+  const V = { over: true, count: 9, limit: 8, source: 'config' } as const
+  const warn = (): string => phaseAreaMessage(V, 'phase-1-x', 'warn')
+  const block = (): string => phaseAreaMessage(V, 'phase-1-x', 'block')
+
+  it('warn: 실행·소모에 관해 거짓을 말하지 않는다', () => {
+    const m = warn()
+    expect(m).not.toContain('소모된 것이 없습니다')
+    expect(m).not.toContain('실행하지 않았습니다')
+    // 🔴 "호출 1회가 나갑니다"도 쓰지 않는다 — 이 경고 뒤 `gateAndRecordAttempt`가 예산 소진으로
+    //    throw할 수 있다. 이 검사는 **자기 자신에 대한 사실**만 주장한다.
+    expect(m).not.toContain('호출 1회')
+    expect(m).toContain('이 검사는 리뷰를 멈추지 않습니다')
+  })
+
+  it('warn: 이미 켜져 있는 설정을 다시 권하지 않고, 실제로 멈추는 법을 알린다', () => {
+    const m = warn()
+    expect(m).not.toContain('"granularityGate": "warn"')
+    expect(m).toContain('"granularityGate": "block"')
+  })
+
+  it('block: 문구가 유지된다(그 모드에서는 정확하다)', () => {
+    const m = block()
+    expect(m).toContain('리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다')
+    expect(m).toContain('둘 중 하나를 선택하세요')
+    // 대칭: 이미 block인 사용자에게 block을 권하지 않는다.
+    expect(m).not.toContain('"granularityGate": "block"')
+    expect(m).toContain('"granularityGate": "warn"')
+  })
+
+  it('교차: 두 문구는 서로 다르고, 각자 상대 모드를 가리킨다(방향이 뒤바뀌면 잡힌다)', () => {
+    expect(warn()).not.toBe(block())
+    expect(warn()).toContain('"block"')
+    expect(block()).toContain('"warn"')
+  })
+
+  it('공통: 두 모드 모두 파일 수·임계와 두 레버를 담는다', () => {
+    for (const m of [warn(), block()]) {
+      expect(m).toContain('코드 변경 9파일 > 8')
+      expect(m).toContain('git restore --staged')       // 레버 A
+      expect(m).toContain('"max_files": 9')             // 레버 B
+      expect(m).toContain('2.4R')                       // 면적을 줄일 동기(실측)
+    }
+  })
+
+  it('기본값은 warn이다 — 인자를 생략하면 warn 문구가 나온다', () => {
+    expect(phaseAreaMessage(V, 'phase-1-x')).toBe(warn())
   })
 })

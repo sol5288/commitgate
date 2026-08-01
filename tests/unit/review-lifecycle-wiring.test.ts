@@ -4,7 +4,7 @@
  * 🔴 pre-dispatch 실패 → 보상 attempt-closed(pre_dispatch_failed) + 예산 환불 · dispatched/dispatch_confirmed →
  *    보상 close + 차감 유지 · 정상 approved → completed 불변 · durable이면 보상 close가 HEAD에 커밋된다.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -355,6 +355,33 @@ describe('[REQ-2026-086] granularity 게이트 — 리뷰 호출 전 차단', ()
       stageCode(repo, gitOf(repo), 20)
       expect(runPhase(repo).msg).not.toContain('검수 면적 초과')
     } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * 🔴 REQ-2026-098 — 위 DEC-6 테스트는 "throw하지 않는다"만 본다. 그래서 warn 경로가 **거짓 문구**를
+   *    출력해도 통과했다(실제로 그랬다: "리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다"를
+   *    출력한 뒤 호출이 나갔다). 순수 테스트만 두면 호출부가 `gate`를 안 넘겨 기본값으로 떨어져도
+   *    통과하므로, **실제 진입점의 출력**을 본다.
+   */
+  it('🔴 [REQ-098] warn 경로의 경고가 실행·소모에 관해 거짓을 말하지 않는다(배선)', () => {
+    const { repo } = setupPhaseRepo()
+    const warned: string[] = []
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => void warned.push(a.join(' ')))
+    try {
+      setGate(repo, 'warn')
+      stageCode(repo, gitOf(repo), 9)
+      runPhase(repo)
+      const area = warned.find((l) => l.includes('검수 면적 초과')) ?? ''
+      expect(area, '면적 경고가 출력돼야 한다(warn 모드에서도 알리기는 한다)').not.toBe('')
+      expect(area).not.toContain('소모된 것이 없습니다')
+      expect(area).not.toContain('실행하지 않았습니다')
+      expect(area).not.toContain('"granularityGate": "warn"') // 이미 warn — 무의미한 조치
+      expect(area).toContain('이 검사는 리뷰를 멈추지 않습니다')
+      expect(area).toContain('"granularityGate": "block"') // 실제로 멈추는 법
+    } finally {
+      spy.mockRestore()
       rmSync(repo, { recursive: true, force: true })
     }
   })

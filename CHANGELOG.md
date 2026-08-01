@@ -12,7 +12,20 @@
 > | REQ · phase | 구현 커밋 | 확인할 파일 |
 > |---|---|---|
 > | 096 phase-1 (문자 집합 SSOT + 호출 전 가드) | `3a691d5` | `lib/scratch.ts`의 `ARCHIVE_BASE_RE`·`ARCHIVE_NAME_RE` · `req-next.ts`의 `PHASE_ID_RE`·`phaseModelProblems` · `review-codex.ts`의 `resolvePhaseTarget` |
-> | 097 phase-1 (종결 티켓 브랜치 축 면제) | **이 커밋** | `req-doctor.ts`의 `ticketTerminalEvent`·D2/D3/D11 · `docs/ssot-design/07-…md` §3.0 · `tests/unit/doctor-terminal-wiring.test.ts` |
+> | 097 phase-1 (종결 티켓 브랜치 축 면제) | `53025bd` | `req-doctor.ts`의 `ticketTerminalEvent`·D2/D3/D11 · `docs/ssot-design/07-…md` §3.0 · `tests/unit/doctor-terminal-wiring.test.ts` |
+> | 098 phase-1 (면적 경고 문구 정직성) | **이 커밋** | `review-codex.ts`의 `phaseAreaMessage`(+`gate` 인자)와 그 호출부 · `tests/unit/review-lifecycle-wiring.test.ts`의 REQ-098 배선 테스트 |
+
+- **검수 면적 경고가 과금 여부를 거짓으로 안내하던 것을 고쳤습니다** (REQ-2026-098).
+
+  `granularityGate`의 기본값은 `warn`이고, 그때 임계(8파일)를 넘겨도 **리뷰는 그대로 실행되고
+  호출이 나갑니다.** 그런데 안내 문구는 `block` 모드를 가정해 쓰여 있어서, 기본 설정 사용자에게
+  "리뷰를 실행하지 않았습니다 — 소모된 것이 없습니다"라고 **비용에 관한 거짓**을 말한 뒤 곧바로
+  호출이 나갔습니다. 게다가 "정책을 끄려면 `"granularityGate": "warn"`"이라고 **이미 켜져 있는
+  설정**을 권했습니다.
+
+  이제 문구가 설정에 따라 갈라집니다. `warn`에서는 이 검사가 리뷰를 멈추지 않는다는 사실과, 실제로
+  멈추게 하려면 `"granularityGate": "block"`이라는 것을 알립니다. `block` 모드 문구는 그대로입니다.
+  **동작은 하나도 바뀌지 않습니다 — 출력 문자열만 바뀝니다.**
 
 - **종결된 티켓에 `req:doctor`를 돌리면 항상 실패하던 문제를 고쳤습니다** (REQ-2026-097).
 
