@@ -2,16 +2,59 @@
   "id": "REQ-2026-097",
   "branch": "feat/req-2026-097-doctor-terminal-ticket-branch-axis",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fbd5b-5e91-7071-928d-085177e49fb9",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "79862081e6e6c7af382d27bd3efb2209d36b7315687277f5ffa627605f176c62",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-terminal-branch-axis",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "67424522fe00465aeaaed258c78e3c1f87131fc27f786f7796d679b5773bc4e3",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-01T12:45:51.726Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "3eb7fe509efcde79a2462677f5f5560ef49e6cda",
+    "design": "420e9a61531533675eb03e84d78aff86cacd7a1c",
+    "plan": "bf89370438e2fe33e4d9a75d725df41ec9d2dedd"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-097/responses/design-r02-approved.json",
+    "response_sha256": "af5ee645137cb40eaceec2a292613437fb7c231f45f1507851e9acfc03983ba4",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "0943628b29178c7e0feb2991d5a1f10a8426d9ca",
+    "codex_thread_id": "019fbd5b-5e91-7071-928d-085177e49fb9",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T12:45:51.726Z",
+    "design_hash": "79862081e6e6c7af382d27bd3efb2209d36b7315687277f5ffa627605f176c62"
+  }
 }
