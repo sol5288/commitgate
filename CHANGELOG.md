@@ -4,17 +4,61 @@
 
 ## Unreleased
 
-> **동작이 좁아지는 변경이 하나 있습니다.** 지금까지 통과하던 staged 구성 하나가 **phase 리뷰 시작 전에
-> 거부**됩니다. 그 구성의 유일한 귀결이 복구 불가능한 교착이었으므로 의도된 차단입니다.
-> 시정은 `git restore --staged` 한 번이고 **코드는 한 줄도 바뀌지 않습니다.**
+> 이번 묶음은 소비 저장소가 보고한 **한 건의 교착 사고**에서 나왔습니다. 승인이 실제로 있는데도 티켓을
+> 종결할 수 없었고, 그 티켓 하나가 저장소 전체의 `req:new`를 막았습니다. 원인 사건을 없애는 **예방**과,
+> 그래도 막혔을 때를 위한 **탈출구**를 함께 넣었습니다.
+>
+> **동작이 좁아지는 변경이 하나 있습니다**(REQ-2026-092). 지금까지 통과하던 staged 구성 하나가
+> **phase 리뷰 시작 전에 거부**됩니다. 그 구성의 유일한 귀결이 복구 불가능한 교착이었으므로 의도된
+> 차단입니다. 시정은 `git restore --staged` 한 번이고 **코드는 한 줄도 바뀌지 않습니다.**
 > 스키마는 그대로라 **`commitgate sync`가 필요 없습니다.**
 
-> **REQ-2026-092는 두 커밋으로 나뉘어 들어왔습니다.**
+> **확인할 파일** — 각 항목이 어느 커밋에서 왔는지.
 >
-> | phase | 구현 커밋 | 확인할 파일 |
+> | REQ · phase | 구현 커밋 | 확인할 파일 |
 > |---|---|---|
-> | phase-1 (술어 SSOT + 리뷰 전 게이트) | `26ee07fc` | `scripts/req/lib/scratch.ts`의 `sourceCommitForbiddenStaged` · `scripts/req/review-codex.ts`의 `forbiddenStagedMessage`·`quotePathspec`·`mainImpl` 게이트 · `scripts/req/req-commit.ts`의 `stagedNames` |
-> | phase-2 (문서·CHANGELOG) | **이 커밋** | `docs/troubleshooting.md`·`.en.md` · 이 파일 |
+> | 092 phase-1 (술어 SSOT + 리뷰 전 게이트) | `26ee07fc` | `lib/scratch.ts`의 `sourceCommitForbiddenStaged` · `review-codex.ts`의 `forbiddenStagedMessage`·`quotePathspec`·`mainImpl` 게이트 · `req-commit.ts`의 `stagedNames` |
+> | 092 phase-2 (문서) | `66ce6d3b` | `docs/troubleshooting.md`·`.en.md` |
+> | 093 phase-1 (`abandoned` + `--abandon`) | `97c531ca` | `lib/close-proof.ts`의 `abandoned`·`OPTIONAL_KEYS`·`verifiedTerminalEvent` · `req-close.ts`의 `runAbandon` · `lib/intake.ts` |
+> | 093 phase-2 (문서·CHANGELOG) | **이 커밋** | `docs/troubleshooting.md`·`.en.md` · 이 파일 |
+
+- **끝낼 수 없는 티켓을 명시적으로 포기해 종결할 수 있습니다** (REQ-2026-093).
+
+  `req:new`는 미종결 durable 티켓 **하나**로 저장소의 모든 후속 작업을 막습니다. 그런데 지금까지 그
+  상태에서 빠져나오는 길은 **완료뿐**이었습니다. 설계 전제가 무너졌거나 요구가 철회돼 완료할 수 없는
+  티켓에는 출구가 없었고, 남은 방법은 감사 파일 직접 편집이었습니다.
+
+  종결 이벤트 3종 중 사람이 쓸 수 있는 것이 하나도 없었기 때문입니다.
+
+  | 이벤트 | 왜 못 쓰나 |
+  |---|---|
+  | `dev-complete` | 완료해야 나옵니다 |
+  | `migrated-complete` | `req:close --migrate`가 **부분 완료 티켓을 명시적으로 거부**합니다(완료를 사후 확인하는 명령이므로) |
+  | `series-terminal` | **열린 리뷰 series**를 요구하는데 교착 티켓은 대개 그 반대이고(모두 승인으로 닫힘/리뷰 이력 없음), 애초에 그 값을 기록하는 명령이 없었습니다 |
+
+  이제 `req:close --abandon`이 있습니다.
+
+  ```sh
+  npx commitgate req:close 2026-004 --abandon \
+    --reason "설계 전제가 무너져 이 접근을 폐기" \
+    --confirm "PM 승인 2026-08-01" --run
+  ```
+
+  🔴 **포기는 되돌리기가 아닙니다.** `ticket-close.jsonl`에 **선언 한 줄만** 추가합니다 — 이미 커밋된
+  phase 증거·승인 매니페스트·설계 승인·리뷰 원장은 **한 바이트도 바뀌지 않고 히스토리에 남습니다.**
+  커밋된 phase가 있으면 실행 전에 개수를 알려 줍니다.
+
+  사유와 승인 문장이 **둘 다 필수**이고, 시각은 **도구가 실제 시계에서** 찍습니다(사람이 적어 넣는
+  자리를 만들지 않습니다). 기본은 dry-run이고 `--run` 후에만 씁니다. 이후 `req:new`는 그 티켓을
+  `abandoned`로 **표시하며** 통과시킵니다 — 완료로 보고하지 않습니다.
+
+  완료 증거가 항상 이깁니다: 실수로 포기 행이 남아도 실제로 완료된 티켓은 여전히 `dev-complete`로
+  보고됩니다. 그리고 포기는 **복원 대상이 아닙니다**(`req:reconstruct`) — 사유·승인 문장은 그 사람만
+  아는 값이라 도구가 지어낼 수 없기 때문입니다.
+
+  기존에 커밋된 close-proof 행은 **그대로 유효**합니다. 새 필드 두 개는 선택 필드이고, 그 키가 없는
+  기존 행은 정상으로 취급합니다(그렇지 않으면 업그레이드만으로 완료 티켓이 손상 판정을 받아 `req:new`가
+  전부 막혔을 것입니다).
 
 - **커밋할 수 없는 승인이 만들어지지 않습니다** (REQ-2026-092).
 

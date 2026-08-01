@@ -81,6 +81,39 @@ It is **fine for the unstaged file to remain modified** — `state.json` and the
 
 🔴 **On 0.15.0 and earlier this situation passed review, and the result was unrecoverable.** An approval binds to `git write-tree` (the whole index), while `req:commit` requires *both* "matches the approved tree" *and* "`state.json`/`responses/` are not staged". Once `state.json` is in the approved tree neither keeping nor removing it can satisfy both, the approval row never reaches `approvals.jsonl`, and **the ticket becomes impossible to close** — which in turn blocks `req:new` for the whole repository. That is why the check now runs *before* the review starts.
 
+**`req:new` is blocked saying there is an unclosed durable ticket.**
+`req:new` judges from **HEAD-committed evidence only**. The named ticket is not closed yet.
+Try these **in order** — each step is harder to undo than the last.
+
+1. **Finish it if you can.** Complete and commit the remaining phases; the final `req:commit` emits `dev-complete`.
+   Run `npm run req:next -- <REQ-id>` to see what is blocking.
+2. **If a design re-approval broke the binding**, reconnect it with `req:rebind` (`req:doctor`'s D26 warns about this case up front).
+3. **If it is a legacy ticket that was already completed and merged**, close it after the fact with `req:close <REQ> --migrate --run`.
+   That command **refuses** partially complete tickets — it confirms completion, it does not declare it.
+4. **If you still cannot finish it, declare it abandoned** (below).
+
+**How do I abandon a ticket I cannot finish?**
+A ticket whose design premise collapsed, or whose requirement was withdrawn, can be closed by an explicit
+abandonment. A reason and an approval statement are **both required**, and the default is dry-run.
+
+```sh
+npx commitgate req:close 2026-004 --abandon \
+  --reason "Design premise collapsed; dropping this approach" \
+  --confirm "Approved by PM 2026-08-01" --run
+```
+
+🔴 **Abandoning is not an undo.** The command appends **a single declaration line** to
+`responses/ticket-close.jsonl`. Already-committed phase evidence, the approval manifest, the design approval
+and the review ledger are **left byte-for-byte intact and stay in history**. If the ticket has committed
+phases, the command tells you how many before it acts.
+
+The decision is kept as a committed audit row (reason, approval statement, timestamp). The timestamp is
+**stamped by the tool from the real clock** — there is no field for a human to write it. Afterwards `req:new`
+passes the ticket while labelling it `abandoned` (it is **not** reported as complete).
+
+It is mutually exclusive with `--migrate`, which means the opposite: `--migrate` confirms *that the work was
+completed*, `--abandon` declares *that it will not be*.
+
 **What should I do if I see a cross-spawn version warning?**
 It means the target project may already have a `cross-spawn` version below CommitGate's verified floor. Upgrade it with `npm i -D cross-spawn@^7.0.6`. In CI or security-sensitive installs, use `npx commitgate --strict` to treat the warning as a failure.
 
