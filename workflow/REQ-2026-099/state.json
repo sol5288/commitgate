@@ -2,16 +2,59 @@
   "id": "REQ-2026-099",
   "branch": "feat/req-2026-099-docs-dcheck-table-alignment",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fbd8a-150c-7260-97a3-19fb25bf75f4",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "374c11aec194aa4cbfdcf4c1cffe41c0aa3320c026de4554e5e248c9e899ce93",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-dcheck-table-alignment",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "8720596b2dd805d1ad0bb868e9ec37f62eea03ad56c9d1989babbe980f573f70",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-01T13:36:49.364Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "441f8e2f4d1c3d33b6c8cbe1cdb59a0656d21324",
+    "design": "98e834077947091ba8cd5d0776aeaa1e55c8c196",
+    "plan": "9fad9e7cea86aeebec324ec0a3aa1016ad1e60c6"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-099/responses/design-r03-approved.json",
+    "response_sha256": "96968031fb353ab45c3b1897cc216622bf4b55c55b591617f27bad73465589c3",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "6d608b3c8411436282f613e965c948adf5a74603",
+    "codex_thread_id": "019fbd8a-150c-7260-97a3-19fb25bf75f4",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-01T13:36:49.364Z",
+    "design_hash": "374c11aec194aa4cbfdcf4c1cffe41c0aa3320c026de4554e5e248c9e899ce93"
+  }
 }
