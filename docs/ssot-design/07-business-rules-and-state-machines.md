@@ -49,13 +49,13 @@ CommitGate의 "업무 규칙"은 커밋을 통과/차단하는 fail-closed 게�
 
 | ID | 검사 | FAIL 조건 |
 |---|---|---|
-| **D2** | 브랜치 일치 | `state.branch` 있고 현재 브랜치 ≠ state.branch |
-| **D3** | 브랜치 로컬 존재 | `state.branch` 있고 `refs/heads/<branch>` 부재 |
+| **D2** | 브랜치 일치 | `state.branch` 있고 현재 브랜치 ≠ state.branch. **종결 티켓이면 면제**(아래 §3.0) |
+| **D3** | 브랜치 로컬 존재 | `state.branch` 있고 `refs/heads/<branch>` 부재. **종결 티켓이면 면제**(아래 §3.0) |
 | **D5** | thread id 형식 | `codex_thread_id`가 비공백인데 UUID 형식 아님 |
 | **D6** | 승인 실체 재검증(when `commit_allowed`) | 응답 부재/손상, 구조 실패, verdict 오류, `commit_approved≠yes`, status 비승인, base/diff 해시 누락, `approved_diff_hash≠review_diff_hash` |
 | **D9** | 승인 트리 일치(when `commit_allowed`) | staged tree ≠ `approved_diff_hash`(finalize면 소스커밋 트리 기준); `commit_allowed`인데 `approved_diff_hash` 없음 |
 | **D10** | clean-tree | scratch 아닌 미스테이지/미추적 존재 |
-| **D11** | feature branch | `phase≠DONE` && (현재=`main` 또는 branch가 prefix 미시작) |
+| **D11** | feature branch | 현재=`main` 또는 branch가 prefix 미시작. **종결 티켓이면 면제**(아래 §3.0) |
 | **D13** | 설계 우선 | 유효 design 승인 없이 **허용 목록 외 변경** 존재. 허용 목록 = 현재 티켓의 00/01/02·`codex-request.md` + scratch + 현재 티켓 `responses/` 아카이브 scratch뿐. 따라서 다른 REQ의 문서·증거 변경도 `codeChanges`로 잡혀 차단된다 |
 | **D15** | NEEDS_FIX 실행가능성 | 응답 status=NEEDS_FIX인데 findings 비었거나 next_action 공백 |
 | **D16** | phase 증거 아카이브(when `commit_allowed`) | 필수인데 증거 문제(경로/sha/구조/verdict/base/tree/live-sha 불일치) |
@@ -64,6 +64,28 @@ CommitGate의 "업무 규칙"은 커밋을 통과/차단하는 fail-closed 게�
 | **D19** | 설치 모드(`req:*` 값의 형태) | **(WARN 상한, FAIL 아님) 없음.** `mixed`(Stage A·Stage B 형태 혼재)만 WARN + `commitgate migrate` 안내. `stage-a`/`stage-b`/`none`/`custom`은 OK |
 
 증거 검증 세부(`evidenceProblems`): 경로 confinement(`<ticketRel>/responses/` 직속·아카이브명), `archive.sha256===ev.response_sha256`, 구조 OK, verdict가 같은 kind의 승인, `review_base_sha` 일치, phase면 `approved_tree===state.approved_diff_hash`, **live `codex-response.json` sha===ev.response_sha256**(손편집 탐지, phase), design이면 `design_hash===state.design_approved_hash`.
+
+### 3.0 종결 티켓의 브랜치 축 면제 (REQ-2026-097)
+
+D2·D3·D11은 **진행 중** 티켓의 작업 위치를 강제하는 규칙이다. 종결된 티켓에는 강제할 작업이 없는데,
+병합 후 브랜치를 지우는 **권장 운영**을 하면 셋 다 영구히 FAIL이 되어 `req:doctor`를 건강 점검으로
+쓸 수 없었다(소비자 리포트: 종결 티켓 118건 전부 exit 1). 게다가 에이전트가 그 FAIL을 보고 종결
+티켓의 feature 브랜치를 되살리려 하는 오작동이 실제로 발생했다.
+
+- **판정 원천**: `main()`이 `scanTicketIntake().baseState`로 계산해 `DoctorInputs.ticketTerminalEvent`에
+  주입한다. 술어(`verifiedTerminalEvent`)뿐 아니라 **입력 획득까지** intake·`req:close`·`req:commit`와
+  같은 함수를 쓴다 — 종결 술어가 갈라지면 탈출구가 사라진다(REQ-2026-072).
+- **면제 대상 상태**: `series-terminal`·`dev-complete`·`migrated-complete`·`abandoned`.
+  `developing`·`needs-recovery`·`corrupt`·`legacy`와 미계산(`undefined`)은 **현행 동작**(fail-closed).
+- **면제되지 않는 것**: 워킹트리 축(D10·D13·D18)과 승인 축(D6·D9·D16). 특히 커밋 게이트는
+  `commit_allowed`이며 dev-complete 시점에 소비되므로, 이 면제는 **커밋 경로를 열지 않는다**
+  ([tests/unit/req-doctor.test.ts](../../tests/unit/req-doctor.test.ts)가 고정).
+- 출력은 `OK` + `종결 티켓(<이벤트>) — … 점검 불요`다. 새 레벨(`INFO`)은 만들지 않았다 —
+  레벨 3종 위에 요약·exit code가 서 있다.
+
+> ⚠️ D25 수집부는 여전히 `existsSync(ticket-close.jsonl)`로 종결을 센다. 목적이 다르다 — 저것은
+> 티켓 N개에 대한 **WARN 전용** 집계라 `ls-tree` 1회로 끝내고, 이것은 게이트를 **푸는** 입력이라
+> 검증된 술어를 쓴다.
 
 ### 3.1 D19 설치 모드 진단 세부 (REQ-2026-014)
 

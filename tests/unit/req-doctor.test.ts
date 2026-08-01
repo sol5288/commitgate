@@ -952,3 +952,81 @@ describe('[REQ-2026-094] D27 — 소비된 승인인데 매니페스트 행이 �
     expect(msg).not.toContain('--approvals')
   })
 })
+
+/**
+ * REQ-2026-097 — 종결된 티켓에서 **브랜치 동일성 축**(D2·D3·D11)을 면제한다.
+ *
+ * 🔴 소비자 리포트: 병합 후 브랜치를 지우는 **권장 운영**을 하면 종결 티켓 전부에서 셋이 영구히
+ *    FAIL이 되어 `req:doctor`를 건강 점검으로 쓸 수 없었다. 더 나쁜 것은 에이전트가 그 FAIL을 보고
+ *    종결 티켓의 feature 브랜치를 되살리려 한다는 점이다.
+ *
+ * 워킹트리 축(D10)과 커밋 게이트(commit_allowed 축)는 **면제 대상이 아니다** — 아래가 그것을 고정한다.
+ */
+describe('[REQ-2026-097] D2·D3·D11 — 종결 티켓은 브랜치 축 면제', () => {
+  /** 병합 후 main으로 돌아와 브랜치를 지운 상태(리포트의 재현 조건 그대로). */
+  const merged = (over: Partial<DoctorInputs> = {}): DoctorInputs => ({
+    ...base,
+    currentBranch: 'main',
+    branchExists: false,
+    ...over,
+  })
+  const AXIS = ['D2', 'D3', 'D11'] as const
+  const lv = (checks: Check[], id: string): string | undefined => checks.find((c) => c.id === id)?.level
+  const ms = (checks: Check[], id: string): string => checks.find((c) => c.id === id)?.msg ?? ''
+
+  it('종결(dev-complete)이면 세 검사가 OK이고 사유를 남긴다', () => {
+    const checks = runChecks(merged({ ticketTerminalEvent: 'dev-complete' }))
+    for (const id of AXIS) {
+      expect(lv(checks, id), id).toBe('OK')
+      expect(ms(checks, id), id).toContain('종결 티켓')
+      expect(ms(checks, id), id).toContain('dev-complete')
+    }
+  })
+
+  /**
+   * 🔴 설계 r01 P1의 회귀 가드. 입력이 boolean이면 `abandoned`와 `dev-complete`를 구분할 수 없어
+   *    이 문구를 만들 수 없다 — 그래서 입력 계약이 `CloseProofEvent | null`이다.
+   */
+  it('사유 문구는 실제 종결 이벤트를 그대로 쓴다(boolean으로는 만들 수 없는 문구)', () => {
+    const checks = runChecks(merged({ ticketTerminalEvent: 'abandoned' }))
+    for (const id of AXIS) {
+      expect(ms(checks, id), id).toContain('abandoned')
+      expect(ms(checks, id), id).not.toContain('dev-complete')
+    }
+  })
+
+  it('진행 중(null)이면 세 검사가 그대로 FAIL — 완화가 새지 않는다', () => {
+    const checks = runChecks(merged({ ticketTerminalEvent: null }))
+    for (const id of AXIS) expect(lv(checks, id), id).toBe('FAIL')
+  })
+
+  it('미계산(undefined)이면 현행 동작 — fail-closed·하위호환', () => {
+    const checks = runChecks(merged({}))
+    for (const id of AXIS) expect(lv(checks, id), id).toBe('FAIL')
+  })
+
+  it('워킹트리 축(D10)은 면제하지 않는다 — 종결과 독립인 사실이다', () => {
+    const checks = runChecks(
+      merged({ ticketTerminalEvent: 'dev-complete', statusEntries: E(' M src/app.ts') }),
+    )
+    expect(lv(checks, 'D2')).toBe('OK')
+    expect(lv(checks, 'D10')).toBe('FAIL')
+  })
+
+  /**
+   * 🔴 R4 — 브랜치 축 면제가 **커밋 경로를 열면 안 된다**. 실제 커밋 게이트는 `commit_allowed`
+   *    축(D6·D9·D16)이며 dev-complete 발행 시점에 소비된다. 그 논증을 주장으로 두지 않고 여기서 고정한다.
+   */
+  it('면제돼도 승인 축은 그대로 막는다 — 종결 티켓이 main에서 커밋 가능해지지 않는다', () => {
+    const checks = runChecks(
+      merged({
+        ticketTerminalEvent: 'dev-complete',
+        state: { ...base.state, commit_allowed: true, approved_diff_hash: 'OTHER' } as WorkflowState,
+        stagedTree: 'TREE',
+      }),
+    )
+    for (const id of AXIS) expect(lv(checks, id), id).toBe('OK')
+    expect(checks.some((c) => c.level === 'FAIL')).toBe(true)
+    expect(lv(checks, 'D9')).toBe('FAIL')
+  })
+})

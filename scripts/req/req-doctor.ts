@@ -30,11 +30,13 @@ import {
 } from './review-codex'
 import { setupGateVerdict, collectGateFacts, type GateVerdict } from './lib/setup-gate'
 // REQ-2026-085 D25: 종결 증거 파일명(trunk 트리에서 이 경로의 존재로 "도달했는가"를 판정한다).
-import { CLOSE_PROOF_BASENAME, recoveryGuidance } from './lib/close-proof'
+import { CLOSE_PROOF_BASENAME, recoveryGuidance, type CloseProofEvent } from './lib/close-proof'
 // REQ-2026-088 DEC-1: 판정은 intake와 같은 술어로. 재구현하면 두 안내가 갈라진다.
 // REQ-2026-094 D27: 증인 불일치 판정은 `lib/evidence`가 정본(여기서 재구현 금지).
 import { splitUnboundPhases, designHashFromManifest, consumedApprovalsWithoutRow } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
+// REQ-2026-097 DEC-1: 종결 판정의 술어·입력 획득을 intake와 공유한다(자체 구현 금지).
+import { scanTicketIntake } from './lib/intake'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { missingQuickstartFiles } from '../../bin/quickstart'
@@ -123,6 +125,18 @@ export interface DoctorInputs {
    * 🔴 이 값이 무엇이든 **WARN 상한**이다 — 차단은 doctor가 아니라 워크플로 verb의 preflight가 한다.
    */
   setupGate?: GateVerdict
+  /**
+   * 🔴 **현재 티켓의 검증된 종결 이벤트**(REQ-2026-097 DEC-2). 브랜치 동일성 축(D2·D3·D11) 면제 입력.
+   *
+   *   - `undefined` = 미계산(legacy·2-arg 호출) → 현행 동작
+   *   - `null`      = 계산했으나 종결 아님(`developing`·`needs-recovery`·`corrupt`·`legacy`) → 현행 동작
+   *   - 이벤트 값    = 종결 → D2·D3·D11 면제 + 그 이벤트를 사유 문구에 쓴다
+   *
+   * 🔴 **boolean이 아닌 이유**: `runChecks`는 `DoctorInputs`만 보는 순수 함수라, boolean이면
+   *    `abandoned`인지 `dev-complete`인지 몰라 면제 사유를 적을 수 없다(설계 r01 P1). 두 필드로 쪼개면
+   *    `terminal=true & event=null` 같은 모순 조합이 타입으로 표현 가능해지므로 값 하나가 둘 다 나른다.
+   */
+  ticketTerminalEvent?: CloseProofEvent | null
   /**
    * D25(REQ-2026-085): 종결됐지만 trunk에 도달하지 않은 티켓 id들. `undefined` = 판정 불가·미계산 → OK.
    * `[]` = 전부 반영됨 → OK. 비어있지 않음 → WARN(**절대 FAIL 아님**).
@@ -314,13 +328,27 @@ export function runChecks(inp: DoctorInputs): Check[] {
   const branch = typeof s.branch === 'string' ? s.branch : ''
   const commitAllowed = s.commit_allowed === true
 
+  /**
+   * 🔴 브랜치 동일성 축 면제(REQ-2026-097). D2·D3·D11은 **진행 중** 티켓의 작업 위치를 강제하는
+   *    규칙이다. 종결된 티켓에는 강제할 작업이 없는데, 병합 후 브랜치를 지우는 **권장 운영**을 하면
+   *    셋 다 영구히 FAIL이 되어 `req:doctor`를 건강 점검으로 쓸 수 없었다(소비자 리포트: 종결 118건 전부).
+   *    더 나쁜 것은 에이전트가 그 FAIL을 보고 **종결 티켓의 feature 브랜치를 되살리려 한다**는 점이다.
+   *
+   *    면제 근거는 `verifiedTerminalEvent` 기반의 **검증된** 종결이다(단순 파일 존재가 아니다) —
+   *    위조 한 줄로 게이트가 풀리지 않는다. 워킹트리 축(D10·D13)은 종결과 독립이라 건드리지 않는다.
+   */
+  const terminal = inp.ticketTerminalEvent ?? null
+  const terminalMsg = (what: string): string => `종결 티켓(${terminal}) — ${what} 점검 불요`
+
   // D2: state.branch == 현재 브랜치
-  if (branch && inp.currentBranch !== branch)
+  if (terminal) c.push({ id: 'D2', level: 'OK', msg: terminalMsg('브랜치 일치') })
+  else if (branch && inp.currentBranch !== branch)
     c.push({ id: 'D2', level: 'FAIL', msg: `state.branch(${branch}) != current(${inp.currentBranch})` })
   else c.push({ id: 'D2', level: 'OK', msg: 'branch 일치' })
 
   // D3: state.branch 로컬 존재
-  if (branch && !inp.branchExists) c.push({ id: 'D3', level: 'FAIL', msg: `state.branch 로컬에 없음: ${branch}` })
+  if (terminal) c.push({ id: 'D3', level: 'OK', msg: terminalMsg('브랜치 존재') })
+  else if (branch && !inp.branchExists) c.push({ id: 'D3', level: 'FAIL', msg: `state.branch 로컬에 없음: ${branch}` })
   else c.push({ id: 'D3', level: 'OK', msg: 'branch 존재' })
 
   // D5: codex_thread_id 형식(설정 시 UUID)
@@ -385,7 +413,12 @@ export function runChecks(inp: DoctorInputs): Check[] {
   //    반면 runChecks는 **워킹 state.json**을 읽으므로, 손으로 `"phase": "DONE"`을 써 넣으면 main 위에서도
   //    D11이 통과했다. 즉 죽은 필드로 게이트가 열리는 위조 경로였다. 조건을 없애 그것만 닫는다
   //    (정상 경로 판정은 완전히 동일하다).
-  if (inp.currentBranch === 'main' || !branch.startsWith(inp.branchPrefix))
+  //
+  // 🔴 REQ-2026-097: 종결 티켓은 면제한다(위 `terminal` 주석). 이 면제는 커밋 경로를 열지 않는다 —
+  //    실제 커밋 게이트는 `commit_allowed`(D6·D9·D16)이고 dev-complete 발행 시점에 소비된다.
+  //    그 사실은 `req-doctor.test.ts`가 테스트로 고정한다(주장으로 두지 않는다).
+  if (terminal) c.push({ id: 'D11', level: 'OK', msg: terminalMsg('feature 브랜치') })
+  else if (inp.currentBranch === 'main' || !branch.startsWith(inp.branchPrefix))
     c.push({
       id: 'D11',
       level: 'FAIL',
@@ -970,6 +1003,28 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     }
   }
 
+  /**
+   * REQ-2026-097 DEC-1: **현재 티켓**의 검증된 종결 이벤트(D2·D3·D11 면제 입력).
+   *
+   * 🔴 `scanTicketIntake`를 그대로 쓴다 — 술어(`verifiedTerminalEvent`)뿐 아니라 **입력 획득까지**
+   *    intake·`req:close`·`req:commit`와 같아야 한다(REQ-2026-094 교훈: 같은 술어를 쓰고도 입력이
+   *    달라 판독이 갈렸다). HEAD blob만 읽으므로 워킹트리 dirty 여부가 이 판정을 흔들지 않는다.
+   *
+   * 🔴 위 D25 수집부는 여전히 `existsSync(close proof)`다 — 목적·비용이 다르다. 저것은 티켓 N개에 대한
+   *    WARN 전용 집계라 `ls-tree` 1회로 끝내고, 이것은 게이트를 **푸는** 입력이라 검증된 술어를 쓴다.
+   *    두 술어가 남아 있는 것은 의도다(설계 r02 관찰).
+   *
+   * 실패는 조용히 `null`(= 종결 아님) — fail-closed. 판정 못 하면 현행 동작이 기본값이다.
+   */
+  const ticketTerminalEvent: CloseProofEvent | null = (() => {
+    try {
+      const base = scanTicketIntake(cfg.root, ticketRel, String(state.id ?? '')).baseState
+      return base === 'series-terminal' || base === 'dev-complete' || base === 'migrated-complete' || base === 'abandoned' ? base : null
+    } catch {
+      return null
+    }
+  })()
+
   const inp: DoctorInputs = {
     state,
     currentBranch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
@@ -1001,6 +1056,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
         return undefined // 손상 매니페스트의 fail-closed는 intake·D17 소관.
       }
     })(),
+    ticketTerminalEvent,
     unmergedClosedTickets: unmerged,
     trunkBranch: cfg.trunkBranch,
     stagedTree: git(['write-tree']),

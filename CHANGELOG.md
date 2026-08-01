@@ -4,6 +4,31 @@
 
 ## Unreleased
 
+> 이번 묶음은 소비 저장소가 보고한 **두 건의 버그 리포트**에서 나왔습니다. 하나는 교착(승인이 나도
+> 커밋할 수 없음)이고, 하나는 종결된 티켓의 진단이 영원히 실패하는 문제입니다.
+
+> **확인할 파일** — 각 항목이 어느 커밋에서 왔는지.
+>
+> | REQ · phase | 구현 커밋 | 확인할 파일 |
+> |---|---|---|
+> | 096 phase-1 (문자 집합 SSOT + 호출 전 가드) | `3a691d5` | `lib/scratch.ts`의 `ARCHIVE_BASE_RE`·`ARCHIVE_NAME_RE` · `req-next.ts`의 `PHASE_ID_RE`·`phaseModelProblems` · `review-codex.ts`의 `resolvePhaseTarget` |
+> | 097 phase-1 (종결 티켓 브랜치 축 면제) | **이 커밋** | `req-doctor.ts`의 `ticketTerminalEvent`·D2/D3/D11 · `docs/ssot-design/07-…md` §3.0 · `tests/unit/doctor-terminal-wiring.test.ts` |
+
+- **종결된 티켓에 `req:doctor`를 돌리면 항상 실패하던 문제를 고쳤습니다** (REQ-2026-097).
+
+  티켓을 종결하고 브랜치를 병합·삭제하는 것은 **권장 운영**인데, 그 뒤 `req:doctor`가 D2(브랜치 일치)·
+  D3(브랜치 존재)·D11(feature 브랜치)로 계속 FAIL을 냈습니다. 보고한 저장소에서는 종결 티켓 118건이
+  전부 exit 1이었습니다. 그래서 `req:doctor`를 스크립트·CI의 건강 점검으로 쓸 수 없었고, 더 나쁘게는
+  AGENTS.md 계약을 따르는 에이전트가 그 FAIL을 보고 **종결 티켓의 feature 브랜치를 되살리려 했습니다.**
+
+  이제 종결이 **검증된** 티켓에서는 세 검사가 `OK`로 면제되고 사유(`종결 티켓(dev-complete) — …`)를
+  남깁니다. 종결 판정은 `req:close`·`req:commit`와 **같은 술어·같은 입력**을 씁니다 — 파일 한 줄을
+  만들어 게이트를 푸는 우회는 생기지 않습니다.
+
+  **면제되지 않는 것**: 워킹트리 축(D10·D13)과 승인 축(D6·D9·D16)은 그대로입니다. 커밋 게이트는
+  `commit_allowed`이므로 이 변경으로 **종결 티켓이 커밋 가능해지지 않습니다**(테스트로 고정).
+  종결되지 않은 티켓의 동작은 **하나도 바뀌지 않습니다.**
+
 - **phase id에 `_`나 `.`를 쓰면 승인이 나도 커밋할 수 없던 교착을 없앴습니다** (REQ-2026-096).
 
   소비 저장소(0.16.0)의 보고입니다. `req:next`가 통과시키는 phase id의 문자 집합(`_`·`.` 허용)과
@@ -21,12 +46,6 @@
   **유료 리뷰 호출이 나가기 전에** 이유와 고치는 법을 말하고 멈춥니다. 시정은 `02-plan.md`와
   `state.json`의 `phases[].id`에서 `_`·`.`를 `-`로 바꾸는 것입니다.
   스키마는 그대로라 **`commitgate sync`가 필요 없습니다.**
-
-  > **확인할 파일**
-  >
-  > | REQ · phase | 확인할 파일 |
-  > |---|---|
-  > | 096 phase-1 (문자 집합 SSOT + 호출 전 가드) | `lib/scratch.ts`의 `ARCHIVE_BASE_RE`·`ARCHIVE_NAME_RE` · `req-next.ts`의 `PHASE_ID_RE`·`phaseModelProblems` · `review-codex.ts`의 `resolvePhaseTarget` |
 
 ## 0.16.0 (2026-08-01)
 
