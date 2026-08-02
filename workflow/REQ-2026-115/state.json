@@ -2,16 +2,54 @@
   "id": "REQ-2026-115",
   "branch": "feat/req-2026-115-d15-rationale-and-exit-oracle",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fc286-a36f-7061-90af-459034fb37ca",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "33bc8fb9e3f442a91413991355aecf5a1ccc5b86d19ad2e8c5284e825cc2aac8",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "b9f06240b22a9b4fad9bd431e2d60b99a0639efa7e6fb0dcb401fb96bc80f894",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-02T12:51:08.530Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "fe070eab1a8e29dc3ce0da6e7959be7f629552e5",
+    "design": "8ea3097030e9421fbd281d434ba6741b19510740",
+    "plan": "3afc25af4aef18563828d8fad5b4c8003f230541"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-115/responses/design-r02-approved.json",
+    "response_sha256": "3444f74c946925c959343fa760fa5378faa69411be7f8823963e249fb5d191f9",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "4abd7c42b7ab5c6bcd8bf07ab07711b8150041c4",
+    "codex_thread_id": "019fc286-a36f-7061-90af-459034fb37ca",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-02T12:51:08.530Z",
+    "design_hash": "33bc8fb9e3f442a91413991355aecf5a1ccc5b86d19ad2e8c5284e825cc2aac8"
+  }
 }
