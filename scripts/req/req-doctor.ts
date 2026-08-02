@@ -23,6 +23,12 @@ import {
   captureDesignBinding,
   designDocPaths,
   REVIEW_CALL_LOG_REL,
+  STAGED_NAMES_Z_ARGS,
+  // 🔴 REQ-2026-107: granularity 판정의 **정본**을 그대로 쓴다(사본 금지). D18이 리뷰 preflight와
+  //    다르게 판정하던 오탐이 정확히 "정책 SSOT가 옮겨갔는데 사본이 남은" 형태였다.
+  judgePhaseArea,
+  declaredPhaseMaxFiles,
+  phaseCodeFiles,
   type WorkflowState,
   type Verdict,
   type ApprovalEvidence,
@@ -91,6 +97,25 @@ export interface DoctorInputs {
   branchPrefix: string
   // D18 granularity 임계(config, advisory). 미지정 시 GRANULARITY_MAX_FILES(현재 동작). main이 cfg.granularityMaxFiles 주입.
   granularityMaxFiles?: number
+  /**
+   * 🔴 REQ-2026-107: 현재 phase의 `phases[].max_files` **선언**(없으면 null). `main()`이
+   * `declaredPhaseMaxFiles(state, state.current_phase)`로 채운다.
+   *
+   * **optional인 이유와 undefined의 의미**(설계 r01 관찰): 기존 호출부(테스트 포함)를 깨지 않기 위해
+   * optional이고, **`undefined`와 `null`은 같은 뜻 — "선언 없음" = config 기본 사용**이다. 즉 이 필드를
+   * 주지 않는 호출자는 이 REQ 이전과 **동일하게** 판정된다(무회귀). `judgePhaseArea`의 계약이
+   * `declared ?? configMax`이므로 `?? null`로 넘기면 그대로 성립한다.
+   */
+  declaredMaxFiles?: number | null
+  /**
+   * 🔴 REQ-2026-107: D18이 셀 **staged 코드 파일**(티켓 문서·scratch 제외). `main()`이
+   * `phaseCodeFiles(staged, ticketRel)`(정본)로 채운다.
+   *
+   * **undefined면 D13의 `codeChanges`로 폴백**한다 — 이 필드를 주지 않는 기존 호출부의 판정을 바꾸지
+   * 않기 위해서다. D13은 계속 `codeChanges`를 쓴다(다른 질문 — "설계 승인 없이 코드가 바뀌었나"에는
+   * unstaged/untracked도 포함되어야 한다). 두 검사가 지표를 공유하던 것이 오히려 사고였다.
+   */
+  stagedCodeFiles?: string[]
   /** REQ-2026-086: granularity 강제 수준. D18 문구가 실제 동작과 어긋나지 않게 한다. 미지정 = DEFAULTS. */
   granularityGate?: GranularityGate
   stagedTree: string
@@ -237,15 +262,31 @@ export const GRANULARITY_MAX_FILES = 8
  * 승인을 받은 phase가 커밋되지 못하고 승인도 소비되지 않는 **교착**이 된다(`req:commit`이 doctor를 하드
  * 게이트로 spawn한다). 그래서 이 자리는 끝까지 진단 표면으로 남는다.
  */
-export function phaseGranularityWarnings(codeFiles: string[], maxFiles: number, gate: GranularityGate = DEFAULTS.granularityGate): string[] {
-  if (codeFiles.length <= maxFiles) return []
+export function phaseGranularityWarnings(
+  codeFiles: string[],
+  maxFiles: number,
+  gate: GranularityGate = DEFAULTS.granularityGate,
+  /**
+   * 🔴 REQ-2026-107: 이 phase가 선언한 상한(`phases[].max_files`, 없으면 null).
+   * 판정은 `judgePhaseArea`(정본)가 하고 여기서는 **문구만** 만든다 — 두 표면(리뷰 preflight·D18)은
+   * 사용자가 할 수 있는 조치가 달라 문구를 공유하면 한쪽에 거짓 안내가 된다.
+   */
+  declaredMaxFiles: number | null = null,
+): string[] {
+  // 🔴 판정을 여기서 다시 쓰지 않는다(REQ-2026-107). 이 REQ가 고친 결함이 정확히 "정책 SSOT가
+  //    review-codex로 옮겨갔는데 여기 사본이 남아 선언을 무시한 것"이다.
+  const v = judgePhaseArea(codeFiles.length, declaredMaxFiles, maxFiles)
+  if (!v.over) return []
   // 🔴 문구는 **실제 설정에 종속**된다(phase-2 r01 P1). `granularityGate:"warn"`인 사용자에게
   //    "막힙니다"라고 하면 도구가 하지 않을 일을 약속하는 것이다 — 안내가 거짓이면 사람은 안내를 믿지 않게 된다.
   const tail =
     gate === 'block'
       ? '다음 phase 리뷰는 이 임계를 넘으면 실행 전에 막힙니다: staging을 줄이거나 state.json의 phases[]에 "max_files"를 선언하세요.'
       : 'granularityGate="warn"이라 리뷰는 그대로 진행됩니다 — 면적을 줄이면 리뷰 라운드가 줄어듭니다(실측: >8파일 평균 2.4R vs ≤8파일 1.4R).'
-  return [`phase 코드 변경 ${codeFiles.length}파일 > 권고 ${maxFiles} — 리뷰 면적 큼(granularity 정책). ${tail}`]
+  // 🔴 임계의 **출처**를 드러낸다(REQ-2026-107 DEC-4) — 사용자가 자기 선언이 인정됐는지 출력에서
+  //    바로 확인할 수 있어야 이런 오탐의 재발을 사람이 알아챈다.
+  const limitLabel = v.source === 'declared' ? `선언한 상한 ${v.limit}` : `권고 ${v.limit}`
+  return [`phase 코드 변경 ${v.count}파일 > ${limitLabel} — 리뷰 면적 큼(granularity 정책). ${tail}`]
 }
 
 /** 설치 모드(REQ-2026-014 D19 진단). `req:*` 스크립트 **값의 형태**로만 판정한다. */
@@ -536,11 +577,21 @@ export function runChecks(inp: DoctorInputs): Check[] {
 
   // D18(Phase C, granularity 정책): phase 코드 변경 파일 수가 임계 초과면 분할 권고. **advisory WARN — 절대 FAIL 아님**.
   // 임계 = config(cfg.granularityMaxFiles) 주입, 미지정 시 GRANULARITY_MAX_FILES(현재 동작).
+  // 🔴 REQ-2026-107: 임계는 **선언 우선**(phases[].max_files), 대상은 **staged 코드 파일**.
+  //    둘 다 리뷰 preflight(review-codex)와 같은 정본을 쓴다 — 이전에는 선언을 무시하고
+  //    D13의 codeChanges(unstaged/untracked 포함)를 세어, 선언으로 리뷰를 정당하게 통과한 phase에도
+  //    "8파일 초과" WARN을 냈다(소비자 5개 티켓에서 실발화).
   {
     const maxFiles = inp.granularityMaxFiles ?? GRANULARITY_MAX_FILES
-    const adv = phaseGranularityWarnings(codeChanges, maxFiles, inp.granularityGate ?? DEFAULTS.granularityGate)
+    const declared = inp.declaredMaxFiles ?? null
+    // undefined면 기존 동작 보존(D13 지표로 폴백) — 이 입력을 주지 않는 호출부는 무회귀.
+    const files = inp.stagedCodeFiles ?? codeChanges
+    const adv = phaseGranularityWarnings(files, maxFiles, inp.granularityGate ?? DEFAULTS.granularityGate, declared)
     if (adv.length) c.push({ id: 'D18', level: 'WARN', msg: adv.join(' / ') })
-    else c.push({ id: 'D18', level: 'OK', msg: `granularity OK(코드 변경 ${codeChanges.length}파일 ≤ ${maxFiles})` })
+    else {
+      const limitLabel = declared === null ? `권고 ${maxFiles}` : `선언한 상한 ${declared}`
+      c.push({ id: 'D18', level: 'OK', msg: `granularity OK(코드 변경 ${files.length}파일 ≤ ${limitLabel})` })
+    }
   }
 
   // D15: 온디스크 응답이 NEEDS_FIX면 findings·next_action이 actionable해야 함(스키마/validateVerdict와 중복이라도 명시 점검).
@@ -1159,6 +1210,11 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // `-z`: 경로 인용 없음(설계 D11) → core.quotePath 불필요. --untracked-files=all: `?? responses/` collapse 방지.
     statusEntries: parseStatusZ(git([...STATUS_Z_ARGS])),
     scratch: reviewScratchPaths(ticketRel),
+    // 🔴 REQ-2026-107: D18은 리뷰 preflight와 **같은 정본**으로 판정한다.
+    //    임계 = 현재 phase의 `max_files` 선언(없으면 config), 대상 = staged 코드 파일.
+    //    `current_phase`가 없으면 선언도 없음(null) → config 기본, 즉 기존 동작.
+    declaredMaxFiles: declaredPhaseMaxFiles(state, typeof state.current_phase === 'string' ? state.current_phase : null),
+    stagedCodeFiles: phaseCodeFiles(git([...STAGED_NAMES_Z_ARGS]).split('\0'), ticketRel),
     responseVerdict,
     responseStructureOk,
     designApproved: state.design_approved === true,

@@ -646,6 +646,24 @@ describe('[C] phaseGranularityWarnings — phase 분할 권고(순수)', () => {
   it('정확히 임계 → []', () => expect(phaseGranularityWarnings(Array.from({ length: 8 }, (_, i) => `f${i}.ts`), 8)).toEqual([]))
   it('임계 초과 → WARN 메시지', () =>
     expect(phaseGranularityWarnings(Array.from({ length: 9 }, (_, i) => `f${i}.ts`), 8).length).toBeGreaterThan(0))
+
+  /**
+   * 🔴 REQ-2026-107: 선언(`phases[].max_files`)이 있으면 그것이 임계다 — 리뷰 preflight와 같은 판정.
+   *    이전에는 이 함수가 선언을 **인자로 받지도 않아**, 선언으로 리뷰를 정당하게 통과한 phase에도
+   *    "8파일 초과"를 냈다(소비자 5개 티켓에서 실발화).
+   */
+  const files = (n: number): string[] => Array.from({ length: n }, (_, i) => `f${i}.ts`)
+  it('🔴 선언 상한 20 + 10파일 → [] (오탐 없음)', () =>
+    expect(phaseGranularityWarnings(files(10), 8, 'warn', 20)).toEqual([]))
+  it('선언 없음 + 10파일 → WARN (기존 동작 보존)', () =>
+    expect(phaseGranularityWarnings(files(10), 8, 'warn', null).length).toBe(1))
+  it('선언 상한 5 + 10파일 → WARN이고 문구가 **선언한 상한 5**를 가리킨다(DEC-4)', () => {
+    const [msg] = phaseGranularityWarnings(files(10), 8, 'warn', 5)
+    expect(msg).toContain('선언한 상한 5')
+    expect(msg).not.toContain('권고 8') // config 임계를 잘못 인용하지 않는다
+  })
+  it('선언 없을 때 문구는 **권고**로 표기한다', () =>
+    expect(phaseGranularityWarnings(files(10), 8, 'warn', null)[0]).toContain('권고 8'))
 })
 
 describe('[C] D18 — granularity advisory(절대 FAIL 아님)', () => {
@@ -657,6 +675,14 @@ describe('[C] D18 — granularity advisory(절대 FAIL 아님)', () => {
     expect(runChecks(mk(validDesignOver)).filter((c) => c.id === 'D18' && c.level === 'FAIL')).toEqual([]))
   it('코드 변경 적음 → D18 OK', () =>
     expect(lvl(runChecks(mk({ designApproved: true, designApprovedHash: 'H', currentDesignHash: 'H', statusEntries: E('M  src/a.ts') })), 'D18')).toBe('OK'))
+
+  /** 🔴 REQ-2026-107: runChecks 배선 — 선언이 D18까지 실제로 전달되는지(순수 함수 단위만으로는 배선을 못 잡는다). */
+  it('🔴 declaredMaxFiles=20 + 12파일 staged → D18 OK (리뷰 게이트가 통과시킨 phase를 경고하지 않는다)', () =>
+    expect(lvl(runChecks(mk({ ...validDesignOver, declaredMaxFiles: 20 })), 'D18')).toBe('OK'))
+  it('declaredMaxFiles 미지정(undefined) → 기존대로 WARN (무회귀)', () =>
+    expect(lvl(runChecks(mk(validDesignOver)), 'D18')).toBe('WARN'))
+  it('🔴 D18이 세는 것은 stagedCodeFiles다 — 주어지면 codeChanges 대신 그것을 쓴다', () =>
+    expect(lvl(runChecks(mk({ ...validDesignOver, stagedCodeFiles: ['src/only.ts'] })), 'D18')).toBe('OK'))
 
   it('[P2] config granularityMaxFiles=2 → 3파일이면 WARN(임계 주입)', () => {
     const three = ['M  src/a.ts', 'M  src/b.ts', 'M  src/c.ts']
