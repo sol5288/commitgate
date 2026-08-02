@@ -2,15 +2,32 @@
   "id": "REQ-2026-103",
   "branch": "feat/req-2026-103-dead-code-and-adapter-restore",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc07e-73f1-75e1-b490-0452558ce7f7",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc086-565d-73c3-8b68-ac374fa99a67",
+  "review_base_sha": "ac57dee01473a360dd3717233c3a65a7ab59d2c1",
+  "review_diff_hash": "d0e1c08e6c27eff41ec35f35f9e9fe3168dc041c",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "4a82323c7873f2b1060f49afd773f25c5112fa08d557a72135cedc9d909e5ff0",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-dead-review-wiring",
+  "phases": [
+    {
+      "id": "phase-1-dead-review-wiring",
+      "approved": true
+    },
+    {
+      "id": "phase-2-misc-dead-symbols",
+      "approved": false
+    },
+    {
+      "id": "phase-3-gitadapter-restore",
+      "approved": false
+    },
+    {
+      "id": "phase-4-changelog",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +36,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-dead-review-wiring#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-dead-review-wiring",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +66,23 @@
     "design_hash": "4a82323c7873f2b1060f49afd773f25c5112fa08d557a72135cedc9d909e5ff0"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-dead-review-wiring",
     "outcome": "approved",
-    "compare_hash": "7eb7ca5bf13dee3c07279d94ea6d03ebe853e3a2b85360058eeba7242f7bc65f",
+    "compare_hash": "779789bff2295cdda7f3daec4be6aaf02a61caef393795f7ae1ffaedb5359be5",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T03:22:33.724Z",
+    "at": "2026-08-02T03:31:31.274Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "d0e1c08e6c27eff41ec35f35f9e9fe3168dc041c",
+      "phase_id": "phase-1-dead-review-wiring",
+      "consumed_by_commit_sha": "145b453b66ac90a64e105dba83596b8d2c4918ad",
+      "approval_consumed_at": "2026-08-02T03:32:04.278Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
