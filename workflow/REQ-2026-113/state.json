@@ -2,16 +2,54 @@
   "id": "REQ-2026-113",
   "branch": "feat/req-2026-113-delta-escalation-observability",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fc24a-2595-7212-94cf-364ee700f2b5",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "3bf3cde68dce7a3bda3536454e0e47ba2576944449fe0bc6ec89af2d083d934a",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "efd55b35689a7bba74087ec2bbea597046a6ff24",
+    "design": "d8f79342c0d413db3bfa7a62c0120792f64ff605",
+    "plan": "e9b2cda907c7f00084341668328815364b60460d"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-113/responses/design-r01-approved.json",
+    "response_sha256": "275bf144d068173b009b595fcad7ae748a0da618dded056dd5b3cbdfca163c51",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "805f5c1176dad76f72aebedc8f5c79159c11eeb5",
+    "codex_thread_id": "019fc24a-2595-7212-94cf-364ee700f2b5",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-02T11:45:14.442Z",
+    "design_hash": "3bf3cde68dce7a3bda3536454e0e47ba2576944449fe0bc6ec89af2d083d934a"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "9ce26918c04dd6b6f6751fc217d0764f4c13c97de0617f9e7e56771f516d46ac",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-02T11:45:14.442Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
