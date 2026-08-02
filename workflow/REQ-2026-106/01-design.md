@@ -10,7 +10,8 @@
 | 2 | `review-codex.ts:122` `ReviewPromptInput` · `:198` `assembleReviewPrompt` | 이미 export. 이동 없이 골든을 붙일 수 있다 |
 | 3 | `lib/evidence.ts:18` | `import type { ApprovalEvidence, ReviewKind } from '../review-codex'` |
 | 4 | `lib/review-exception.ts:14` · `lib/review-ledger.ts:22` | `import type { ReviewKind } from '../review-codex'` |
-| 5 | `review-codex.ts` | `ReviewKind`·`ApprovalEvidence`·`WorkflowState` 정의처. 9개 CLI가 여기서 import |
+| 5 | `review-codex.ts:94`·`:618` | `ReviewKind`·`ApprovalEvidence` 정의처. 9개 CLI도 여기서 import(re-export로 보존) |
+| 6 | `review-codex.ts:1000` `WorkflowState` | **lib 어느 모듈도 import하지 않는다**(실측). 폐포가 6~8개 타입(367·807·1189·1491행 등)에 걸쳐 있다 → DEC-4로 범위 밖 |
 
 ## 핵심 설계 결정
 
@@ -23,7 +24,16 @@ expect(norm(assembleReviewPrompt(input))).toBe(norm(EXPECTED_PHASE_PROMPT))
 
 - 🔴 **expected를 SUT로 구성하지 않는다**(REQ-2026-031 교훈). `import`한 상수·템플릿으로 expected를 조립하면 SUT가 바뀔 때 expected도 같이 바뀌어 **동어반복**이 된다.
 - 🔴 **`norm`은 CRLF→LF 정규화만 한다**(REQ-2026-042 교훈: autocrlf 환경에서 Write는 LF, Edit는 CRLF를 남겨 같은 내용이 갈린다). 그 외 공백은 **정규화하지 않는다** — 공백이 계약의 일부다.
-- 케이스는 **계약이 갈리는 축**만 덮는다: `kind=design` / `kind=phase` / `previousFindingsToClose` 유무. 조합 폭발을 노리지 않는다.
+- 케이스는 **계약이 갈리는 축**을 덮는다. 두 축은 **독립**이므로 곱으로 덮어야 한다:
+
+  | | `previousFindingsToClose` 없음 | 있음 |
+  |---|---|---|
+  | `kind=phase` | ✅ 골든 1 | ✅ 골든 2 |
+  | `kind=design` | ✅ 골든 3(full) | ✅ 골든 6 |
+
+  design 모드의 하위 변형(delta·shipped phases)은 별도 골든 4·5로 둔다.
+
+  🔴 **`design` × `previousFindings` 조합은 설계 재리뷰(r01 NEEDS_FIX → r02)의 정상 경로다** — 이 REQ 자신이 지금 밟고 있는 경로이기도 하다. 조합을 빠뜨리면 "previousFindings를 phase에서만 낸다"로 바뀌어도 골든이 통과한다(설계 r02 P1이 지적한 지점).
 
 ### DEC-2 골든의 값어치는 **변이검사로 증명한다**
 
@@ -31,21 +41,30 @@ expect(norm(assembleReviewPrompt(input))).toBe(norm(EXPECTED_PHASE_PROMPT))
 
 ### DEC-3 타입은 **정의를 옮기고 모놀리스는 re-export**한다
 
-`lib/review-types.ts`를 만들어 `ReviewKind`·`ApprovalEvidence`·`WorkflowState`(및 그들이 참조하는 보조 타입)의 **정의를 옮긴다**. `review-codex.ts`는 `export type { ... } from './lib/review-types'`로 **re-export를 유지**한다.
+`lib/review-types.ts`를 만들어 **`ReviewKind`·`ApprovalEvidence`의 정의를 옮긴다**(DEC-4가 범위를 이 둘로 확정). `review-codex.ts`는 `export type { ... } from './lib/review-types'`로 **re-export를 유지**한다.
 
 - 이유: 9개 CLI가 `from './review-codex'`로 이 타입들을 가져온다. re-export를 유지하면 **호출부를 하나도 건드리지 않고** 역방향 의존만 끊을 수 있다. 검수 면적이 파일 3개로 줄어든다.
 - `lib/`의 3개 모듈은 `from './review-types'`로 바꾼다 → `lib/`이 leaf가 된다.
 - 🔴 **런타임 코드는 옮기지 않는다.** `type`·`interface`만이다. `.js` 산출물이 없는 타입 전용 이동이라 동작 변화가 원리적으로 불가능하다 — 이것이 이 phase의 안전 논거다.
 
-### DEC-4 어떤 타입까지 내리는가 — **의존 폐포까지만**
+### DEC-4 어떤 타입까지 내리는가 — **역방향 의존이 실제로 쓰는 것까지만**
 
-`WorkflowState`가 참조하는 `SeriesRecord`·`PhaseEntry` 등이 함께 가야 한다면 함께 옮긴다(타입은 반쪽만 옮길 수 없다). 그러나 **폐포를 넘어서 "관련돼 보이는 것"을 끌고 가지 않는다** — 이 REQ의 목적은 역방향 의존 해소이지 타입 재조직이 아니다. 무엇을 옮겼는지는 typecheck가 판정한다.
+구현 착수 전 실측으로 초안을 좁혔다. `lib/`의 3개 모듈이 import하는 타입은 **`ReviewKind`·`ApprovalEvidence` 둘뿐**이고, `ApprovalEvidence`의 폐포는 `ReviewKind` 하나다. 이 둘만 옮기면 `grep "from '../review-codex'" scripts/req/lib/`가 0이 되어 **목표가 완전히 달성된다.**
+
+`WorkflowState`는 내리지 않는다:
+
+- **어떤 lib 모듈도 쓰지 않는다** → leaf-ness와 무관하다.
+- 폐포가 `PhaseEntry`·`SeriesRecord`·`HumanResolution`·`DesignDocBlobs`·`BlockedReviewMarker`(→`BlockedReviewTarget`)·`ReviewExceptionConfirmed`·`SuccessorOf`로 번져 파일 곳곳(367·807·1189·1491행 등)을 건드린다.
+- 그것이 필요해지는 작업(series/budget 추출)은 **이 REQ가 명시적으로 미룬 것**이다. 미룬 일을 위해 지금 옮기면 투기적 변경이고, 검수 면적만 몇 배가 된다.
+
+이 REQ의 목적은 **역방향 의존 해소**이지 타입 재조직이 아니다. 나중에 추출을 할 때 그 REQ가 필요한 만큼 더 내리면 된다 — re-export가 유지되므로 점진 이동이 가능하다.
 
 ## Phase별 구현
 
 | phase | 내용 | 파일 |
 |---|---|---|
-| `phase-1-prompt-byte-goldens` | 요구 1 — 골든 + 변이검사. **코드 이동 0** | 1 |
+| `phase-1-prompt-byte-goldens` | 요구 1 — 골든 5건 + 변이검사. **코드 이동 0** (커밋됨 `f89e58a`) | 1 |
+| `phase-1b-design-prevfindings-golden` | 요구 1 보완 — 누락된 `design` × `previousFindings` 조합(설계 r02 P1) | 1 |
 | `phase-2-review-types-descent` | 요구 2 — `lib/review-types.ts` 신설·3개 lib 전환·모놀리스 re-export | 5 |
 | `phase-3-changelog` | CHANGELOG(앞 phase SHA 포인터 표 포함) | 1 |
 
@@ -53,7 +72,8 @@ phase-1이 먼저인 이유: **안전망을 먼저 친다.** phase-2는 타입�
 
 ## 변경 파일
 
-- phase-1: `tests/unit/review-prompt-golden.test.ts`(신규)
+- phase-1: `tests/unit/review-prompt-golden.test.ts`(신규·커밋됨)
+- phase-1b: `tests/unit/review-prompt-golden.test.ts`(케이스 추가)
 - phase-2: `scripts/req/lib/review-types.ts`(신규) · `scripts/req/review-codex.ts` · `scripts/req/lib/{evidence,review-exception,review-ledger}.ts`
 - phase-3: `CHANGELOG.md`
 

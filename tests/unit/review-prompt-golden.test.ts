@@ -149,6 +149,54 @@ describe('[REQ-2026-106] assembleReviewPrompt — 바이트 골든', () => {
     expect(norm(actual)).toBe(expected)
   })
 
+  /**
+   * 🔴 REQ-2026-106 phase-1b(설계 r02 P1): `kind` 축과 `previousFindingsToClose` 축은 조립 코드에서
+   *    **독립**이므로 곱으로 덮어야 한다. phase-1은 각 축을 따로만 덮어 이 조합이 비어 있었다.
+   *
+   *    이 조합은 **설계 재리뷰(r01 NEEDS_FIX → r02)의 정상 경로**다 — 이 REQ 자신이 밟은 경로이기도 하다.
+   *    비어 있으면 "previousFindings를 phase에서만 낸다"로 바뀌어도 다른 골든은 전부 통과한다.
+   */
+  it('kind=design + previousFindingsToClose: 설계 재리뷰 경로의 바이트', () => {
+    const actual = assembleReviewPrompt({
+      reviewKind: 'design',
+      reviewContext: {
+        branch: 'feat/req-2026-106-y',
+        reviewBaseSha: 'sha4',
+        reviewTree: 'TREE4',
+        phase: 'REVIEW_REQUEST',
+        previousFindingsToClose: '# 직전 findings\n- P1 설계 지적',
+      },
+      reviewBaseSha: 'sha4',
+      requestBody: 'R2',
+      stagedDiff: '',
+      designDocs: { requirement: 'RQ2', design: 'DS2', plan: 'PL2' },
+    })
+    const expected = [
+      '# Review Context',
+      '- branch: feat/req-2026-106-y',
+      '- review_base_sha: sha4',
+      '- review_tree: TREE4',
+      '- phase: REVIEW_REQUEST',
+      '# 직전 findings',
+      '- P1 설계 지적',
+      '---',
+      'REVIEW_BASE_SHA: sha4',
+      '---',
+      'REVIEW_KIND: design (응답 review_kind가 동일해야 함)',
+      '---',
+      'R2',
+      '---',
+      '# 권위 아티팩트 = 설계 문서 00/01/02 (리뷰 대상 = 바인딩 대상)',
+      '## 00-requirement.md',
+      'RQ2',
+      '## 01-design.md',
+      'DS2',
+      '## 02-plan.md',
+      'PL2',
+    ].join('\n')
+    expect(norm(actual)).toBe(expected)
+  })
+
   it('kind=design + 이미 커밋된 phase가 있으면 권위 아티팩트 **뒤**에 참고 블록', () => {
     const actual = assembleReviewPrompt({
       reviewKind: 'design',

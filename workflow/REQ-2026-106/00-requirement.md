@@ -29,7 +29,9 @@ A3에서 JSONL 원장 3형제 제네릭화를 기각한 근거는 "세 파일을
    - 🔴 **expected를 SUT로 구성하지 않는다**(REQ-2026-031 교훈: import한 상수로 expected를 만들면 동어반복이 된다). literal을 테스트 파일에 박는다.
    - 🔴 **줄바꿈을 정규화한다**(REQ-2026-042 교훈: autocrlf 환경에서 Write=LF·Edit=CRLF로 갈린다).
 
-2. **`ReviewKind`·`ApprovalEvidence`·`WorkflowState`를 `lib/review-types.ts`로 내린다.** 현재 `lib/`의 3개 모듈이 모놀리스에서 타입을 import한다 — **`lib/`이 leaf가 아니다.** 타입 전용 import라 런타임 순환은 없지만, 이 방향이 남아 있는 한 어떤 추출도 순환을 만든다. 아키텍처 역전 자체가 결함이다.
+2. **`lib/`이 모놀리스에서 타입을 import하는 방향을 끊는다.** 현재 `lib/`의 3개 모듈이 `../review-codex`에서 타입을 가져온다 — **`lib/`이 leaf가 아니다.** 타입 전용 import라 런타임 순환은 없지만 아키텍처 역전 자체가 결함이고, 이 방향이 남아 있는 한 어떤 추출도 순환을 만든다.
+
+   🔴 **옮기는 것은 실제로 필요한 타입만이다**(구현 착수 전 실측으로 범위를 좁혔다). lib 3개가 쓰는 것은 **`ReviewKind`·`ApprovalEvidence` 둘뿐**이다(`evidence.ts:18`·`review-exception.ts:14`·`review-ledger.ts:22`). 초안은 `WorkflowState`도 함께 내리려 했으나 **어떤 lib 모듈도 쓰지 않고**, 의존 폐포로 `PhaseEntry`·`SeriesRecord`·`HumanResolution`·`DesignDocBlobs`·`BlockedReviewMarker`(→`BlockedReviewTarget`)·`ReviewExceptionConfirmed`·`SuccessorOf`까지 6~8개를 파일 곳곳(367·807·1189·1491행 등)에서 끌고 온다. **그것들이 필요해지는 추출(series/budget)은 이 REQ가 명시적으로 미룬 작업이다** — 미룬 일을 위해 지금 옮기는 것은 투기다.
 
 ## 비요구(명시적 범위 밖) — 판단 근거를 남긴다
 
