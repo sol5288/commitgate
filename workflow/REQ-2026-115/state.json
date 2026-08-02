@@ -2,15 +2,20 @@
   "id": "REQ-2026-115",
   "branch": "feat/req-2026-115-d15-rationale-and-exit-oracle",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc286-a36f-7061-90af-459034fb37ca",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc28a-71ef-7f20-bc1d-c896c155774c",
+  "review_base_sha": "3383e0edcb0e1b8b41ba50432fda08dfa1dce9c1",
+  "review_diff_hash": "7c72440b72ee92663972ebbcc2f11d724ae0d280",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "33bc8fb9e3f442a91413991355aecf5a1ccc5b86d19ad2e8c5284e825cc2aac8",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-d15-rationale",
+  "phases": [
+    {
+      "id": "phase-1-d15-rationale",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -21,16 +26,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-d15-rationale#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-d15-rationale",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-d15-rationale",
     "outcome": "approved",
-    "compare_hash": "b9f06240b22a9b4fad9bd431e2d60b99a0639efa7e6fb0dcb401fb96bc80f894",
+    "compare_hash": "5840f108a24e1e426b69812b07590fa31a84605e3b928affc3315a643070c0ed",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T12:51:08.530Z",
+    "at": "2026-08-02T12:55:10.198Z",
     "findings": [],
     "elided_count": 0
   },
@@ -51,5 +63,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-02T12:51:08.530Z",
     "design_hash": "33bc8fb9e3f442a91413991355aecf5a1ccc5b86d19ad2e8c5284e825cc2aac8"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "7c72440b72ee92663972ebbcc2f11d724ae0d280",
+      "phase_id": "phase-1-d15-rationale",
+      "consumed_by_commit_sha": "d952e031a0294b2792db7f3720bcd8e6f9cbf883",
+      "approval_consumed_at": "2026-08-02T12:55:41.266Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
