@@ -2,16 +2,54 @@
   "id": "REQ-2026-108",
   "branch": "feat/req-2026-108-d5-dead-field-severity",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fc13e-a8a2-70c0-8b41-ed450763ab65",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "9210038236b7cd380107405312ee556f42b17fec1c18dee0a50cd36b89bf667d",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "d9714f367ba6d59edb6272cf8c745ae83293709c",
+    "design": "aa926a714c6efd854a684fd7247301f3a6f33091",
+    "plan": "c1961d135531a72b97a7251222d4a037360f5511"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-108/responses/design-r01-approved.json",
+    "response_sha256": "176d247177c6aba4bde211eaedc29469011bd6e8a39f13c9c5c5a6d3a387874a",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "ab400634edf9bce03d1c1f0ab51806d15d5320a5",
+    "codex_thread_id": "019fc13e-a8a2-70c0-8b41-ed450763ab65",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-02T06:52:49.669Z",
+    "design_hash": "9210038236b7cd380107405312ee556f42b17fec1c18dee0a50cd36b89bf667d"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "7b96f3073b91c40519e9727d4b6ada0a56bfe6a7318e556c8bf90ea102a6a600",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-02T06:52:49.669Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
