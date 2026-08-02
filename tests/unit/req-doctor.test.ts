@@ -228,9 +228,27 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     expect(lvl(runChecks(mk({ branchExists: false })), 'D3')).toBe('FAIL')
   })
 
-  it('D5: codex_thread_id 형식 오류 → FAIL, 정상 UUID → OK', () => {
-    expect(lvl(runChecks(mk({ state: { codex_thread_id: 'not-uuid' } })), 'D5')).toBe('FAIL')
+  /**
+   * 🔴 REQ-2026-108: D5는 **WARN 상한**이다. 이 필드를 읽는 코드는 D5 자신뿐이고
+   *    (REQ-2026-103이 마지막 소비 경로를 제거), `req:commit`이 doctor를 하드 게이트로 spawn하므로
+   *    FAIL이면 codex가 thread id 형식을 바꾸는 날 전 소비자의 커밋이 동시에 막힌다.
+   */
+  it('D5: codex_thread_id 형식 오류 → WARN, 정상 UUID → OK', () => {
+    expect(lvl(runChecks(mk({ state: { codex_thread_id: 'not-uuid' } })), 'D5')).toBe('WARN')
     expect(lvl(runChecks(mk({ state: { codex_thread_id: '019eeca1-2356-76c3-aa38-9af48842caea' } })), 'D5')).toBe('OK')
+  })
+
+  it('D5: 미설정(undefined) → OK (무회귀)', () =>
+    expect(lvl(runChecks(mk({ state: {} })), 'D5')).toBe('OK'))
+
+  /**
+   * 🔴 이 REQ의 요구는 "WARN이다"가 아니라 **"커밋을 막지 않는다"**이다.
+   *    `main()`의 exit 규칙이 `FAIL ≥ 1 → exit 1`이므로 FAIL 0건 = exit 0 = `req:commit` 통과다.
+   */
+  it('🔴 D5 형식 오류만으로는 FAIL이 0건이다 — 커밋이 막히지 않는다', () => {
+    const checks = runChecks(mk({ state: { codex_thread_id: 'not-uuid' } }))
+    expect(checks.filter((c) => c.level === 'FAIL')).toEqual([])
+    expect(lvl(checks, 'D5')).toBe('WARN') // 보고는 계속한다(감사 기록에 남는 값이다)
   })
 
   it('D6: commit_allowed=true인데 응답 없음 → FAIL', () => {

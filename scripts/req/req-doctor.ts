@@ -473,9 +473,23 @@ export function runChecks(inp: DoctorInputs): Check[] {
   else c.push({ id: 'D3', level: 'OK', msg: 'branch 존재' })
 
   // D5: codex_thread_id 형식(설정 시 UUID)
+  //
+  // 🔴 **WARN 상한이다 — FAIL로 올리지 않는다**(REQ-2026-108). 세 가지가 함께 근거다:
+  //
+  //   1. **이 필드를 읽는 코드는 이 검사 자신뿐이다.** REQ-2026-013 P4가 재리뷰를 stateless로 고정하며
+  //      소비 분기를 상수로 죽였고, REQ-2026-103이 그 죽은 배선을 제거했다. 지금은 기록 전용이다
+  //      (승인 증거 스냅샷 `ApprovalEvidence.codex_thread_id`에 남는다 — 그래서 검사 자체는 유지한다).
+  //   2. **FAIL은 곧 커밋 차단이다.** `req:commit`이 doctor를 하드 게이트로 spawn한다 — D19~D27이 전부
+  //      WARN 상한인 바로 그 이유이며, D5만 그 원칙보다 먼저 만들어져 밖에 남아 있었다.
+  //   3. **비대칭 비용.** 값의 출처는 codex CLI가 내는 `thread.started.thread_id`다. codex가 그 형식을
+  //      UUID가 아닌 것으로 바꾸는 날 **전 소비자의 커밋이 동시에 막힌다** — 아무것도 읽지 않는 필드
+  //      때문에. 같은 비대칭을 `assertReviewerReady`(review-codex)가 이미 반대 방향으로 판단해 두었다
+  //      ("false block은 codex가 출력 문자열을 바꾼 날 모든 리뷰를 동시에 멈춘다").
+  //
+  // 판정 조건과 메시지 문자열은 **그대로**다(REQ-2026-108 DEC-1) — 바뀐 것은 심각도 하나뿐이다.
   const tid = s.codex_thread_id
   if (typeof tid === 'string' && tid.length > 0 && !UUID_RE.test(tid))
-    c.push({ id: 'D5', level: 'FAIL', msg: `codex_thread_id 형식 오류: ${tid}` })
+    c.push({ id: 'D5', level: 'WARN', msg: `codex_thread_id 형식 오류: ${tid}` })
   else c.push({ id: 'D5', level: 'OK', msg: 'thread_id 형식 OK(또는 미설정)' })
 
   // D6: commit_allowed=true → 온디스크 응답 재파싱·재검증 + **실제 승인 여부**·state 바인딩 정합(§9.6, DEC-WF-025).
