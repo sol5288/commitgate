@@ -2,17 +2,18 @@
   "id": "REQ-2026-111",
   "branch": "feat/req-2026-111-doctor-observability",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc1dd-d991-7be1-bdec-eabe44d26fc1",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc1df-4752-7d72-8c69-d08b04eb3ad8",
+  "review_base_sha": "50cde18feb745eeb02285aeb69c16b829f3840dd",
+  "review_diff_hash": "d39d86a2b2ae10a3c71083bdb1f63939ebb57b50",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "b93e7c716b5e541b05b393257f8a4ffac9e43c7e5a7a697cf181ad12803fb605",
-  "current_phase": null,
+  "current_phase": "phase-1-doctor-run-log",
   "phases": [
     {
-      "id": "phase-1-doctor-run-log"
+      "id": "phase-1-doctor-run-log",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -32,6 +33,13 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-doctor-run-log#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-doctor-run-log",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -40,13 +48,13 @@
     "plan": "c5dc2854cfb67626d2282f18e5b3c3e4e1617ca4"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-doctor-run-log",
     "outcome": "approved",
-    "compare_hash": "15d7ee61bcbded423b36f216ef4ca17a58968e2467b6f8aabeaaeaf9d88a778e",
+    "compare_hash": "036bdbd3ce6360c5a61a79c914e50f7bc21c9c3ac671352c41cc685aa623737f",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T09:46:38.981Z",
+    "at": "2026-08-02T09:48:27.951Z",
     "findings": [],
     "elided_count": 0
   },
@@ -62,5 +70,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-02T09:46:38.981Z",
     "design_hash": "b93e7c716b5e541b05b393257f8a4ffac9e43c7e5a7a697cf181ad12803fb605"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "d39d86a2b2ae10a3c71083bdb1f63939ebb57b50",
+      "phase_id": "phase-1-doctor-run-log",
+      "consumed_by_commit_sha": "b3d42f70c1637a51e8774dedd880a772d222acb2",
+      "approval_consumed_at": "2026-08-02T09:49:22.793Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
