@@ -2,14 +2,14 @@
   "id": "REQ-2026-103",
   "branch": "feat/req-2026-103-dead-code-and-adapter-restore",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc08e-19d1-7ec2-ae36-226e6fe63300",
-  "review_base_sha": "f468432408a69c6796cc66555b6178c4dd544e19",
-  "review_diff_hash": "a4136351836854638d030916891575cd3ed56c76",
+  "codex_thread_id": "019fc08f-b171-7580-969e-476171cd3ebf",
+  "review_base_sha": "1e38455c6dc9ae069801ffb872e342bea450201e",
+  "review_diff_hash": "c9c284c22de45e76c7ee389bd483275f575f266a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "4a82323c7873f2b1060f49afd773f25c5112fa08d557a72135cedc9d909e5ff0",
-  "current_phase": "phase-3-gitadapter-restore",
+  "current_phase": "phase-4-changelog",
   "phases": [
     {
       "id": "phase-1-dead-review-wiring",
@@ -25,7 +25,7 @@
     },
     {
       "id": "phase-4-changelog",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -59,6 +59,13 @@
       "phase_id": "phase-3-gitadapter-restore",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-changelog#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4-changelog",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -81,12 +88,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-3-gitadapter-restore",
+    "phase_id": "phase-4-changelog",
     "outcome": "approved",
-    "compare_hash": "903d4da933a53f47fdd706e5ef90cb4b2aad1d9e917ffe69b57ea52aec5ad34e",
+    "compare_hash": "7a5d6c5464b9020324490a699e6e1a5befb60011bdaa77fd0aa66bacd07a4bc9",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T03:39:51.298Z",
+    "at": "2026-08-02T03:41:36.804Z",
     "findings": [],
     "elided_count": 0
   },
@@ -108,6 +115,12 @@
       "phase_id": "phase-3-gitadapter-restore",
       "consumed_by_commit_sha": "4532ddd25224433a10cb74831e148cc2ce7c80c8",
       "approval_consumed_at": "2026-08-02T03:40:12.461Z"
+    },
+    {
+      "approved_tree": "c9c284c22de45e76c7ee389bd483275f575f266a",
+      "phase_id": "phase-4-changelog",
+      "consumed_by_commit_sha": "5791cddc81f86ffb2fcf76fb2d7edff7e9ec50db",
+      "approval_consumed_at": "2026-08-02T03:41:52.501Z"
     }
   ],
   "user_commit_confirmed": null
