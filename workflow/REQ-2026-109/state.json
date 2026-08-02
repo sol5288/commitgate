@@ -2,15 +2,20 @@
   "id": "REQ-2026-109",
   "branch": "feat/req-2026-109-delivery-evidence-ports-dedup",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc16b-175f-7823-a601-077b21f9093f",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc171-1edf-7823-b02c-353460ee8558",
+  "review_base_sha": "aa70ff4ef1c7c807cd6fe531625952e318326858",
+  "review_diff_hash": "83fc12656846136a3b5856e7c46a5ec7988e4995",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "aefc7c2947a3672970cc1f0914537d7b7c23d07b54d13a931d651c2ff0b687a2",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-ports-dedup",
+  "phases": [
+    {
+      "id": "phase-1-ports-dedup",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -21,16 +26,23 @@
       "phase_id": null,
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-ports-dedup#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-ports-dedup",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-ports-dedup",
     "outcome": "approved",
-    "compare_hash": "e9554cb4bab0210f8c786aa2c279821c2b2e774357287a187e5ae1b98b761871",
+    "compare_hash": "97b903db15acc6b9347cd50febf7a3cf7b012384042e0c1a5d611678c0841d69",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T07:41:03.260Z",
+    "at": "2026-08-02T07:48:00.665Z",
     "findings": [],
     "elided_count": 0
   },
@@ -51,5 +63,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-02T07:41:03.260Z",
     "design_hash": "aefc7c2947a3672970cc1f0914537d7b7c23d07b54d13a931d651c2ff0b687a2"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "83fc12656846136a3b5856e7c46a5ec7988e4995",
+      "phase_id": "phase-1-ports-dedup",
+      "consumed_by_commit_sha": "623138bf21c25519c1abb134d5c928b5f9d95c21",
+      "approval_consumed_at": "2026-08-02T07:48:28.557Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
