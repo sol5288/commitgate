@@ -1,16 +1,20 @@
 {
   "id": "REQ-2026-110",
   "branch": "feat/req-2026-110-doctor-high-confirm-diagnostic",
-  "risk_level": "LOW",
-  "codex_thread_id": "019fc1a5-959e-77f3-9ab6-87351f4f9444",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc1aa-bd54-79e1-82c8-e7e855dc8944",
+  "review_base_sha": "29a1bb054e8d2e77a154909f0cbf2337c1f76479",
+  "review_diff_hash": "41592d07f3421bbe27261f578a71115150246265",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "bf8ee4fe717cf8c7d75f7e6be986e6e3f446c28138c0196db4200984ab164a2d",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-d28-high-confirm",
+  "phases": [
+    {
+      "id": "phase-1-d28-high-confirm",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +23,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-d28-high-confirm#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-d28-high-confirm",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +53,24 @@
     "design_hash": "bf8ee4fe717cf8c7d75f7e6be986e6e3f446c28138c0196db4200984ab164a2d"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-d28-high-confirm",
     "outcome": "approved",
-    "compare_hash": "85d9898a6ef5bf2153cc1ae714fd92615da064c4c379bb623c457b252a83f84d",
+    "compare_hash": "b3d032e93ce619eef97d99f72de801e0cf9a844490f496212afe6c9b15eff3c8",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T08:45:11.737Z",
+    "at": "2026-08-02T08:51:18.987Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "risk_level": "LOW",
+  "consumed_approvals": [
+    {
+      "approved_tree": "41592d07f3421bbe27261f578a71115150246265",
+      "phase_id": "phase-1-d28-high-confirm",
+      "consumed_by_commit_sha": "623de80b3d1e027e6962ec4f033dce39589ebbf6",
+      "approval_consumed_at": "2026-08-02T08:53:18.915Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
