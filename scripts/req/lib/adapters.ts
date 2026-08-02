@@ -247,7 +247,6 @@ export function createReviewerProbes(spawnStatus: StatusSpawn = safeSpawnSyncSta
 export interface ReviewRequest {
   prompt: string
   schemaPath: string
-  resumeThreadId: string | null
   cwd: string
   /** REQ-2026-013 P1: codex `-c model=` override. null = 생략(전역 상속). */
   model: string | null
@@ -399,18 +398,19 @@ export function deriveStrictOutputSchema(schemaText: string): string {
 }
 
 /**
- * default ReviewerAdapter(codex CLI). exec(신규)/resume(thread_id) 분기 + `--output-last-message`(임시파일) 캡처 + thread 파싱.
- * - **read-only 리뷰어 강제(양 라운드, REQ-2026-006/R9)**: exec은 `--sandbox read-only`. resume은 `-s/--sandbox` 플래그를 **거부**하므로
- *   (`error: unexpected argument '--sandbox'` — spike 확인) `-c sandbox_mode="read-only"` **config override**로 read-only를 강제한다.
- *   행동 검증: resume(무 override)은 실제 write 성공(sandbox drop=갭 실재), resume(override)은 write가 `Access is denied`로 차단(enforced).
- *   `-c`가 향후 CLI에서 거부되면 resume 자체가 실패=fail-closed(리뷰 미승인).
+ * default ReviewerAdapter(codex CLI). `codex exec` + `--output-last-message`(임시파일) 캡처 + thread 파싱.
+ * - **read-only 리뷰어 강제(REQ-2026-006/R9)**: `--sandbox read-only`.
  * - `--output-schema`에는 원본이 아니라 **strict 파생 copy**를 넘긴다(codex strict mode 400 방지, REQ-2026-005). 원본은 검증 SSOT.
- * - threadId: resume이면 resumeThreadId, exec이면 parseThreadId(stdout)(없으면 null → 호출처가 fail-closed).
+ * - threadId: parseThreadId(stdout)(없으면 null → 호출처가 fail-closed).
  * - codex 미설치/실패 → runner가 throw(그대로 전파, fail-closed).
+ *
+ * 🔴 REQ-2026-103: **resume 분기를 제거했다.** REQ-2026-013 P4가 재리뷰를 stateless로 고정한 뒤 호출부의
+ *    `isResume`가 `false` 상수였으므로 `exec resume` 경로는 도달 불가였다. resume이 부활한다면(REQ-2026-045
+ *    레버 C — 현재 PARKED) 게이트 정책부터 새로 설계해야 하므로 이 조립부를 보존할 실익이 없다.
  */
 export function createCodexReviewerAdapter(run: CodexRunner = defaultCodexRunner): ReviewerAdapter {
   return {
-    review({ prompt, schemaPath, resumeThreadId, cwd, model, reasoningEffort }) {
+    review({ prompt, schemaPath, cwd, model, reasoningEffort }) {
       const tmpDir = mkdtempSync(join(tmpdir(), 'req-codex-'))
       const lastPath = join(tmpDir, 'last.json')
       // 원본(검증 SSOT)을 읽어 strict copy 파생 → temp에 기록 → --output-schema로 전달(archive 검증엔 원본 사용).
@@ -422,12 +422,9 @@ export function createCodexReviewerAdapter(run: CodexRunner = defaultCodexRunner
       const overrideArgs: string[] = []
       if (model) overrideArgs.push('-c', `model="${model}"`)
       if (reasoningEffort) overrideArgs.push('-c', `model_reasoning_effort="${reasoningEffort}"`)
-      // exec·resume 양쪽에 동일 주입(codex `-c`는 두 서브커맨드 모두 받음 — 실측).
-      const args = resumeThreadId
-        ? ['exec', 'resume', resumeThreadId, '-c', 'sandbox_mode="read-only"', ...overrideArgs, '--json', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
-        : ['exec', ...overrideArgs, '--json', '--sandbox', 'read-only', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
+      const args = ['exec', ...overrideArgs, '--json', '--sandbox', 'read-only', '--output-schema', outputSchemaPath, '--output-last-message', lastPath, '-']
       const rawStdout = run(args, prompt, cwd)
-      const threadId = resumeThreadId ?? parseThreadId(rawStdout)
+      const threadId = parseThreadId(rawStdout)
       const lastMessage = existsSync(lastPath) ? readFileSync(lastPath, 'utf8') : ''
       return { rawStdout, lastMessage, threadId }
     },

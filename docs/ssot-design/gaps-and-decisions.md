@@ -30,10 +30,10 @@
 - **근거**: [README.md](../../README.md) "보장하지 않는 것".
 - **재구현 원칙**: 이는 **의도된 경계**다. 강제력은 협조하는 에이전트 유지에 있고, 운영 방어선은 CI·배포 파이프라인. 하드 강제를 추가하려면 별도 설계 필요.
 
-### G-06. resume 경로 미사용(dead-ish path) (영향: 소)
-- **사실**: `createCodexReviewerAdapter`에 resume argv가 있으나 라이브 `main()`이 `isResume=false` 고정이라 현재 사용되지 않는다.
-- **근거**: [scripts/req/review-codex.ts](../../scripts/req/review-codex.ts) 주석(D5 stateless).
-- **재구현 원칙**: 재리뷰는 stateless(새 스레드)가 현재 동작. resume는 향후 opt-in용 보존 코드로 취급.
+### G-06. resume 경로 미사용(dead-ish path) — **해소됨(REQ-2026-103)**
+- **사실(당시)**: `createCodexReviewerAdapter`에 resume argv가 있으나 라이브 `main()`이 `isResume=false` 고정이라 사용되지 않았다.
+- **해소**: REQ-2026-103이 resume 배선을 어댑터까지 제거했다. "향후 opt-in용 보존"이라는 이 항목의 옛 결론은 **철회한다** — 도달 불가 코드를 보존하면 준비된 기능처럼 읽히지만 실제로는 검증된 적이 없다.
+- **재개 조건**: 재리뷰는 stateless(새 스레드)가 현재이자 확정된 동작이다(REQ-2026-045 운영정책). resume은 레버 C(자문 전용)로 PARKED이며, 부활한다면 게이트 정책·감사 설계부터 새로 한다(옛 argv 복원이 아니다).
 
 ### G-06a. 리뷰 라운드 상한·escalation 없음 (영향: 대 — **열린 gap**)
 - **사실**: 설계/phase 리뷰의 **재검수 횟수 상한이 없다.** needs-fix면 무한히 반복할 수 있고, 상한 도달 시 PM에게 넘기는 escalation 경로도 없다. 유일한 회로차단기 `blocked`는 `findings=[]`일 때만 발화하므로([07](07-business-rules-and-state-machines.md) §7), findings가 계속 나오는 비수렴 루프에서는 **영원히 걸리지 않는다**. **이 문장은 `0962d37` 기준으로도 그대로 유효하다 — 상한·escalation 기능은 여전히 구현되지 않았다.**

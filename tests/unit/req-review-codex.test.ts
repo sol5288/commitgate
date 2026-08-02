@@ -70,8 +70,8 @@ import {
   __getReviewerForTest,
   isLegacyTicket,
   recordAttempt,
+  gateAndRecordAttempt,
   closeSeriesApproved,
-  withAttemptRecorded,
   appendLedgerRowToDisk,
   checkReviewBudget,
   consumeReviewException,
@@ -3619,7 +3619,7 @@ describe('REQ-2026-027 phase-2 — series 계수(순수)', () => {
 /**
  * REQ-2026-027 phase-2 — attempt 배선을 **main() 실제 실행 경로**에서 검증(near-e2e).
  *
- * 왜 near-e2e인가(design-r01 P1): `withAttemptRecorded`의 동작은 순수 테스트로 잡히지만, main()이 그 반환
+ * 왜 near-e2e인가(design-r01 P1): `gateAndRecordAttempt`의 동작은 순수 테스트로 잡히지만, main()이 그 반환
  * state(afterAttempt)를 후처리 base로 넘겼는지(R9)는 안 잡힌다 — pre-call state를 baseArgs에 넣으면 최종
  * writeState가 attempt를 되돌린다. fake reviewer 주입으로 main()을 돌려 디스크 state의 attempts를 단언한다.
  */
@@ -4500,18 +4500,23 @@ describe('REQ-2026-027 phase-2 — SCRATCH·fresh-thread(순수)', () => {
   })
 })
 
-/** REQ-2026-027 phase-2 — O2-5: withAttemptRecorded는 call() throw에도 attempt를 되돌리지 않는다. */
-describe('REQ-2026-027 phase-2 — withAttemptRecorded throw 보존(near-fs)', () => {
-  it('O2-5: call()이 throw해도 디스크 state의 attempts가 증가한 채 남는다', () => {
+/**
+ * REQ-2026-027 phase-2 — O2-5: 예산 세탁 차단. attempt는 **외부 호출 전에** 디스크에 영속된다.
+ *
+ * REQ-2026-103: 예전에는 `withAttemptRecorded(ctx, () => { throw })`로 "call()이 throw해도 되돌아가지
+ * 않는다"를 봤다. 그 래퍼는 프로덕션 호출자가 없어 제거됐고, 지키려는 불변식은 원래 `gateAndRecordAttempt`의
+ * 것이다 — **반환 전에 `writeState`한다.** 이후 무엇이 실패하든 되돌릴 수 없다는 성질이 여기서 나온다
+ * (mainImpl은 이 함수가 반환한 **뒤에** 원장 커밋·프롬프트·리뷰어 호출을 한다).
+ */
+describe('REQ-2026-027 phase-2 — attempt 영속 선행(near-fs)', () => {
+  it('O2-5: gateAndRecordAttempt는 반환 시점에 이미 디스크 state의 attempts를 증가시켜 뒀다', () => {
     const dir = mkdtempSync(join(tmpdir(), 'req027-wa-'))
     try {
       const state: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1 }
-      expect(() =>
-        withAttemptRecorded({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: { autoBudget: 5, hardCap: 8 } }, () => {
-          throw new Error('boom') // 외부 호출 중 실패 시뮬레이션
-        }),
-      ).toThrow('boom')
-      // 🔴 기록은 호출 **전**에 writeState됐으므로 throw에도 디스크에 남는다(예산 세탁 차단).
+      const { attempt } = gateAndRecordAttempt({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: { autoBudget: 5, hardCap: 8 } })
+      expect(attempt.attempt).toBe(1)
+      // 🔴 반환 **직후** 디스크를 읽는다 — 외부 호출은 아직 일어나지 않았다. 이미 기록돼 있어야
+      //    이후 호출이 실패해도 회차가 되돌아가지 않는다(예산 세탁 차단).
       const persisted = JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')) as WorkflowState
       const series = (persisted.review_series ?? []) as SeriesRecord[]
       expect(series).toHaveLength(1)
@@ -4713,8 +4718,8 @@ describe('REQ-2026-028 phase-1 — 예산 게이트 강제(main near-e2e)', () =
         expect(series[0]!.attempts).toBe(6)
         expect(series[0]!.closed_reason).toBeNull() // 🔴 NEEDS_FIX라 열린 채 — 예외 소비가 닫으면 실패
         // 7회차(attempts=6)를 예외 없이 시도하면 또 막힌다(우회 없음). 예외가 닫았다면 새 series(0회)로 뚫렸을 것.
-        // withAttemptRecorded로 게이트 경로만 직접 검증(near-e2e는 D10 등 부수 상태에 얽혀 격리가 어렵다).
-        expect(() => withAttemptRecorded({ ticketDir: ticket, state: s6, kind: 'design', phaseId: null, budget: { autoBudget: 5, hardCap: 8 } }, () => 'x')).toThrow(/사람 승인/)
+        // gateAndRecordAttempt로 게이트 경로만 직접 검증(near-e2e는 D10 등 부수 상태에 얽혀 격리가 어렵다).
+        expect(() => gateAndRecordAttempt({ ticketDir: ticket, state: s6, kind: 'design', phaseId: null, budget: { autoBudget: 5, hardCap: 8 } })).toThrow(/사람 승인/)
       } finally { exitSpy.mockRestore() }
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
@@ -4738,8 +4743,8 @@ describe('REQ-2026-028 phase-1 — 예산 게이트 강제(main near-e2e)', () =
       review_exception_confirmed: ex } as unknown as WorkflowState
     const dir = mkdtempSync(join(tmpdir(), 'req028-hash-'))
     try {
-      // withAttemptRecorded가 열린 record의 series_id를 직접 써서 예외를 소비해야 한다(throw 없이).
-      const { state: after } = withAttemptRecorded({ ticketDir: dir, state, kind: 'phase', phaseId: 'phase#alpha', budget: { autoBudget: 5, hardCap: 8 } }, () => 'ok')
+      // gateAndRecordAttempt가 열린 record의 series_id를 직접 써서 예외를 소비해야 한다(throw 없이).
+      const { state: after } = gateAndRecordAttempt({ ticketDir: dir, state, kind: 'phase', phaseId: 'phase#alpha', budget: { autoBudget: 5, hardCap: 8 } })
       expect((after.review_series as SeriesRecord[])[0]!.attempts).toBe(6)
       expect(after.review_exception_confirmed).toBeNull() // 소비됨 — series_id 매칭 성공
     } finally { rmSync(dir, { recursive: true, force: true }) }
@@ -4790,7 +4795,7 @@ describe('REQ-2026-029 phase-1 — human-resolution 순수', () => {
   })
 })
 
-describe('REQ-2026-029 phase-1 — terminal 가드(withAttemptRecorded)', () => {
+describe('REQ-2026-029 phase-1 — terminal 가드(gateAndRecordAttempt)', () => {
   const validHR: HumanResolution = { decision: 'terminate', method: '종결 승인', decided_at: '2026-07-18T00:00:00Z' }
   const B = { autoBudget: 5, hardCap: 8 }
 
@@ -4799,9 +4804,7 @@ describe('REQ-2026-029 phase-1 — terminal 가드(withAttemptRecorded)', () => 
     try {
       const state: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1,
         review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 8, closed_reason: 'human-resolution', human_resolution: validHR }] }
-      let called = false
-      expect(() => withAttemptRecorded({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: B }, () => { called = true; return 'x' })).toThrow(/human-resolution/)
-      expect(called).toBe(false) // call 도달 안 함
+      expect(() => gateAndRecordAttempt({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: B })).toThrow(/human-resolution/)
       // 새 series가 안 열렸다(디스크에 안 쓰임 — terminal은 recordAttempt·writeState 전 throw)
       expect(existsSync(join(dir, 'state.json'))).toBe(false)
     } finally { rmSync(dir, { recursive: true, force: true }) }
@@ -4812,7 +4815,7 @@ describe('REQ-2026-029 phase-1 — terminal 가드(withAttemptRecorded)', () => 
     try {
       const state: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1,
         review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts: 3, closed_reason: 'approved' }] }
-      const { state: after } = withAttemptRecorded({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: B }, () => 'ok')
+      const { state: after } = gateAndRecordAttempt({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: B })
       const series = after.review_series as SeriesRecord[]
       expect(series).toHaveLength(2) // 이전 approved 보존 + 새 series
       expect(series[1]!.attempts).toBe(1)

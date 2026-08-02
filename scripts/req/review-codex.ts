@@ -1517,34 +1517,6 @@ export function consumeReviewException(
 }
 
 /**
- * attempt를 **외부 호출 직전**에 기록·`writeState`하고 `call()`을 부른다(REQ-2026-027 D3 + REQ-2026-028 D1).
- *
- * **순서가 계약이다**(R8): 예산 게이트 → (예외 소비) → 기록·writeState → `call()`. `call()`이 throw해도
- * 기록은 이미 디스크에 있어 되돌아가지 않는다 — 외부 호출은 이미 일어났고 비용도 발생했다.
- *
- * **예산 게이트가 `recordAttempt` 전이다**(REQ-2026-028 R5): 막을 거면 호출도 기록도 하기 전에 막는다.
- * throw 시 state는 바뀌지 않는다(예외 소비 성공 시에만 쓰기). **반환 `state`가 후처리의 유일한 base다**(R9).
- */
-/**
- * 원장 1행 append(REQ-2026-051 D5·D6). 티켓 `responses/review-ledger.jsonl`에 쓴다.
- *
- * 🔴 **두 실패를 분리한다**(phase-2 리뷰 P1 — D5와 D6이 뭉개지면 안 된다):
- *
- *   1. **기존 원장 읽기·파싱·검증 실패 = 전파(fail-closed, D5).** 기존 본문이 파싱 불가(잘린 JSONL)이거나
- *      같은 자연키에 다른 내용이 오면 `appendLedgerRow`가 `conflict`를 낸다. `readFileSync` 자체의 오류도
- *      마찬가지다. 이것들은 **감사 원장의 무결성 손상**이므로 조용히 진행하면 D5 위반이다 — throw한다.
- *      호출자(attempt-opened)가 외부 호출 **전**에 이걸 부르므로, 손상된 원장은 리뷰를 시작조차 못 한다
- *      (D10 pre-review clean-tree 게이트와 같은 자리·같은 태도).
- *
- *   2. **새 행 쓰기 실패 = 삼킴(D6).** 읽기·검증이 통과했는데 mkdir/write가 실패하는 것은 순수한 I/O
- *      문제다. 이것이 승인·차단 판정이나 exit code를 뒤집으면 계약 위반이다(측정 로그 R8과 같은 취지).
- *      경고만 내고 판정은 그대로 둔다.
- *
- * 정상 경로에서 attempt-opened가 무결성을 확인하고 우리가 유효한 행 하나만 append하므로, attempt-closed
- * 시점의 재검증은 (협조적 단일 worktree 전제에서) 통과한다 — closed에서 전파가 실제로 발화하는 것은
- * "일어나선 안 될" 손상뿐이고, 그때는 크게 실패하는 편이 옳다.
- */
-/**
  * 리뷰어 provider id(REQ-2026-064 DEC-4). 현재 구현은 codex 하나지만 **자리를 지금 만들어 둔다** —
  * provider가 늘어난 뒤에 옛 행이 "무엇이 리뷰했는지" 비어 있으면 그 시점의 감사가 불가능해진다.
  */
@@ -1586,6 +1558,25 @@ export function assertReviewerReady(probes: ReviewerProbes, warn: (m: string) =>
     )
 }
 
+/**
+ * 원장 1행 append(REQ-2026-051 D5·D6). 티켓 `responses/review-ledger.jsonl`에 쓴다.
+ *
+ * 🔴 **두 실패를 분리한다**(phase-2 리뷰 P1 — D5와 D6이 뭉개지면 안 된다):
+ *
+ *   1. **기존 원장 읽기·파싱·검증 실패 = 전파(fail-closed, D5).** 기존 본문이 파싱 불가(잘린 JSONL)이거나
+ *      같은 자연키에 다른 내용이 오면 `appendLedgerRow`가 `conflict`를 낸다. `readFileSync` 자체의 오류도
+ *      마찬가지다. 이것들은 **감사 원장의 무결성 손상**이므로 조용히 진행하면 D5 위반이다 — throw한다.
+ *      호출자(attempt-opened)가 외부 호출 **전**에 이걸 부르므로, 손상된 원장은 리뷰를 시작조차 못 한다
+ *      (D10 pre-review clean-tree 게이트와 같은 자리·같은 태도).
+ *
+ *   2. **새 행 쓰기 실패 = 삼킴(D6).** 읽기·검증이 통과했는데 mkdir/write가 실패하는 것은 순수한 I/O
+ *      문제다. 이것이 승인·차단 판정이나 exit code를 뒤집으면 계약 위반이다(측정 로그 R8과 같은 취지).
+ *      경고만 내고 판정은 그대로 둔다.
+ *
+ * 정상 경로에서 attempt-opened가 무결성을 확인하고 우리가 유효한 행 하나만 append하므로, attempt-closed
+ * 시점의 재검증은 (협조적 단일 worktree 전제에서) 통과한다 — closed에서 전파가 실제로 발화하는 것은
+ * "일어나선 안 될" 손상뿐이고, 그때는 크게 실패하는 편이 옳다.
+ */
 export function appendLedgerRowToDisk(root: string, ticketRel: string, row: LedgerRow): void {
   const abs = join(root, ledgerPath(ticketRel))
   // ── 읽기·검증 단계(D5 — 전파) ──
@@ -1603,17 +1594,6 @@ export function appendLedgerRowToDisk(root: string, ticketRel: string, row: Ledg
   }
 }
 
-/**
- * 🔴 **pre-call ledger-only 커밋**(REQ-2026-052 DEC-A4·A6 step 4). `attempt-opened`를 외부 호출 **전에**
- *    HEAD에 durable하게 만든다 — process가 죽어도 "예산 사용·미확정 호출"이 HEAD에서 관측된다(요구 #1).
- *
- * 🔴 **pathspec 커밋 — 원장 경로만**: `git commit -- <ledger>`는 워킹트리의 원장만 커밋하고, 인덱스에
- *    staged된 design 문서·phase 코드는 **건드리지 않는다**(그대로 staged 유지). 그래서 리뷰 대상 binding
- *    (reviewTree)이 커밋 후에도 보존된다. `git add -- <ledger>`로 먼저 스테이징(1라운드 untracked 대응).
- *
- * 🔴 **fail-closed**: 커밋 실패(훅 등)면 throw — opened가 durable하지 않은 채 외부 호출하면 요구 위반이다.
- *    실패는 **외부 호출 전**에 전파된다(호출은 아직 안 일어났다).
- */
 /**
  * close proof 1행 append(REQ-2026-052). 원장의 `appendLedgerRowToDisk`와 같은 규칙:
  * 읽기·검증 손상은 **전파**(fail-closed·D5), 쓰기 실패는 **삼킴**(D6). 멱등(duplicate=no-op).
@@ -1681,6 +1661,17 @@ export function durableParentSeriesTerminal(args: {
   return true
 }
 
+/**
+ * 🔴 **pre-call ledger-only 커밋**(REQ-2026-052 DEC-A4·A6 step 4). `attempt-opened`를 외부 호출 **전에**
+ *    HEAD에 durable하게 만든다 — process가 죽어도 "예산 사용·미확정 호출"이 HEAD에서 관측된다(요구 #1).
+ *
+ * 🔴 **pathspec 커밋 — 원장 경로만**: `git commit -- <ledger>`는 워킹트리의 원장만 커밋하고, 인덱스에
+ *    staged된 design 문서·phase 코드는 **건드리지 않는다**(그대로 staged 유지). 그래서 리뷰 대상 binding
+ *    (reviewTree)이 커밋 후에도 보존된다. `git add -- <ledger>`로 먼저 스테이징(1라운드 untracked 대응).
+ *
+ * 🔴 **fail-closed**: 커밋 실패(훅 등)면 throw — opened가 durable하지 않은 채 외부 호출하면 요구 위반이다.
+ *    실패는 **외부 호출 전**에 전파된다(호출은 아직 안 일어났다).
+ */
 export function precallCommitLedgerRow(gitFn: GitFn, ticketRel: string, ticketId: string, attempt: AttemptInfo): void {
   const ledgerRel = ledgerPath(ticketRel)
   gitFn(['add', '--', ledgerRel]) // untracked/modified 원장을 스테이징(오직 이 경로).
@@ -1709,8 +1700,12 @@ export interface AttemptInfo {
  * recordAttempt → writeState. 반환 `{state, attempt}`. **외부 호출도 원장 쓰기도 하지 않는다.**
  *
  * 왜 분리했나: B2는 attempt 기록 **후, 외부 호출 전**에 원장 opened를 커밋하고 **그 다음에** approval binding을
- * 캡처해야 한다(DEC-A6). 그러려면 "기록"과 "호출" 사이에 커밋·캡처 단계가 들어간다. `withAttemptRecorded`는
- * 이 함수 + onAttemptOpened + call로 그대로 재조립돼 기존 계약·테스트를 보존한다.
+ * 캡처해야 한다(DEC-A6). 그러려면 "기록"과 "호출" 사이에 커밋·캡처 단계가 들어간다.
+ *
+ * **순서가 계약이다**(REQ-2026-027 R8): 예산 게이트 → (예외 소비) → 기록·`writeState` → (호출자가) 외부 호출.
+ * 반환 **전에** 디스크에 영속하므로 이후 호출이 실패해도 회차는 되돌아가지 않는다(예산 세탁 차단).
+ * 막을 거면 `recordAttempt` 전에 막는다(REQ-2026-028 R5) — throw 시 state는 바뀌지 않는다(예외 소비 성공 시에만 쓰기).
+ * **반환 `state`가 후처리의 유일한 base다**(R9).
  */
 export function gateAndRecordAttempt(ctx: {
   ticketDir: string
@@ -1751,34 +1746,6 @@ export function gateAndRecordAttempt(ctx: {
     exception_consumed: decision.kind === 'needs-exception',
   }
   return { state, attempt: info }
-}
-
-export function withAttemptRecorded<T>(
-  ctx: {
-    ticketDir: string
-    state: WorkflowState
-    kind: ReviewKind
-    phaseId: string | null
-    budget: ReviewBudget
-    /**
-     * attempt 확정·영속 **직후, 외부 호출 직전**에 불린다(REQ-2026-051 D2 — `attempt-opened`).
-     * 🔴 **여기서 던진 예외는 전파된다**(외부 호출 전에). `appendLedgerRowToDisk`가 쓰기 실패는 이미
-     *    삼키므로, 여기까지 올라오는 예외는 **원장 무결성 손상**뿐이다 — 손상된 감사 원장 위에서 리뷰를
-     *    시작하지 않는다(D5 fail-closed, D10 pre-review 게이트와 같은 자리).
-     */
-    onAttemptOpened?: (info: AttemptInfo) => void
-  },
-  call: () => T,
-): { result: T; state: WorkflowState; attempt: AttemptInfo } {
-  const { state, attempt: info } = gateAndRecordAttempt(ctx)
-  // 🔴 원장 `attempt-opened`도 **호출 전**에 남는다 — 그래야 호출이 실패해 완료 기록이 없는 attempt가
-  //    "예산은 깎였는데 완료되지 않은 호출"로 관측된다(REQ-2026-051 요구사항 #1).
-  //    🔴 **여기서 삼키지 않는다**(phase-2 리뷰 P1). `appendLedgerRowToDisk`가 이미 쓰기 실패는 삼키고
-  //    읽기·검증 손상만 throw한다(D5/D6 분리). 그 throw는 **외부 호출 전에 전파**되어야 손상된 원장이
-  //    리뷰를 시작조차 못 한다(D10 pre-review 게이트와 같은 자리). 여기서 catch하면 그 fail-closed가 죽는다.
-  ctx.onAttemptOpened?.(info)
-  const result = call() // throw면 그대로 전파(기록은 이미 선행)
-  return { result, state, attempt: info }
 }
 
 /** 같은 `(kind, phase_id)`의 열린 series record(없으면 undefined). series_id를 재구성하지 않고 직접 얻는다. */
@@ -2450,7 +2417,7 @@ function gitStatusEntries(): StatusEntry[] {
 }
 
 /**
- * 리뷰어 호출 + 응답 캡처(Phase 3 이음새). ReviewerAdapter.review로 codex(exec/resume)를 추상화하고
+ * 리뷰어 호출 + 응답 캡처(Phase 3 이음새). ReviewerAdapter.review로 `codex exec`를 추상화하고
  * lastMessage를 respPath에 기록(현행 `--output-last-message respPath`와 동일 효과 — respPath는 SCRATCH라 사후 무수정 검증 허용).
  * thread_id 부재(exec에서 thread.started 없음)면 fail-closed throw. rv 주입 가능(default codex, 테스트=FakeReviewerAdapter).
  */
@@ -2459,7 +2426,6 @@ export function callReviewer(
   opts: {
     prompt: string
     schemaPath: string
-    resumeThreadId: string | null
     cwd: string
     respPath: string
     model: string | null
@@ -2475,7 +2441,6 @@ export function callReviewer(
   const { lastMessage, threadId } = rv.review({
     prompt: opts.prompt,
     schemaPath: opts.schemaPath,
-    resumeThreadId: opts.resumeThreadId,
     cwd: opts.cwd,
     model: opts.model,
     reasoningEffort: opts.reasoningEffort,
@@ -2654,7 +2619,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
     writeFileSync(previewPath, prompt, 'utf8')
     console.log('[req:review-codex] DRY-RUN (--run 지정 시 라이브 호출)')
     console.log(
-      `  ticket=${ticketDir}  REQ=${state.id} phase=${state.phase} branch=${branch} kind=${opts.kind} phaseId=${phaseId ?? '(none)'}`,
+      `  ticket=${ticketDir}  REQ=${state.id} branch=${branch} kind=${opts.kind} phaseId=${phaseId ?? '(none)'}`,
     )
     console.log(
       `  review_base_sha=${reviewBaseSha}  review_tree=${reviewTree}${designHash ? `  design_hash=${designHash}` : ''}${phaseId ? `  design_valid=${String(designValid)}` : ''}`,
@@ -2667,7 +2632,6 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   const respPath = join(ticketDir, 'codex-response.json')
   const repoRel = (abs: string) => relative(cfg.root, abs).replace(/\\/g, '/')
   const SCRATCH = reviewScratchPaths(ticketRel)
-  const isResume = false // REQ-2026-013 P4: 재리뷰는 항상 stateless. codex_thread_id는 저장만.
 
   // DEC-A6 step 2a: phase는 유효 design 승인 전제(D13 동일) — 미충족 시 호출·커밋·기록 전 fail-closed.
   if (phaseId && !designValid)
@@ -2770,7 +2734,8 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   const prompt = buildPromptFor(reviewBaseSha, reviewTree)
   writeFileSync(previewPath, prompt, 'utf8')
   const promptSha256 = createHash('sha256').update(prompt, 'utf8').digest('hex')
-  console.warn(`⚠️  codex 실제 호출 (${isResume ? 'resume' : 'exec'}) — 호출 1회 발생 (DEC-WF-026: 호출 직전 확인)`)
+  // REQ-2026-013 P4: 재리뷰는 항상 stateless(exec). `state.codex_thread_id`는 감사용으로 저장만 하고 읽지 않는다.
+  console.warn('⚠️  codex 실제 호출 (exec) — 호출 1회 발생 (DEC-WF-026: 호출 직전 확인)')
   let reviewDurationMs = 0 // REQ-2026-045: callReviewer 소요(측정 전용).
   // 🔴 REQ-2026-054(DEC-C4): dispatch 구간(callReviewer → 사후 tamper 검증 → 응답 파싱)을 try/catch로 감싼다.
   //    실패 시 lifecycle을 분류해 **보상 attempt-closed**를 남기고(durable이면 pathspec 커밋), **명백한
@@ -2789,7 +2754,6 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       callRes = callReviewer(reviewer, {
         prompt,
         schemaPath: cfg.schemaPathAbs,
-        resumeThreadId: isResume ? (state.codex_thread_id as string) : null,
         cwd: cfg.root,
         respPath,
         // REQ-2026-013 P1: 리뷰 모델·추론강도 override를 config에서 채워 어댑터로 전달(null이면 어댑터가 `-c` 생략).
