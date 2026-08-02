@@ -10,3 +10,6 @@
 # D10 스크래치 허용목록에 없으므로 이 규칙이 유일한 방어다 — 누락되면 첫 리뷰 뒤 D10 FAIL로 커밋이 전부 막힌다(REQ-2026-047).
 # ⚠️ 루트 .gitignore의 `workflow/.review-calls.jsonl` 형태를 복사하지 말 것 — 여기선 `workflow/workflow/…`를 찾아 무효다.
 /.review-calls.jsonl
+# doctor 실행 관측 로그(REQ-2026-111). 위와 같은 자리·같은 성격이며 **커밋 대상이 아니다**.
+# ⚠️ 여기서도 앵커드 상대경로다 — 루트 형식(`workflow/…`)을 복사하면 무효가 된다.
+/.doctor-runs.jsonl

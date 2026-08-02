@@ -15,6 +15,10 @@ workflow/**/.codex-*.tmp
 # ledger 커밋을 늘리지 않는다. 내용(프롬프트·diff·finding 본문)은 담기지 않고 개수만 담는다.
 workflow/.review-calls.jsonl
 
+# doctor 실행 관측 로그(REQ-2026-111). 같은 이유로 **커밋 대상이 아니다** — 실행 1회 = 1행이고
+# 담기는 것은 ticket_id·시각·검사 id·level뿐이다(메시지 본문·경로는 담지 않는다).
+workflow/.doctor-runs.jsonl
+
 # Codex 리뷰 요청서(일회용 핸드오프, 커밋 대상 아님)
 codex-review-request*.md
 

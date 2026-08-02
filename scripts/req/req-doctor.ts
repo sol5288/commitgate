@@ -7,8 +7,8 @@
  *
  * 사용: req:doctor <REQ-id>  |  req:doctor --ticket <dir>   (저장소 패키지매니저의 실행 형식으로)
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { resolve, join, relative } from 'node:path'
+import { existsSync, readFileSync, readdirSync, appendFileSync, mkdirSync } from 'node:fs'
+import { resolve, join, relative, dirname } from 'node:path'
 import { createHash } from 'node:crypto'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
@@ -1114,6 +1114,64 @@ export function lockfileHygiene(
   return present.some((f) => isTracked(f)) ? 'ok' : 'untracked'
 }
 
+// ─────────────────────────────────────── 실행 관측 로그(REQ-2026-111) ──
+
+/**
+ * doctor 실행 관측 로그의 경로(repo root 기준). **커밋 대상이 아니다** — `workflow/.review-calls.jsonl`과
+ * 같은 성격·같은 자리다(설계 DEC-1).
+ *
+ * 🔴 커밋하지 않는 이유: (a) doctor는 phase마다 여러 번 돌아 커밋 소음이 된다 (b) 커밋된 증거는
+ *    **병합되지 않은 브랜치와 함께 사라진다**(소비자 3곳 실측: 리뷰 아카이브의 3.1% 유실, 그중 다수가
+ *    실패 기록) (c) 티켓 내부 커밋 자산은 D10/D13 스테이징 규칙과 얽힌다.
+ */
+export const DOCTOR_RUN_LOG_REL = 'workflow/.doctor-runs.jsonl'
+
+/** 실행 1회 = 1행(설계 DEC-2). `msg`는 담지 않는다 — 경로·파일명이 섞이고 질문에 답하는 데 불필요하다. */
+export interface DoctorRunRow {
+  ticket_id: string
+  at: string
+  /** `main()`의 출력 요약과 **같은 기준** — FAIL 1건 이상이면 FAIL. */
+  verdict: 'PASS' | 'FAIL'
+  /**
+   * 이번 실행에서 반환된 체크 개수(`checks.length`).
+   *
+   * 🔴 **id별 "평가됨"은 기록하지 않는다**(설계 DEC-3). `runChecks`가 매 호출에서 등록부 전부를
+   *    push한다고 가정하지 않기 때문이다. 이 로그로 답할 수 있는 것은 "D-x가 발화한 적 있는가"와
+   *    "몇 번 FAIL했는가"까지다. 필드 추가로 확장 가능하다(append-only JSONL).
+   */
+  evaluated: number
+  /** level !== 'OK' 인 것만, `runChecks` 반환 순서 유지. */
+  nonok: { id: CheckId; level: Level }[]
+}
+
+/** 순수 — 관측 행 조립. 부작용이 없어 단독 테스트된다. */
+export function buildDoctorRunRow(checks: readonly Check[], meta: { ticketId: string; at: string }): DoctorRunRow {
+  const nonok = checks.filter((c) => c.level !== 'OK').map((c) => ({ id: c.id, level: c.level }))
+  return {
+    ticket_id: meta.ticketId,
+    at: meta.at,
+    verdict: checks.some((c) => c.level === 'FAIL') ? 'FAIL' : 'PASS',
+    evaluated: checks.length,
+    nonok,
+  }
+}
+
+/**
+ * 관측 행 append. **모든 예외를 삼킨다.**
+ *
+ * 🔴 관측은 게이트가 아니다(요구 제약 1). 로그가 없어도, 쓰기가 실패해도 doctor의 출력·FAIL 개수·
+ *    exit code는 **동일해야 한다**. `review-codex.ts`의 review-call 로그와 같은 형태·같은 이유다.
+ */
+export function appendDoctorRun(rootAbs: string, row: DoctorRunRow): void {
+  try {
+    const abs = join(rootAbs, ...DOCTOR_RUN_LOG_REL.split('/'))
+    mkdirSync(dirname(abs), { recursive: true })
+    appendFileSync(abs, `${JSON.stringify(row)}\n`, 'utf8')
+  } catch {
+    // 의도적으로 비어 있다 — 관측 실패가 판정을 바꾸면 안 된다.
+  }
+}
+
 export function main(argv: string[] = process.argv.slice(2)): void {
   const opts = parseArgs(argv)
   const cfg = loadConfig({ root: opts.root })
@@ -1316,7 +1374,9 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     quickstartBackfill: quickstartBackfillTargets(cfg.root),
     // D22(REQ-2026-047): 현재 repo-root 런타임 스크래치 축은 review-call 측정 로그 1건.
     // 새 축이 생기면 이 배열에 추가하고 packed-consumer smoke 단언도 함께 늘린다(docs 인벤토리 표의 유지 규칙).
-    repoRootScratchUnprotected: unprotectedRepoRootScratch([REVIEW_CALL_LOG_REL], git),
+    // REQ-2026-111: 새 관측 로그도 같은 보호 대상이다 — 루트 `.gitignore`·`templates/workflow.gitignore`
+    //   양쪽이 배포되지 않은 설치본을 D22가 알리게 한다(자산 skew 전례: REQ-2026-025·038).
+    repoRootScratchUnprotected: unprotectedRepoRootScratch([REVIEW_CALL_LOG_REL, DOCTOR_RUN_LOG_REL], git),
     // D23(REQ-2026-056): frozen-lockfile 위생(존재·tracked). tracked 판정은 read-only `git ls-files`.
     lockfileStatus: lockfileHygiene(cfg.root, cfg.packageManager, (rel) => {
       try {
@@ -1331,6 +1391,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   }
 
   const checks = runChecks(inp)
+  // REQ-2026-111: 관측 로그. 판정·출력·exit는 아래 그대로이며 이 호출은 그것들에 영향을 주지 않는다.
+  appendDoctorRun(cfg.root, buildDoctorRunRow(checks, { ticketId: String(state.id ?? ''), at: new Date().toISOString() }))
   for (const c of checks) console.log(`[req:doctor] ${c.level} ${c.id}: ${c.msg}`)
   const fails = checks.filter((c) => c.level === 'FAIL')
   console.log(`[req:doctor] ${fails.length ? `FAIL ${fails.length}건` : 'PASS'} (REQ=${state.id})`)
