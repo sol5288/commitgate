@@ -2,15 +2,20 @@
   "id": "REQ-2026-113",
   "branch": "feat/req-2026-113-delta-escalation-observability",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc24a-2595-7212-94cf-364ee700f2b5",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc253-ee27-74b3-9f03-d9220dea2192",
+  "review_base_sha": "bfa9d8d32ec2efc6b44fa651d9a96989f130efd4",
+  "review_diff_hash": "3734355996368ee225aabd3cebcefc72b0863b6d",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "3bf3cde68dce7a3bda3536454e0e47ba2576944449fe0bc6ec89af2d083d934a",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-delta-observability",
+  "phases": [
+    {
+      "id": "phase-1-delta-observability",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +24,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-delta-observability#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-delta-observability",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +54,23 @@
     "design_hash": "3bf3cde68dce7a3bda3536454e0e47ba2576944449fe0bc6ec89af2d083d934a"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-delta-observability",
     "outcome": "approved",
-    "compare_hash": "9ce26918c04dd6b6f6751fc217d0764f4c13c97de0617f9e7e56771f516d46ac",
+    "compare_hash": "3d5bd1951c8d6c8ad0c3d14e5011fa8f38bb08fad6fdb83d1341324f5a334501",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T11:45:14.442Z",
+    "at": "2026-08-02T11:55:42.490Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3734355996368ee225aabd3cebcefc72b0863b6d",
+      "phase_id": "phase-1-delta-observability",
+      "consumed_by_commit_sha": "41a06e5914f7d115fa8e21e922376830746caa40",
+      "approval_consumed_at": "2026-08-02T11:56:28.804Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
