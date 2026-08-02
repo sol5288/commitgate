@@ -86,7 +86,7 @@ export type Level = 'OK' | 'WARN' | 'FAIL'
  */
 export const D_CHECK_IDS = [
   'D2', 'D3', 'D5', 'D6', 'D9', 'D10', 'D11', 'D13', 'D15', 'D16', 'D17', 'D18', 'D19',
-  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29',
+  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30',
 ] as const
 
 /** D-체크 id — `D_CHECK_IDS` 등재분만. 새 id는 등록부에 먼저 추가해야 컴파일된다. */
@@ -135,6 +135,13 @@ export interface DoctorInputs {
    * `undefined` = 점검 불요(계약 파일이 없거나 읽지 못함) → D29는 OK. 진단이 사람을 막지 않는다.
    */
   retiredClaimHits?: { file: string; claim: RetiredClaim }[]
+  /**
+   * D30(REQ-2026-114): **리뷰를 받았는데 증거가 trunk에 없는 티켓**과 그 리뷰 횟수.
+   * `main()`이 리뷰 호출 로그와 trunk 트리에서 계산해 채운다 — `runChecks`는 순수하다.
+   *
+   * `undefined` = 판정 불가(trunk ref 없음·로그 없음·git 실패) → D30은 OK.
+   */
+  strandedEvidence?: { id: string; reviews: number }[]
   declaredMaxFiles?: number | null
   /**
    * 🔴 REQ-2026-107: D18이 셀 **staged 코드 파일**(티켓 문서·scratch 제외). `main()`이
@@ -951,6 +958,29 @@ export function runChecks(inp: DoctorInputs): Check[] {
         '. 해당 문장을 지우거나 현재 동작으로 갱신하세요(도구는 이 파일을 고치지 않습니다).',
     })
 
+  /**
+   * D30(REQ-2026-114): 리뷰를 받았는데 그 증거가 trunk에 없는 티켓.
+   *
+   * 🔴 **WARN 전용이다.** 진행 중 티켓이 **정상적으로** 포함된다 — FAIL이면 평범한 작업이 막힌다.
+   * 🔴 **"유실됐다"고 단정하지 않는다.** 사실만 말한다: 리뷰 N회를 받았고 증거가 trunk에 없다.
+   *    판단(계속할지·버릴지)은 사람이 한다.
+   * 🔴 판정 불가는 **조용히 통과**한다(D25와 같은 근거) — 오탐이 잦으면 사람이 doctor 출력
+   *    전체를 무시하게 되고, 그러면 진짜 FAIL까지 죽는다.
+   */
+  if (inp.strandedEvidence === undefined)
+    c.push({ id: 'D30', level: 'OK', msg: '미병합 리뷰 증거 점검 불요(trunk 없음·로그 없음·미계산)' })
+  else if (inp.strandedEvidence.length === 0)
+    c.push({ id: 'D30', level: 'OK', msg: `리뷰 증거가 모두 trunk(${inp.trunkBranch ?? '-'})에 반영됨` })
+  else
+    c.push({
+      id: 'D30',
+      level: 'WARN',
+      msg:
+        `리뷰 증거가 trunk(${inp.trunkBranch ?? '-'})에 없는 티켓 ${inp.strandedEvidence.length}건 — ` +
+        inp.strandedEvidence.map((s) => `${s.id}(리뷰 ${s.reviews}회)`).join(' · ') +
+        '. 진행 중이면 정상입니다. 병합되지 않으면 이 증거는 메인라인에 남지 않습니다(감사 추적은 브랜치-지역적).',
+    })
+
   return c
 }
 
@@ -969,6 +999,77 @@ export function runChecks(inp: DoctorInputs): Check[] {
  * @param ticketRoot      티켓 루트(repo-상대)
  * @param selfTicketId    지금 doctor가 도는 대상 티켓(제외)
  */
+/**
+ * 리뷰 호출 로그에서 **티켓별 리뷰 횟수**를 읽는다(REQ-2026-114).
+ *
+ * 🔴 **fail-open이다.** 파일이 없거나 읽지 못하면 `null`(판정 불가)을 낸다 — D30은 그때 조용히
+ *    통과한다. 손상된 줄은 **건너뛴다**(전체를 버리지 않는다): append-only 로그의 마지막 줄이
+ *    잘리는 것은 흔한 사고이고, 그 하나 때문에 나머지 관측을 버릴 이유가 없다.
+ *    로그 자체가 게이트가 아니므로 여기서 fail-closed로 갈 근거도 없다.
+ *
+ * 🔴 **그러나 "아무것도 못 읽음"과 "읽었는데 비어 있음"은 구별한다**(phase-1 리뷰 r01 의견).
+ *    비어 있지 않은 줄이 하나라도 있는데 **전부 파싱에 실패하면** `null`이다 — 그때 빈 Map을 내면
+ *    D30이 "리뷰 증거가 모두 trunk에 반영됨"이라고 **모르는 것을 단언**하게 된다.
+ *    빈 파일(줄이 아예 없음)은 정상적인 "아직 리뷰 없음"이므로 빈 Map이 맞다.
+ */
+export function readReviewCallCounts(absPath: string): Map<string, number> | null {
+  let raw: string
+  try {
+    raw = readFileSync(absPath, 'utf8')
+  } catch {
+    return null // 파일 없음·권한 없음 → 판정 불가
+  }
+  const counts = new Map<string, number>()
+  let seen = 0
+  let parsed = 0
+  for (const line of raw.split('\n')) {
+    const t = line.trim()
+    if (t === '') continue
+    seen++
+    try {
+      const id = (JSON.parse(t) as { ticket_id?: unknown }).ticket_id
+      parsed++
+      if (typeof id === 'string' && id !== '') counts.set(id, (counts.get(id) ?? 0) + 1)
+    } catch {
+      // 손상된 줄 하나는 건너뛴다 — 나머지 관측은 유효하다.
+    }
+  }
+  if (seen > 0 && parsed === 0) return null // 통째로 손상 → 판정 불가(빈 결과로 단언하지 않는다)
+  return counts
+}
+
+/**
+ * **리뷰를 받았는데 증거가 trunk에 없는 티켓**(REQ-2026-114, 순수).
+ *
+ * 🔴 **왜 close proof가 아니라 리뷰 로그인가**: D25 계열은 워킹트리의 close proof를 찾는데,
+ *    실측된 유실 티켓(`REQ-2026-025`·`009`·`062`)은 **종결된 적이 없어** close proof가 어느
+ *    브랜치에도 없다. 찾을 것이 없으므로 그 신호로는 원리적으로 잡을 수 없다.
+ *    리뷰 호출 로그는 gitignored·워킹디렉터리 상주라 브랜치와 함께 사라지지 않는다.
+ *
+ * 🔴 **"유실됐다"고 단정하지 않는다.** 진행 중 티켓이 정상적으로 포함된다 — 그래서 **리뷰 횟수**를
+ *    함께 낸다(기간 임계로 거르지 않는다: 근거 없는 임의 임계를 넣지 않는다).
+ *    8회 받고 trunk에 없는 것과 오늘 1회 받은 것은 사람이 즉시 구별한다.
+ *
+ * 자기 티켓은 제외한다(D25 선례) — 작업 중 티켓이 매번 걸리면 안내가 죽는다.
+ */
+export function strandedReviewedTickets(
+  reviewCounts: ReadonlyMap<string, number>,
+  trunkPaths: ReadonlySet<string>,
+  ticketRoot: string,
+  selfTicketId: string,
+): { id: string; reviews: number }[] {
+  const root = toPosix(ticketRoot).replace(/\/+$/, '')
+  const inTrunk = new Set<string>()
+  for (const p of trunkPaths) {
+    const m = new RegExp(`^${root}/([^/]+)/responses/`).exec(p)
+    if (m?.[1]) inTrunk.add(m[1])
+  }
+  return [...reviewCounts.entries()]
+    .filter(([id]) => id !== selfTicketId && !inTrunk.has(id))
+    .map(([id, reviews]) => ({ id, reviews }))
+    .sort((a, b) => (b.reviews - a.reviews) || a.id.localeCompare(b.id))
+}
+
 export function unmergedClosedTickets(
   closedTicketIds: readonly string[],
   trunkPaths: ReadonlySet<string>,
@@ -1290,6 +1391,11 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   // D25(REQ-2026-085): trunk 도달 여부. `ls-tree` **1회**로 끝낸다 — 티켓마다 `git log`를 돌리면 80회다.
   //   판정 불가(비활성·ref 없음·git 실패)는 undefined로 남겨 조용히 통과시킨다(DEC-2).
   let unmerged: string[] | undefined
+  /**
+   * D30(REQ-2026-114): 리뷰를 받았는데 증거가 trunk에 없는 티켓.
+   * D25와 **같은 `ls-tree` 결과를 쓴다** — git 호출을 늘리지 않는다.
+   */
+  let stranded: { id: string; reviews: number }[] | undefined
   if (cfg.trunkBranch !== null) {
     try {
       git(['rev-parse', '--verify', '--quiet', `${cfg.trunkBranch}^{commit}`])
@@ -1303,8 +1409,13 @@ export function main(argv: string[] = process.argv.slice(2)): void {
             .map((d) => d.name)
         : []
       unmerged = unmergedClosedTickets(closed, trunkPaths, cfg.ticketRoot, String(state.id ?? ''))
+      // 🔴 로그가 없거나 손상돼도 **조용히 통과**한다(요구 제약 2) — 진단이 사람을 막지 않는다.
+      const counts = readReviewCallCounts(join(cfg.root, ...REVIEW_CALL_LOG_REL.split('/')))
+      stranded =
+        counts === null ? undefined : strandedReviewedTickets(counts, trunkPaths, cfg.ticketRoot, String(state.id ?? ''))
     } catch {
       unmerged = undefined // trunk ref 없음 등 — 알림을 낼 근거가 없다.
+      stranded = undefined
     }
   }
 
@@ -1366,6 +1477,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     })(),
     ticketTerminalEvent,
     unmergedClosedTickets: unmerged,
+    // D30(REQ-2026-114): 같은 `ls-tree` 결과에서 파생 — git 호출 증가 0.
+    strandedEvidence: stranded,
     trunkBranch: cfg.trunkBranch,
     stagedTree: git(['write-tree']),
     // `-z`: 경로 인용 없음(설계 D11) → core.quotePath 불필요. --untracked-files=all: `?? responses/` collapse 방지.

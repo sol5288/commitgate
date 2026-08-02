@@ -75,6 +75,7 @@ CommitGate의 "업무 규칙"은 커밋을 통과/차단하는 fail-closed 게�
 | **D26** | 결속 끊긴 phase 사전 경고 | **(WARN 상한, FAIL 아님) 없음.** design 재승인으로 현재 design 승인에 결속되지 않은 phase 증거가 있으면 WARN + `req:rebind` 안내 (REQ-2026-088) |
 | **D27** | 승인 증인 불일치 | **(WARN 상한, FAIL 아님) 없음.** 소비된 승인 중 매니페스트 행이 없는 것이 있으면 WARN(복구 불가 — 재수행 또는 `req:close --abandon` 안내) (REQ-2026-094) |
 | **D28** | HIGH 사람확인 차단 진단 | **(WARN 상한, FAIL 아님) 없음.** HIGH 티켓에서 `userConfirmGate`(정본)가 차단 상태면 그 사유를 그대로 WARN으로 알린다 — 실제 차단은 계속 `req:commit`이 한다. 진단이 게이트가 되면 진단의 오차가 곧 차단이 된다 (REQ-2026-110) |
+| **D30** | 미병합 리뷰 증거 | **(WARN 상한, FAIL 아님) 없음.** 리뷰 호출 로그(`workflow/.review-calls.jsonl`)에 이력이 있는데 trunk 트리에 `responses/`가 없는 티켓을 **리뷰 횟수와 함께** 알린다. 진행 중 티켓이 정상적으로 포함되므로 "유실됐다"고 단정하지 않는다 — 횟수로 사람이 구별한다. trunk ref 없음·로그 없음·손상은 조용히 통과(D25와 같은 근거). **D25와 축이 다르다**: D25는 close proof를 보고, 버려진 티켓에는 close proof가 없어 원리적으로 잡히지 않는다 (REQ-2026-114) |
 | **D29** | 계약 파일의 폐기된 서술 | **(WARN 상한, FAIL 아님) 없음.** 소비자 계약 파일(`AGENTS.md`·`AGENTS.commitgate.md`)에 `RETIRED_CLAIMS`(`scripts/req/lib/retired-claims.ts`) 등재 문구가 있으면 사유를 그대로 WARN으로 알린다. **파일은 고치지 않는다** — 사용자 소유이며 `init`도 부재 시에만 만든다. 대상 파일이 없으면 점검 불요(OK). FAIL이 아닌 이유: 업그레이드 즉시 기설치 소비자의 커밋이 **서술 문제로** 막힌다 (REQ-2026-112) |
 
 증거 검증 세부(`evidenceProblems`): 경로 confinement(`<ticketRel>/responses/` 직속·아카이브명), `archive.sha256===ev.response_sha256`, 구조 OK, verdict가 같은 kind의 승인, `review_base_sha` 일치, phase면 `approved_tree===state.approved_diff_hash`, **live `codex-response.json` sha===ev.response_sha256**(손편집 탐지, phase), design이면 `design_hash===state.design_approved_hash`.

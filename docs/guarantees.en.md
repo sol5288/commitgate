@@ -31,6 +31,11 @@ So that you do not miscalculate where your real defenses are:
 - **This is not hard enforcement.** No git hook is installed, so running `git commit` directly instead of `req:commit` bypasses doctor, the approval binding, and the evidence trail. Your real defense for production is still CI and the deployment pipeline.
 - **It does not keep your staged content secret.** `req:review-codex` transmits the full `git diff --cached` to Codex (OpenAI), and codex reads the repository root under `--sandbox read-only`. There is no masking, scrubbing, or size cap. For payment or credential-bearing codebases, write a "inspect the staged diff before review" step into your contract (`AGENTS.md`).
 - **It does not guarantee anything after the commit.** Approval binds the staged tree at commit time; merge, tag, and publish are each separate control points.
+- 🔴 **Evidence is branch-local.** Approval responses, `approvals.jsonl`, and the ledger are committed on that ticket's **feature branch**. If you never merge that branch, **the evidence never reaches your mainline.** Nothing is destroyed — it is still on the branch — but it is invisible from mainline, and deleting the branch takes it with you.
+
+  Measured (3 consumer repositories, 2,089 review calls, 16 days): **3.1% (65) of responses were absent from mainline**, and **66.2% of those were needs-fix records** (versus 47.9% among the ones that survived). In other words, **a retrospective built only from archived responses systematically undercounts failures.** A young repository with everything merged showed 0% — this skew accumulates over time.
+
+  `req:doctor`'s **D30** reports tickets that were reviewed but whose evidence is not in trunk, together with the review count (WARN — work in progress is normal, so it does not block).
 - 🔴 **The "confirm at every phase" backstop for HIGH-risk tickets is gone.** It used to be that a `HIGH` ticket required a human confirmation before every phase commit regardless of configuration; now **`stopGate` alone** decides where that confirmation happens — under the default `req`, intermediate phases of a HIGH ticket auto-commit on Codex approval alone. To review every change yourself, set `stopGate: "phase"`.
 
 ## Support scope
