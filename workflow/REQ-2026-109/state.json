@@ -2,16 +2,54 @@
   "id": "REQ-2026-109",
   "branch": "feat/req-2026-109-delivery-evidence-ports-dedup",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fc16b-175f-7823-a601-077b21f9093f",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "aefc7c2947a3672970cc1f0914537d7b7c23d07b54d13a931d651c2ff0b687a2",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "e9554cb4bab0210f8c786aa2c279821c2b2e774357287a187e5ae1b98b761871",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-02T07:41:03.260Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "728e6cc5e97431d74c2d56b450fe58dac3b8d8ad",
+    "design": "8a9112793f551f4688d1ee667c08d084547d6422",
+    "plan": "61db33874bcf81058f6e9c887748f347244a6719"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-109/responses/design-r04-approved.json",
+    "response_sha256": "857d47fba8fd8335ab33f67345ac95f46462d0607f69ca8f2efbc6d9f2676136",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "093a771c6739d218a1ecc0c1dd5a8754d16f4157",
+    "codex_thread_id": "019fc16b-175f-7823-a601-077b21f9093f",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-02T07:41:03.260Z",
+    "design_hash": "aefc7c2947a3672970cc1f0914537d7b7c23d07b54d13a931d651c2ff0b687a2"
+  }
 }
