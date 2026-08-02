@@ -15,12 +15,13 @@
  */
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
 import { resolve, join } from 'node:path'
-import { pathToFileURL, fileURLToPath } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline/promises'
 import { canUseRawMode, colorEnabled, colorize, displayWidth, runSelect } from './select-prompt'
 import Ajv from 'ajv'
 import { CONFIG_SCHEMA, DEFAULTS, stripBom, STOP_GATE_OF, type SetupMarker, type PhaseCommitPolicy } from '../scripts/req/lib/config'
 import { createReviewerProbes, codexMissingSetupMessage, type ReviewerProbes } from '../scripts/req/lib/adapters'
+import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 /**
  * TTY 판정 입력(주입 가능 — 테스트). `process.std*.isTTY`는 **비-TTY에서 `undefined`**이지 `false`가 아니므로
@@ -731,6 +732,12 @@ export function printHelp(): void {
 `)
 }
 
+/**
+ * 🔴 이 `runCli`는 `lib/cli-boundary`의 `makeRunCli`를 **일부러 쓰지 않는다**(REQ-2026-105 DEC-4).
+ *    두 가지가 다르다: **async**이고(`deps?` 주입 seam까지 받는다), help를 오류가 아닌 정상 종료로
+ *    처리한다. 동기 경계 헬퍼로 덮을 수 없고, 덮으려고 일반화하면 공용 계약이 약해진다.
+ *    (`isEntrypoint`는 별개 관심사라 아래에서 공유한다.)
+ */
 export async function runCli(argv: string[], deps?: SetupDeps): Promise<void> {
   try {
     const opts = parseArgs(argv)
@@ -755,5 +762,5 @@ export async function runCli(argv: string[], deps?: SetupDeps): Promise<void> {
   }
 }
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))

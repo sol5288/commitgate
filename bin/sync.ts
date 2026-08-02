@@ -37,7 +37,6 @@
  */
 import { existsSync, copyFileSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, join, dirname, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadConfig, DEFAULT_REVIEW_PERSONA_RELPATH, type ResolvedConfig } from '../scripts/req/lib/config'
 import { safeSpawnSyncStatus } from '../scripts/req/lib/adapters'
 import {
@@ -49,6 +48,7 @@ import {
   sha256File,
   assertGitWorkTree,
 } from './init'
+import { makeRunCli, isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 export interface SyncOptions {
   dir: string
@@ -564,14 +564,7 @@ function printHelp(): void {
 `)
 }
 
-export function runCli(argv: string[]): void {
-  try {
-    runSync(parseArgs(argv))
-  } catch (err) {
-    console.error(`commitgate sync: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli((argv) => runSync(parseArgs(argv)), 'commitgate sync')
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))

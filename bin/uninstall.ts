@@ -20,7 +20,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve, join, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadConfig, stripBom, DEFAULTS, DEFAULT_REVIEW_PERSONA_RELPATH } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitAdapter, type GitRunner } from '../scripts/req/lib/adapters'
 import {
@@ -39,6 +38,7 @@ import {
   REQ_DEV_DEPS,
   assertGitWorkTree,
 } from './init'
+import { makeRunCli, isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 export interface UninstallOptions {
   dir: string
@@ -696,14 +696,7 @@ function printHelp(): void {
 }
 
 /** CLI 경계: 예상된 실패(throw)를 친절한 한 줄 + exit 1로 변환(스택트레이스 노출 방지). init.ts runCli와 동일 정책. */
-export function runCli(argv: string[]): void {
-  try {
-    runUninstall(parseArgs(argv))
-  } catch (err) {
-    console.error(`commitgate uninstall: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli((argv) => runUninstall(parseArgs(argv)), 'commitgate uninstall')
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))

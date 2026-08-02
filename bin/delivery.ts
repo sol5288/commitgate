@@ -14,7 +14,6 @@
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadConfig, type StopGate } from '../scripts/req/lib/config'
 import { createGitAdapter, safeSpawnSyncStatus, type GitAdapter } from '../scripts/req/lib/adapters'
 import { closeProofPath, parseCloseProof } from '../scripts/req/lib/close-proof'
@@ -45,6 +44,7 @@ import {
   type DeliveryEvent,
   type DeliveryRecord,
 } from '../scripts/req/lib/delivery'
+import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 /** `-h/--help` 신호(오류가 아니다). */
 export class HelpRequested extends Error {
@@ -838,6 +838,12 @@ req.config.json 의 stopGate: "merge" 를 함께 쓰면 req:next 종단도 묶�
 `)
 }
 
+/**
+ * 🔴 이 `runCli`는 `lib/cli-boundary`의 `makeRunCli`를 **일부러 쓰지 않는다**(REQ-2026-105 DEC-4).
+ *    `bin/check.ts`와 같은 이유다 — `HelpRequested`를 잡아 도움말을 찍고 **정상 종료**하므로 공용
+ *    경계의 "예외 → 한 줄 + exit 1" 계약과 의미가 다르다. 누락이 아니라 결정이다.
+ *    (`isEntrypoint`는 별개 관심사라 아래에서 공유한다.)
+ */
 export function runCli(argv: string[]): void {
   try {
     const o = parseArgs(argv)
@@ -895,7 +901,7 @@ export function runCli(argv: string[]): void {
   }
 }
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))
 
 /** 테스트가 root를 명시해 ctx를 만들 때 쓰는 헬퍼. */

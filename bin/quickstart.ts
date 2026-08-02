@@ -10,8 +10,8 @@
  */
 import { existsSync, lstatSync, readFileSync, writeFileSync, realpathSync } from 'node:fs'
 import { resolve, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { PACKAGE_ROOT, statWritableDest, assertGitWorkTree, AGENTS_CONTRACT_MARKER } from './init'
+import { makeRunCli, isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 /** 마커 쌍(포함) 매칭. 비탐욕 — 첫 close에서 끝난다. 마커 문자열의 정본은 이 정규식이다(REQ-2026-103: 참조 0인 상수 2개 제거). */
 const QS_RE = /<!-- commitgate:quickstart -->[\s\S]*?<!-- \/commitgate:quickstart -->/
@@ -338,14 +338,7 @@ function printHelp(): void {
 `)
 }
 
-export function runCli(argv: string[]): void {
-  try {
-    runQuickstart(parseArgs(argv))
-  } catch (err) {
-    console.error(`commitgate quickstart: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli((argv) => runQuickstart(parseArgs(argv)), 'commitgate quickstart')
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))

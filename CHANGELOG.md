@@ -16,7 +16,29 @@
 > | 103 phase-2 (참조 없는 심볼 3종) | `1888c81` | `bin/quickstart.ts` 상단 · `req-close.ts`의 `plannedPhaseIdsFromState` 호출 · `lib/review-ledger.ts` 말미 |
 > | 103 phase-3 (`gitAdapter` 복원) | `4532ddd` | `review-codex.ts`의 `main()` try/finally · `tests/unit/req-review-codex.test.ts` O2-8·O2-8b |
 > | 103 phase-4 (CHANGELOG) | `5791cdd` | `CHANGELOG.md` |
-> | 104 phase-1 (문서 진실성 가드 범위) | **이 커밋** | `tests/unit/docs-stale-claims.test.ts`의 `docFiles`·`STALE_CLAIMS` |
+> | 104 phase-1 (문서 진실성 가드 범위) | `b5b32ef` | `tests/unit/docs-stale-claims.test.ts`의 `docFiles`·`STALE_CLAIMS` |
+> | 105 phase-1 (CLI 경계 헬퍼 + 11곳) | `ae82735` | `scripts/req/lib/cli-boundary.ts`(신규) · `tests/unit/cli-boundary.test.ts`(신규) · `bin/init.ts`·`scripts/req/req-*.ts` 말미 |
+> | 105 phase-2 (나머지 7곳) | **이 커밋** | `bin/{quickstart,uninstall,sync,migrate}.ts`(전환) · `bin/{check,delivery,setup}.ts`(미공유 사유 주석) |
+
+- **CLI 오류 경계를 한 곳으로 모았습니다** (REQ-2026-105).
+
+  18개 CLI 진입점이 각자 같은 7줄을 복제하고 있었습니다 — 예외를 `commitgate: <메시지>` 한 줄과
+  exit 1로 바꾸는 경계입니다. 이 경계의 계약은 **스택트레이스를 사용자에게 노출하지 않는 것**인데,
+  18곳에 흩어져 있으면 한 곳만 어긋나도 raw stack이 그대로 새어 나갑니다. `makeRunCli`로 모았습니다.
+
+  엔트리포인트 판정(`isMain`)도 18곳 전부 `isEntrypoint`로 통일했습니다. 그전에는 16곳이
+  `pathToFileURL(process.argv[1] ?? '')`, 2곳이 가드 우선 형태였습니다. **결과는 실측상 같습니다** —
+  `pathToFileURL('')`은 예외를 던지지 않고 현재 디렉터리 URL을 내므로 어떤 모듈과도 일치하지
+  않습니다. 그래도 가드 우선을 정본으로 삼았습니다. 같은 결과를 **문서화되지 않은 동작에 기대어**
+  얻고 있으면, Node가 그 동작을 바꾸는 날 18곳이 한꺼번에 흔들리기 때문입니다.
+
+  🔴 **세 곳(`check`·`delivery`·`setup`)은 자기 `runCli`를 유지합니다.** 셋 다 도움말 요청을 오류가
+  아닌 **제어 흐름**으로 처리하고(`setup`은 async이기도 합니다), 이를 헬퍼에 흡수하려면 예외 클래스와
+  핸들러를 파라미터로 받아야 합니다. 그러면 "예외 → 한 줄 + exit 1"이라는 계약이 "경우에 따라 정상
+  종료"로 약해집니다. 호출자 셋을 위해 공용 계약을 넓히지 않았고, **왜 공유하지 않는지 각 파일에
+  주석으로 남겼습니다** — 다음 사람이 누락으로 오해해 되돌리지 않도록.
+
+  소비자가 보는 것은 달라지지 않습니다: 오류 메시지 문자열·exit code·verb 표면 전부 그대로입니다.
 
 - **문서 거짓 서술 가드가 `docs/` 하위 전체를 봅니다** (REQ-2026-104).
 

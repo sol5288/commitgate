@@ -12,7 +12,6 @@
  *    그래서 D19~D23을 WARN 상한으로 묶은 제약이 여기엔 적용되지 않고, FAIL이 exit 1을 낼 수 있다.
  */
 import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadConfig, type ResolvedConfig } from '../scripts/req/lib/config'
 import {
   createReviewerProbes,
@@ -20,6 +19,7 @@ import {
   type AuthProbeResult,
   type VersionProbeResult,
 } from '../scripts/req/lib/adapters'
+import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 /** `req:doctor`와 같은 어휘(사용자가 이미 아는 등급). */
 export type CheckLevel = 'OK' | 'WARN' | 'FAIL'
@@ -211,6 +211,13 @@ exit: FAIL이 하나라도 있으면 1, 아니면 0.
 `)
 }
 
+/**
+ * 🔴 이 `runCli`는 `lib/cli-boundary`의 `makeRunCli`를 **일부러 쓰지 않는다**(REQ-2026-105 DEC-4).
+ *    `HelpRequested`는 오류가 아니라 **제어 흐름**이다 — 잡아서 도움말을 찍고 **정상 종료**한다.
+ *    공용 경계의 계약은 "예외 → 한 줄 + exit 1"이고, 여기에 예외 클래스·핸들러를 파라미터로 뚫으면
+ *    그 계약이 "예외 → 경우에 따라 정상 종료"로 약해진다. 호출자 3개를 위해 공용 계약을 넓히지 않는다.
+ *    (`isEntrypoint`는 별개 관심사라 아래에서 공유한다.)
+ */
 export function runCli(argv: string[]): void {
   try {
     const opts = parseArgs(argv)
@@ -227,5 +234,5 @@ export function runCli(argv: string[]): void {
   }
 }
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))

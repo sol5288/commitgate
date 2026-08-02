@@ -24,9 +24,9 @@
  */
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs'
 import { resolve, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { stripBom } from '../scripts/req/lib/config'
 import { REQ_SCRIPTS, STAGE_B_REQ_SCRIPTS, KIT_SOURCE_DIR_REL, assertGitWorkTree, commitgateDeclared } from './init'
+import { makeRunCli, isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 export interface MigrateOptions {
   dir: string
@@ -249,14 +249,7 @@ function printHelp(): void {
 `)
 }
 
-export function runCli(argv: string[]): void {
-  try {
-    runMigrate(parseArgs(argv))
-  } catch (err) {
-    console.error(`commitgate migrate: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli((argv) => runMigrate(parseArgs(argv)), 'commitgate migrate')
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))
