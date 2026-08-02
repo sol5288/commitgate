@@ -2,16 +2,54 @@
   "id": "REQ-2026-103",
   "branch": "feat/req-2026-103-dead-code-and-adapter-restore",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fc07e-73f1-75e1-b490-0452558ce7f7",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "4a82323c7873f2b1060f49afd773f25c5112fa08d557a72135cedc9d909e5ff0",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "7faa54c9d9b6fe4832314ff30a8744ce92a5f936",
+    "design": "24e377607418939518f675be8624141e694a9491",
+    "plan": "2177ab13ca14f8b8d5f3d3ed7f1bbdb3ad4d8cad"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-103/responses/design-r01-approved.json",
+    "response_sha256": "fe14cd8b5944dcd5127c34044997d1bf5ec338b7929a983dce2ca6091214354c",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "cd048155e518c08feff2fe552b6d366ed3bc7a39",
+    "codex_thread_id": "019fc07e-73f1-75e1-b490-0452558ce7f7",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-02T03:22:33.724Z",
+    "design_hash": "4a82323c7873f2b1060f49afd773f25c5112fa08d557a72135cedc9d909e5ff0"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "7eb7ca5bf13dee3c07279d94ea6d03ebe853e3a2b85360058eeba7242f7bc65f",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-02T03:22:33.724Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
