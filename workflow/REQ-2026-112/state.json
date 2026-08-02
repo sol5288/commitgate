@@ -2,21 +2,22 @@
   "id": "REQ-2026-112",
   "branch": "feat/req-2026-112-stop-gate-notice-truth",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc22e-9acd-7131-a978-7ede8406680d",
-  "review_base_sha": "c62ba7512fdbc26856ed7d54989222fbfc546f0d",
-  "review_diff_hash": "20ed7a43db299681d1f9ccb0e1b3ddb8949ff750",
+  "codex_thread_id": "019fc237-3041-7bc3-888d-320b16f1fbe4",
+  "review_base_sha": "8cd4f4319fca4cbc515f48f95291b92562662f18",
+  "review_diff_hash": "b6df7cb06284d27c9cb47cef6810859ce538c725",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "a2cbc18da294114c9c1fb8cd21e6123543224e6ae8935dd5f76a0f4d77c150e6",
-  "current_phase": "phase-1-notice-truth",
+  "current_phase": "phase-2-retired-claims-check",
   "phases": [
     {
       "id": "phase-1-notice-truth",
       "approved": true
     },
     {
-      "id": "phase-2-retired-claims-check"
+      "id": "phase-2-retired-claims-check",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -36,16 +37,23 @@
       "phase_id": "phase-1-notice-truth",
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-retired-claims-check#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-retired-claims-check",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-notice-truth",
+    "phase_id": "phase-2-retired-claims-check",
     "outcome": "approved",
-    "compare_hash": "6c84df32355233f78280d6666aaa5074b0d2842fb8cf2a509e6e683a9e7bcdbd",
+    "compare_hash": "a5eb139842167b179800ed530f76c839c2b6961be2883ac0a741b6d7331e9e32",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T11:14:50.466Z",
+    "at": "2026-08-02T11:24:28.813Z",
     "findings": [],
     "elided_count": 0
   },
@@ -73,6 +81,12 @@
       "phase_id": "phase-1-notice-truth",
       "consumed_by_commit_sha": "481670348eac5b2f822e29836f7694f414c7b77a",
       "approval_consumed_at": "2026-08-02T11:15:24.564Z"
+    },
+    {
+      "approved_tree": "b6df7cb06284d27c9cb47cef6810859ce538c725",
+      "phase_id": "phase-2-retired-claims-check",
+      "consumed_by_commit_sha": "0ff8c48148658e9fcda4f61b257647fc72779f38",
+      "approval_consumed_at": "2026-08-02T11:24:59.269Z"
     }
   ],
   "user_commit_confirmed": null
