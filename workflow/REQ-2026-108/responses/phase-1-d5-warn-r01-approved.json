@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"dc60a5a27c9256c07fcdd4291d834a91a75609b1","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"Phase 1 변경을 커밋하세요. 통합 직전에는 계획에 따라 전체 테스트 스위트를 실행하세요.","observations":[]}
