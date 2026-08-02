@@ -18,7 +18,45 @@
 > | 103 phase-4 (CHANGELOG) | `5791cdd` | `CHANGELOG.md` |
 > | 104 phase-1 (문서 진실성 가드 범위) | `b5b32ef` | `tests/unit/docs-stale-claims.test.ts`의 `docFiles`·`STALE_CLAIMS` |
 > | 105 phase-1 (CLI 경계 헬퍼 + 11곳) | `ae82735` | `scripts/req/lib/cli-boundary.ts`(신규) · `tests/unit/cli-boundary.test.ts`(신규) · `bin/init.ts`·`scripts/req/req-*.ts` 말미 |
-> | 105 phase-2 (나머지 7곳) | **이 커밋** | `bin/{quickstart,uninstall,sync,migrate}.ts`(전환) · `bin/{check,delivery,setup}.ts`(미공유 사유 주석) |
+> | 105 phase-2 (나머지 7곳) | `02099af` | `bin/{quickstart,uninstall,sync,migrate}.ts`(전환) · `bin/{check,delivery,setup}.ts`(미공유 사유 주석) |
+> | 106 phase-1·1b (프롬프트 바이트 골든) | `f89e58a` · `a180694` | `tests/unit/review-prompt-golden.test.ts` |
+> | 106 phase-2 (타입 하강) | `9dcba47` | `scripts/req/lib/review-types.ts`(신규) · `review-codex.ts`의 re-export · `lib/{evidence,review-exception,review-ledger}.ts`의 import |
+> | 106 phase-3 (이 문서) | **이 커밋** | `CHANGELOG.md` |
+
+- **리뷰 프롬프트의 바이트를 테스트로 고정했습니다** (REQ-2026-106 · `f89e58a`·`a180694`).
+
+  프롬프트는 리뷰어에게 **그대로 전달되는 입력**입니다. 조립 코드는 이미 단위 테스트가 있었지만
+  `toContain`과 순서 비교라 **구분자·공백이 바뀌어도 통과**했습니다. 리뷰 결과가 조용히 달라질 수 있는
+  축이 핀 없이 열려 있었던 셈입니다. 6개 조합(`phase`/`design` × 이전 findings 유무, delta 모드,
+  이미 커밋된 phase 참고 블록)의 출력 전문을 테스트에 박은 문자열과 바이트 비교합니다.
+
+  값어치를 변이검사로 확인했습니다: 블록 구분자를 `\n`에서 `\n\n`으로 바꾸면 **기존 구조 테스트 8건은
+  전부 통과하고 새 골든 5건은 전부 실패**합니다. 즉 기존 테스트가 못 보던 축을 덮습니다.
+
+- **`lib/`이 다시 leaf가 됐습니다** (REQ-2026-106 · `9dcba47`).
+
+  `lib/`의 세 모듈이 `review-codex.ts`에서 타입을 **거꾸로** import하고 있었습니다. `import type`이라
+  런타임 순환은 없었지만 의존 방향이 뒤집혀 있어, 앞으로 무엇을 떼어내든 순환을 만드는 상태였습니다.
+  `ReviewKind`·`ApprovalEvidence`의 정의를 `lib/review-types.ts`로 내리고 `review-codex.ts`는
+  **re-export만** 남겼습니다 — 이 타입을 쓰는 CLI 9개는 한 줄도 바뀌지 않았습니다.
+
+- 🔴 **하지 않기로 한 것** (같은 감사에서 제안됐으나 판단으로 제외).
+
+  자체 감사는 `review-codex.ts`(3,040줄)의 추가 분해를 제안했습니다. **측정해 보고 하지 않기로 했습니다.**
+
+  - **프롬프트 조립 분리(~350줄)**: 감사는 "`main()`을 돌려야만 검증된다"를 근거로 들었지만 **사실이
+    아닙니다** — `assembleReviewPrompt`는 이미 export돼 있고 직접 테스트되고 있었습니다. 남는 이득은
+    파일 줄 수뿐입니다.
+  - **series/budget 분리(~400줄)**: 이미 두터운 테스트가 있습니다. 이동은 조직화일 뿐 안전성을 더하지
+    않습니다.
+  - **`mainImpl`(523줄) 분해**: **이 함수의 단계 순서가 곧 감사 계약**인데(원장 기록 → 바인딩 캡처 →
+    호출 → 변조 검증 → 증거 보존), 그 순서를 검증하는 단위 테스트가 없습니다. 순서를 지키는 코드를
+    순서를 검증할 오라클 없이 재배치하는 것은 이 도구가 존재하는 이유를 위험에 빠뜨립니다. 분해하려면
+    순서 계약의 오라클을 먼저 설계해야 하고, 그것은 별도 작업입니다.
+
+  같은 기준으로 A트랙의 다른 제안들도 제외했습니다 — git 어댑터 싱글턴 통합(방금 복원 누락으로 데인
+  자리에 간접층을 얹는 일), sha256·경로 유틸 통합, JSONL 원장 제네릭화(세 파일을 **함께 바꾼 커밋이
+  히스토리 전체에서 0건** — 중복이 비용을 물린 적이 없습니다). **줄 수 감소가 곧 개선은 아닙니다.**
 
 - **CLI 오류 경계를 한 곳으로 모았습니다** (REQ-2026-105).
 
