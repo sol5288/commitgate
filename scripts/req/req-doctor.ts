@@ -35,6 +35,13 @@ import {
   type ApprovalEvidence,
 } from './review-codex'
 import { setupGateVerdict, collectGateFacts, type GateVerdict } from './lib/setup-gate'
+/**
+ * 🔴 REQ-2026-112(D29): **목록(`RETIRED_CLAIMS`)을 import하지 않는다.** 매칭 함수만 가져간다 —
+ *    배열을 손에 쥐지 않으면 사본을 둘 자리가 없다(설계 DEC-4 ① 구조 방어).
+ *    아래 재수출은 테스트가 **참조 동일성**으로 정본 결속을 확인하는 seam이다.
+ */
+import { retiredClaimsIn, type RetiredClaim } from './lib/retired-claims'
+export { retiredClaimsIn } from './lib/retired-claims'
 // 🔴 REQ-2026-110(D28): HIGH 확인 차단 판정의 **정본**을 그대로 쓴다(사본 금지 — REQ-2026-107 교훈).
 //    `req:commit`은 doctor를 **spawn**하지 정적 import하지 않으므로 순환은 생기지 않는다(typecheck 확인).
 import { userConfirmGate, wouldCompleteReq } from './req-commit'
@@ -79,7 +86,7 @@ export type Level = 'OK' | 'WARN' | 'FAIL'
  */
 export const D_CHECK_IDS = [
   'D2', 'D3', 'D5', 'D6', 'D9', 'D10', 'D11', 'D13', 'D15', 'D16', 'D17', 'D18', 'D19',
-  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28',
+  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29',
 ] as const
 
 /** D-체크 id — `D_CHECK_IDS` 등재분만. 새 id는 등록부에 먼저 추가해야 컴파일된다. */
@@ -121,6 +128,13 @@ export interface DoctorInputs {
    * `undefined` = 판정 불요 → D28은 OK. 이 입력을 주지 않는 호출부는 무회귀다.
    */
   highConfirm?: { blocked: boolean; reason?: string }
+  /**
+   * D29(REQ-2026-112): 소비자 **계약 파일**(`AGENTS.md`·`AGENTS.commitgate.md`)에서 발견된
+   * 폐기된 주장. `main()`이 `retiredClaimsIn`으로 계산해 채운다 — `runChecks`는 순수하다.
+   *
+   * `undefined` = 점검 불요(계약 파일이 없거나 읽지 못함) → D29는 OK. 진단이 사람을 막지 않는다.
+   */
+  retiredClaimHits?: { file: string; claim: RetiredClaim }[]
   declaredMaxFiles?: number | null
   /**
    * 🔴 REQ-2026-107: D18이 셀 **staged 코드 파일**(티켓 문서·scratch 제외). `main()`이
@@ -915,6 +929,28 @@ export function runChecks(inp: DoctorInputs): Check[] {
           : 'HIGH 확인 충족(또는 해당 없음) — 이 축으로는 커밋이 막히지 않습니다',
     })
 
+  /**
+   * D29(REQ-2026-112): 계약 파일에 남은 **폐기된 주장**.
+   *
+   * 🔴 **WARN 전용이다.** FAIL로 올리면 업그레이드 즉시 기설치 소비자의 커밋이 **서술 문제로** 막힌다.
+   * 🔴 **파일을 고치지 않는다.** `AGENTS.md`는 사용자 소유다(`init`도 부재 시에만 만든다) — 알리기만 한다.
+   * 🔴 **사유를 재작성하지 않는다**(D28과 같은 원칙). 등재 정본의 `why`를 그대로 쓴다 —
+   *    두 표면이 다른 말을 하면 어느 쪽이 맞는지 사람이 판단해야 한다.
+   */
+  if (inp.retiredClaimHits === undefined)
+    c.push({ id: 'D29', level: 'OK', msg: '계약 파일 폐기 서술 점검 불요(대상 파일 없음·미계산)' })
+  else if (inp.retiredClaimHits.length === 0)
+    c.push({ id: 'D29', level: 'OK', msg: '계약 파일에 폐기된 서술 없음' })
+  else
+    c.push({
+      id: 'D29',
+      level: 'WARN',
+      msg:
+        '계약 파일에 더 이상 사실이 아닌 서술이 있습니다 — ' +
+        inp.retiredClaimHits.map((h) => `${h.file}: "${h.claim.text}"(${h.claim.why})`).join(' / ') +
+        '. 해당 문장을 지우거나 현재 동작으로 갱신하세요(도구는 이 파일을 고치지 않습니다).',
+    })
+
   return c
 }
 
@@ -1125,6 +1161,12 @@ export function lockfileHygiene(
  *    실패 기록) (c) 티켓 내부 커밋 자산은 D10/D13 스테이징 규칙과 얽힌다.
  */
 export const DOCTOR_RUN_LOG_REL = 'workflow/.doctor-runs.jsonl'
+
+/**
+ * D29(REQ-2026-112)가 읽는 **계약 파일**. `init`이 만드는 두 형태를 모두 본다 —
+ * 기존 `AGENTS.md`에 계약 마커가 없으면 `AGENTS.commitgate.md`를 사본으로 함께 깐다(`bin/init.ts`).
+ */
+export const CONTRACT_FILE_RELS = ['AGENTS.md', 'AGENTS.commitgate.md'] as const
 
 /** 실행 1회 = 1행(설계 DEC-2). `msg`는 담지 않는다 — 경로·파일명이 섞이고 질문에 답하는 데 불필요하다. */
 export interface DoctorRunRow {
@@ -1377,6 +1419,20 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // REQ-2026-111: 새 관측 로그도 같은 보호 대상이다 — 루트 `.gitignore`·`templates/workflow.gitignore`
     //   양쪽이 배포되지 않은 설치본을 D22가 알리게 한다(자산 skew 전례: REQ-2026-025·038).
     repoRootScratchUnprotected: unprotectedRepoRootScratch([REVIEW_CALL_LOG_REL, DOCTOR_RUN_LOG_REL], git),
+    // D29(REQ-2026-112): 계약 파일을 **읽기만** 한다. 파일이 하나도 없으면 `undefined`(점검 불요).
+    retiredClaimHits: ((): { file: string; claim: RetiredClaim }[] | undefined => {
+      const rels = CONTRACT_FILE_RELS.filter((r) => existsSync(join(cfg.root, r)))
+      if (rels.length === 0) return undefined
+      const hits: { file: string; claim: RetiredClaim }[] = []
+      for (const rel of rels) {
+        try {
+          for (const claim of retiredClaimsIn(readFileSync(join(cfg.root, rel), 'utf8'))) hits.push({ file: rel, claim })
+        } catch {
+          // 읽기 실패는 조용히 건너뛴다 — 진단이 사람을 막지 않는다.
+        }
+      }
+      return hits
+    })(),
     // D23(REQ-2026-056): frozen-lockfile 위생(존재·tracked). tracked 판정은 read-only `git ls-files`.
     lockfileStatus: lockfileHygiene(cfg.root, cfg.packageManager, (rel) => {
       try {

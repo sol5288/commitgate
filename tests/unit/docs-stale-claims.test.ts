@@ -6,114 +6,21 @@ import { STOP_GATE_HIGH_NOTICE } from '../../bin/setup'
 // 🔴 고지의 값↔의미 매핑을 **실제 정지 규칙**에 결속하기 위해 정본 판정 함수를 그대로 쓴다(사본 금지).
 import { userConfirmGate } from '../../scripts/req/req-commit'
 import type { WorkflowState } from '../../scripts/req/review-codex'
+// 🔴 등재 목록의 **정본**. 이 파일에 사본을 두지 않는다 — D29가 같은 목록을 쓴다(REQ-2026-112).
+import { RETIRED_CLAIMS } from '../../scripts/req/lib/retired-claims'
 
 /**
  * REQ-2026-073 phase-1 — **알려진 거짓 보장이 문서로 되돌아오지 않는다**.
  *
- * REQ-2026-071은 "HIGH 위험 티켓은 정책과 무관하게 매 phase 확인"이라는 백스톱을 **의도적으로
- * 제거**하고, 확인을 `stopGate`가 정한 한 지점으로 옮겼다. 그런데 문서 5곳이 그 백스톱을 계속
- * 보장한다고 썼다 — 같은 파일 안에서 앞뒤가 모순인 곳도 있었다.
+ * 🔴 **등재 목록의 정본은 `scripts/req/lib/retired-claims.ts`다**(REQ-2026-112).
+ *    여기서 재수출만 한다 — 목록을 두 벌 두면 한쪽만 갱신될 때 소비자 진단(D29)이 조용히 거짓이 된다.
+ *    항목 추가 규칙·한계 서술도 그 모듈에 있다.
  *
  * 🔴 **이 테스트가 하는 일과 하지 않는 일**(DEC-3):
- *  - 한다: 아래 **고정 문장**이 문서에 다시 나타나면 실패한다.
- *  - 하지 않는다: 문서가 코드와 일치하는지 **일반적으로** 판정하지 않는다. 같은 거짓말을
- *    다른 표현으로 쓰면 이 테스트는 통과한다 — 그건 사람 리뷰의 몫이다.
- *
- * 왜 이 범위인가: REQ-2026-044에서 "문서 정적 스캐너"를 설계했다가 오라클을 명세하지 못해
- * 설계 리뷰 5라운드 미수렴 → 폐기했다. 일반 판정을 노리면 바닥없는 nitpick이 된다.
- * 여기서는 판정이 기계적이고, 실패하면 무엇을 고칠지 명확하다.
- *
- * 🔴 **항목을 추가할 때의 규칙**(REQ-2026-104): 등재할 문자열은 **정정문에도 남기지 않는다.**
- *    부분 문자열 검사기는 "주장"과 "철회를 설명하려고 옛 문구를 인용한 것"을 구별하지 못한다 —
- *    정정문이 옛 표현을 축자 인용하면 그 순간 가드가 스스로 실패한다. 인용부호 구간을 예외 처리하는
- *    파서를 만드는 대신(그게 위에서 폐기한 그 길이다) **정정문을 풀어 쓴다.**
- *    실제 사례: REQ-2026-103의 resume 항목을 등재하려다 `06`·`gaps`·`CHANGELOG`의 정정문 3곳이
- *    옛 문구를 인용하고 있어 먼저 풀어 썼다.
+ *  - 한다: 등재된 **고정 문장**이 검사 대상에 다시 나타나면 실패한다.
+ *  - 하지 않는다: 문서가 코드와 일치하는지 **일반적으로** 판정하지 않는다.
  */
-
-/** 되살아나면 안 되는 문장(한/영). 부분 문자열로 검사한다 — 문장부호·줄바꿈에 취약하지 않게. */
-export const STALE_CLAIMS: readonly { text: string; why: string }[] = [
-  {
-    text: '어느 값에서도 매 phase 확인',
-    why: 'REQ-071이 제거한 HIGH 백스톱 (configuration.md)',
-  },
-  {
-    text: '정책과 무관하게 매 phase 확인',
-    why: 'REQ-071이 제거한 HIGH 백스톱 (workflow.md)',
-  },
-  {
-    text: '기본값은 매 phase 커밋 전에',
-    why: 'stopGate 기본값은 이제 req 다 (workflow.md)',
-  },
-  {
-    text: 'HIGH-risk tickets stop at every phase under any value',
-    why: 'the HIGH backstop REQ-071 removed (configuration.en.md)',
-  },
-  {
-    text: 'HIGH-risk tickets still stop at every phase',
-    why: 'the HIGH backstop REQ-071 removed (workflow.en.md)',
-  },
-  {
-    text: 'By default the loop stops at `AWAIT_HUMAN` before every phase commit',
-    why: 'the stopGate default is now req (workflow.en.md)',
-  },
-  {
-    text: 'it would livelock on HIGH',
-    why: 'no longer the reason there is no "all" value (configuration.en.md)',
-  },
-  /**
-   * 🔴 이 두 건은 **이 REQ가 쓰다가 리뷰에서 걸린 문장**이다(phase-3 r01 P1).
-   *    "커밋·통합되지 않는다"는 커밋 단위 보장으로 읽히는데, 기본값 `req`에서 HIGH 티켓의
-   *    중간 phase는 Codex 승인만으로 커밋된다 — 고치려던 것과 **같은 종류의 과잉 약속**이었다.
-   */
-  {
-    text: '사람 확인 없이 커밋·통합되지 않습니다',
-    why: '커밋 단위 보장으로 읽히는 과잉 약속 — 확인은 stopGate 지점에서만 요구된다',
-  },
-  {
-    text: 'never committed or integrated without a human confirmation',
-    why: 'reads as a per-commit guarantee — confirmation is required only at the stopGate point',
-  },
-  /**
-   * 🔴 REQ-2026-100 — `docs/development.md`가 "전체 스위트를 돌리고 **게이트 판정도 이것을 본다**"고
-   *    적고 있었다. 사실이 아니다: `req:doctor`·`req:commit` 어디에도 테스트를 실행하는 코드가 없고
-   *    `req.config.json`에 테스트 설정도 없다. 게이트를 테스트 검증자로 오해하게 만드는 문장이라
-   *    REQ-2026-073이 정리한 것과 **같은 결함 class**다.
-   *    (같은 문장 뒤쪽의 "변경분만 돌리지 않는다"는 **참이며 유지**한다 — 실측이 그 근거를 강화했다.)
-   */
-  {
-    text: '게이트 판정도 이것을 봅니다',
-    why: '게이트는 테스트를 실행하지 않는다 (development.md · REQ-2026-100)',
-  },
-  {
-    text: 'that is what the gate judges',
-    why: 'the gate does not run tests (development.en.md · REQ-2026-100)',
-  },
-  /**
-   * 🔴 REQ-2026-103 — `docs/ssot-design/06`·`gaps-and-decisions.md` G-06이 **도달 불가였던 resume
-   *    코드**를 "향후 opt-in용으로 보존"이라 서술했다. 호출부가 `isResume = false` 상수라 실행될 수
-   *    없는 경로였는데, 문서만 보면 켜기만 하면 되는 기능처럼 읽혔다. REQ-103이 배선을 제거하고
-   *    서술을 정정했다. 재리뷰는 stateless가 확정 동작이며(REQ-2026-045 운영정책), resume은 부활해도
-   *    게이트 정책부터 새로 설계한다 — 옛 argv 복원이 아니다.
-   *
-   *    ko 전용 항목이다: 이 서술은 `docs/ssot-design/`(ko)에만 있었고, 없던 문장을 영문으로 만들어
-   *    등재하면 **영원히 발화하지 않는 항목**이 늘 뿐이다.
-   */
-  {
-    text: '향후 opt-in용',
-    why: 'resume은 도달 불가 코드였다 — "켜면 되는 보존 코드"가 아니다 (ssot-design 06·G-06 · REQ-2026-103)',
-  },
-  /**
-   * 🔴 REQ-2026-112 — **표현 변형**이다. 위의 두 항목(`어느 값에서도 매 phase 확인`·
-   *    `정책과 무관하게 매 phase 확인`)과 같은 주장인데 문장이 달라 부분 문자열 검사를 빠져나갔다.
-   *    `docs/ssot-design/04`는 이미 `docs/**` 검사 범위 **안**이었는데도 통과했다 —
-   *    **범위를 넓히는 것만으로는 부족하다**는 실증이다.
-   */
-  {
-    text: '정책과 무관하게 유지',
-    why: 'REQ-071이 제거한 HIGH 백스톱의 표현 변형 (ssot-design 04 · REQ-2026-112)',
-  },
-]
+export const STALE_CLAIMS = RETIRED_CLAIMS
 
 /**
  * 재귀 `.md` 수집 대상 디렉터리.
@@ -147,7 +54,8 @@ const CODE_SURFACES = [join('bin', 'setup.ts'), join('scripts', 'req', 'lib', 'c
  * 대상 목록이 나중에 글로브로 넓어지면 여기 있는 것들이 걸려 정정·기록이 막힌다.
  */
 const SCAN_EXCLUDED = [
-  join('tests', 'unit', 'docs-stale-claims.test.ts'), // 가드 자신 — 등재 목록이 여기 있다
+  join('scripts', 'req', 'lib', 'retired-claims.ts'), // 등재 **정본** — 문구를 담는 것이 그 역할이다
+  join('tests', 'unit', 'docs-stale-claims.test.ts'), // 가드 자신
   'CHANGELOG.md', // 역사 기록. 그 시점의 사실을 적은 것은 거짓이 아니다
 ] as const
 /** 티켓 문서는 정정을 설명하려면 옛 문구를 인용해야 한다. */
