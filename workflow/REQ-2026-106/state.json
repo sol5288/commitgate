@@ -2,14 +2,14 @@
   "id": "REQ-2026-106",
   "branch": "feat/req-2026-106-review-kernel-types-and-prompt-goldens",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc104-5329-7330-8c8c-847effbdd13b",
-  "review_base_sha": "eacc7c6cc2cfb01aa1a2ae03c3a7adc5a70bbe3e",
-  "review_diff_hash": "1b4d5dc7e29c8b2796254f2f1ef47a8c99180209",
+  "codex_thread_id": "019fc108-49dc-7a32-bdba-a413bf074e55",
+  "review_base_sha": "eb479ddffb196fc5c035c05e81d35af5f6d58933",
+  "review_diff_hash": "71f3fe84512c4dd8b1a5175db196d18ec09be897",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "708e0d025048e9a85fed50b5ecaddc8054c8de28def1df6dadcb01f59f6e9b53",
-  "current_phase": "phase-1b-design-prevfindings-golden",
+  "current_phase": "phase-2-review-types-descent",
   "phases": [
     {
       "id": "phase-1-prompt-byte-goldens",
@@ -21,7 +21,7 @@
     },
     {
       "id": "phase-2-review-types-descent",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-changelog",
@@ -59,6 +59,13 @@
       "phase_id": "phase-1b-design-prevfindings-golden",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-review-types-descent#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-review-types-descent",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -68,12 +75,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1b-design-prevfindings-golden",
+    "phase_id": "phase-2-review-types-descent",
     "outcome": "approved",
-    "compare_hash": "4b04cc600490649d8a64a080fbb2c29efe57a61a9d60a1f4690b4335a717e332",
+    "compare_hash": "ac6ac8b8372f47cc2f862961ca21f492b500278ea82c46980ae0d8549ce6e391",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T05:49:00.641Z",
+    "at": "2026-08-02T05:53:14.701Z",
     "findings": [],
     "elided_count": 0
   },
@@ -89,6 +96,12 @@
       "phase_id": "phase-1b-design-prevfindings-golden",
       "consumed_by_commit_sha": "a180694736b84f76e596e237e16353d999ddb36b",
       "approval_consumed_at": "2026-08-02T05:49:17.424Z"
+    },
+    {
+      "approved_tree": "71f3fe84512c4dd8b1a5175db196d18ec09be897",
+      "phase_id": "phase-2-review-types-descent",
+      "consumed_by_commit_sha": "9dcba47b03b9486efbfe10db785ce949f2985cab",
+      "approval_consumed_at": "2026-08-02T05:53:37.656Z"
     }
   ],
   "user_commit_confirmed": null,
