@@ -2,16 +2,54 @@
   "id": "REQ-2026-106",
   "branch": "feat/req-2026-106-review-kernel-types-and-prompt-goldens",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fc0f9-ad1b-7653-b93f-9975314b7ebc",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "02618c79750d35475a97bf91615d538f25e8d6b876298e199eb9962915154adf",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "4d7453016e83b3fbd4a09bde7ef12ed9e0cdee4f",
+    "design": "430ad612cc1a2a7e9035146f0d4099150665526b",
+    "plan": "b1ddb7d02f55f4a5b9132ad33465c71c5fa79971"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-106/responses/design-r01-approved.json",
+    "response_sha256": "26f904f3a1bafea4086b86dead402190d9bc4f28d7226dbd4c0d0bbd90976c7b",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "c0415e3f47fcf4755872f71902a713826c43ca19",
+    "codex_thread_id": "019fc0f9-ad1b-7653-b93f-9975314b7ebc",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-02T05:37:43.882Z",
+    "design_hash": "02618c79750d35475a97bf91615d538f25e8d6b876298e199eb9962915154adf"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "692774d0ee33affbe87d4e8e5568af10a73c396f646aa954021085878003b1a1",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-02T05:37:43.882Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
