@@ -2,18 +2,22 @@
   "id": "REQ-2026-106",
   "branch": "feat/req-2026-106-review-kernel-types-and-prompt-goldens",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc0fe-da87-7963-a7a5-f9a9750bb3d3",
+  "codex_thread_id": "019fc103-017e-7152-af74-192015f203b8",
   "review_base_sha": "7bb07e7bad5e007aa8440825200827809b179118",
   "review_diff_hash": "63027ad200629e95fe32ade93df965c0ef364357",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "02618c79750d35475a97bf91615d538f25e8d6b876298e199eb9962915154adf",
+  "design_approved_hash": "708e0d025048e9a85fed50b5ecaddc8054c8de28def1df6dadcb01f59f6e9b53",
   "current_phase": "phase-1-prompt-byte-goldens",
   "phases": [
     {
       "id": "phase-1-prompt-byte-goldens",
       "approved": true
+    },
+    {
+      "id": "phase-1b-design-prevfindings-golden",
+      "approved": false
     },
     {
       "id": "phase-2-review-types-descent",
@@ -41,34 +45,28 @@
       "phase_id": "phase-1-prompt-byte-goldens",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
-    "requirement": "4d7453016e83b3fbd4a09bde7ef12ed9e0cdee4f",
-    "design": "430ad612cc1a2a7e9035146f0d4099150665526b",
-    "plan": "b1ddb7d02f55f4a5b9132ad33465c71c5fa79971"
-  },
-  "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-106/responses/design-r01-approved.json",
-    "response_sha256": "26f904f3a1bafea4086b86dead402190d9bc4f28d7226dbd4c0d0bbd90976c7b",
-    "review_kind": "design",
-    "phase_id": null,
-    "review_base_sha": "c0415e3f47fcf4755872f71902a713826c43ca19",
-    "codex_thread_id": "019fc0f9-ad1b-7653-b93f-9975314b7ebc",
-    "machine_schema_version": "1.1",
-    "status": "STEP_COMPLETE",
-    "commit_approved": "yes",
-    "approved_at": "2026-08-02T05:37:43.882Z",
-    "design_hash": "02618c79750d35475a97bf91615d538f25e8d6b876298e199eb9962915154adf"
+    "requirement": "ded9c09b933afe6881e4bd2c6b687419f1779b7d",
+    "design": "576577b5e0e169c3f50235c3f04c567407a3dd14",
+    "plan": "d571b86004b6ef8a8171c3be9dc28409d7518330"
   },
   "last_review": {
-    "review_kind": "phase",
-    "phase_id": "phase-1-prompt-byte-goldens",
+    "review_kind": "design",
+    "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "4bd4c00eeaa6e214adf11a6231b72c77f5f5b158bd981de5b4cacaa7cce7ae34",
+    "compare_hash": "253403ca5d594d2860255c7eaf5a0a9c8cee322eba63b5f92275f96215a0c311",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T05:43:13.197Z",
+    "at": "2026-08-02T05:47:29.789Z",
     "findings": [],
     "elided_count": 0
   },
@@ -80,5 +78,18 @@
       "approval_consumed_at": "2026-08-02T05:43:36.578Z"
     }
   ],
-  "user_commit_confirmed": null
+  "user_commit_confirmed": null,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-106/responses/design-r03-approved.json",
+    "response_sha256": "08af12013c93ee1dbfe68dbaf5ca96b78d2384f9d932fecb66b07330d2b69dbb",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "0fef5ba4f6b957b78a1b433c8e796b7235276545",
+    "codex_thread_id": "019fc103-017e-7152-af74-192015f203b8",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-02T05:47:29.789Z",
+    "design_hash": "708e0d025048e9a85fed50b5ecaddc8054c8de28def1df6dadcb01f59f6e9b53"
+  }
 }
