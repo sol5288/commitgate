@@ -2,15 +2,21 @@
   "id": "REQ-2026-107",
   "branch": "feat/req-2026-107-doctor-granularity-parity",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc12c-069a-7eb1-aab8-f354c5d34e35",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc130-a0c1-7963-b2b0-48a0511f2de0",
+  "review_base_sha": "62b76ab32f29d297ab2391676f6ac7d84f40a096",
+  "review_diff_hash": "5de8d399bbdae7a2e7d5bae6b9014d40cab7e443",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "9b23a2ec85b9dfd9fbbe7051f017be0deea021467c889836dd826c66d3c41ba1",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-d18-parity",
+  "phases": [
+    {
+      "id": "phase-1-d18-parity",
+      "approved": true,
+      "max_files": 15
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +25,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-d18-parity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-d18-parity",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +55,23 @@
     "design_hash": "9b23a2ec85b9dfd9fbbe7051f017be0deea021467c889836dd826c66d3c41ba1"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-d18-parity",
     "outcome": "approved",
-    "compare_hash": "662d6834c2c41c74805c4fbb7b2b84809dd6c426d3078b62650ef92b60c4f6e9",
+    "compare_hash": "44db3d39a5fa1e44f80596b9b80925c8c6cfe276e37ea334f04f9167d27dbca8",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T06:32:30.150Z",
+    "at": "2026-08-02T06:37:33.224Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "5de8d399bbdae7a2e7d5bae6b9014d40cab7e443",
+      "phase_id": "phase-1-d18-parity",
+      "consumed_by_commit_sha": "247e5269ffa79026d776ad5cb548224dd028a894",
+      "approval_consumed_at": "2026-08-02T06:38:06.518Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
