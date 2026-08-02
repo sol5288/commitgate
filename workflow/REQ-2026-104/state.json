@@ -2,15 +2,20 @@
   "id": "REQ-2026-104",
   "branch": "feat/req-2026-104-docs-truth-guard-scope",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc0a1-b077-72a0-a42a-e98c390ee7e6",
+  "codex_thread_id": "019fc0a6-cac4-78a0-a612-66dcd7a1ed23",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "f1baf057ee92734045c52194fb0339d1a56c872d4e44687405c8b0fb22984a30",
+  "design_approved_hash": "becd8000e19610b58bd119139006c9f10cc5df91b822cb2f2eb3272aafe79db6",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-docs-truth-guard",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -28,35 +33,42 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#3",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
-    "requirement": "6b08d25c45e28f0a53fb5e6a7e51fbd1ec5f155f",
-    "design": "87f19db356e256c55aebbc76d90e2ecd317b47f4",
-    "plan": "783e6f858d90285b0dc633fcff34db602bf63986"
+    "requirement": "9f81cc13b2fcec1fb409379c2bd3fead8b0d43e4",
+    "design": "be1dbb0836f68e21849df51b2ad6b0aa3cfe038b",
+    "plan": "036e4c8adda7714d73790f8d52dbd54f013cf909"
   },
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "d7b1f3897b0b668aa78eae75565194174b1dc102d74dc1d95991b847db3a55dd",
+    "compare_hash": "96a6c78dc3565b23b38aaf2828507a03dc2e9c4e4bd0a97353fe943c60311c95",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T04:01:29.756Z",
+    "at": "2026-08-02T04:06:47.676Z",
     "findings": [],
     "elided_count": 0
   },
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-104/responses/design-r02-approved.json",
-    "response_sha256": "e1ebd7e6455d3ced48063ac5a57d30428aba64315785fec59725e321d2e30e17",
+    "response_path": "workflow/REQ-2026-104/responses/design-r03-approved.json",
+    "response_sha256": "1cf2ae05440dfe6d9a27e202ab18c9d7035512d8c4c1c9b327813b4198c27675",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "3e2df391d5a883628ab921238aee6b0e3173ac06",
-    "codex_thread_id": "019fc0a1-b077-72a0-a42a-e98c390ee7e6",
+    "review_base_sha": "123c009ec5f113aadddfebd0c6d94f041ced6909",
+    "codex_thread_id": "019fc0a6-cac4-78a0-a612-66dcd7a1ed23",
     "machine_schema_version": "1.1",
     "status": "COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-08-02T04:01:29.756Z",
-    "design_hash": "f1baf057ee92734045c52194fb0339d1a56c872d4e44687405c8b0fb22984a30"
+    "approved_at": "2026-08-02T04:06:47.676Z",
+    "design_hash": "becd8000e19610b58bd119139006c9f10cc5df91b822cb2f2eb3272aafe79db6"
   }
 }
