@@ -15,7 +15,25 @@
 > | 103 phase-1 (죽은 resume 배선·`withAttemptRecorded` 제거) | `145b453` | `review-codex.ts`의 `callReviewer` · `lib/adapters.ts`의 `createCodexReviewerAdapter` · `tests/unit/req-adapters.test.ts` · `docs/ssot-design/06`·`gaps-and-decisions.md` G-06 |
 > | 103 phase-2 (참조 없는 심볼 3종) | `1888c81` | `bin/quickstart.ts` 상단 · `req-close.ts`의 `plannedPhaseIdsFromState` 호출 · `lib/review-ledger.ts` 말미 |
 > | 103 phase-3 (`gitAdapter` 복원) | `4532ddd` | `review-codex.ts`의 `main()` try/finally · `tests/unit/req-review-codex.test.ts` O2-8·O2-8b |
-> | 103 phase-4 (이 문서) | **이 커밋** | `CHANGELOG.md` |
+> | 103 phase-4 (CHANGELOG) | `5791cdd` | `CHANGELOG.md` |
+> | 104 phase-1 (문서 진실성 가드 범위) | **이 커밋** | `tests/unit/docs-stale-claims.test.ts`의 `docFiles`·`STALE_CLAIMS` |
+
+- **문서 거짓 서술 가드가 `docs/` 하위 전체를 봅니다** (REQ-2026-104).
+
+  `docs-stale-claims` 검사는 "과거에 실제로 적었던 거짓 문장이 다시 나타나면 실패한다"는 장치입니다.
+  그런데 대상 수집이 **비재귀**여서 `docs/ssot-design/` 18개 문서(285KB)가 통째로 빠져 있었습니다 —
+  가장 오래 살아남는 설계 SSOT 문서가 검사 밖이었던 셈입니다. 재귀로 바꾸고, **범위가 다시 좁아지면
+  실패하는 단언**을 함께 넣었습니다(기존 검사는 파일 수만 보아 회귀를 놓쳤습니다).
+
+  REQ-2026-103이 정정한 resume 서술도 금지 목록에 등재했습니다. 등재하는 과정에서 하나 배웠습니다 —
+  **정정문이 옛 문구를 그대로 인용하면 가드가 자기 자신에게 걸립니다.** 부분 문자열 검사기는 주장과
+  인용을 구별하지 못합니다. 인용부호를 예외 처리하는 파서를 만드는 대신(그 길은 REQ-2026-044에서
+  이미 폐기했습니다) 정정문을 풀어 썼고, 그 규칙을 테스트 파일 주석에 남겼습니다.
+
+  🔴 **이 가드의 한계를 분명히 해둡니다.** 고정 문자열 목록이며 **새로운 거짓 서술을 스스로 찾지
+  못합니다.** REQ-103이 발견한 resume 서술도 등재 *후에야* 막힙니다 — 발견 자체는 사람이 했습니다.
+  범위 확장으로 얻은 것은 "이미 아는 거짓말이 무가드 구역으로 이주하지 못한다"는 예방뿐입니다.
+
 
 - **`main()`이 `gitAdapter`도 원래대로 되돌립니다** (REQ-2026-103 · `4532ddd`).
 
@@ -32,8 +50,8 @@
 
   REQ-2026-013 P4에서 재리뷰를 stateless(항상 새 스레드)로 고정한 뒤, 호출부의 `isResume`이
   `false` 상수가 되어 `codex exec resume` 분기 전체가 실행될 수 없는 코드로 남아 있었습니다.
-  문서(`docs/ssot-design/06`, `gaps-and-decisions.md` G-06)는 이를 "향후 opt-in용으로 보존"이라고
-  적어 **실제보다 준비된 기능처럼 읽혔습니다.** 배선을 어댑터까지 걷어내고 문서 서술도 정정했습니다.
+  문서(`docs/ssot-design/06`, `gaps-and-decisions.md` G-06)는 이를 **나중에 켜기만 하면 되는 보존
+  코드처럼 서술해 실제보다 준비된 기능처럼 읽혔습니다.** 배선을 어댑터까지 걷어내고 문서도 정정했습니다.
 
   🔴 **`state.codex_thread_id` 필드는 그대로 기록합니다.** 기존 티켓의 `state.json`과 승인 증거
   스냅샷이 이 값을 갖고 있기 때문입니다. 없앤 것은 그 값을 **읽어서 분기하던 죽은 경로**뿐입니다.

@@ -19,6 +19,13 @@ import type { WorkflowState } from '../../scripts/req/review-codex'
  * 왜 이 범위인가: REQ-2026-044에서 "문서 정적 스캐너"를 설계했다가 오라클을 명세하지 못해
  * 설계 리뷰 5라운드 미수렴 → 폐기했다. 일반 판정을 노리면 바닥없는 nitpick이 된다.
  * 여기서는 판정이 기계적이고, 실패하면 무엇을 고칠지 명확하다.
+ *
+ * 🔴 **항목을 추가할 때의 규칙**(REQ-2026-104): 등재할 문자열은 **정정문에도 남기지 않는다.**
+ *    부분 문자열 검사기는 "주장"과 "철회를 설명하려고 옛 문구를 인용한 것"을 구별하지 못한다 —
+ *    정정문이 옛 표현을 축자 인용하면 그 순간 가드가 스스로 실패한다. 인용부호 구간을 예외 처리하는
+ *    파서를 만드는 대신(그게 위에서 폐기한 그 길이다) **정정문을 풀어 쓴다.**
+ *    실제 사례: REQ-2026-103의 resume 항목을 등재하려다 `06`·`gaps`·`CHANGELOG`의 정정문 3곳이
+ *    옛 문구를 인용하고 있어 먼저 풀어 썼다.
  */
 
 /** 되살아나면 안 되는 문장(한/영). 부분 문자열로 검사한다 — 문장부호·줄바꿈에 취약하지 않게. */
@@ -79,11 +86,32 @@ export const STALE_CLAIMS: readonly { text: string; why: string }[] = [
     text: 'that is what the gate judges',
     why: 'the gate does not run tests (development.en.md · REQ-2026-100)',
   },
+  /**
+   * 🔴 REQ-2026-103 — `docs/ssot-design/06`·`gaps-and-decisions.md` G-06이 **도달 불가였던 resume
+   *    코드**를 "향후 opt-in용으로 보존"이라 서술했다. 호출부가 `isResume = false` 상수라 실행될 수
+   *    없는 경로였는데, 문서만 보면 켜기만 하면 되는 기능처럼 읽혔다. REQ-103이 배선을 제거하고
+   *    서술을 정정했다. 재리뷰는 stateless가 확정 동작이며(REQ-2026-045 운영정책), resume은 부활해도
+   *    게이트 정책부터 새로 설계한다 — 옛 argv 복원이 아니다.
+   *
+   *    ko 전용 항목이다: 이 서술은 `docs/ssot-design/`(ko)에만 있었고, 없던 문장을 영문으로 만들어
+   *    등재하면 **영원히 발화하지 않는 항목**이 늘 뿐이다.
+   */
+  {
+    text: '향후 opt-in용',
+    why: 'resume은 도달 불가 코드였다 — "켜면 되는 보존 코드"가 아니다 (ssot-design 06·G-06 · REQ-2026-103)',
+  },
 ]
 
-/** 검사 대상: 저장소 루트의 README 2종 + `docs/*.md` 전부. */
+/**
+ * 검사 대상: 저장소 루트의 README 2종 + `docs/` **하위 전체**의 `.md`.
+ *
+ * 🔴 REQ-2026-104: 예전에는 비재귀(`readdirSync(docs)`)여서 `docs/ssot-design/` 18파일(285KB)이
+ *    통째로 무가드였다 — `.md` 필터가 디렉터리 엔트리를 걸러내 하위가 아예 열리지 않았다.
+ *    설계 SSOT 문서가 가장 오래 살아남는 서술인데 검사에서 빠져 있던 셈이다.
+ */
 function docFiles(root: string): string[] {
-  const docs = readdirSync(join(root, 'docs'))
+  const docs = readdirSync(join(root, 'docs'), { recursive: true })
+    .map((f) => String(f))
     .filter((f) => f.endsWith('.md'))
     .map((f) => join('docs', f))
   return ['README.md', 'README.en.md', ...docs]
@@ -100,6 +128,17 @@ describe('[REQ-2026-073] 알려진 거짓 보장이 문서에 없다', () => {
     expect(files).toContain('README.md')
     expect(files).toContain(join('docs', 'workflow.md'))
     expect(files).toContain(join('docs', 'configuration.en.md'))
+  })
+
+  /**
+   * 🔴 REQ-2026-104: **범위 자체를 단언한다.** 위 검사는 `length > 10`이라 재귀가 사라져도
+   *    (최상위만 21개) 통과한다 — 즉 무가드로 되돌아가는 것을 못 잡는다. 하위 디렉터리 파일이
+   *    실제로 목록에 있는지 직접 본다.
+   */
+  it('🔴 docs/ 하위 디렉터리도 검사 대상이다(재귀 회귀 방지)', () => {
+    const nested = files.filter((f) => f.startsWith(join('docs', 'ssot-design')))
+    expect(nested.length).toBeGreaterThan(10) // 현재 18파일
+    expect(nested).toContain(join('docs', 'ssot-design', 'gaps-and-decisions.md'))
   })
 
   for (const claim of STALE_CLAIMS) {

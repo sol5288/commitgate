@@ -93,7 +93,7 @@ override 인자(모델/추론강도)는 값이 있을 때만 주입: `-c model="
 | exec(새 스레드) | `codex exec <override…> --json --sandbox read-only --output-schema <strict.json> --output-last-message <last> -` |
 
 - **유일한 호출 형태가 exec(stateless)다.** 재리뷰도 새 스레드로 간다 — resume 누적이 토큰 증가·목표 이동을 유발하기 때문(REQ-2026-013 P4).
-- 🔴 **REQ-2026-103: resume argv를 제거했다.** 그 전까지 `createCodexReviewerAdapter`에 resume 조립부가 남아 있었으나 호출부가 `isResume = false` 상수여서 도달 불가였고, 문서는 이를 "향후 opt-in용 보존"이라 적어 **실제보다 준비된 것처럼 읽혔다**. resume이 부활한다면(REQ-2026-045 레버 C — 현재 PARKED) 게이트 정책·감사 설계부터 다시 해야 한다.
+- 🔴 **REQ-2026-103: resume argv를 제거했다.** 그 전까지 `createCodexReviewerAdapter`에 resume 조립부가 남아 있었으나 호출부가 `isResume = false` 상수여서 도달 불가였고, 문서는 이를 **나중에 켜기만 하면 되는 보존 코드처럼 서술해 실제보다 준비된 것처럼 읽혔다**. resume이 부활한다면(REQ-2026-045 레버 C — 현재 PARKED) 게이트 정책·감사 설계부터 다시 해야 한다.
 
 ### 2.2 출력 스키마(strict)
 `deriveStrictOutputSchema`([scripts/req/lib/adapters.ts](../../scripts/req/lib/adapters.ts))가 원본을 파싱→수정→직렬화한 **파생 copy**를 만들어 `--output-schema`로 넘긴다. 원본 `machine.schema.json`은 **검증 SSOT로 불변**이며, 응답·아카이브 검증에는 계속 원본을 쓴다. 파생은 두 가지를 적용한다.
