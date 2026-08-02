@@ -2,6 +2,63 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+> 자체 감사에서 나온 **내부 정리**입니다. 소비자가 관측할 수 있는 변화는 없습니다 —
+> CLI 표면·`req:doctor` 출력·리뷰 프롬프트·`state.json` 스키마·원장/증거 아카이브 형식이
+> 모두 그대로입니다. 진행 중인 티켓 위로 업그레이드해도 이어서 작업할 수 있습니다.
+
+> **확인할 파일** — 각 항목이 어느 커밋에서 왔는지.
+>
+> | REQ · phase | 구현 커밋 | 확인할 파일 |
+> |---|---|---|
+> | 103 phase-1 (죽은 resume 배선·`withAttemptRecorded` 제거) | `145b453` | `review-codex.ts`의 `callReviewer` · `lib/adapters.ts`의 `createCodexReviewerAdapter` · `tests/unit/req-adapters.test.ts` · `docs/ssot-design/06`·`gaps-and-decisions.md` G-06 |
+> | 103 phase-2 (참조 없는 심볼 3종) | `1888c81` | `bin/quickstart.ts` 상단 · `req-close.ts`의 `plannedPhaseIdsFromState` 호출 · `lib/review-ledger.ts` 말미 |
+> | 103 phase-3 (`gitAdapter` 복원) | `4532ddd` | `review-codex.ts`의 `main()` try/finally · `tests/unit/req-review-codex.test.ts` O2-8·O2-8b |
+> | 103 phase-4 (이 문서) | **이 커밋** | `CHANGELOG.md` |
+
+- **`main()`이 `gitAdapter`도 원래대로 되돌립니다** (REQ-2026-103 · `4532ddd`).
+
+  `req:review-codex`의 `main()`은 주입받은 reviewer를 호출이 끝나면 복원했지만(REQ-2026-027 D3),
+  바로 옆에서 재할당하는 모듈 전역 `gitAdapter`는 되돌리지 않았습니다. 그래서 호출이 끝난 뒤에도
+  **그 호출의 저장소 root가 남았고**, 다음 호출이 자기 root를 세우기 전에 모듈의 git 헬퍼를 쓰면
+  엉뚱한 저장소를 향할 수 있었습니다. 같은 위험을 지적한 주석이 reviewer 쪽에만 달려 있었습니다.
+
+  **CLI 사용자에게는 관측되지 않습니다** — 명령 하나가 프로세스 하나이기 때문입니다. 실제 영향은
+  한 프로세스에서 `main()`을 여러 번 부르는 경우(near-e2e 테스트)에 한정됩니다. 회귀 테스트
+  O2-8·O2-8b를 붙였고, 복원 한 줄을 빼면 둘 다 실패하는 것을 확인했습니다.
+
+- **도달할 수 없던 resume 경로를 제거했습니다** (REQ-2026-103 · `145b453`).
+
+  REQ-2026-013 P4에서 재리뷰를 stateless(항상 새 스레드)로 고정한 뒤, 호출부의 `isResume`이
+  `false` 상수가 되어 `codex exec resume` 분기 전체가 실행될 수 없는 코드로 남아 있었습니다.
+  문서(`docs/ssot-design/06`, `gaps-and-decisions.md` G-06)는 이를 "향후 opt-in용으로 보존"이라고
+  적어 **실제보다 준비된 기능처럼 읽혔습니다.** 배선을 어댑터까지 걷어내고 문서 서술도 정정했습니다.
+
+  🔴 **`state.codex_thread_id` 필드는 그대로 기록합니다.** 기존 티켓의 `state.json`과 승인 증거
+  스냅샷이 이 값을 갖고 있기 때문입니다. 없앤 것은 그 값을 **읽어서 분기하던 죽은 경로**뿐입니다.
+
+  resume이 필요해지면(REQ-2026-045 레버 C — 현재 보류) 게이트 정책과 감사 설계부터 새로 합니다.
+  옛 코드가 필요하면 `145b453^`에 있습니다.
+
+- **참조가 하나도 없던 심볼 3종을 제거했습니다** (REQ-2026-103 · `1888c81`).
+
+  `QUICKSTART_MARKER_OPEN`/`_CLOSE`(마커 문자열의 정본은 원래부터 정규식이었습니다),
+  `req-close.ts`의 `committedPlannedPhaseIds` 별칭(정본 `plannedPhaseIdsFromState`를 직접 호출),
+  `lib/review-ledger.ts`의 `unclosedAttempts`(어떤 게이트에도 연결돼 있지 않았습니다).
+
+  `unclosedAttempts`가 지원하려던 관측 — "예산은 깎였는데 완료되지 않은 호출" — 은 **그대로
+  가능합니다.** 그것을 가능하게 하는 것은 이 조회 헬퍼가 아니라 외부 호출 **전에** 커밋되는
+  `attempt-opened` 원장 행이고, 그 경로는 손대지 않았습니다. 자동 진단으로 만들 때는 `req:doctor`
+  체크와 함께 작성합니다(그때는 출력이 바뀌므로 별도 작업입니다). 옛 코드는 `1888c81^`에 있습니다.
+
+- **`withAttemptRecorded`를 제거하고 테스트를 프로덕션 함수로 옮겼습니다** (REQ-2026-103 · `145b453`).
+
+  이 래퍼는 프로덕션에서 아무도 부르지 않았고(`main()`은 `gateAndRecordAttempt`를 직접 호출),
+  테스트 5곳만 이를 통해 게이트를 검증하고 있었습니다. 테스트를 지우는 대신 `gateAndRecordAttempt`
+  대상으로 다시 썼습니다 — 검증 대상이 원래 래퍼가 아니라 게이트였으므로 커버리지는 줄지 않고,
+  이제 실제 실행되는 함수를 직접 겨냥합니다.
+
 ## 0.18.0 (2026-08-02)
 
 > 이번 묶음은 **"적용한 프로젝트에서 변경 하나마다 수십 분이 걸린다"**는 제보에서 나왔습니다.
