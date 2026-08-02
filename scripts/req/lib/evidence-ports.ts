@@ -23,8 +23,12 @@ function abs(root: string, repoRel: string): string {
  *
  * @param root  소비 저장소 루트(=`cfg.root`).
  * @param responsesDirRel 티켓 `responses/` repo-상대 경로(아카이브 목록용).
+ * @param ref  `head*` 포트가 읽을 git ref(기본 `HEAD`). REQ-2026-109: `commitgate delivery`가
+ *   feature ref 기준으로 같은 검증을 돌려야 해서 매개변수화했다 — 그 전에는 `bin/delivery.ts`가
+ *   포트 3개를 **따로 구현**했고, 이 파일이 주석으로 경고한 함정 두 개(바이트 손실·경로 인용)를
+ *   그대로 밟고 있었다. 기본값이 `'HEAD'`라 기존 호출부는 바뀌지 않는다.
  */
-export function createEvidencePorts(root: string, responsesDirRel: string): EvidencePorts {
+export function createEvidencePorts(root: string, responsesDirRel: string, ref = 'HEAD'): EvidencePorts {
   /** 짧은 문자열 출력을 내는 git 호출(파일 내용용 아님). */
   const gitText = (args: string[]): string =>
     execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
@@ -49,7 +53,7 @@ export function createEvidencePorts(root: string, responsesDirRel: string): Evid
     headText(repoRel) {
       try {
         // 🔴 부재가 정상이므로 git stderr를 버린다(REQ-2026-058 F-5) — 판정은 그대로 `catch → null`.
-        return execFileSync('git', ['show', `HEAD:${repoRel}`], {
+        return execFileSync('git', ['show', `${ref}:${repoRel}`], {
           cwd: root,
           encoding: 'utf8',
           maxBuffer: 64 * 1024 * 1024,
@@ -71,7 +75,7 @@ export function createEvidencePorts(root: string, responsesDirRel: string): Evid
      */
     headBlobSha256(repoRel) {
       try {
-        const buf = execFileSync('git', ['cat-file', 'blob', `HEAD:${repoRel}`], {
+        const buf = execFileSync('git', ['cat-file', 'blob', `${ref}:${repoRel}`], {
           cwd: root,
           maxBuffer: 64 * 1024 * 1024,
           stdio: ['ignore', 'pipe', 'ignore'], // 부재가 정상 — stderr 노이즈 억제(REQ-2026-058 F-5)
@@ -90,7 +94,7 @@ export function createEvidencePorts(root: string, responsesDirRel: string): Evid
      */
     headArchivePaths(responsesDirRel) {
       try {
-        const out = execFileSync('git', ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', responsesDirRel], {
+        const out = execFileSync('git', ['ls-tree', '-r', '-z', '--name-only', ref, '--', responsesDirRel], {
           cwd: root,
           encoding: 'utf8',
           maxBuffer: 64 * 1024 * 1024,
@@ -104,7 +108,7 @@ export function createEvidencePorts(root: string, responsesDirRel: string): Evid
       }
     },
     headCommitSha() {
-      return gitText(['rev-parse', 'HEAD']).trim()
+      return gitText(['rev-parse', ref]).trim()
     },
     /**
      * 🔴 **pathspec 범위 커밋**. `git add <paths>` 로 새 파일을 추적 대상에 넣은 뒤,

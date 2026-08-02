@@ -45,6 +45,7 @@ import {
   type DeliveryRecord,
 } from '../scripts/req/lib/delivery'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
+import { createEvidencePorts } from '../scripts/req/lib/evidence-ports'
 
 /** `-h/--help` 신호(오류가 아니다). */
 export class HelpRequested extends Error {
@@ -322,47 +323,6 @@ export function integrateEligibilityProblems(f: EligibilityFacts): string[] {
 }
 
 /** feature ref에서 통합 자격 사실을 수집한다. */
-/**
- * `evidence.ts`의 무결성 검증기를 **임의 ref 범위**로 돌리기 위한 ports.
- *
- * 🔴 검증을 직접 손으로 재구현하지 않는다 — 그러면 "manifest 구조만 보고 응답 파일은 안 본다" 같은
- *    구멍이 계속 생긴다(phase-2 r03·r04 P1이 정확히 그것이었다). 저장소의 정본 검증기를 그대로 쓴다.
- */
-export function refEvidencePorts(ctx: Ctx, ref: string) {
-  const show = (rel: string): string | null => readAtRef(ctx, ref, rel)
-  return {
-    headText: show,
-    headBlobSha256(rel: string): string | null {
-      const r = safeSpawnSyncStatus('git', ['cat-file', 'blob', `${ref}:${rel}`], { cwd: ctx.root })
-      if (r.status !== 0) return null
-      return createHash('sha256').update(Buffer.from(r.stdout, 'utf8')).digest('hex')
-    },
-    headArchivePaths(responsesDirRel: string): string[] {
-      const r = safeSpawnSyncStatus('git', ['ls-tree', '-r', '--name-only', ref, '--', responsesDirRel], {
-        cwd: ctx.root,
-      })
-      if (r.status !== 0) return []
-      return r.stdout.split('\n').map((x) => x.trim()).filter(Boolean)
-    },
-  }
-}
-
-/**
- * `merge-base(delivery, feature) .. feature` 에서 **delivery 레코드 파일**을 건드린 경로들.
- * 비어 있지 않으면 양쪽이 같은 파일을 다르게 고친 것이라 병합이 그 파일에서 충돌한다(design r07 P1).
- */
-export function featureChangedRecordPaths(ctx: Ctx, slug: string, deliveryHead: string, featureRef: string): string[] {
-  const mb = safeSpawnSyncStatus('git', ['merge-base', deliveryHead, featureRef], { cwd: ctx.root })
-  if (mb.status !== 0) return ['(merge-base 계산 실패 — 공통 조상이 없습니다)']
-  const recordRel = deliveryRecordPath(ctx.ticketRoot, slug)
-  const r = safeSpawnSyncStatus(
-    'git',
-    ['diff', '--name-only', `${mb.stdout.trim()}..${featureRef}`, '--', recordRel],
-    { cwd: ctx.root },
-  )
-  if (r.status !== 0) return ['(feature 변경 목록 조회 실패)']
-  return r.stdout.split('\n').map((x) => x.trim()).filter(Boolean)
-}
 
 /** 목록 비교용 구분자(US). 파일에 원시 제어문자를 넣지 않기 위해 fromCharCode 로 만든다. */
 const UNIT_SEP = String.fromCharCode(31)
@@ -407,7 +367,7 @@ export function collectEligibility(ctx: Ctx, featureRef: string, reqId: string):
   const integrityProblems =
     manifestText === null
       ? ['승인 매니페스트가 없어 무결성을 검증할 수 없습니다']
-      : verifyCommittedEvidenceIntegrity({ ticketRel, manifestText, ports: refEvidencePorts(ctx, featureRef) })
+      : verifyCommittedEvidenceIntegrity({ ticketRel, manifestText, ports: createEvidencePorts(ctx.root, `${ticketRel}/responses`, featureRef) })
           .problems
 
   /**
@@ -528,6 +488,23 @@ export interface Io {
 const defaultIo: Io = { log: (m) => console.log(m), now: () => new Date().toISOString() }
 
 /** 묶음의 대상 브랜치. 현재는 `main` 고정(v1 — 여러 대상은 비목표). */
+/**
+ * `merge-base(delivery, feature) .. feature` 에서 **delivery 레코드 파일**을 건드린 경로들.
+ * 비어 있지 않으면 양쪽이 같은 파일을 다르게 고친 것이라 병합이 그 파일에서 충돌한다(design r07 P1).
+ */
+export function featureChangedRecordPaths(ctx: Ctx, slug: string, deliveryHead: string, featureRef: string): string[] {
+  const mb = safeSpawnSyncStatus('git', ['merge-base', deliveryHead, featureRef], { cwd: ctx.root })
+  if (mb.status !== 0) return ['(merge-base 계산 실패 — 공통 조상이 없습니다)']
+  const recordRel = deliveryRecordPath(ctx.ticketRoot, slug)
+  const r = safeSpawnSyncStatus(
+    'git',
+    ['diff', '--name-only', `${mb.stdout.trim()}..${featureRef}`, '--', recordRel],
+    { cwd: ctx.root },
+  )
+  if (r.status !== 0) return ['(feature 변경 목록 조회 실패)']
+  return r.stdout.split('\n').map((x) => x.trim()).filter(Boolean)
+}
+
 export const DEFAULT_TARGET_BRANCH = 'main'
 
 /**
