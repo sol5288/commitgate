@@ -79,6 +79,14 @@ export function __getReviewerForTest(): ReviewerAdapter {
   return reviewer
 }
 
+/**
+ * 테스트 전용: 현재 모듈 gitAdapter를 관측(복원 검증용, REQ-2026-103). `__getReviewerForTest`와 같은 목적 —
+ * `main()`이 남긴 모듈 전역 오염을 관측 가능하게 만든다. 프로덕션 경로는 이 함수를 쓰지 않는다.
+ */
+export function __getGitAdapterForTest(): GitAdapter {
+  return gitAdapter
+}
+
 /** 구조화 응답 스키마 버전 (machine.schema.json과 동기). */
 export const MACHINE_SCHEMA_VERSION = '1.1'
 
@@ -2459,11 +2467,18 @@ export function main(
   // REQ-2026-027 D3: 주입한 reviewer는 이 호출에만 유효해야 한다 — 모듈 전역에 잔존하면 이후 인자 없는
   // main()도 그것을 쓴다(리뷰어 observation). CLI는 프로세스당 1회라 무해하나, programmatic 다중 호출
   // (near-e2e 테스트 등)에선 오염된다. finally로 기본값을 복원한다.
+  //
+  // 🔴 REQ-2026-103: `gitAdapter`도 **같은 이유로** 복원한다. `mainImpl`이 `createGitAdapter(cfg.root)`로
+  //    모듈 전역을 재할당하므로, 복원하지 않으면 이 호출이 끝난 뒤에도 **이 호출의 root**가 남는다 —
+  //    다음 호출이 자기 root를 설정하기 전에 이 모듈의 git 헬퍼(`git()`)를 쓰면 남의 저장소를 향한다.
+  //    reviewer에만 걸려 있던 방어를 대칭으로 맞춘다(둘 다 모듈 전역·둘 다 호출 지역 값이어야 한다).
   const defaultReviewer = reviewer
+  const defaultGitAdapter = gitAdapter
   try {
     mainImpl(argv, opts2)
   } finally {
     reviewer = defaultReviewer
+    gitAdapter = defaultGitAdapter
   }
 }
 

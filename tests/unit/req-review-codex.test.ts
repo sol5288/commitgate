@@ -68,6 +68,7 @@ import {
   SNAPSHOT_MAX_DETAIL_BYTES,
   main as reviewCodexMain,
   __getReviewerForTest,
+  __getGitAdapterForTest,
   isLegacyTicket,
   recordAttempt,
   gateAndRecordAttempt,
@@ -3736,6 +3737,39 @@ describe('REQ-2026-027 phase-2 — attempt 배선(main near-e2e)', () => {
       // 🔴 호출 뒤 전역은 fake가 아니라 원래(before)로 복원됐다 — 이후 인자 없는 main()이 fake를 쓰지 않는다.
       expect(__getReviewerForTest()).toBe(before)
       expect(__getReviewerForTest()).not.toBe(fake)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * REQ-2026-103: `gitAdapter`도 호출 뒤 복원된다.
+   *
+   * O2-7이 reviewer에 대해 잡은 것과 **같은 결함**이 gitAdapter에는 남아 있었다 — `mainImpl`이
+   * `createGitAdapter(cfg.root)`로 모듈 전역을 재할당하고 되돌리지 않아, 호출이 끝난 뒤에도 그 root가
+   * 남았다. 다음 호출이 자기 root를 세우기 전에 모듈의 `git()`을 쓰면 남의 저장소를 향한다.
+   */
+  it('O2-8: 주입 root로 호출한 뒤 gitAdapter가 기본값으로 복원된다(정상 종료)', () => {
+    const { repo, head } = setupRepo()
+    try {
+      const before = __getGitAdapterForTest()
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedDesign(head, 'approved'), threadId: 'TID', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      expect(fake.requests.length).toBe(1) // 실제로 repo root로 동작했다
+      expect(__getGitAdapterForTest()).toBe(before) // 🔴 복원 — repo의 adapter가 남지 않았다
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('O2-8b 🔴 main()이 throw해도 gitAdapter는 복원된다(finally 경로)', () => {
+    const { repo } = setupRepo()
+    try {
+      const before = __getGitAdapterForTest()
+      // gitAdapter 재할당 **이후**에 터지는 실패 — 복원이 정상 종료에만 걸려 있으면 여기서 오염이 남는다.
+      const throwing = { review: () => { throw new Error('__reviewer_boom__') } }
+      expect(() => reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: throwing })).toThrow()
+      expect(__getGitAdapterForTest()).toBe(before)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
