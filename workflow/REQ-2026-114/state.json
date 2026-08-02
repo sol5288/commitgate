@@ -2,15 +2,20 @@
   "id": "REQ-2026-114",
   "branch": "feat/req-2026-114-stranded-evidence-diagnostic",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc26d-beab-7a53-b201-525e8a14fde7",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc275-8d0c-7d40-b9c1-612f08b27923",
+  "review_base_sha": "8d2f5c48b56c9b7a6f69a129c0cf3f948892e656",
+  "review_diff_hash": "7a56bed14c3e690fd5be6a7d133ecab90381eba4",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "3c63c6063315461b970186c0ea8ff094e0d2337adf53e751cd4a3109aa36988a",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-stranded-evidence",
+  "phases": [
+    {
+      "id": "phase-1-stranded-evidence",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +24,20 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-stranded-evidence#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-stranded-evidence",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-stranded-evidence#2",
+      "review_kind": "phase",
+      "phase_id": "phase-1-stranded-evidence",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +61,23 @@
     "design_hash": "3c63c6063315461b970186c0ea8ff094e0d2337adf53e751cd4a3109aa36988a"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-stranded-evidence",
     "outcome": "approved",
-    "compare_hash": "549b49ef4abd594d1aafa424590600a1edd1a9931b6f6515288fb7f91a81378d",
+    "compare_hash": "2b8ee51584b413b73e3b0e78ee7ed9aab41b035da10ceb11e0272430da4d1bae",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T12:24:08.047Z",
+    "at": "2026-08-02T12:32:37.570Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "7a56bed14c3e690fd5be6a7d133ecab90381eba4",
+      "phase_id": "phase-1-stranded-evidence",
+      "consumed_by_commit_sha": "bd5d3299e81b2fac65ad76cbacdbf8a0ac72056d",
+      "approval_consumed_at": "2026-08-02T12:33:16.505Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
