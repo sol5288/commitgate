@@ -19,7 +19,7 @@
  * 이 모듈은 **순수**하다 — fs·git을 모른다. 부작용은 호출부가 낸다(`lib/evidence`와 같은 태도).
  */
 import { isValidIsoInstant } from './evidence'
-import type { ReviewKind } from '../review-codex'
+import type { ReviewKind } from './review-types'
 
 /** 원장 파일의 티켓-상대 경로. `approvals.jsonl`과 같은 디렉터리 — 기존 내구화 경로 2곳을 그대로 재사용한다. */
 export const LEDGER_BASENAME = 'review-ledger.jsonl'

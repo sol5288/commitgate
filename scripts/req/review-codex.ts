@@ -61,6 +61,7 @@ import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { assertSetupComplete } from './lib/setup-gate'
 import { createReviewerProbes, type ReviewerProbes } from './lib/adapters'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
+import type { ReviewKind, ApprovalEvidence } from './lib/review-types'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -87,11 +88,16 @@ export function __getGitAdapterForTest(): GitAdapter {
   return gitAdapter
 }
 
+/**
+ * 🔴 REQ-2026-106: `ReviewKind`·`ApprovalEvidence`의 **정의는 `lib/review-types.ts`로 내려갔다**
+ *    (`lib/`이 이 파일에서 타입을 거꾸로 import하던 방향을 끊기 위해). 여기서는 **re-export만** 한다 —
+ *    9개 CLI가 `from './review-codex'`로 이 타입들을 가져오므로 호출부를 하나도 바꾸지 않기 위해서다.
+ */
+export type { ReviewKind, ApprovalEvidence } from './lib/review-types'
+
 /** 구조화 응답 스키마 버전 (machine.schema.json과 동기). */
 export const MACHINE_SCHEMA_VERSION = '1.1'
 
-/** 리뷰 종류 (DEC-WF-027): design=설계문서 권위, phase=staged diff 권위. */
-export type ReviewKind = 'design' | 'phase'
 
 /** design 리뷰 권위 아티팩트 = 티켓 설계 문서 본문 3종. */
 export interface DesignDocs {
@@ -611,30 +617,6 @@ export interface PhaseEntry {
   max_files?: number
 }
 
-/**
- * 승인 증거 핀(REQ-016 A1, D-016-2). 승인 시 state.json에 기록되는 런타임 핀.
- * 내구 audit은 커밋된 아카이브(D-016-1)/매니페스트(Phase B). kind 격리: phase=approved_tree, design=design_hash.
- */
-export interface ApprovalEvidence {
-  response_path: string
-  response_sha256: string
-  review_kind: ReviewKind
-  phase_id: string | null
-  review_base_sha: string
-  approved_tree?: string
-  design_hash?: string | null
-  /**
-   * 🔴 REQ-2026-052 DEC-B5(phase-3a2): **phase 전용** — 이 phase 승인 시점의 committed design 결속
-   *   (= `designValid` 통과값 `currentHash`). evidence-finalize가 manifest phase 행 `phase_design_ref`로 기록한다.
-   *   design kind·레거시(phaseId 없음)면 null.
-   */
-  phase_design_ref?: string | null
-  codex_thread_id: string
-  machine_schema_version: string
-  status: string
-  commit_approved: string
-  approved_at: string
-}
 
 export type ReviewOutcome = 'approved' | 'needs-fix' | 'blocked' | 'invalid'
 

@@ -11,7 +11,7 @@
  * 순수 모듈 — fs·git을 모른다. 부작용은 호출부가 낸다(`lib/review-ledger`·`lib/close-proof`와 같은 태도).
  */
 import { isValidIsoInstant } from './evidence'
-import type { ReviewKind } from '../review-codex'
+import type { ReviewKind } from './review-types'
 
 /** 예외 부여 파일의 basename. `review-ledger.jsonl`·`ticket-close.jsonl`과 같은 `responses/` 디렉터리. */
 export const EXCEPTION_BASENAME = 'review-exceptions.jsonl'

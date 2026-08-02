@@ -15,7 +15,7 @@
  */
 import { isArchiveFileName } from './scratch'
 import { bookkeepingMessage } from './bookkeeping'
-import type { ApprovalEvidence, ReviewKind } from '../review-codex'
+import type { ApprovalEvidence, ReviewKind } from './review-types'
 
 // ─────────────────────────────────────────────────────── 공통 형식 술어 ──
 
