@@ -44,13 +44,18 @@ const repoWithTicket = (): string => {
   return repo
 }
 
-/** `main()`을 돌리고 출력 줄과 `process.exit` 호출 여부를 함께 돌려준다. */
-const runDoctor = (repo: string): { lines: string[]; exited: boolean } => {
+/**
+ * `main()`을 돌리고 출력 줄과 `process.exit` **인자**를 함께 돌려준다.
+ *
+ * 🔴 **호출 여부가 아니라 인자를 모은다**(REQ-2026-115). 여부만 비교하면 `exit(1)`을 `exit(2)`로
+ *    바꿔도 두 실행이 함께 바뀌어 동일성 비교를 통과한다 — 회귀가 조용히 지나간다.
+ */
+const runDoctor = (repo: string): { lines: string[]; exitCodes: (number | undefined)[] } => {
   const lines: string[] = []
-  let exited = false
+  const exitCodes: (number | undefined)[] = []
   const log = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void lines.push(a.join(' ')))
-  const exit = vi.spyOn(process, 'exit').mockImplementation(((): never => {
-    exited = true
+  const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number): never => {
+    exitCodes.push(code)
     return undefined as never
   }) as never)
   try {
@@ -59,7 +64,7 @@ const runDoctor = (repo: string): { lines: string[]; exited: boolean } => {
     log.mockRestore()
     exit.mockRestore()
   }
-  return { lines, exited }
+  return { lines, exitCodes }
 }
 
 const logAbs = (repo: string): string => join(repo, ...DOCTOR_RUN_LOG_REL.split('/'))
@@ -138,7 +143,6 @@ describe('[REQ-2026-111] main() 배선 (실 git)', () => {
   it('🔴 로그 쓰기가 실패해도 출력과 exit 동작이 동일하다', () => {
     const repo = repoWithTicket()
     const before = runDoctor(repo)
-    expect(before.exited).toBe(true) // D2/D3 FAIL → exit 1
 
     // 실제 쓰기 실패를 만든다: 로그 경로를 **디렉터리**로 바꾼다(appendFileSync → EISDIR).
     rmSync(logAbs(repo), { force: true })
@@ -146,8 +150,15 @@ describe('[REQ-2026-111] main() 배선 (실 git)', () => {
 
     const after = runDoctor(repo)
 
+    // ① 이 REQ가 지키려는 성질 — 관측 실패가 판정을 바꾸지 않는다.
     expect(after.lines).toEqual(before.lines)
-    expect(after.exited).toBe(before.exited)
+    expect(after.exitCodes).toEqual(before.exitCodes)
+    /**
+     * ② 그 성질이 **어떤 값 위에서** 성립하는지 고정한다(REQ-2026-115).
+     *    ①만 있으면 공통 exit 코드를 바꿔도 양쪽이 함께 바뀌어 통과한다.
+     *    현재 계약: FAIL 1건 이상 → `exit(1)`. 이 픽스처는 D2·D3가 FAIL이다.
+     */
+    expect(before.exitCodes).toEqual([1])
   })
 
   /** AC-5 — 소스 정규식이 아니라 **런타임 발화**로 검증한다(REQ-2026-099: 권위를 관찰에서 구하지 않는다). */

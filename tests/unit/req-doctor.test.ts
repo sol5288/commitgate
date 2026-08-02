@@ -16,6 +16,8 @@ import {
 import { packageRoot, DEFAULTS } from '../../scripts/req/lib/config'
 import type { StatusEntry } from '../../scripts/req/lib/porcelain'
 import type { WorkflowState, Verdict } from '../../scripts/req/review-codex'
+// REQ-2026-115: D15가 "스키마와 중복이 아니다"라는 주장을 오라클로 고정하기 위해 스키마 검증을 직접 쓴다.
+import { validateResponseStructure } from '../../scripts/req/review-codex'
 
 /**
  * 테스트 편의: `--porcelain` 표기 문자열(`'R  old -> new'`)을 `StatusEntry`로 변환.
@@ -471,6 +473,39 @@ describe('req:doctor — D15 (NEEDS_FIX actionable)', () => {
   })
   it('응답 없음(null) → OK', () => {
     expect(lvl(runChecks(mk({ responseVerdict: null })), 'D15')).toBe('OK')
+  })
+
+  /**
+   * 🔴 REQ-2026-115 — **D15가 "중복"이 아니라는 주장을 오라클로 고정한다.**
+   *
+   * 주석은 검증되지 않는다. 그래서 주장 자체를 테스트로 만든다:
+   * 같은 응답이 **스키마는 통과**하는데 **D15는 FAIL**한다. 그 간극이 D15의 존재 이유다.
+   *
+   * 🔴 **위반을 분리한다**(설계 리뷰 r01 P1). D15는 두 조건 중 하나만 어긋나도 FAIL하므로,
+   *    둘을 겹친 입력 하나로 테스트하면 한쪽 판정을 제거해도 다른 쪽 때문에 FAIL이 유지되어
+   *    **변이가 잡히지 않는다.**
+   *
+   * 스키마에 `minItems`/`minLength`가 추가되는 날 이 테스트가 실패하며
+   * "이제 D15 주석의 표가 낡았다"고 알려준다 — 서술과 코드가 함께 움직인다.
+   */
+  describe('[REQ-2026-115] 스키마는 통과하지만 D15는 잡는다(주석 주장 고정)', () => {
+    const SCHEMA = join(packageRoot(), 'workflow', 'machine.schema.json')
+    /** findings만 위반 — `next_action`은 정상. `findingsOk` 판정이 사라지면 이것이 통과해 버린다. */
+    const onlyFindings = needsFix({ findings: [] })
+    /** next_action만 위반 — `findings`는 정상. `nextOk` 판정이 사라지면 이것이 통과해 버린다. */
+    const onlyNextAction = needsFix({ next_action: '   ' })
+
+    for (const [label, bad] of [
+      ['findings만 비어 있음', onlyFindings],
+      ['next_action만 공백', onlyNextAction],
+    ] as const) {
+      it(`${label} — 스키마는 통과한다`, () => {
+        expect(validateResponseStructure(bad, SCHEMA).ok).toBe(true)
+      })
+      it(`${label} — 그런데 D15는 FAIL한다`, () => {
+        expect(lvl(runChecks(mk({ responseVerdict: bad })), 'D15')).toBe('FAIL')
+      })
+    }
   })
 })
 

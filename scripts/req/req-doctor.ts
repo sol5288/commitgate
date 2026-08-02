@@ -644,8 +644,24 @@ export function runChecks(inp: DoctorInputs): Check[] {
     }
   }
 
-  // D15: 온디스크 응답이 NEEDS_FIX면 findings·next_action이 actionable해야 함(스키마/validateVerdict와 중복이라도 명시 점검).
-  // typeof 가드: 파손된 next_action(비-문자열)이 .trim()에서 throw하지 않게(fail-closed).
+  /**
+   * D15: 온디스크 응답이 `NEEDS_FIX`면 `findings`·`next_action`이 actionable해야 한다.
+   *
+   * 🔴 **중복이 아니다 — 커밋 직전에 이 조합을 막는 유일한 검사다**(REQ-2026-115에서 정정).
+   *
+   * | 방어선 | 이 조합을 막는가 | 언제 |
+   * |---|---|---|
+   * | `machine.schema.json` | ❌ `findings`에 `minItems` 없음 · `next_action`은 `{"type":"string"}`뿐 | — |
+   * | `validateVerdict`(review-codex) | ✅ | **리뷰 시점** |
+   * | doctor의 `validateResponseStructure` | ❌ **스키마** 검증이라 위 한계를 그대로 물려받는다 | 커밋 직전 |
+   * | **D15** | ✅ | **커밋 직전** |
+   *
+   * 즉 `codex-response.json`이 리뷰 이후 손상되거나 손으로 편집되면 **여기서만 잡힌다.**
+   * 이 주장은 `req-doctor.test.ts`가 오라클로 고정한다(스키마 통과 ↔ D15 FAIL 대비) —
+   * 스키마에 제약이 추가되는 날 그 테스트가 실패하며 이 표가 낡았다고 알려준다.
+   *
+   * typeof 가드: 파손된 `next_action`(비-문자열)이 `.trim()`에서 throw하지 않게(fail-closed).
+   */
   const rv = inp.responseVerdict
   if (rv && rv.status === 'NEEDS_FIX') {
     const findingsOk = Array.isArray(rv.findings) && rv.findings.length > 0
