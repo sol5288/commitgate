@@ -74,6 +74,7 @@ CommitGate의 "업무 규칙"은 커밋을 통과/차단하는 fail-closed 게�
 | **D25** | 종결 티켓 trunk 미도달 | **(WARN 상한, FAIL 아님) 없음.** 종결됐는데 trunk에 없는 티켓이 있으면 WARN. 판정 불가(trunk ref 없음 등)는 OK (REQ-2026-085) |
 | **D26** | 결속 끊긴 phase 사전 경고 | **(WARN 상한, FAIL 아님) 없음.** design 재승인으로 현재 design 승인에 결속되지 않은 phase 증거가 있으면 WARN + `req:rebind` 안내 (REQ-2026-088) |
 | **D27** | 승인 증인 불일치 | **(WARN 상한, FAIL 아님) 없음.** 소비된 승인 중 매니페스트 행이 없는 것이 있으면 WARN(복구 불가 — 재수행 또는 `req:close --abandon` 안내) (REQ-2026-094) |
+| **D28** | HIGH 사람확인 차단 진단 | **(WARN 상한, FAIL 아님) 없음.** HIGH 티켓에서 `userConfirmGate`(정본)가 차단 상태면 그 사유를 그대로 WARN으로 알린다 — 실제 차단은 계속 `req:commit`이 한다. 진단이 게이트가 되면 진단의 오차가 곧 차단이 된다 (REQ-2026-110) |
 
 증거 검증 세부(`evidenceProblems`): 경로 confinement(`<ticketRel>/responses/` 직속·아카이브명), `archive.sha256===ev.response_sha256`, 구조 OK, verdict가 같은 kind의 승인, `review_base_sha` 일치, phase면 `approved_tree===state.approved_diff_hash`, **live `codex-response.json` sha===ev.response_sha256**(손편집 탐지, phase), design이면 `design_hash===state.design_approved_hash`.
 

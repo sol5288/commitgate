@@ -24,6 +24,7 @@ import {
   designDocPaths,
   REVIEW_CALL_LOG_REL,
   STAGED_NAMES_Z_ARGS,
+  readPhases,
   // 🔴 REQ-2026-107: granularity 판정의 **정본**을 그대로 쓴다(사본 금지). D18이 리뷰 preflight와
   //    다르게 판정하던 오탐이 정확히 "정책 SSOT가 옮겨갔는데 사본이 남은" 형태였다.
   judgePhaseArea,
@@ -34,6 +35,9 @@ import {
   type ApprovalEvidence,
 } from './review-codex'
 import { setupGateVerdict, collectGateFacts, type GateVerdict } from './lib/setup-gate'
+// 🔴 REQ-2026-110(D28): HIGH 확인 차단 판정의 **정본**을 그대로 쓴다(사본 금지 — REQ-2026-107 교훈).
+//    `req:commit`은 doctor를 **spawn**하지 정적 import하지 않으므로 순환은 생기지 않는다(typecheck 확인).
+import { userConfirmGate, wouldCompleteReq } from './req-commit'
 // REQ-2026-085 D25: 종결 증거 파일명(trunk 트리에서 이 경로의 존재로 "도달했는가"를 판정한다).
 import { CLOSE_PROOF_BASENAME, recoveryGuidance, type CloseProofEvent } from './lib/close-proof'
 // REQ-2026-088 DEC-1: 판정은 intake와 같은 술어로. 재구현하면 두 안내가 갈라진다.
@@ -75,7 +79,7 @@ export type Level = 'OK' | 'WARN' | 'FAIL'
  */
 export const D_CHECK_IDS = [
   'D2', 'D3', 'D5', 'D6', 'D9', 'D10', 'D11', 'D13', 'D15', 'D16', 'D17', 'D18', 'D19',
-  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27',
+  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28',
 ] as const
 
 /** D-체크 id — `D_CHECK_IDS` 등재분만. 새 id는 등록부에 먼저 추가해야 컴파일된다. */
@@ -106,6 +110,17 @@ export interface DoctorInputs {
    * 주지 않는 호출자는 이 REQ 이전과 **동일하게** 판정된다(무회귀). `judgePhaseArea`의 계약이
    * `declared ?? configMax`이므로 `?? null`로 넘기면 그대로 성립한다.
    */
+  /**
+   * 🔴 REQ-2026-110(D28): HIGH 사람확인 게이트의 **판정 결과**. `main()`이 `userConfirmGate`(정본)를
+   * 호출해 그대로 채운다.
+   *
+   * **왜 `stopGate`·`completesReq`를 각각 받지 않는가**: 그러면 `runChecks`(순수) 안에서 게이트를
+   * 재조립해야 하고 그 조립이 곧 사본이다. REQ-2026-107이 고친 결함이 정확히 "정책이 옮겨갔는데
+   * 사본이 남아 갈라진 것"이었다. **판정 결과만 받으면 이 함수는 표시만 하므로 갈라질 표면이 없다.**
+   *
+   * `undefined` = 판정 불요 → D28은 OK. 이 입력을 주지 않는 호출부는 무회귀다.
+   */
+  highConfirm?: { blocked: boolean; reason?: string }
   declaredMaxFiles?: number | null
   /**
    * 🔴 REQ-2026-107: D18이 셀 **staged 코드 파일**(티켓 문서·scratch 제외). `main()`이
@@ -868,6 +883,38 @@ export function runChecks(inp: DoctorInputs): Check[] {
     })
   }
 
+  /**
+   * D28: HIGH 사람확인 게이트가 커밋을 막을 상태인가(REQ-2026-110).
+   *
+   * **왜 필요했나**: `req:commit`의 차단 게이트 중 **이것 하나만** doctor에 대응이 없었다. HIGH 티켓에서
+   * 확인 기록이 없거나 scope가 어긋나면 `req:doctor`는 PASS인데 `req:commit`이 실패했다 — 사용자는
+   * 커밋을 실행해봐야 이유를 알았다. 원장 실측상 티켓 시간의 86~91%가 "상태 파악과 조치" 구간이다.
+   *
+   * 🔴 **WARN 상한 — FAIL 분기를 만들지 않는다.** D19~D27과 같은 근거(커밋이 doctor를 하드 게이트로
+   *    spawn한다)에 더해, 여기엔 하나가 더 있다: **이 검사가 FAIL이면 같은 조건을 두 곳에서 막는다.**
+   *    doctor의 판정이 커밋 게이트와 조금이라도 어긋나는 순간 커밋이 **doctor 때문에** 막힌다 —
+   *    진단이 게이트가 되면 진단의 오차가 곧 차단이 된다. 실제 차단은 계속 `userConfirmGate`가 한다.
+   *
+   * 🔴 **사유를 재작성하지 않는다.** `userConfirmGate`가 조치 명령까지 담은 문자열을 이미 만든다.
+   *    두 표면이 다른 문구를 내면 "어느 쪽이 맞나"를 사람이 판단해야 하고, 그 순간 진단은 시간을
+   *    아껴주는 대신 쓴다.
+   */
+  if (inp.highConfirm?.blocked)
+    c.push({
+      id: 'D28',
+      level: 'WARN',
+      msg: `이 상태로는 req:commit이 막힙니다(HIGH 사람확인). ${inp.highConfirm.reason ?? ''}`.trim(),
+    })
+  else
+    c.push({
+      id: 'D28',
+      level: 'OK',
+      msg:
+        inp.highConfirm === undefined
+          ? 'HIGH 확인 점검 불요(판정 입력 없음)'
+          : 'HIGH 확인 충족(또는 해당 없음) — 이 축으로는 커밋이 막히지 않습니다',
+    })
+
   return c
 }
 
@@ -1227,6 +1274,21 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // 🔴 REQ-2026-107: D18은 리뷰 preflight와 **같은 정본**으로 판정한다.
     //    임계 = 현재 phase의 `max_files` 선언(없으면 config), 대상 = staged 코드 파일.
     //    `current_phase`가 없으면 선언도 없음(null) → config 기본, 즉 기존 동작.
+    // 🔴 REQ-2026-110(D28): 판정은 정본이 하고 runChecks는 표시만 한다.
+    //    매니페스트는 아래 D27 입력이 읽는 것과 같은 경로다(같은 커밋 상태를 본다).
+    highConfirm: (() => {
+      try {
+        const manifest =
+          createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(`${ticketRel}/responses/approvals.jsonl`) ?? ''
+        const completes = wouldCompleteReq({
+          phaseIds: readPhases(state).map((p) => p.id),
+          manifestContent: manifest,
+        }).complete
+        return userConfirmGate(state, cfg.stopGate, completes)
+      } catch {
+        return undefined // 판정 불가는 조용히 '점검 불요' — 진단이 doctor를 깨뜨리지 않는다.
+      }
+    })(),
     declaredMaxFiles: declaredPhaseMaxFiles(state, typeof state.current_phase === 'string' ? state.current_phase : null),
     stagedCodeFiles: phaseCodeFiles(git([...STAGED_NAMES_Z_ARGS]).split('\0'), ticketRel),
     responseVerdict,

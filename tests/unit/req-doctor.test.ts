@@ -1169,3 +1169,31 @@ describe('[REQ-2026-102] legacy 티켓 — 면제하지 않되 사유를 말한�
     for (const id of AXIS) expect(lv(checks, id), id).not.toBe('WARN')
   })
 })
+
+/**
+ * 🔴 REQ-2026-110 — D28: HIGH 사람확인 차단을 **미리** 알린다.
+ *
+ * `req:commit`의 차단 게이트 중 이것 하나만 doctor에 대응이 없어, HIGH 티켓에서 doctor는 PASS인데
+ * 커밋이 실패했다. 진단은 **차단하지 않는다** — WARN 상한이고, 그 이유는 진단의 오차가 곧 차단이
+ * 되면 안 되기 때문이다(판정 자체는 `userConfirmGate` 정본이 하고 여기는 표시만 한다).
+ */
+describe('[REQ-2026-110] D28 — HIGH 확인 차단 진단', () => {
+  const reason = 'HIGH risk: user_commit_confirmed 없음 — req:commit 차단. 기록: npx commitgate req:confirm 2026-001 --scope req --method "<승인 문장>" --run'
+
+  it('차단 상태 → D28 WARN이고 **사유를 그대로** 싣는다(문구 재작성 금지)', () => {
+    const checks = runChecks(mk({ highConfirm: { blocked: true, reason } }))
+    expect(lvl(checks, 'D28')).toBe('WARN')
+    expect(checks.find((c) => c.id === 'D28')!.msg).toContain(reason)
+  })
+
+  it('🔴 차단 상태여도 FAIL은 0건이다 — 진단이 게이트가 되지 않는다(exit 불변)', () => {
+    const checks = runChecks(mk({ highConfirm: { blocked: true, reason } }))
+    expect(checks.filter((c) => c.level === 'FAIL')).toEqual([])
+  })
+
+  it('충족 상태 → D28 OK', () =>
+    expect(lvl(runChecks(mk({ highConfirm: { blocked: false } })), 'D28')).toBe('OK'))
+
+  it('입력 미지정(undefined) → D28 OK — 기존 호출부 무회귀', () =>
+    expect(lvl(runChecks(mk({})), 'D28')).toBe('OK'))
+})
