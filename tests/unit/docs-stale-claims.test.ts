@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { D_CHECK_IDS, runChecks, type DoctorInputs } from '../../scripts/req/req-doctor'
+import { STOP_GATE_HIGH_NOTICE } from '../../bin/setup'
+// 🔴 고지의 값↔의미 매핑을 **실제 정지 규칙**에 결속하기 위해 정본 판정 함수를 그대로 쓴다(사본 금지).
+import { userConfirmGate } from '../../scripts/req/req-commit'
 import type { WorkflowState } from '../../scripts/req/review-codex'
 
 /**
@@ -100,21 +103,66 @@ export const STALE_CLAIMS: readonly { text: string; why: string }[] = [
     text: '향후 opt-in용',
     why: 'resume은 도달 불가 코드였다 — "켜면 되는 보존 코드"가 아니다 (ssot-design 06·G-06 · REQ-2026-103)',
   },
+  /**
+   * 🔴 REQ-2026-112 — **표현 변형**이다. 위의 두 항목(`어느 값에서도 매 phase 확인`·
+   *    `정책과 무관하게 매 phase 확인`)과 같은 주장인데 문장이 달라 부분 문자열 검사를 빠져나갔다.
+   *    `docs/ssot-design/04`는 이미 `docs/**` 검사 범위 **안**이었는데도 통과했다 —
+   *    **범위를 넓히는 것만으로는 부족하다**는 실증이다.
+   */
+  {
+    text: '정책과 무관하게 유지',
+    why: 'REQ-071이 제거한 HIGH 백스톱의 표현 변형 (ssot-design 04 · REQ-2026-112)',
+  },
 ]
 
 /**
- * 검사 대상: 저장소 루트의 README 2종 + `docs/` **하위 전체**의 `.md`.
+ * 재귀 `.md` 수집 대상 디렉터리.
  *
  * 🔴 REQ-2026-104: 예전에는 비재귀(`readdirSync(docs)`)여서 `docs/ssot-design/` 18파일(285KB)이
  *    통째로 무가드였다 — `.md` 필터가 디렉터리 엔트리를 걸러내 하위가 아예 열리지 않았다.
- *    설계 SSOT 문서가 가장 오래 살아남는 서술인데 검사에서 빠져 있던 셈이다.
+ * 🔴 REQ-2026-112: `templates/`·`skills/`를 추가했다. **소비자에게 배포되는 지침**인데 검사 밖이었다.
  */
+const SCAN_DIRS = ['docs', 'templates', 'skills'] as const
+
+/**
+ * 개별 파일 대상.
+ *
+ * 🔴 REQ-2026-112: `AGENTS.template.md`는 `init`이 소비자 `AGENTS.md`로 **복사**하는 계약 템플릿인데
+ *    검사 밖이었다 — 폐기된 주장이 가장 널리 배포되는 경로가 무가드였던 셈이다.
+ * 🔴 `workflow/`를 **글로브로 넣지 않는다.** `workflow/**`면 REQ 티켓 문서까지 잡혀,
+ *    폐기 문구를 인용해 정정을 설명하는 설계 문서를 쓸 수 없게 된다.
+ */
+const SCAN_FILES = ['README.md', 'README.en.md', 'AGENTS.template.md', join('workflow', 'review-persona.md')] as const
+
+/**
+ * **코드 표면**(REQ-2026-112). 폐기된 주장이 남아 있던 코드 파일을 **손으로 적은 목록**으로 검사한다.
+ *
+ * 🔴 `**\/*.ts` 글로브가 아닌 이유: 그러면 폐기 문구를 설명하는 정정문·주석까지 걸려 **정정 자체가
+ *    불가능**해진다(REQ-2026-104가 겪은 함정). 목록은 "실제로 폐기 주장이 있던 곳"으로 한정한다.
+ */
+const CODE_SURFACES = [join('bin', 'setup.ts'), join('scripts', 'req', 'lib', 'config.ts')] as const
+
+/**
+ * 폐기 문구를 **담는 것이 정상인** 자리. 검사 대상에 들어오면 안 된다.
+ * 대상 목록이 나중에 글로브로 넓어지면 여기 있는 것들이 걸려 정정·기록이 막힌다.
+ */
+const SCAN_EXCLUDED = [
+  join('tests', 'unit', 'docs-stale-claims.test.ts'), // 가드 자신 — 등재 목록이 여기 있다
+  'CHANGELOG.md', // 역사 기록. 그 시점의 사실을 적은 것은 거짓이 아니다
+] as const
+/** 티켓 문서는 정정을 설명하려면 옛 문구를 인용해야 한다. */
+const EXCLUDED_PREFIX = join('workflow', 'REQ-')
+
 function docFiles(root: string): string[] {
-  const docs = readdirSync(join(root, 'docs'), { recursive: true })
-    .map((f) => String(f))
-    .filter((f) => f.endsWith('.md'))
-    .map((f) => join('docs', f))
-  return ['README.md', 'README.en.md', ...docs]
+  const out: string[] = [...SCAN_FILES]
+  for (const d of SCAN_DIRS) {
+    for (const f of readdirSync(join(root, d), { recursive: true })) {
+      const rel = String(f)
+      if (rel.endsWith('.md')) out.push(join(d, rel))
+    }
+  }
+  out.push(...CODE_SURFACES)
+  return out
 }
 
 const ROOT = join(__dirname, '..', '..')
@@ -141,12 +189,120 @@ describe('[REQ-2026-073] 알려진 거짓 보장이 문서에 없다', () => {
     expect(nested).toContain(join('docs', 'ssot-design', 'gaps-and-decisions.md'))
   })
 
+  /**
+   * 🔴 REQ-2026-112 (AC-3) — **배포되는 지침 표면**이 검사 대상에 실제로 들어 있다.
+   *
+   * 왜 필요한가: REQ-2026-073이 폐기 주장을 정정할 때 대상이 `README`+`docs/`뿐이어서,
+   * `AGENTS.template.md`(소비자 `AGENTS.md`로 복사됨)에 같은 주장이 그대로 남았다.
+   * 가장 널리 배포되는 지침이 무가드였다.
+   */
+  it('🔴 배포되는 지침 파일이 검사 대상이다(AGENTS 템플릿·templates·skills·persona)', () => {
+    expect(files).toContain('AGENTS.template.md')
+    expect(files).toContain(join('workflow', 'review-persona.md'))
+    expect(files).toContain(join('templates', 'CLAUDE.template.md'))
+    expect(files.some((f) => f.startsWith(join('skills', '')) && f.endsWith('.md'))).toBe(true)
+  })
+
+  /**
+   * 🔴 REQ-2026-112 (AC-1b) — **코드 표면**도 검사 대상이다.
+   *
+   * 왜 필요한가: 설계 리뷰가 지적한 공백이다. 배포 문서와 사용자 노출 상수만 검사하면
+   * `config.ts`의 주석 3곳과 `setup.ts`의 근거 주석을 옛 주장 그대로 남겨도 전부 통과한다.
+   */
+  it('🔴 코드 표면(setup·config)이 검사 대상이다', () => {
+    for (const rel of CODE_SURFACES) expect(files).toContain(rel)
+  })
+
+  /**
+   * 🔴 REQ-2026-112 (AC-3) — 폐기 문구를 **담는 것이 정상인** 자리는 검사 대상에 없다.
+   *
+   * 대상이 나중에 글로브로 넓어지면 가드 자신·CHANGELOG·티켓 문서가 걸려
+   * **정정을 설명하는 글 자체가 불가능**해진다. 그 회귀를 여기서 막는다.
+   */
+  it('🔴 제외돼야 할 자리가 검사 대상에 없다(글로브 확장 회귀 방지)', () => {
+    const leaked = files.filter(
+      (f) => (SCAN_EXCLUDED as readonly string[]).includes(f) || f.startsWith(EXCLUDED_PREFIX),
+    )
+    expect(leaked).toEqual([])
+  })
+
   for (const claim of STALE_CLAIMS) {
     it(`"${claim.text.slice(0, 40)}…" 가 없다 — ${claim.why}`, () => {
       const hits = files.filter((f) => readFileSync(join(ROOT, f), 'utf8').includes(claim.text))
       expect(hits).toEqual([])
     })
   }
+})
+
+/**
+ * REQ-2026-112 (AC-2) — **사용자에게 보여주는 문구**는 상수를 직접 검사한다.
+ *
+ * 🔴 왜 파일 스캔이 아니라 import인가: 대상이 정확하고, 상수 이름이 바뀌거나 사라지면
+ *    **컴파일이 깨져** 조용한 무효화가 불가능하다. 파일 스캔은 같은 파일의 주석까지 걸려
+ *    정정문을 막는다(그래서 코드 표면 검사는 별도 축으로 두고, 여기서는 값 자체를 본다).
+ *
+ * 이 문구는 사용자가 `stopGate` 값을 **고르는 순간** 화면에 뜬다(`hintFor`). 설정 화면이 실제
+ * 동작보다 강한 약속을 하면 사용자는 보호받는다고 믿는 자리에서 보호받지 못한다.
+ */
+describe('[REQ-2026-112] setup 고지 문구 ↔ 실제 정지 규칙', () => {
+  it('🔴 폐기된 주장을 담지 않는다', () => {
+    for (const claim of STALE_CLAIMS)
+      expect(STOP_GATE_HIGH_NOTICE, `고지에 폐기 문구: ${claim.why}`).not.toContain(claim.text)
+  })
+
+  /**
+   * 🔴 **값↔의미 매핑을 실제 게이트 동작에 결속한다**(phase-1 리뷰 r01 P1).
+   *
+   * 단어 존재만 보면 `phase`와 `req`의 설명을 **서로 바꿔 놓아도** 통과한다. 그러면 사용자는
+   * 정반대를 안내받는다. 그래서 먼저 `userConfirmGate`로 **진짜 규칙**을 확인하고,
+   * 고지의 각 절이 그 규칙과 같은 말을 하는지 본다.
+   *
+   * 이렇게 두면 나중에 `userConfirmGate`가 바뀔 때 이 테스트가 **고지도 바꿔야 한다고 알려준다**.
+   */
+  describe('값↔의미 매핑이 userConfirmGate와 일치한다', () => {
+    const high = { id: 'REQ-TEST', risk_level: 'HIGH' } as WorkflowState
+    /** 고지에서 `<값>:` 절을 꺼낸다. 없으면 실패 — 문장 구조가 깨진 것도 결함이다. */
+    const seg = (v: string): string => {
+      const found = STOP_GATE_HIGH_NOTICE.split('·')
+        .map((s) => s.trim())
+        .find((s) => s.includes(`${v}:`))
+      if (!found) throw new Error(`고지에 '${v}:' 절이 없다 — 실제 값: ${STOP_GATE_HIGH_NOTICE}`)
+      return found
+    }
+
+    it('phase — 매 커밋에서 멈춘다', () => {
+      expect(userConfirmGate(high, 'phase', false).blocked).toBe(true) // 진짜 규칙
+      expect(seg('phase')).toContain('매 phase') // 고지가 같은 말을 하는가
+    })
+
+    it('req — 중간 phase는 안 멈추고 REQ를 끝내는 커밋에서 멈춘다', () => {
+      expect(userConfirmGate(high, 'req', false).blocked).toBe(false)
+      expect(userConfirmGate(high, 'req', true).blocked).toBe(true)
+      expect(seg('req')).toContain('REQ를 끝내는')
+    })
+
+    it('merge — 커밋에서는 멈추지 않는다', () => {
+      expect(userConfirmGate(high, 'merge', true).blocked).toBe(false)
+      expect(seg('merge')).toContain('멈추지 않')
+    })
+
+    /**
+     * 이 절은 **참이므로 유지**한다 — 커밋에서 안 멈춰도 통합 승인은 남는다.
+     *
+     * 🔴 **단어 존재만 보지 않는다**(phase-1 리뷰 r02 P1). `통합`이 있는지만 확인하면
+     *    마지막 절을 `…필요하지 않습니다`로 뒤집어도 통과한다 — 사용자는 정반대를 안내받는데
+     *    게이트는 조용하다. 그래서 **긍정 의미를 단언하고 부정형을 금지**한다.
+     */
+    it('통합 승인이 어느 값에서도 **필요하다**고 말한다(부정형 금지)', () => {
+      const tail = STOP_GATE_HIGH_NOTICE.split('·')
+        .map((s) => s.trim())
+        .find((s) => s.includes('통합'))
+      if (!tail) throw new Error(`고지에 통합 승인 절이 없다 — 실제 값: ${STOP_GATE_HIGH_NOTICE}`)
+      expect(tail).toContain('어느 값에서도 필요')
+      // '필요하지 않'·'필요 없'·'불필요' 어느 형태로도 뒤집을 수 없다.
+      expect(tail).not.toMatch(/필요\s*(하지\s*않|없)|불필요/)
+    })
+  })
 })
 
 /**

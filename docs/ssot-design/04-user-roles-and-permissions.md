@@ -51,7 +51,8 @@ CommitGate에는 로그인 세션·토큰·RBAC 같은 **애플리케이션 인�
 - **경로 B에서 CI는 사후 검증**이다(push 이후 실행). 그 green은 반영을 *사전에* 막아 준 것이 아니므로 보고에서 생략하지 않는다.
 - push 응답의 `remote: Bypassed rule violations`는 우회가 **이미 일어난 뒤**의 사후 신호이므로 사전 정지 근거가 될 수 없다 — push 전에 멈춘다.
 - `R1/R2/R3`는 반영 이후 CI green 확인 뒤 각각 따로 요청한다. 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.
-- **LOW 커밋은 통제점이 아니다(REQ-2026-037).** `req.config.json`의 `phaseCommit.autoApprove="low-only"`면 LOW 위험 티켓의 Codex 승인 phase는 사람 정지 없이 자동 커밋되고, 사람 확인은 위 통합 통제점(I1/I2/B1)으로 모인다 — `req:next` 종단이 `DONE`이 아니라 `AWAIT_HUMAN`(통합)으로 멈춘다. 기본값 `never`면 매 phase `req:commit --run` 확인(현행). **HIGH commit 확인(위 행)은 정책과 무관하게 유지**된다.
+- **LOW 커밋은 통제점이 아니다(REQ-2026-037).** `req.config.json`의 `phaseCommit.autoApprove="low-only"`면 LOW 위험 티켓의 Codex 승인 phase는 사람 정지 없이 자동 커밋되고, 사람 확인은 위 통합 통제점(I1/I2/B1)으로 모인다 — `req:next` 종단이 `DONE`이 아니라 `AWAIT_HUMAN`(통합)으로 멈춘다.
+- **HIGH 커밋 확인(아래 §5)이 발생하는 지점도 `stopGate`가 정한다(REQ-2026-071).** `phase`면 매 phase 커밋 전, `req`(기본값)면 REQ를 끝내는 커밋 전, `merge`면 커밋에서는 멈추지 않는다(`userConfirmGate`). 이 축이 없애는 것은 **커밋 지점의 정지**뿐이며, 통합 통제점(I1/I2/B1)은 어느 값에서도 남는다.
 
 ## 5. HIGH 위험 커밋의 사람 확인
 

@@ -71,11 +71,13 @@
 ### 4. 커밋 정책
 - 각 phase는 의미 있는 커밋. "WIP" 금지.
 - 커밋 메시지 컨벤션: `test/feat/fix/refactor/docs/chore` 접두사. `[Codex]`/`[Claude]` 같은 메타 정보 금지(Reviewer 편향 방지).
-- HIGH 영향 phase는 `req:commit --run` 직전 사용자 확인(`state.user_commit_confirmed`).
-- **LOW phase 자동 커밋(opt-in)**: `req.config.json`의 `phaseCommit.autoApprove`가 `low-only`이고 `risk_level`이
-  `LOW`(정확 일치)면, Codex 승인 phase를 사람 정지 없이 자동 커밋한다(`req:next`가 `req:commit --run`을 RUN으로 지시).
-  기본값 `never`면 종전대로 매 phase 사람 확인. **HIGH는 정책과 무관하게 매 phase 확인**(`userConfirmGate` 백스톱).
-  자동 커밋을 켜면 사람 확인은 feature→main **통합 통제점**(I1/I2/B1)으로 모인다 — `req:next` 종단이 `DONE`이 아니라
+- HIGH 영향 phase가 커밋에서 멈추는 **지점은 `stopGate`가 정한다**(`state.user_commit_confirmed`로 기록).
+- **정지 지점은 `req.config.json`의 `stopGate` 하나가 정한다**(`userConfirmGate`):
+  `phase`=매 phase 커밋 전 · `req`(기본값)=REQ를 끝내는 커밋 전 · `merge`=커밋에서는 멈추지 않음.
+  LOW phase는 파생된 `phaseCommit.autoApprove`가 `low-only`일 때 사람 정지 없이 자동 커밋된다
+  (`req:next`가 `req:commit --run`을 RUN으로 지시).
+- **통합(main 병합) 승인은 어느 값에서도 필요하다.** 커밋에서 멈추지 않게 설정해도 사람 확인은
+  feature→main **통합 통제점**(I1/I2/B1)으로 모인다 — `req:next` 종단이 `DONE`이 아니라
   `AWAIT_HUMAN`(통합)으로 멈춘다.
 
 ### 5. 승인 범위 해석 규칙

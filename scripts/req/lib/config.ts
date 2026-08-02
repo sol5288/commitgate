@@ -36,9 +36,10 @@ export interface ReviewBudget {
 /**
  * phase 자동 커밋 정책(REQ-2026-037). **opt-in** — 코어 기본은 `never`(현행: 매 phase `AWAIT_HUMAN` 정지).
  *   - `never`   : Codex 승인 phase마다 사람 확인(`req:commit --run`). 배포 안전도구의 무회귀 기본값.
- *   - `low-only`: `risk_level==='LOW'`(정확 일치)인 phase를 사람 정지 없이 자동 커밋. HIGH는 정책과 무관하게
- *     정지(`req-commit`의 Gate B가 이중 백스톱). 정책 `"all"`은 **없다** — HIGH는 매 phase 신선한
- *     `user_commit_confirmed`를 요구하므로 자동 커밋이 livelock/위조를 부른다(REQ-2026-019 폐기 사유).
+ *   - `low-only`: `risk_level==='LOW'`(정확 일치)인 phase를 사람 정지 없이 자동 커밋.
+ *     HIGH 티켓이 커밋에서 멈추는 **지점은 `stopGate`가 정한다**(`userConfirmGate`) — 이 축이 정하지 않는다.
+ *     정책 `"all"`은 **없다** — 자동 커밋이 사람 확인을 요구하는 지점과 만나면 livelock/위조를 부른다
+ *     (REQ-2026-019 폐기 사유).
  */
 export type PhaseCommitPolicy = 'never' | 'low-only'
 
@@ -50,9 +51,11 @@ export type PhaseCommitPolicy = 'never' | 'low-only'
  * - `req`  : REQ 안의 LOW phase는 자율 커밋하고, 사람 확인을 **통합 직전 한 번**으로 모은다.
  * - `merge`: 여러 REQ를 하나의 delivery set으로 묶고, 묶음 전체가 끝날 때까지 미룬다(REQ-2026-066).
  *
- * 🔴 **HIGH 위험 티켓은 어느 값에서도 매 phase 확인**이다. `"all"`류 값은 없다 — HIGH는 매 phase 신선한
- *    `user_commit_confirmed`를 요구하므로 자동화하면 livelock 또는 타임스탬프 위조가 된다
- *    (REQ-2026-019 폐기 사유).
+ * 🔴 **HIGH 티켓의 정지 지점도 이 값이 정한다**(REQ-2026-071). `phase`면 매 phase 커밋 전,
+ *    `req`면 REQ를 끝내는 커밋 전, `merge`면 커밋에서는 멈추지 않는다(`userConfirmGate`).
+ *    `"all"`류 값은 없다 — 사람 확인을 요구하는 지점에서 자동 커밋하면 livelock 또는
+ *    타임스탬프 위조가 된다(REQ-2026-019 폐기 사유).
+ * 🔴 **통합(main 병합) 승인은 어느 값에서도 필요하다** — 이 축이 없애는 것은 커밋 지점의 정지뿐이다.
  * 🔴 `"merge"`는 `commitgate delivery` **동작과 함께** 착륙했다(REQ-2026-066 p1~p3 동일 릴리스).
  *    스키마에 값만 먼저 넣으면 고를 수는 있는데 동작이 없는 거짓 UI가 된다 — 그래서 미뤘던 값이다.
  */
@@ -211,7 +214,8 @@ export const DEFAULTS = {
   // REQ-2026-063: 현행 기본(매 phase 정지) = phaseCommit.never 와 같은 값.
   // 🔴 기본 멈춤 지점 = req(REQ-2026-067 DEC-18, 사용자 지시). 이전 기본은 phase(매 phase 정지)였다.
   //    **안전 기본값을 완화하는 변경**이다 — 값을 핀하지 않은 소비자는 LOW phase가 사람 정지 없이
-  //    자동 커밋된다. HIGH 위험 티켓은 어느 값에서도 매 phase 확인이다(userConfirmGate 백스톱).
+  //    자동 커밋된다. HIGH 티켓도 이 값에서는 REQ를 끝내는 커밋에서만 멈춘다(`userConfirmGate`).
+  //    통합(main 병합) 승인은 그대로 필요하다.
   stopGate: 'req' as StopGate,
   /**
    * REQ-2026-085: D25(미병합 누적 경고)가 "도달했는가"를 판정하는 통합 브랜치.

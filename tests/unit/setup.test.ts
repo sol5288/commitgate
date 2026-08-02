@@ -534,15 +534,22 @@ describe('[setup] stopGate 질문', () => {
   })
 
   /**
-   * 🔴 이 고지가 없으면 `req`를 고른 사용자가 "이제 전부 자동"이라고 오해하고,
-   * HIGH 티켓에서 멈출 때 도구가 고장 난 것으로 본다. 그 정지는 정책이다(REQ-2026-019 폐기 사유).
+   * 🔴 이 고지는 **이 값이 무엇을 정하는지**를 그 자리에서 알려준다. 사용자는 지금 정지 지점을
+   * 고르고 있고, 값마다 멈추는 자리가 다르다(`userConfirmGate`). 어떤 값을 골라도 통합 승인은
+   * 남는다는 사실이 함께 있어야 "전부 자동이 됐다"는 오해가 생기지 않는다.
+   *
+   * 🔴 **이 테스트는 REQ-2026-112에서 갱신됐다.** 이전 판은 고지가 위험도에 따라 매 phase 확인이
+   *    남는다고 **단언**해서, REQ-2026-071이 그 백스톱을 걷어낸 뒤에도 **거짓 문구를 고정**하고 있었다.
+   *    테스트가 옛 계약을 붙들고 있으면 정정 자체가 실패로 보인다 — 문구를 고치는 REQ에서
+   *    이 단언을 함께 고쳐야 하는 이유다.
    */
-  it('🔴 hint 가 HIGH 예외와 통합 승인 필요를 고지한다', () => {
+  it('🔴 hint 가 정지 지점을 stopGate가 정한다고 알리고 통합 승인 필요를 남긴다', () => {
     const sg = buildQuestions({}).find((q) => q.key === 'stopGate') as Question
     const h = hintFor(sg)
-    expect(h).toContain('HIGH')
-    expect(h).toContain('매 phase 확인')
+    for (const v of ['phase', 'req', 'merge']) expect(h).toContain(v)
     expect(h).toContain('통합')
+    // 폐기된 보장으로 되돌아가지 않는다(정본 등재 목록은 docs-stale-claims.test.ts).
+    expect(h).not.toContain('어느 값에서도 매 phase 확인')
   })
 
   // stopGate 는 "전역 상속" 개념이 없다 — 비움 sentinel을 안내하지도, 허용하지도 않는다.
@@ -957,10 +964,11 @@ describe('[setup] 안내 분리 · 항목 설명', () => {
     expect(h).not.toContain('Enter=유지')
   })
 
-  it('메뉴 질문 안내는 현재 값과 HIGH 고지를 남긴다', () => {
+  /** REQ-2026-112: 고지 내용이 "정지 지점을 이 값이 정한다"로 바뀌었다 — 고지가 **붙는다는 사실**을 본다. */
+  it('메뉴 질문 안내는 현재 값과 정지 지점 고지를 남긴다', () => {
     const h = hintFor(menuQ)
     expect(h).toContain('현재:')
-    expect(h).toContain('HIGH')
+    expect(h).toContain('정지 지점')
   })
 
   /** 🔴 자유 입력 안내는 이 REQ의 명시 제외 — 한 글자도 바뀌면 안 된다. */
