@@ -2,14 +2,14 @@
   "id": "REQ-2026-105",
   "branch": "feat/req-2026-105-cli-boundary-consolidation",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc0e2-5da0-7c60-ace4-900e6d798d02",
-  "review_base_sha": "1cb610b68334ec35ccc236853b129ecdd9fc0ef1",
-  "review_diff_hash": "adaee91e2239721d0982be7e97a9f2643b3e0ad3",
+  "codex_thread_id": "019fc0e7-f276-71e2-b2ab-e6b5081b7c40",
+  "review_base_sha": "5117eceab1213e1e3e005c44a16a79723bb5212d",
+  "review_diff_hash": "b58bcf58634caa519f619969fea74e6ae121a876",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "6549a46ceb9af1f2d4788cf5a697c4034fd34d364d977f24c68da7ab9aa8fe02",
-  "current_phase": "phase-1-cli-boundary-helper",
+  "current_phase": "phase-2-cli-boundary-variants",
   "phases": [
     {
       "id": "phase-1-cli-boundary-helper",
@@ -18,7 +18,7 @@
     },
     {
       "id": "phase-2-cli-boundary-variants",
-      "approved": false,
+      "approved": true,
       "max_files": 10
     }
   ],
@@ -39,16 +39,23 @@
       "phase_id": "phase-1-cli-boundary-helper",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-cli-boundary-variants#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-cli-boundary-variants",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-cli-boundary-helper",
+    "phase_id": "phase-2-cli-boundary-variants",
     "outcome": "approved",
-    "compare_hash": "d6c8a3223c9019e283973e57b5cf55cab25df2e169fbe1f7e6655cfa40f7d1c9",
+    "compare_hash": "72f0b6d287ab1891ad977b63f54178447b6cd181ce537b051b069e1063558311",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T05:12:02.850Z",
+    "at": "2026-08-02T05:18:01.002Z",
     "findings": [],
     "elided_count": 0
   },
@@ -76,6 +83,12 @@
       "phase_id": "phase-1-cli-boundary-helper",
       "consumed_by_commit_sha": "ae82735aafe053b36ef4e7d3875bfdf2d8674b2d",
       "approval_consumed_at": "2026-08-02T05:12:23.800Z"
+    },
+    {
+      "approved_tree": "b58bcf58634caa519f619969fea74e6ae121a876",
+      "phase_id": "phase-2-cli-boundary-variants",
+      "consumed_by_commit_sha": "02099af9d315d6cb4b09b26edc329c4bf6b77b4c",
+      "approval_consumed_at": "2026-08-02T05:18:21.343Z"
     }
   ],
   "user_commit_confirmed": null
