@@ -2,14 +2,14 @@
   "id": "REQ-2026-103",
   "branch": "feat/req-2026-103-dead-code-and-adapter-restore",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc086-565d-73c3-8b68-ac374fa99a67",
-  "review_base_sha": "ac57dee01473a360dd3717233c3a65a7ab59d2c1",
-  "review_diff_hash": "d0e1c08e6c27eff41ec35f35f9e9fe3168dc041c",
+  "codex_thread_id": "019fc089-a054-7410-ad4d-b396694f2018",
+  "review_base_sha": "b15fc53c5d4018a0f63994146c1dffd7b65dec79",
+  "review_diff_hash": "d06d445a4162e46312ce700c597ff0b7fb8a2dd0",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "4a82323c7873f2b1060f49afd773f25c5112fa08d557a72135cedc9d909e5ff0",
-  "current_phase": "phase-1-dead-review-wiring",
+  "current_phase": "phase-2-misc-dead-symbols",
   "phases": [
     {
       "id": "phase-1-dead-review-wiring",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-misc-dead-symbols",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-gitadapter-restore",
@@ -45,6 +45,13 @@
       "phase_id": "phase-1-dead-review-wiring",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-misc-dead-symbols#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-misc-dead-symbols",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -67,12 +74,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-dead-review-wiring",
+    "phase_id": "phase-2-misc-dead-symbols",
     "outcome": "approved",
-    "compare_hash": "779789bff2295cdda7f3daec4be6aaf02a61caef393795f7ae1ffaedb5359be5",
+    "compare_hash": "67fdd4c53c5e822c1f4980a8016c75f17ab8e6abec08d3cc4be7de267669ff9f",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T03:31:31.274Z",
+    "at": "2026-08-02T03:35:05.298Z",
     "findings": [],
     "elided_count": 0
   },
@@ -82,6 +89,12 @@
       "phase_id": "phase-1-dead-review-wiring",
       "consumed_by_commit_sha": "145b453b66ac90a64e105dba83596b8d2c4918ad",
       "approval_consumed_at": "2026-08-02T03:32:04.278Z"
+    },
+    {
+      "approved_tree": "d06d445a4162e46312ce700c597ff0b7fb8a2dd0",
+      "phase_id": "phase-2-misc-dead-symbols",
+      "consumed_by_commit_sha": "1888c810de992b6c0b38eecfc4a598b38471150e",
+      "approval_consumed_at": "2026-08-02T03:35:27.631Z"
     }
   ],
   "user_commit_confirmed": null
