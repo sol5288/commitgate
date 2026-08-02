@@ -685,6 +685,15 @@ export interface ReviewCallLogRow {
   code_file_count?: number | null
   granularity_over?: boolean | null
   granularity_limit?: number | null
+  /**
+   * REQ-2026-113 — 이 호출이 **델타 모드**였는가(design + `design_baseline` 존재).
+   *
+   * 선택 필드인 이유: 이 필드가 없는 **기존 행**이 이미 쌓여 있다(소비자 3곳 2,089행 실측).
+   * 소비자는 부재를 "알 수 없음"으로 다뤄야 한다 — `false`로 단정하면 과거를 왜곡한다.
+   */
+  delta_mode?: boolean
+  /** REQ-2026-113 — 리뷰어가 전체 재리뷰를 요청했는가(`full_review_requested: "yes"`). 위와 같은 이유로 선택. */
+  full_review_requested?: boolean
 }
 
 /**
@@ -719,6 +728,15 @@ export function buildReviewCallLogRow(args: {
    * 미지정/null = design 리뷰이거나 legacy 호출 → 세 필드 모두 null.
    */
   phaseArea?: PhaseAreaVerdict | null
+  /**
+   * REQ-2026-113: 이 호출이 **델타 모드**였는가(= design + `design_baseline` 존재).
+   *
+   * 🔴 **선택 인자가 아니다.** 호출부가 빠뜨리면 컴파일이 깨진다 — 조용한 `undefined`가 불가능하다.
+   *    (행 필드는 선택이다: 이 필드 없는 기존 행이 이미 로그에 쌓여 있다.)
+   * 🔴 **`policy_version` 역산을 남기지 않기 위해서다.** 이 값이 없어 델타 호출 수를 얻으려면
+   *    `applyDeltaPersona(base, true)`의 해시를 계산해 대조해야 했다(REQ-2026-113 조사).
+   */
+  deltaMode: boolean
 }): ReviewCallLogRow {
   return {
     ticket_id: args.ticketId,
@@ -741,6 +759,14 @@ export function buildReviewCallLogRow(args: {
     granularity_limit: args.phaseArea ? args.phaseArea.limit : null,
     review_base_sha: args.reviewBaseSha,
     review_tree: args.reviewTree,
+    delta_mode: args.deltaMode,
+    /**
+     * 🔴 **빌더가 이미 받는 `verdict`에서 파생한다**(REQ-2026-113 DEC-1) — 호출부에 넘길 인자가
+     *    없으므로 "빌더는 고쳤는데 main이 안 넘긴다"는 배선 끊김이 원리적으로 불가능하다.
+     * 🔴 `=== 'yes'`가 아닌 모든 값은 `false`다. 스키마 값은 `"yes"`/`"no"`이고 **선택 필드**라
+     *    부재가 흔한데, 부재·`"no"`·이상값은 모두 "요청 안 함"이다. 요청을 **과대계상하지 않는 방향**.
+     */
+    full_review_requested: args.verdict.full_review_requested === 'yes',
   }
 }
 
@@ -2976,6 +3002,9 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       reviewTree,
       // REQ-2026-089 DEC-1: preflight가 계산한 값을 그대로(재계산 금지). design 리뷰면 null.
       phaseArea,
+      // REQ-2026-113: 프롬프트 조립에 쓴 **그 값**을 그대로 쓴다(재계산 금지) — `designDelta`가
+      //   설정됐다는 것이 곧 델타 모드다(`hasDesignBaseline` + baseline, :2566).
+      deltaMode: designDelta !== undefined,
     }),
   )
 

@@ -3231,6 +3231,7 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         assembledPromptSha256: 'a'.repeat(64),
         reviewBaseSha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
         reviewTree: 'cafef00dcafef00dcafef00dcafef00dcafef00d',
+        deltaMode: false,
       })
       expect(Object.keys(row).sort()).toEqual(
         [
@@ -3255,6 +3256,10 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
           'code_file_count',
           'granularity_over',
           'granularity_limit',
+          // REQ-2026-113: 델타 리뷰 관측. escalation이 실측 0회인데 **분모(델타 호출 수)를 로그로 셀 수
+          //   없어** policy_version 해시를 역산해야 했다 — 그 우회를 남기지 않는다.
+          'delta_mode',
+          'full_review_requested',
         ].sort(),
       )
       expect(row.findings_count).toBe(2)
@@ -3268,6 +3273,8 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       expect(row.assembled_prompt_sha256).toBe('a'.repeat(64))
       expect(row.review_base_sha).toBe('deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
       expect(row.review_tree).toBe('cafef00dcafef00dcafef00dcafef00dcafef00d')
+      expect(row.delta_mode).toBe(false)
+      expect(row.full_review_requested).toBe(false)
     })
 
     it('REQ-2026-043: 미핀(config null)이면 review_model·review_reasoning_effort는 null(감사 신호)', () => {
@@ -3288,6 +3295,7 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         assembledPromptSha256: 'b'.repeat(64),
         reviewBaseSha: null,
         reviewTree: null,
+        deltaMode: false,
       })
       expect(row.review_model).toBeNull()
       expect(row.review_reasoning_effort).toBeNull()
@@ -3313,11 +3321,61 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         assembledPromptSha256: 'c'.repeat(64),
         reviewBaseSha: null,
         reviewTree: null,
+        deltaMode: false,
       })
       expect(row.archive_round).toBeNull()
       expect(row.phase_id).toBeNull()
       expect(row.findings_count).toBe(0) // findings 미제공 → 0(undefined 아님)
       expect(row.observations_count).toBe(0)
+    })
+
+    /**
+     * REQ-2026-113 — 델타 관측 2필드.
+     *
+     * 🔴 **배선 위험이 구조로 제거돼 있다**(설계 DEC-1·DEC-2):
+     *  - `full_review_requested`는 빌더가 **이미 받는** `verdict`에서 파생 → 넘길 인자가 없다.
+     *  - `deltaMode`는 **필수 인자** → 호출부가 빠뜨리면 컴파일이 깨진다(실제로 이 REQ 구현 중
+     *    호출부 5곳이 전부 타입 오류로 드러났다).
+     *
+     * 남는 한계: 호출부가 `deltaMode`에 **잘못된 값**을 넘기는 경우는 타입이 못 잡는다(설계에 명시).
+     */
+    describe('REQ-2026-113: 델타 관측 필드', () => {
+      const base = {
+        ticketId: 'REQ-2026-113',
+        kind: 'design' as const,
+        phaseId: null,
+        archiveRound: 1,
+        outcome: 'needs-fix' as const,
+        timestamp: '2026-08-02T00:00:00.000Z',
+        policyVersion: 'p',
+        reviewModel: null,
+        reviewReasoningEffort: null,
+        promptBytes: 1,
+        reviewDurationMs: 1,
+        previousFindingsCount: 0,
+        assembledPromptSha256: 'a'.repeat(64),
+        reviewBaseSha: null,
+        reviewTree: null,
+      }
+
+      it('delta_mode는 넘긴 값을 그대로 담는다', () => {
+        expect(buildReviewCallLogRow({ ...base, verdict: {}, deltaMode: true }).delta_mode).toBe(true)
+        expect(buildReviewCallLogRow({ ...base, verdict: {}, deltaMode: false }).delta_mode).toBe(false)
+      })
+
+      /** 스키마 값은 `"yes"`/`"no"` 문자열이고 **선택 필드**라 부재가 흔하다. `yes`만 true다. */
+      it("full_review_requested는 'yes'만 true — 'no'·부재·이상값은 false", () => {
+        const fr = (v?: string): boolean =>
+          buildReviewCallLogRow({
+            ...base,
+            verdict: (v === undefined ? {} : { full_review_requested: v }) as Verdict,
+            deltaMode: true,
+          }).full_review_requested as boolean
+        expect(fr('yes')).toBe(true)
+        expect(fr('no')).toBe(false)
+        expect(fr()).toBe(false) // 부재 = 요청 안 함
+        expect(fr('YES')).toBe(false) // 이상값은 과대계상하지 않는다
+      })
     })
   })
 
@@ -3381,6 +3439,7 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
       assembledPromptSha256: 'd'.repeat(64),
       reviewBaseSha: 'abc123',
       reviewTree: 'def456',
+      deltaMode: false,
     })
     const line = JSON.stringify(row)
     // verdict를 통째로 덤프하거나 detail을 흘리는 구현은 여기서 실패한다.
@@ -5061,6 +5120,7 @@ describe('[REQ-2026-089] 측정 로그에 phase 검수 면적을 남긴다', () 
     assembledPromptSha256: 'a'.repeat(64),
     reviewBaseSha: null,
     reviewTree: null,
+    deltaMode: false,
   }
 
   it('초과 판정이 그대로 실린다(개수·초과여부·적용 임계)', () => {
