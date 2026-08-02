@@ -2,15 +2,28 @@
   "id": "REQ-2026-106",
   "branch": "feat/req-2026-106-review-kernel-types-and-prompt-goldens",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc0f9-ad1b-7653-b93f-9975314b7ebc",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc0fe-da87-7963-a7a5-f9a9750bb3d3",
+  "review_base_sha": "7bb07e7bad5e007aa8440825200827809b179118",
+  "review_diff_hash": "63027ad200629e95fe32ade93df965c0ef364357",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "02618c79750d35475a97bf91615d538f25e8d6b876298e199eb9962915154adf",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-prompt-byte-goldens",
+  "phases": [
+    {
+      "id": "phase-1-prompt-byte-goldens",
+      "approved": true
+    },
+    {
+      "id": "phase-2-review-types-descent",
+      "approved": false
+    },
+    {
+      "id": "phase-3-changelog",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +32,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-prompt-byte-goldens#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-prompt-byte-goldens",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +62,23 @@
     "design_hash": "02618c79750d35475a97bf91615d538f25e8d6b876298e199eb9962915154adf"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-prompt-byte-goldens",
     "outcome": "approved",
-    "compare_hash": "692774d0ee33affbe87d4e8e5568af10a73c396f646aa954021085878003b1a1",
+    "compare_hash": "4bd4c00eeaa6e214adf11a6231b72c77f5f5b158bd981de5b4cacaa7cce7ae34",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T05:37:43.882Z",
+    "at": "2026-08-02T05:43:13.197Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "63027ad200629e95fe32ade93df965c0ef364357",
+      "phase_id": "phase-1-prompt-byte-goldens",
+      "consumed_by_commit_sha": "f89e58a19ecfcdaf7da803788cc5fe0a2ed23e14",
+      "approval_consumed_at": "2026-08-02T05:43:36.578Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
