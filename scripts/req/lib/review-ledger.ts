@@ -283,13 +283,3 @@ export function appendLedgerRow(existingContent: string, row: LedgerRow): Append
   return { outcome: 'appended', content: base + serializeLedgerRow(row), problems: [] }
 }
 
-/**
- * `attempt-opened`만 있고 대응하는 `attempt-closed`가 없는 attempt (요구사항 #1).
- *
- * 이것이 곧 **"예산은 깎였는데 완료되지 않은 호출"**이다 — 외부 호출 실패나 응답 처리 실패로
- * 아카이브도 측정 로그도 남지 않은 시도. 소비자 저장소에서 실측 1건(attempts 4 vs 아카이브 3)이 있었다.
- */
-export function unclosedAttempts(rows: readonly LedgerRow[]): LedgerRow[] {
-  const closed = new Set(rows.filter((r) => r.event === 'attempt-closed').map((r) => [r.series_id, String(r.attempt)].join(KEY_SEP)))
-  return rows.filter((r) => r.event === 'attempt-opened' && !closed.has([r.series_id, String(r.attempt)].join(KEY_SEP)))
-}

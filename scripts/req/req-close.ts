@@ -118,13 +118,6 @@ export function isAncestor(root: string, a: string, b: string): boolean {
 }
 
 /**
- * HEAD state.json 본문에서 커밋된 phase 계획 id(`phases[].id`)를 뽑는다(파싱 불가·부재 → []). r02 P1 완료성 기준.
- * 🔴 REQ-2026-072: 구현은 `lib/evidence`(정본)로 옮겼다 — `req:rebind`의 완료 재판정이 같은 파서를 쓴다.
- *    기존 이름은 호출부·테스트 호환을 위해 유지한다.
- */
-export const committedPlannedPhaseIds = plannedPhaseIdsFromState
-
-/**
  * 🔴 포기 종결(REQ-2026-093 DEC-4). 사람이 "이 티켓은 더 진행하지 않는다"를 선언해 durable 종결한다.
  *
  * **무엇을 하지 않는가가 이 함수의 계약이다**(DEC-5): 커밋된 phase 증거·`approvals.jsonl`·설계 승인·
@@ -307,7 +300,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     evidencedPhaseIdsAll,
     evidencedPhaseIdsBound,
     rebindablePhaseIds: unboundSplit.rebindable,
-    committedPlannedPhaseIds: committedPlannedPhaseIds(stateText),
+    // 🔴 REQ-2026-072: 파서 정본은 `lib/evidence`다 — `req:rebind`의 완료 재판정이 같은 함수를 쓴다.
+    committedPlannedPhaseIds: plannedPhaseIdsFromState(stateText),
     integrated,
     nowIso: new Date().toISOString(),
     evidenceBasis: [manifestRel], // 마이그레이션 근거: 티켓 매니페스트(design_hash·phase_design_ref·archive_inventory의 단일 출처).

@@ -9,7 +9,6 @@ import {
   ledgerRowProblems,
   ledgerRowKey,
   ledgerPath,
-  unclosedAttempts,
   LEDGER_KEYS,
   OPTIONAL_LEDGER_KEYS,
   LEDGER_BASENAME,
@@ -226,28 +225,6 @@ describe('[ledger] ⑰ attempt-closed 는 판정이 있어야 한다(design 리�
   })
   it('정상 attempt-closed 는 통과', () => {
     expect(ledgerRowProblems(closed())).toEqual([])
-  })
-})
-
-describe('[ledger] ⑨ 미완 attempt 관측 — 이 REQ의 존재 이유', () => {
-  it('opened 만 있고 closed 가 없는 attempt를 찾아낸다', () => {
-    const rows = [opened({ attempt: 1 }), closed({ attempt: 1 }), opened({ attempt: 2 })]
-    const unclosed = unclosedAttempts(rows)
-    expect(unclosed.length).toBe(1)
-    expect(unclosed[0]?.attempt).toBe(2)
-  })
-
-  it('전부 닫혔으면 빈 배열', () => {
-    expect(unclosedAttempts([opened({ attempt: 1 }), closed({ attempt: 1 })])).toEqual([])
-  })
-
-  it('series 가 다르면 같은 attempt 번호라도 서로 닫아주지 않는다', () => {
-    const rows = [
-      opened({ series_id: 'design:-#1', attempt: 1 }),
-      closed({ series_id: 'phase:p1#1', attempt: 1, review_kind: 'phase', phase_id: 'p1' }),
-    ]
-    expect(unclosedAttempts(rows).length).toBe(1)
-    expect(unclosedAttempts(rows)[0]?.series_id).toBe('design:-#1')
   })
 })
 

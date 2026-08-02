@@ -13,9 +13,7 @@ import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PACKAGE_ROOT, statWritableDest, assertGitWorkTree, AGENTS_CONTRACT_MARKER } from './init'
 
-export const QUICKSTART_MARKER_OPEN = '<!-- commitgate:quickstart -->'
-export const QUICKSTART_MARKER_CLOSE = '<!-- /commitgate:quickstart -->'
-/** 마커 쌍(포함) 매칭. 비탐욕 — 첫 close에서 끝난다. */
+/** 마커 쌍(포함) 매칭. 비탐욕 — 첫 close에서 끝난다. 마커 문자열의 정본은 이 정규식이다(REQ-2026-103: 참조 0인 상수 2개 제거). */
 const QS_RE = /<!-- commitgate:quickstart -->[\s\S]*?<!-- \/commitgate:quickstart -->/
 
 const toLf = (s: string): string => s.replace(/\r\n/g, '\n')
