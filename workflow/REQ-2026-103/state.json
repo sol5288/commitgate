@@ -2,14 +2,14 @@
   "id": "REQ-2026-103",
   "branch": "feat/req-2026-103-dead-code-and-adapter-restore",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc089-a054-7410-ad4d-b396694f2018",
-  "review_base_sha": "b15fc53c5d4018a0f63994146c1dffd7b65dec79",
-  "review_diff_hash": "d06d445a4162e46312ce700c597ff0b7fb8a2dd0",
+  "codex_thread_id": "019fc08e-19d1-7ec2-ae36-226e6fe63300",
+  "review_base_sha": "f468432408a69c6796cc66555b6178c4dd544e19",
+  "review_diff_hash": "a4136351836854638d030916891575cd3ed56c76",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "4a82323c7873f2b1060f49afd773f25c5112fa08d557a72135cedc9d909e5ff0",
-  "current_phase": "phase-2-misc-dead-symbols",
+  "current_phase": "phase-3-gitadapter-restore",
   "phases": [
     {
       "id": "phase-1-dead-review-wiring",
@@ -21,7 +21,7 @@
     },
     {
       "id": "phase-3-gitadapter-restore",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-4-changelog",
@@ -52,6 +52,13 @@
       "phase_id": "phase-2-misc-dead-symbols",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-gitadapter-restore#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-gitadapter-restore",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -74,12 +81,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-misc-dead-symbols",
+    "phase_id": "phase-3-gitadapter-restore",
     "outcome": "approved",
-    "compare_hash": "67fdd4c53c5e822c1f4980a8016c75f17ab8e6abec08d3cc4be7de267669ff9f",
+    "compare_hash": "903d4da933a53f47fdd706e5ef90cb4b2aad1d9e917ffe69b57ea52aec5ad34e",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T03:35:05.298Z",
+    "at": "2026-08-02T03:39:51.298Z",
     "findings": [],
     "elided_count": 0
   },
@@ -95,6 +102,12 @@
       "phase_id": "phase-2-misc-dead-symbols",
       "consumed_by_commit_sha": "1888c810de992b6c0b38eecfc4a598b38471150e",
       "approval_consumed_at": "2026-08-02T03:35:27.631Z"
+    },
+    {
+      "approved_tree": "a4136351836854638d030916891575cd3ed56c76",
+      "phase_id": "phase-3-gitadapter-restore",
+      "consumed_by_commit_sha": "4532ddd25224433a10cb74831e148cc2ce7c80c8",
+      "approval_consumed_at": "2026-08-02T03:40:12.461Z"
     }
   ],
   "user_commit_confirmed": null
