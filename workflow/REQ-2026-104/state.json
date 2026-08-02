@@ -2,18 +2,18 @@
   "id": "REQ-2026-104",
   "branch": "feat/req-2026-104-docs-truth-guard-scope",
   "risk_level": "LOW",
-  "codex_thread_id": "019fc0a6-cac4-78a0-a612-66dcd7a1ed23",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fc0a7-4d3a-7610-8dc0-e75ca86278d7",
+  "review_base_sha": "edc434e7914425a88eb5dca8a54048eaa1f322a5",
+  "review_diff_hash": "ecb6a666d6d45bd26ece6d60344caf989be12d68",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "becd8000e19610b58bd119139006c9f10cc5df91b822cb2f2eb3272aafe79db6",
-  "current_phase": null,
+  "current_phase": "phase-1-docs-truth-guard",
   "phases": [
     {
       "id": "phase-1-docs-truth-guard",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -40,6 +40,13 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-docs-truth-guard#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-docs-truth-guard",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -48,13 +55,13 @@
     "plan": "036e4c8adda7714d73790f8d52dbd54f013cf909"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-docs-truth-guard",
     "outcome": "approved",
     "compare_hash": "96a6c78dc3565b23b38aaf2828507a03dc2e9c4e4bd0a97353fe943c60311c95",
     "count": 1,
     "errors": [],
-    "at": "2026-08-02T04:06:47.676Z",
+    "at": "2026-08-02T04:07:42.209Z",
     "findings": [],
     "elided_count": 0
   },
@@ -70,5 +77,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-02T04:06:47.676Z",
     "design_hash": "becd8000e19610b58bd119139006c9f10cc5df91b822cb2f2eb3272aafe79db6"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "ecb6a666d6d45bd26ece6d60344caf989be12d68",
+      "phase_id": "phase-1-docs-truth-guard",
+      "consumed_by_commit_sha": "b5b32ef9e57ac44346c09e56154420150d6103bb",
+      "approval_consumed_at": "2026-08-02T04:08:08.024Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
