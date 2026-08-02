@@ -14,7 +14,6 @@
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve, join, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import {
   loadState,
   writeState,
@@ -75,6 +74,7 @@ export {
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type PackageManager, type ResolvedConfig } from './lib/config'
 import { createGitAdapter, quietGitRunner, safeSpawnSync, type GitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
+import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 
 // git=GitAdapter 경유(D-017-3), 패키지매니저=config. runDoctor(pnpm/npm 실행)는 cwd=gitRoot 필요(비-git 호출). main()이 loadConfig 후 config.root로 설정.
 let gitRoot = packageRoot()
@@ -1001,14 +1001,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 }
 
 /** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). 직접 `tsx` 실행은 아래 `if (isMain) main()`이 그대로 담당(하위호환). */
-export function runCli(argv: string[]): void {
-  try {
-    main(argv)
-  } catch (err) {
-    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli(main)
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) main()

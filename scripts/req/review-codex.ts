@@ -28,7 +28,6 @@ import {
   statSync,
 } from 'node:fs'
 import { resolve, join, relative, sep, dirname } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
 import { bookkeepingMessage } from './lib/bookkeeping'
@@ -61,6 +60,7 @@ import { isArchiveFileName, isAllowedResponsesScratch, reviewScratchPaths, sourc
 import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { assertSetupComplete } from './lib/setup-gate'
 import { createReviewerProbes, type ReviewerProbes } from './lib/adapters'
+import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -3006,14 +3006,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
 }
 
 /** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). 직접 `tsx` 실행은 아래 `if (isMain) main()`이 그대로 담당(하위호환). */
-export function runCli(argv: string[]): void {
-  try {
-    main(argv)
-  } catch (err) {
-    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli(main)
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) main()

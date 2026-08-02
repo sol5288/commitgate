@@ -33,12 +33,13 @@ import {
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { loadConfig, stripBom, DEFAULT_REVIEW_PERSONA_RELPATH, type PackageManager } from '../scripts/req/lib/config'
 import { createGitAdapter, codexMissingInstallGuidanceLine, type GitRunner } from '../scripts/req/lib/adapters'
 import { parseStatusZ, entryPaths, STATUS_Z_ARGS, type StatusEntry } from '../scripts/req/lib/porcelain'
 import { VERB_MODULES } from './dispatch.mjs' // 🔴 DEC-D3: 현재 Stage-B req 명령 표면 SSOT.
 import * as semver from 'semver'
+import { makeRunCli, isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 /** 이 패키지 루트(bin/ 기준 1단계 위). 복사 원본. */
 export const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -1577,14 +1578,7 @@ export function main(argv: string[]): void {
  * (에러 문구 자체가 이미 조치 안내를 담고 있어 스택트레이스는 노이즈일 뿐 — REQ 후속 UX 개선.)
  * bin/commitgate.mjs 런처와 직접 실행(`tsx bin/init.ts`)이 공유하는 단일 경계.
  */
-export function runCli(argv: string[]): void {
-  try {
-    main(argv)
-  } catch (err) {
-    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli(main)
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))

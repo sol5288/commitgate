@@ -14,7 +14,6 @@
  */
 import { writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadConfig, packageRoot } from './lib/config'
 import { createGitAdapter, quietGitRunner, type GitAdapter } from './lib/adapters'
 import { createEvidencePorts } from './lib/evidence-ports'
@@ -25,6 +24,7 @@ import { listHeadTicketIds } from './lib/intake'
 import { assertSetupComplete } from './lib/setup-gate'
 import { isValidHumanResolution } from './review-codex'
 import { bookkeepingMessage } from './lib/bookkeeping'
+import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 /**
@@ -215,14 +215,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 }
 
 /** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). */
-export function runCli(argv: string[]): void {
-  try {
-    main(argv)
-  } catch (err) {
-    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli(main)
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) main()

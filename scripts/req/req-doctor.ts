@@ -9,7 +9,6 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
@@ -40,6 +39,7 @@ import { scanTicketIntake } from './lib/intake'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { quickstartBackfillTargets, type QuickstartBackfillTarget } from '../../bin/quickstart'
+import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — config 부재 시 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -1206,14 +1206,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 }
 
 /** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). 직접 `tsx` 실행은 아래 `if (isMain) main()`이 그대로 담당(하위호환). */
-export function runCli(argv: string[]): void {
-  try {
-    main(argv)
-  } catch (err) {
-    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli(main)
 
-const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) main()

@@ -18,7 +18,6 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadConfig } from './lib/config'
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
@@ -27,6 +26,7 @@ import { closeProofPath, rebindConfirmSentence } from './lib/close-proof'
 import { computeDevCompleteProof } from './req-commit'
 import { appendCloseProofRowToDisk, loadState, readPhases } from './review-codex'
 import { bookkeepingMessage } from './lib/bookkeeping'
+import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 
 export interface Opts {
   reqId: string | null
@@ -279,14 +279,7 @@ function recheckCompletion(args: {
  *    쓰는 이 repo에서는 재현되지 않고 **Stage B 소비자에게만** 터지던 사각지대다.
  *    특히 이 명령은 D26·`staleBindingNotice`가 처방하는 해법이라 "진단은 되는데 처방이 안 되는" 상태였다.
  */
-export function runCli(argv: string[]): void {
-  try {
-    main(argv)
-  } catch (err) {
-    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli(main)
 
-const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))

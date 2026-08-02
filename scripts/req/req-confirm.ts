@@ -14,7 +14,6 @@
  *
  * 사용: req:confirm <REQ> --scope phase|req|delivery --method "<승인 문장>" [--note "<메모>"] [--run]
  */
-import { pathToFileURL } from 'node:url'
 import { join, relative } from 'node:path'
 import { loadConfig } from './lib/config'
 import { createGitAdapter } from './lib/adapters'
@@ -22,6 +21,7 @@ import { assertSetupComplete } from './lib/setup-gate'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { REQUIRED_CONFIRM_SCOPE, userConfirmProblem, type ConfirmScope, type UserCommitConfirmed } from './lib/evidence'
 import { loadState, writeState, type WorkflowState } from './review-codex'
+import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 
 export const CONFIRM_SCOPES: readonly ConfirmScope[] = ['phase', 'req', 'delivery']
 
@@ -157,14 +157,7 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
  *    Stage B에서 `mod.runCli is not a function`으로 죽었다. 이 명령은 **HIGH 위험 티켓의 커밋 차단을
  *    푸는 유일한 경로**라(`userConfirmGate`가 이것을 실행하라고 안내한다), 죽으면 빠져나갈 길이 없었다.
  */
-export function runCli(argv: string[]): void {
-  try {
-    main(argv)
-  } catch (err) {
-    console.error(`commitgate: ${err instanceof Error ? err.message : String(err)}`)
-    process.exitCode = 1
-  }
-}
+export const runCli = makeRunCli(main)
 
-const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+const isMain = isEntrypoint(import.meta.url)
 if (isMain) runCli(process.argv.slice(2))
