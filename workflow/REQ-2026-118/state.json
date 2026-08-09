@@ -2,15 +2,24 @@
   "id": "REQ-2026-118",
   "branch": "feat/req-2026-118-deterministic-full-review",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe73f-f50b-7bb3-b0a2-7027ab5dbd4d",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fe742-8b75-7962-9f75-efb0fc2e41d2",
+  "review_base_sha": "7905add18a134b0f3002e3d1721c05e42bf27038",
+  "review_diff_hash": "04aee84042e768bfd5e3020e683344e3cdb85da1",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "06d652276739589a84ce8fc8eae405a5d0bb00d01bc287e05ec490fd58b76d2f",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-reason-core",
+  "phases": [
+    {
+      "id": "phase-1-reason-core",
+      "approved": true
+    },
+    {
+      "id": "phase-2-wiring-log",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +28,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-reason-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-reason-core",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +58,23 @@
     "design_hash": "06d652276739589a84ce8fc8eae405a5d0bb00d01bc287e05ec490fd58b76d2f"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-reason-core",
     "outcome": "approved",
-    "compare_hash": "a03374e39946dfbbf40a0589652d35f7df5cabfd2f0f34f832095d01a4d1d1b1",
+    "compare_hash": "57d9fe337c4dd27a9db2966e0ad5d4cd5eaa376843904aa0bd4d4b954a03837a",
     "count": 1,
     "errors": [],
-    "at": "2026-08-09T15:59:47.942Z",
+    "at": "2026-08-09T16:03:04.852Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "04aee84042e768bfd5e3020e683344e3cdb85da1",
+      "phase_id": "phase-1-reason-core",
+      "consumed_by_commit_sha": "a21091673e07573ee716b3103b8e2ee39a0f8ebc",
+      "approval_consumed_at": "2026-08-09T16:03:29.847Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
