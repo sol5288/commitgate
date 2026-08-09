@@ -4,7 +4,6 @@
 
 ## Unreleased
 
-<<<<<<< HEAD
 - **델타 설계 리뷰의 full 전환이 결정적 조건이 됩니다** (REQ-2026-118). 지금까지 "이 변경은
   델타로 볼 범위를 벗어났다"는 판단은 리뷰어 재량(`full_review_requested`)에만 맡겨져 있었고,
   그 재량은 소비자 3곳 누적 **0건**으로 한 번도 행사되지 않았습니다(설계 재개는 32.6%였는데도).
@@ -13,7 +12,6 @@
   - 리뷰 호출 로그에 `full_review_reason`(선택 키)이 남습니다: `no-baseline` · `invalid-baseline` ·
     `all-docs-changed` · `phase-structure-changed`. 기존 행(키 없음)은 그대로 유효합니다.
   - 리뷰어 재량 경로·응답 스키마는 바뀌지 않습니다 — 결정적 조건이 앞단에 추가된 것입니다.
-=======
 - **phase의 실효 위험을 감지합니다 — D31(경고 전용)** (REQ-2026-119). 위험도는 티켓 생성 시
   입력값(기본 LOW)만 신뢰되고 phase가 실제로 무엇을 건드리는지는 아무 표면도 보지 않았습니다 —
   LOW 문서 티켓의 한 phase가 결제 웹훅을 수정해도 조용했습니다. 이제 staged 경로가 민감 패턴
@@ -23,7 +21,6 @@
   - `req.config.json`의 `riskPaths`(선택)로 패턴을 **대체**할 수 있습니다(합집합이 아니라서
     기본 목록의 오탐 항목을 제거할 수 있습니다). `[]`는 감지 비활성입니다.
   - 실행 로그(`.doctor-runs.jsonl`)에는 id·level만 남고 경로는 기록되지 않습니다.
->>>>>>> feat/req-2026-119-phase-effective-risk-detect
 - **`commitgate verify-range` — 머지 직전 로컬 승인 증거 검증 + GitHub CI opt-in** (REQ-2026-116).
   base..head 범위의 커밋을 로컬 git과 커밋된 `approvals.jsonl`만으로 **승인 소비 · 도구 부기 ·
   머지 · 미입증**으로 분류합니다(GitHub 인증·네트워크 불필요). 기본은 보고(exit 0)이고
