@@ -57,6 +57,7 @@ import {
   quotePathspec,
   reviewPolicyVersion,
   buildReviewCallLogRow,
+  decideDesignDelta,
   committedPhaseIds,
   shippedPhasesBlock,
   appendReviewCallLog,
@@ -3376,6 +3377,69 @@ describe('REQ-2026-025 phase-2 — review-call 로그', () => {
         expect(fr()).toBe(false) // 부재 = 요청 안 함
         expect(fr('YES')).toBe(false) // 이상값은 과대계상하지 않는다
       })
+
+      /** REQ-2026-118: full 모드 사유 — 있으면 담고, 없으면 **키 자체가 없다**(선택 키 하위호환). */
+      it('full_review_reason은 넘긴 값 그대로, 미지정이면 키 부재', () => {
+        const withReason = buildReviewCallLogRow({ ...base, verdict: {}, deltaMode: false, fullReviewReason: 'phase-structure-changed' })
+        expect(withReason.full_review_reason).toBe('phase-structure-changed')
+        const without = buildReviewCallLogRow({ ...base, verdict: {}, deltaMode: true })
+        expect('full_review_reason' in without).toBe(false) // undefined 키도 아니고 아예 없다(키 집합 오라클 보호)
+        expect(JSON.parse(JSON.stringify(without)).full_review_reason).toBeUndefined()
+      })
+    })
+  })
+
+  /** REQ-2026-118: 델타/full 결정 배선 — 프롬프트 모드(designDelta)와 로그 사유를 **함께** 정하는 지점. */
+  describe('REQ-2026-118: decideDesignDelta', () => {
+    const BLOB = (c: string): string => c.repeat(40)
+    const blobs = { requirement: BLOB('a'), design: BLOB('b'), plan: BLOB('c') }
+    const PLAN = '## Phase 1 — x (`phase-1-x`)\n'
+    const docs = { requirement: 'r', design: 'd', plan: PLAN }
+    const gitOk = (planBody: string) => (args: string[]): string => {
+      if (args[0] === 'cat-file') return planBody
+      throw new Error(`예상 밖: ${args.join(' ')}`)
+    }
+    const st = (baseline: unknown): WorkflowState => ({ id: 'REQ-X', design_baseline: baseline }) as unknown as WorkflowState
+
+    it('baseline 부재 → full(designDelta 없음) + no-baseline, 안내 없음(첫 리뷰는 정상)', () => {
+      const r = decideDesignDelta(st(undefined), blobs, docs, gitOk(PLAN))
+      expect(r.designDelta).toBeUndefined()
+      expect(r.fullReviewReason).toBe('no-baseline')
+      expect(r.notice).toBeNull()
+    })
+    it('baseline 손상(형식 불량) → invalid-baseline', () => {
+      const r = decideDesignDelta(st({ requirement: '', design: '', plan: '' }), blobs, docs, gitOk(PLAN))
+      expect(r.fullReviewReason).toBe('invalid-baseline')
+    })
+    it('일부 변경 + phase 집합 동일 → 델타 유지·사유 없음(과잉 full 전환 회귀 방지)', () => {
+      const baseline = { ...blobs, design: BLOB('x') } // design만 다름
+      const r = decideDesignDelta(st(baseline), blobs, docs, gitOk(PLAN))
+      expect(r.designDelta).toEqual({ changed: ['design'], unchanged: ['requirement', 'plan'] })
+      expect(r.fullReviewReason).toBeUndefined()
+      expect(r.notice).toBeNull()
+    })
+    it('전 문서 변경 → full 강제 + all-docs-changed + 안내 1줄(완료 기준 1·6)', () => {
+      const baseline = { requirement: BLOB('x'), design: BLOB('y'), plan: BLOB('z') }
+      const r = decideDesignDelta(st(baseline), blobs, docs, gitOk(PLAN))
+      expect(r.designDelta).toBeUndefined()
+      expect(r.fullReviewReason).toBe('all-docs-changed')
+      expect(r.notice).toContain('all-docs-changed')
+    })
+    it('phase 구조 변경 → full 강제 + phase-structure-changed(완료 기준 2)', () => {
+      const baseline = { ...blobs, plan: BLOB('z') } // plan 변경 + 헤딩 phase 집합 상이
+      const r = decideDesignDelta(st(baseline), blobs, docs, gitOk('## Phase 1 — x (`phase-1-old`)\n'))
+      expect(r.designDelta).toBeUndefined()
+      expect(r.fullReviewReason).toBe('phase-structure-changed')
+    })
+    it('baseline plan blob 읽기 실패 → 구조 비교 건너뜀(델타 유지 가능 — 모르는 것으로 강제 금지)', () => {
+      const baseline = { ...blobs, design: BLOB('x') }
+      const gitFail = (args: string[]): string => {
+        if (args[0] === 'cat-file') throw new Error('missing blob')
+        throw new Error(`예상 밖: ${args.join(' ')}`)
+      }
+      const r = decideDesignDelta(st(baseline), blobs, docs, gitFail)
+      expect(r.designDelta).toBeDefined()
+      expect(r.fullReviewReason).toBeUndefined()
     })
   })
 

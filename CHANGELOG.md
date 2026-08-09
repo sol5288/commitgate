@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+- **델타 설계 리뷰의 full 전환이 결정적 조건이 됩니다** (REQ-2026-118). 지금까지 "이 변경은
+  델타로 볼 범위를 벗어났다"는 판단은 리뷰어 재량(`full_review_requested`)에만 맡겨져 있었고,
+  그 재량은 소비자 3곳 누적 **0건**으로 한 번도 행사되지 않았습니다(설계 재개는 32.6%였는데도).
+  이제 **전 문서 변경**·**02-plan phase 구조 변경**이면 도구가 델타 대신 전체 설계 리뷰를
+  조립하고 그 사실을 실행 출력에 표시합니다. 방향은 항상 델타→full(더 넓은 리뷰)뿐입니다.
+  - 리뷰 호출 로그에 `full_review_reason`(선택 키)이 남습니다: `no-baseline` · `invalid-baseline` ·
+    `all-docs-changed` · `phase-structure-changed`. 기존 행(키 없음)은 그대로 유효합니다.
+  - 리뷰어 재량 경로·응답 스키마는 바뀌지 않습니다 — 결정적 조건이 앞단에 추가된 것입니다.
 - **`commitgate verify-range` — 머지 직전 로컬 승인 증거 검증 + GitHub CI opt-in** (REQ-2026-116).
   base..head 범위의 커밋을 로컬 git과 커밋된 `approvals.jsonl`만으로 **승인 소비 · 도구 부기 ·
   머지 · 미입증**으로 분류합니다(GitHub 인증·네트워크 불필요). 기본은 보고(exit 0)이고

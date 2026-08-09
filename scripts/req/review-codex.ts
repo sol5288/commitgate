@@ -31,6 +31,7 @@ import { resolve, join, relative, sep, dirname } from 'node:path'
 import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
 import { bookkeepingMessage } from './lib/bookkeeping'
+import { autoFullReviewReason, type FullReviewReason } from './lib/full-review'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget, type GranularityGate } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
@@ -426,6 +427,51 @@ export function hasDesignBaseline(state: WorkflowState): boolean {
 export type DesignDocKey = 'requirement' | 'design' | 'plan'
 
 /**
+ * design 리뷰의 델타/full 결정(REQ-2026-118). 델타 게이트(`hasDesignBaseline`) 위에 **결정적 full
+ * 전환**(`autoFullReviewReason`)을 얹는다 — 전 문서 변경·phase 구조 변경이면 델타의 절감·범위 축소
+ * 이득이 없거나 위험하므로 `designDelta`를 내지 않는다(full 조립). baseline 부재·손상은 동작
+ * 무변경(원래 full)이고 사유만 기록한다.
+ *
+ * main()에서 분리해 export하는 이유: 이 결정은 프롬프트 모드와 로그 사유를 **함께** 정하는 배선이라,
+ * 순수 판정기(`lib/full-review`)만 테스트하면 배선 끊김을 못 잡는다(이 저장소의 3회 실증 교훈).
+ */
+export function decideDesignDelta(
+  state: WorkflowState,
+  designDocBlobs: DesignDocBlobs,
+  designDocs: DesignDocs,
+  gitFn: GitFn,
+): {
+  designDelta: { changed: DesignDocKey[]; unchanged: DesignDocKey[] } | undefined
+  fullReviewReason: FullReviewReason | undefined
+  /** 사용자에게 보여줄 전환 안내 1줄(자동 전환일 때만 — no-baseline은 첫 리뷰의 정상 상태라 침묵). */
+  notice: string | null
+} {
+  const baseline = state.design_baseline
+  const baselineState: 'valid' | 'absent' | 'invalid' =
+    baseline === undefined || baseline === null ? 'absent' : hasDesignBaseline(state) ? 'valid' : 'invalid'
+  if (baselineState !== 'valid' || !baseline)
+    return {
+      designDelta: undefined,
+      fullReviewReason: baselineState === 'absent' ? 'no-baseline' : 'invalid-baseline',
+      notice: null,
+    }
+  const delta = computeDesignDelta(baseline, designDocBlobs)
+  let baselinePlanBody: string | null = null
+  try {
+    baselinePlanBody = gitFn(['cat-file', 'blob', baseline.plan])
+  } catch {
+    baselinePlanBody = null // baseline blob 소실 등 — 구조 비교만 건너뛴다(판정기 계약).
+  }
+  const reason = autoFullReviewReason({ baselineState, delta, baselinePlanBody, currentPlanBody: designDocs.plan })
+  if (reason === null) return { designDelta: delta, fullReviewReason: undefined, notice: null }
+  return {
+    designDelta: undefined,
+    fullReviewReason: reason,
+    notice: `ℹ️  전체 설계 리뷰로 전환: ${reason} — 델타 대신 문서 전체를 심사합니다.`,
+  }
+}
+
+/**
  * delta review 문서 태그(REQ-2026-033 B-2a, R3). 변경/미변경 표시 — 코드 상수(오라클이 정확히 고정).
  * 정보성 태그일 뿐이다: 리뷰 계약(재litigate 금지 지시)은 B-2b의 persona 몫. B-2a는 "무엇이 바뀌었나"만 표시.
  */
@@ -694,6 +740,11 @@ export interface ReviewCallLogRow {
   delta_mode?: boolean
   /** REQ-2026-113 — 리뷰어가 전체 재리뷰를 요청했는가(`full_review_requested: "yes"`). 위와 같은 이유로 선택. */
   full_review_requested?: boolean
+  /**
+   * REQ-2026-118 — design 리뷰가 **왜 full 모드로 돌았는가**(결정적 판정 사유). 델타 모드·phase 리뷰는
+   * 키 부재. 선택 필드인 이유는 위와 동일 — 기존 행에 키가 없고, 부재는 "알 수 없음"이다.
+   */
+  full_review_reason?: FullReviewReason
 }
 
 /**
@@ -737,6 +788,8 @@ export function buildReviewCallLogRow(args: {
    *    `applyDeltaPersona(base, true)`의 해시를 계산해 대조해야 했다(REQ-2026-113 조사).
    */
   deltaMode: boolean
+  /** REQ-2026-118: design full 모드 사유(델타였으면 undefined → 키 생략). */
+  fullReviewReason?: FullReviewReason
 }): ReviewCallLogRow {
   return {
     ticket_id: args.ticketId,
@@ -767,6 +820,9 @@ export function buildReviewCallLogRow(args: {
      *    부재가 흔한데, 부재·`"no"`·이상값은 모두 "요청 안 함"이다. 요청을 **과대계상하지 않는 방향**.
      */
     full_review_requested: args.verdict.full_review_requested === 'yes',
+    // REQ-2026-118: 사유가 없으면 **키 자체를 만들지 않는다** — `undefined` 값 키는 JSON에서는 빠지지만
+    // `Object.keys`에는 잡혀 행 형태 검사(키 집합 오라클)를 오염시킨다.
+    ...(args.fullReviewReason !== undefined ? { full_review_reason: args.fullReviewReason } : {}),
   }
 }
 
@@ -2554,6 +2610,8 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   let designHash: string | undefined
   let designDocBlobs: DesignDocBlobs | undefined
   let designDelta: { changed: DesignDocKey[]; unchanged: DesignDocKey[] } | undefined
+  // REQ-2026-118: full 모드 사유(design 전용·로그 선택 키). undefined = 델타 모드였다는 뜻.
+  let fullReviewReason: FullReviewReason | undefined
   if (opts.kind === 'design') {
     // 리뷰 본문·바인딩 해시 모두 git 인덱스에서 — "리뷰 대상 = 바인딩 대상"(결정#3, Codex P2). 누락 문서는 각 함수가 fail-closed.
     designDocs = readDesignDocsFromIndex(ticketRel, git, cfg.designDocs)
@@ -2562,8 +2620,15 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
     designDocBlobs = captureDesignDocBlobs(ticketRel, git, cfg.designDocs)
     // REQ-2026-033 B-2a: design **재리뷰**(baseline 있음)면 delta 표시. 이 분기 안이라 phase는 구조적으로 delta 불가(kind 격리).
     // 게이트는 hasDesignBaseline이지 changed 수가 아니다 — 변경 0(baseline==current)이어도 delta 모드. persona는 안 바꾼다.
-    const baseline = state.design_baseline
-    if (hasDesignBaseline(state) && baseline) designDelta = computeDesignDelta(baseline, designDocBlobs)
+    //
+    // REQ-2026-118: 그 앞단에 **결정적 full 전환**이 선다(`decideDesignDelta` — 단일 배선인 designDelta
+    // 변수만 억제하면 full 조립·delta persona 미적용이 함께 따라온다). 재량 경로(full_review_requested)는
+    // 그대로다 — 이 판정은 제거가 아니라 앞단 추가다.
+    const decision = decideDesignDelta(state, designDocBlobs, designDocs, git)
+    designDelta = decision.designDelta
+    fullReviewReason = decision.fullReviewReason
+    // R4: 자동 전환은 조용히 일어나면 안 된다 — "왜 이번엔 델타가 아니지"를 묻게 하지 않는다.
+    if (decision.notice !== null) console.log(decision.notice)
   } else {
     // REQ-2026-056: lockfile diff는 프롬프트에서 요약(전문 opt-in = cfg.lockfilePromptFull). 🔴 프롬프트 문자열만
     // 바꾼다 — 바인딩(reviewTree = git write-tree)은 전체 index라 무영향(승인은 여전히 전체 lockfile 결속).
@@ -3005,6 +3070,8 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       // REQ-2026-113: 프롬프트 조립에 쓴 **그 값**을 그대로 쓴다(재계산 금지) — `designDelta`가
       //   설정됐다는 것이 곧 델타 모드다(`hasDesignBaseline` + baseline, :2566).
       deltaMode: designDelta !== undefined,
+      // REQ-2026-118: 프롬프트 조립에 쓴 판정 그대로(재계산 금지 — deltaMode와 같은 태도).
+      fullReviewReason,
     }),
   )
 
