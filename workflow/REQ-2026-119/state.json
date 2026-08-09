@@ -2,15 +2,20 @@
   "id": "REQ-2026-119",
   "branch": "feat/req-2026-119-phase-effective-risk-detect",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe761-2cde-7540-a3da-841aab759d04",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fe769-1927-72e0-ab25-d7bd046a59ac",
+  "review_base_sha": "1e21087b4365d38f0493e0cd499c5bf977f47b44",
+  "review_diff_hash": "8d9f3da2dcfb45ac51f54e415181a2a646c7935d",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "a0e5150dfe91b16ff5db606f224524d94c4a3e6b62e8d0d7a0a431a2cfaeb16d",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-risk-detect",
+  "phases": [
+    {
+      "id": "phase-1-risk-detect",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +24,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-risk-detect#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-risk-detect",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +54,23 @@
     "design_hash": "a0e5150dfe91b16ff5db606f224524d94c4a3e6b62e8d0d7a0a431a2cfaeb16d"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-risk-detect",
     "outcome": "approved",
-    "compare_hash": "17b876973ff8356c65e32998bf76d3aab6fd1c97df0debc8299e85c0d87f4468",
+    "compare_hash": "3bb6d0504e10fa503adb8e4fe4aa428bd224a74727ea78bdfba35a226d077c3d",
     "count": 1,
     "errors": [],
-    "at": "2026-08-09T16:36:24.681Z",
+    "at": "2026-08-09T16:44:54.108Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "8d9f3da2dcfb45ac51f54e415181a2a646c7935d",
+      "phase_id": "phase-1-risk-detect",
+      "consumed_by_commit_sha": "bbdcc9ea1ef1f88575789925c19f663066cba808",
+      "approval_consumed_at": "2026-08-09T16:45:20.238Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
