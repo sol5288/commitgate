@@ -2,15 +2,20 @@
   "id": "REQ-2026-122",
   "branch": "feat/req-2026-122-test-tier-scripts",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe7ed-f251-7932-bc3e-095130db0374",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fe7fb-85e5-7cd3-a7b0-cf9868b6067c",
+  "review_base_sha": "85da4b61619866bef0c6fc98ec3e61ab4fa941d7",
+  "review_diff_hash": "65f886e02ecd2852e171dc175aabbba4535babaa",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "85193a1abcdaba78f9182c0a624e14276e35d18c10c6c540ba17745320f84f95",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-tier-scripts",
+  "phases": [
+    {
+      "id": "phase-1-tier-scripts",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -21,6 +26,14 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-tier-scripts#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-tier-scripts",
+      "attempts": 3,
+      "closed_reason": "approved",
+      "void_attempts": 1
     }
   ],
   "design_baseline": {
@@ -42,14 +55,23 @@
     "design_hash": "85193a1abcdaba78f9182c0a624e14276e35d18c10c6c540ba17745320f84f95"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-tier-scripts",
     "outcome": "approved",
-    "compare_hash": "176183aae417739f0b8094bacc0a29ac17c387762042bce9d7baa0c9cf4a95d2",
+    "compare_hash": "2b09463b80c037ba44282bd529990daff6465e0a687d797093c9318fe0804acf",
     "count": 1,
     "errors": [],
-    "at": "2026-08-09T19:10:10.870Z",
+    "at": "2026-08-09T19:24:56.640Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "65f886e02ecd2852e171dc175aabbba4535babaa",
+      "phase_id": "phase-1-tier-scripts",
+      "consumed_by_commit_sha": "e4834042310f9f32425b3edf7ab9f9c04d15cde6",
+      "approval_consumed_at": "2026-08-09T19:25:31.231Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
