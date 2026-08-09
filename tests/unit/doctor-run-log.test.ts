@@ -15,8 +15,10 @@ import { join } from 'node:path'
 import {
   main as doctorMain,
   buildDoctorRunRow,
+  runChecks,
   DOCTOR_RUN_LOG_REL,
   type Check,
+  type DoctorInputs,
 } from '../../scripts/req/req-doctor'
 import { mkRepo, git } from './fixtures/stale-devcomplete'
 
@@ -101,6 +103,84 @@ describe('[REQ-2026-111] buildDoctorRunRow (순수)', () => {
     const at = '2026-08-02T00:00:00.000Z'
     expect(buildDoctorRunRow([mk('D2', 'OK'), mk('D18', 'WARN')], { ticketId: 'X', at }).verdict).toBe('PASS')
     expect(buildDoctorRunRow([mk('D2', 'OK'), mk('D10', 'FAIL')], { ticketId: 'X', at }).verdict).toBe('FAIL')
+  })
+
+  it('[REQ-2026-117] subjects가 있으면 담고, 없거나 비면 키 자체를 생략한다(하위호환)', () => {
+    const at = '2026-08-09T00:00:00.000Z'
+    const withSubjects: Check = { id: 'D30', level: 'WARN', msg: 'm', subjects: ['REQ-2026-009'] } as Check
+    const emptySubjects: Check = { id: 'D25', level: 'WARN', msg: 'm', subjects: [] } as Check
+    const noSubjects: Check = { id: 'D18', level: 'WARN', msg: 'm' } as Check
+    const row = buildDoctorRunRow([withSubjects, emptySubjects, noSubjects], { ticketId: 'X', at })
+    expect(row.nonok).toEqual([
+      { id: 'D30', level: 'WARN', subjects: ['REQ-2026-009'] },
+      { id: 'D25', level: 'WARN' },
+      { id: 'D18', level: 'WARN' },
+    ])
+    // 직렬화에서도 subjects 없는 항목엔 키가 없다 — 기존 소비자와 같은 형태.
+    expect(JSON.stringify(row.nonok[1])).toBe('{"id":"D25","level":"WARN"}')
+  })
+
+  it('[REQ-2026-117] 기존 행(subjects 부재)은 그대로 유효한 형태다 — 새 스키마가 과거를 거부하지 않는다', () => {
+    const legacy = '{"ticket_id":"X","at":"2026-08-02T14:10:12.132Z","verdict":"PASS","evaluated":24,"nonok":[{"id":"D30","level":"WARN"}]}'
+    const parsed = JSON.parse(legacy) as { nonok: { id: string; level: string; subjects?: string[] }[] }
+    expect(parsed.nonok[0]?.subjects).toBeUndefined() // 부재 = 정상(선택 키)
+  })
+})
+
+/** runChecks 최소 입력(req-doctor.test.ts의 base 형태 — 이 테스트는 D25/D29/D30 subjects만 본다). */
+function mkInputs(over: Partial<DoctorInputs>): DoctorInputs {
+  return {
+    state: {
+      id: TICKET_ID,
+      branch: 'feat/req-2026-999-x',
+      phase: 'IMPLEMENT',
+      commit_allowed: false,
+    } as never,
+    currentBranch: 'feat/req-2026-999-x',
+    branchExists: true,
+    branchPrefix: 'feat/req-',
+    stagedTree: 'TREE',
+    statusEntries: [],
+    scratch: [`${TICKET_REL}/codex-response.json`],
+    responseVerdict: null,
+    responseStructureOk: false,
+    designApproved: false,
+    designApprovedHash: null,
+    currentDesignHash: null,
+    ticketDocs: [],
+    ticketRel: TICKET_REL,
+    ...over,
+  } as DoctorInputs
+}
+
+describe('[REQ-2026-117] subjects 허용 규칙 — 저위험 식별자만', () => {
+  /**
+   * 🔴 subjects에 워킹트리 경로·메시지 본문이 새는 회귀를 막는다. 허용: 티켓 id(`REQ-…`) 또는
+   *    계약 파일명(`CONTRACT_FILE_RELS`). runChecks가 실제로 채우는 값 전수를 이 규칙으로 검사한다.
+   */
+  const ALLOWED = /^REQ-\d{4}-\d+$/
+  const CONTRACT_FILES = ['AGENTS.md', 'AGENTS.commitgate.md']
+
+  it('D25·D29·D30이 채우는 subjects 전수가 허용 목록 안이다', () => {
+    const checks = runChecks(
+      mkInputs({
+        unmergedClosedTickets: ['REQ-2026-001'],
+        retiredClaimHits: [
+          { file: 'AGENTS.md', claim: { text: 'x', why: 'y' } as never },
+          { file: 'AGENTS.commitgate.md', claim: { text: 'x', why: 'y' } as never },
+        ],
+        strandedEvidence: [{ id: 'REQ-2026-009', reviews: 7 }],
+        strandedClassified: [{ id: 'REQ-2026-009', reviews: 7, category: 'branch-alive', ageDays: 3 }],
+        remoteTrunkFreshness: null,
+        trunkBranch: 'main',
+      }),
+    )
+    const fired = checks.filter((c) => c.subjects !== undefined)
+    expect(fired.map((c) => c.id).sort()).toEqual(['D25', 'D29', 'D30'])
+    for (const c of fired)
+      for (const s of c.subjects!) {
+        expect(ALLOWED.test(s) || CONTRACT_FILES.includes(s), `허용되지 않은 subject: ${c.id} → ${s}`).toBe(true)
+      }
   })
 })
 

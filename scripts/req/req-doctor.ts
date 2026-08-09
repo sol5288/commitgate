@@ -96,6 +96,12 @@ export interface Check {
   id: CheckId
   level: Level
   msg: string
+  /**
+   * 발화 **대상의 기계 식별자**(REQ-2026-117 DEC-5) — 실행 로그(`.doctor-runs.jsonl`)에 실린다.
+   * 🔴 저위험 식별자만: 티켓 id(`REQ-…`)·계약 파일명(`CONTRACT_FILE_RELS`). 워킹트리 경로·메시지
+   *    본문은 넣지 않는다(REQ-2026-111의 프라이버시 결정 계승 — D10 등 경로 주체 검사는 의도적 제외).
+   */
+  subjects?: string[]
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -876,6 +882,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
       msg:
         `종결됐지만 trunk(${inp.trunkBranch ?? '-'})에 없는 티켓 ${inp.unmergedClosedTickets.length}건: ` +
         `${inp.unmergedClosedTickets.join(', ')} — 쌓일수록 브랜치가 서로의 조상이 되어 **순서를 바꿔 병합하거나 되돌릴 수 없게** 됩니다. 통합하거나 정리하세요.`,
+      subjects: [...inp.unmergedClosedTickets],
     })
   }
 
@@ -980,6 +987,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
         '계약 파일에 더 이상 사실이 아닌 서술이 있습니다 — ' +
         inp.retiredClaimHits.map((h) => `${h.file}: "${h.claim.text}"(${h.claim.why})`).join(' / ') +
         '. 해당 문장을 지우거나 현재 동작으로 갱신하세요(도구는 이 파일을 고치지 않습니다).',
+      subjects: [...new Set(inp.retiredClaimHits.map((h) => h.file))],
     })
 
   /**
@@ -1003,6 +1011,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
         `리뷰 증거가 trunk(${inp.trunkBranch ?? '-'})에 없는 티켓 ${inp.strandedEvidence.length}건 — ` +
         inp.strandedEvidence.map((s) => `${s.id}(리뷰 ${s.reviews}회)`).join(' · ') +
         '. 진행 중이면 정상입니다. 병합되지 않으면 이 증거는 메인라인에 남지 않습니다(감사 추적은 브랜치-지역적).',
+      subjects: inp.strandedEvidence.map((s) => s.id),
     })
   else {
     /**
@@ -1038,6 +1047,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
         parts.join(' / ') +
         remoteAxisNote +
         '. 병합되지 않으면 이 증거는 메인라인에 남지 않습니다(감사 추적은 브랜치-지역적).',
+      subjects: inp.strandedEvidence.map((s) => s.id),
     })
   }
 
@@ -1469,13 +1479,23 @@ export interface DoctorRunRow {
    *    "몇 번 FAIL했는가"까지다. 필드 추가로 확장 가능하다(append-only JSONL).
    */
   evaluated: number
-  /** level !== 'OK' 인 것만, `runChecks` 반환 순서 유지. */
-  nonok: { id: CheckId; level: Level }[]
+  /**
+   * level !== 'OK' 인 것만, `runChecks` 반환 순서 유지.
+   * `subjects`(REQ-2026-117): 발화 대상 기계 식별자 — **선택 키**다. 기존 행(키 부재)은 계속 유효하고,
+   * 검사가 subjects를 내지 않으면 직렬화에서도 키가 빠진다(append-only JSONL 하위호환).
+   */
+  nonok: { id: CheckId; level: Level; subjects?: string[] }[]
 }
 
 /** 순수 — 관측 행 조립. 부작용이 없어 단독 테스트된다. */
 export function buildDoctorRunRow(checks: readonly Check[], meta: { ticketId: string; at: string }): DoctorRunRow {
-  const nonok = checks.filter((c) => c.level !== 'OK').map((c) => ({ id: c.id, level: c.level }))
+  const nonok = checks
+    .filter((c) => c.level !== 'OK')
+    .map((c) =>
+      c.subjects !== undefined && c.subjects.length > 0
+        ? { id: c.id, level: c.level, subjects: [...c.subjects] }
+        : { id: c.id, level: c.level },
+    )
   return {
     ticket_id: meta.ticketId,
     at: meta.at,
