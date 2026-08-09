@@ -32,6 +32,7 @@ import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { autoFullReviewReason, type FullReviewReason } from './lib/full-review'
+import { secretScanGate } from './lib/secret-scan'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget, type GranularityGate } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
@@ -824,6 +825,40 @@ export function buildReviewCallLogRow(args: {
     // `Object.keys`에는 잡혀 행 형태 검사(키 집합 오라클)를 오염시킨다.
     ...(args.fullReviewReason !== undefined ? { full_review_reason: args.fullReviewReason } : {}),
   }
+}
+
+/**
+ * 프롬프트 크기 게이트(REQ-2026-120 DEC-4, 순수). **max 우선**: max 초과면 차단(이미 안 나가므로
+ * 경고 불요), max 이내면 warn 초과 여부만 경고. 두 값은 독립 정책이다 — `max < warn`은 "작은 전송
+ * 예산 + 기본 경고"로 유효하다(설계 r01 P1: 교차검증 거부는 그 정책 자체를 막는다).
+ * 🔴 **절단 경로는 없다** — 절단은 리뷰어가 못 본 부분을 승인하는 결과가 된다.
+ */
+export function promptSizeGate(input: {
+  totalBytes: number
+  personaBytes: number
+  /** 권위 아티팩트(설계 문서 또는 staged diff) 바이트. */
+  payloadBytes: number
+  warnBytes: number
+  maxBytes: number | null
+}): { verdict: 'pass' | 'warn' | 'block'; message: string | null } {
+  const kb = (n: number): string => `${Math.round(n / 1024)}KB`
+  if (input.maxBytes !== null && input.totalBytes > input.maxBytes)
+    return {
+      verdict: 'block',
+      message:
+        `리뷰 프롬프트 ${kb(input.totalBytes)} 가 상한 promptMaxBytes(${kb(input.maxBytes)})를 초과합니다 — 전송하지 않았고 예산도 차감되지 않았습니다. ` +
+        `절단하지 않습니다: phase를 나누거나, lockfile 전문이 켜져 있으면 lockfilePromptFull=false(기본 요약)를 확인하거나, 설계 문서를 분할하십시오.`,
+    }
+  if (input.totalBytes > input.warnBytes) {
+    const contextBytes = Math.max(0, input.totalBytes - input.personaBytes - input.payloadBytes)
+    return {
+      verdict: 'warn',
+      message:
+        `리뷰 프롬프트 ${kb(input.totalBytes)} (persona ${kb(input.personaBytes)} · 본문 ${kb(input.payloadBytes)} · 문맥 ${kb(contextBytes)}) — ` +
+        `promptWarnBytes(${kb(input.warnBytes)}) 초과. 전송은 진행합니다 — 비용에 유의하십시오.`,
+    }
+  }
+  return { verdict: 'pass', message: null }
 }
 
 /**
@@ -2767,6 +2802,31 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       if (cfg.granularityGate === 'block') throw new Error(msg)
       console.warn(`[req:review-codex] ⚠️ ${msg}`) // granularityGate:'warn' — 이전 동작(경고만).
     }
+  }
+
+  // 🔴 REQ-2026-120 DEC-3: secret scan — **예산 gate·attempt 기록·pre-call 원장 커밋·유료 호출보다 앞**이다.
+  //    뒤에 두면 차단해도 예산이 이미 차감돼 "아무것도 소모하지 않고 되돌린다"가 거짓이 된다(granularity
+  //    게이트와 같은 순서 규칙). 스캔 대상은 전송될 **최종 조립 형태의 프롬프트**다 — 이 시점 binding
+  //    값(sha 문자열)은 pre-call 커밋으로 바뀔 수 있으나 hex라 스캔 결과에 영향이 없고, 내용(diff·문서·
+  //    persona)은 동일하다. 판정은 순수 게이트(secretScanGate)가 하고 여기는 verdict만 해석한다.
+  {
+    const preBinding = captureGitBinding()
+    const gatePrompt = buildPromptFor(preBinding.reviewBaseSha, preBinding.reviewTree)
+    if (cfg.secretScan !== 'off') {
+      const scan = secretScanGate(gatePrompt, cfg.secretScan)
+      if (scan.verdict === 'block') throw new Error(scan.message ?? 'secret scan 차단')
+      if (scan.verdict === 'warn') console.warn(`[req:review-codex] ⚠️ ${scan.message}`)
+    }
+    // REQ-2026-120 DEC-4: 크기 게이트 — 같은 지점(전송될 최종 형태 기준·소모 전). max 우선, warn은 진행.
+    const size = promptSizeGate({
+      totalBytes: assembledPromptBytes(gatePrompt),
+      personaBytes: Buffer.byteLength(effectivePersona ?? '', 'utf8'),
+      payloadBytes: Buffer.byteLength(stagedDiff ?? (designDocs ? Object.values(designDocs).join('') : ''), 'utf8'),
+      warnBytes: cfg.promptWarnBytes,
+      maxBytes: cfg.promptMaxBytes,
+    })
+    if (size.verdict === 'block') throw new Error(size.message ?? '프롬프트 상한 초과')
+    if (size.verdict === 'warn') console.warn(`[req:review-codex] ⚠️ ${size.message}`)
   }
 
   // DEC-A6 step 3: 예산/예외 gate + attempt-opened 기록(state.json scratch). 반환 state가 이후 base(R9).

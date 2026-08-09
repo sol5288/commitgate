@@ -29,7 +29,7 @@ CommitGate가 막는 것은 단순한 명령 실수가 아니라 **리뷰받지 
 방어선을 잘못 계산하지 않도록, 이 도구가 **하지 않는 일**을 분명히 해 둡니다.
 
 - **하드 강제가 아닙니다.** git hook을 설치하지 않으므로 `req:commit` 대신 `git commit`을 직접 치면 doctor·승인 바인딩·증거 기록이 전부 우회됩니다. 다만 그런 커밋은 승인 증거를 남기지 않으므로 **`npx commitgate verify-range`가 로컬에서 "미입증"으로 드러냅니다**(머지 승인 전 확인 용도 — GitHub 인증·네트워크 불필요). GitHub CI는 사용량·비용이 발생할 수 있어 **선택 사항**이며 CommitGate의 필수 조건이 아닙니다 — 강제 수준을 더 올리고 싶은 조직만 자체 파이프라인에서 `verify-range --strict`나 원격 검증을 선택합니다.
-- **staged 내용의 비밀을 지켜 주지 않습니다.** `req:review-codex`는 `git diff --cached` 전문을 Codex(OpenAI)로 전송하고, codex는 `--sandbox read-only`로 저장소 루트를 읽습니다. 마스킹·스크러빙·길이 상한이 없습니다. 결제·자격증명처럼 민감한 코드베이스라면 리뷰 전 staged diff를 육안으로 확인하는 절차를 계약(`AGENTS.md`)에 명문화하세요.
+- **staged 내용의 비밀을 완전히 지켜 주지는 않습니다.** `req:review-codex`는 `git diff --cached` 전문을 Codex(OpenAI)로 전송하고, codex는 `--sandbox read-only`로 저장소 루트를 읽습니다. 전송 직전에 **고신뢰 secret 패턴**(개인키 PEM·AWS 키·GitHub/Slack 토큰·Google/OpenAI 키·JWT)은 기본 차단합니다(`secretScan: "block"` — 예산 미차감, `"warn"`/`"off"`로 완화 가능). 그러나 **이 목록이 못 잡는 비밀은 얼마든지 있고, 마스킹·스크러빙은 하지 않습니다** — 리뷰 전 staged diff 육안 확인 의무는 그대로입니다. 길이는 기본 무제한이되 `promptWarnBytes`(기본 256KiB) 초과 시 경고하고, `promptMaxBytes`(opt-in) 설정 시 초과분은 절단 없이 전송을 거부합니다.
 - **커밋 이후를 보장하지 않습니다.** 승인은 커밋 시점의 staged tree에 대한 것이고, 머지·태그·publish는 각각 별도 통제점입니다.
 - 🔴 **증거는 브랜치-지역적입니다.** 승인 응답·`approvals.jsonl`·원장은 그 티켓의 **feature 브랜치에** 커밋됩니다. 그 브랜치를 병합하지 않으면 **증거는 메인라인에 남지 않습니다.** 데이터가 파괴되는 것은 아니고(브랜치에 그대로 있습니다) 메인라인에서 보이지 않을 뿐이지만, 그 브랜치를 지우면 함께 사라집니다.
 

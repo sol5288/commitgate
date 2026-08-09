@@ -1,0 +1,93 @@
+{
+  "id": "REQ-2026-120",
+  "branch": "feat/req-2026-120-review-transmit-safety",
+  "risk_level": "LOW",
+  "codex_thread_id": "019fe7a8-749f-70a3-b2c8-749da5476dc0",
+  "review_base_sha": "ef7c303f656d4c43b09587c4837be34d5c81082c",
+  "review_diff_hash": "c631a0effdc97d85106552a6a1534e4cd82faa82",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "b053c88280187ad434dcff0889caa2f781c0e7f60bea70308b77dbc95c1bcec4",
+  "current_phase": "phase-2-size-surface",
+  "phases": [
+    {
+      "id": "phase-1-secret-scan",
+      "approved": true
+    },
+    {
+      "id": "phase-2-size-surface",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-secret-scan#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-secret-scan",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-size-surface#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-size-surface",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-size-surface",
+    "outcome": "approved",
+    "compare_hash": "3e7809706a1ed15e5ac658051970129f6d367e022823097f71871508142ab4b5",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-09T17:54:29.643Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "54ba3e27c897877ff05d7ffdb4e19fdc909638a9",
+    "design": "edc995557ac4cd91477e06c70b0f3a28a3d26876",
+    "plan": "156066a399b93d9eb366f8ee0ddab9ca8ff0f9a8"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-120/responses/design-r03-approved.json",
+    "response_sha256": "3ce4569d2d61e633a45409d563534ceed8e42950ec81528f8ea8bf62a4c104c3",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "ff02d00e23a287f423027058f6bb8aa2ad72d9e4",
+    "codex_thread_id": "019fe792-c893-7162-b876-0435d2b7d255",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-09T17:30:16.947Z",
+    "design_hash": "b053c88280187ad434dcff0889caa2f781c0e7f60bea70308b77dbc95c1bcec4"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "2a4309a51626e3e7925be5e04ea8b3333c4185d0",
+      "phase_id": "phase-1-secret-scan",
+      "consumed_by_commit_sha": "cf583c6c4b0141fac018b7a5635c15aa6098ca91",
+      "approval_consumed_at": "2026-08-09T17:45:53.893Z"
+    },
+    {
+      "approved_tree": "c631a0effdc97d85106552a6a1534e4cd82faa82",
+      "phase_id": "phase-2-size-surface",
+      "consumed_by_commit_sha": "eb58e1559a51211e1bf103ef7cbb61d50f26ce18",
+      "approval_consumed_at": "2026-08-09T17:55:14.017Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}
