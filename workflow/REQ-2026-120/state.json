@@ -2,14 +2,14 @@
   "id": "REQ-2026-120",
   "branch": "feat/req-2026-120-review-transmit-safety",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe79f-d828-7a11-9c15-f535c5960efc",
-  "review_base_sha": "db02349ec07b8976215fa3b927d4aeacc5172f78",
-  "review_diff_hash": "2a4309a51626e3e7925be5e04ea8b3333c4185d0",
+  "codex_thread_id": "019fe7a8-749f-70a3-b2c8-749da5476dc0",
+  "review_base_sha": "ef7c303f656d4c43b09587c4837be34d5c81082c",
+  "review_diff_hash": "c631a0effdc97d85106552a6a1534e4cd82faa82",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "b053c88280187ad434dcff0889caa2f781c0e7f60bea70308b77dbc95c1bcec4",
-  "current_phase": "phase-1-secret-scan",
+  "current_phase": "phase-2-size-surface",
   "phases": [
     {
       "id": "phase-1-secret-scan",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-size-surface",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -37,16 +37,23 @@
       "phase_id": "phase-1-secret-scan",
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-size-surface#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-size-surface",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-secret-scan",
+    "phase_id": "phase-2-size-surface",
     "outcome": "approved",
-    "compare_hash": "ed6e716a9060b0bf149029344c30c71cce37147df0dea8f2719353fd64243d41",
+    "compare_hash": "3e7809706a1ed15e5ac658051970129f6d367e022823097f71871508142ab4b5",
     "count": 1,
     "errors": [],
-    "at": "2026-08-09T17:45:20.113Z",
+    "at": "2026-08-09T17:54:29.643Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,6 +81,12 @@
       "phase_id": "phase-1-secret-scan",
       "consumed_by_commit_sha": "cf583c6c4b0141fac018b7a5635c15aa6098ca91",
       "approval_consumed_at": "2026-08-09T17:45:53.893Z"
+    },
+    {
+      "approved_tree": "c631a0effdc97d85106552a6a1534e4cd82faa82",
+      "phase_id": "phase-2-size-surface",
+      "consumed_by_commit_sha": "eb58e1559a51211e1bf103ef7cbb61d50f26ce18",
+      "approval_consumed_at": "2026-08-09T17:55:14.017Z"
     }
   ],
   "user_commit_confirmed": null
