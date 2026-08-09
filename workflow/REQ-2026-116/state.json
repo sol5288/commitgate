@@ -2,14 +2,14 @@
   "id": "REQ-2026-116",
   "branch": "feat/req-2026-116-verify-range-and-ci-optin",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe6d9-2099-7121-9490-355e40b5399e",
-  "review_base_sha": "8d6a7ee0bfafb9cbdb3ee5accc30233badaa5f91",
-  "review_diff_hash": "195e11812bf7d07ded07d6374cf0ec72de4e9db8",
+  "codex_thread_id": "019fe6e8-8734-7851-a540-3cc8245e0273",
+  "review_base_sha": "678f786c70aae396c5226fb46cc37737aeaa17e8",
+  "review_diff_hash": "61b2dba7e9ee0c02d6c8b4e71b1e3931ee705f24",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "52f565f194a5e71047666d128688addbba6a7dbd2051b78f81a0d6663c798775",
-  "current_phase": "phase-1-verify-core",
+  "current_phase": "phase-2-cli-ci-optin",
   "phases": [
     {
       "id": "phase-1-verify-core",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-cli-ci-optin",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-docs",
@@ -41,16 +41,23 @@
       "phase_id": "phase-1-verify-core",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-cli-ci-optin#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-cli-ci-optin",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-verify-core",
+    "phase_id": "phase-2-cli-ci-optin",
     "outcome": "approved",
-    "compare_hash": "73d3dd7e27da90c8b2e22f5d26e4e08a8e23a1a21fbc44b14617d1332681c24a",
+    "compare_hash": "c2e58cf007767a1704f76fc369ad101b877e6186f457b2ee3d3944e037d822f6",
     "count": 1,
     "errors": [],
-    "at": "2026-08-09T14:07:34.184Z",
+    "at": "2026-08-09T14:25:04.521Z",
     "findings": [],
     "elided_count": 0
   },
@@ -78,6 +85,12 @@
       "phase_id": "phase-1-verify-core",
       "consumed_by_commit_sha": "24d88ae07281e54148b5a5cbd8cdf3a4aba547c4",
       "approval_consumed_at": "2026-08-09T14:08:21.058Z"
+    },
+    {
+      "approved_tree": "61b2dba7e9ee0c02d6c8b4e71b1e3931ee705f24",
+      "phase_id": "phase-2-cli-ci-optin",
+      "consumed_by_commit_sha": "27f75f4958a85312706146eeeaae0ca58b9b8f28",
+      "approval_consumed_at": "2026-08-09T14:25:31.730Z"
     }
   ],
   "user_commit_confirmed": null
