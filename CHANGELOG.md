@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- **design 승인의 부기 커밋이 2개에서 1개가 됩니다** (REQ-2026-121). 승인 증거(finalize) 커밋
+  직후 항상 따라오던 `state checkpoint` 커밋을 없애고, **같은 검증**(바이트·티켓 id 대조)을 통과한
+  `state.json`을 finalize 커밋에 함께 싣습니다 — 파일 내용은 동일하고 커밋 경계만 합쳐집니다
+  (소비자 3곳 실측: checkpoint류가 부기 커밋의 ~25%·1,526건이었고 그 design 짝이 대상).
+  검증에 실패하면 기존처럼 증거만 커밋하고 별도 checkpoint가 폴백으로 동작합니다.
+  phase 경로(evidence-finalize)는 복구 불변식 때문에 이번에 바꾸지 않습니다.
 - **리뷰 전송 직전 secret scan — 기본 차단** (REQ-2026-120). 조립 프롬프트(staged diff·설계 문서
   전문 포함)가 외부로 나가기 직전, 고신뢰 패턴(개인키 PEM · AWS AKIA/ASIA · GitHub ghp/gho/ghu/
   ghs/ghr/PAT · Slack xox?/xapp · Google · OpenAI · JWT)을 검사해 일치하면 **호출 없이** 멈춥니다 —

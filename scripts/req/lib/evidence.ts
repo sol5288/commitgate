@@ -773,7 +773,14 @@ export function durableDesignEvidence(args: {
   validPhaseIds: string[]
   nowIso: string
   ports: EvidencePorts
-}): { outcome: DurableOutcome; stagePaths: string[] } {
+  /**
+   * REQ-2026-121: finalize 커밋에 **동승할 승인 상태**(REQ-2026-057 DEC-1의 design 경로 한정 재개정).
+   * 경로는 호출자가 정하지 않는다 — `<ticketRel>/state.json`을 이 함수가 계산한다(설계 r01 observation:
+   * "정확히 한 경로" 계약을 함수가 직접 보장). 디스크 내용 = `serialized` 바이트 · 역직렬화 `id` =
+   * `ticketId`를 재검증하고, **실패하면 동승만 생략**한다(증거가 우선 — R2. 폴백 checkpoint는 호출부).
+   */
+  companionState?: { serialized: string }
+}): { outcome: DurableOutcome; stagePaths: string[]; stateIncluded: boolean } {
   const { ticketRel, evidence: ev, ports } = args
   if (ev.review_kind !== 'design') throw new Error(`durableDesignEvidence: review_kind != design (${String(ev.review_kind)})`)
   const manifestRel = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/approvals.jsonl`
@@ -796,7 +803,7 @@ export function durableDesignEvidence(args: {
     ports.headBlobSha256(ev.response_path) !== null &&
     headInventory.every((i) => ports.headBlobSha256(i.response_path) === i.sha256)
 
-  if (onDiskRow && headDurable) return { outcome: 'already-durable', stagePaths: [] }
+  if (onDiskRow && headDurable) return { outcome: 'already-durable', stagePaths: [], stateIncluded: false }
 
   let inventory: ArchiveInventoryItem[]
   if (onDiskRow) {
@@ -821,15 +828,47 @@ export function durableDesignEvidence(args: {
   const ledgerRel = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/review-ledger.jsonl`
   const ledgerExists = ports.readText(ledgerRel) !== null
   const stagePaths = designEvidenceStagePaths(inventory, ev.response_path, ticketRel, ledgerExists)
+
+  /**
+   * REQ-2026-121: 승인 상태 동승 — checkpoint(state-checkpoint.ts)와 같은 검증을 통과할 때만.
+   * 경로는 여기서 계산한다(호출자 지정 금지 — "정확히 한 경로"를 함수가 보장). 검증 실패는 throw가
+   * 아니라 **동승 생략**이다: 증거 커밋이 우선이고, 폴백 checkpoint 경로가 오늘의 동작 그대로 남는다.
+   */
+  const stateRel = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/state.json`
+  let stateIncluded = false
+  if (args.companionState !== undefined) {
+    const onDisk = ports.readText(stateRel)
+    let idOk = false
+    try {
+      idOk = (JSON.parse(args.companionState.serialized) as { id?: unknown }).id === args.ticketId
+    } catch {
+      idOk = false
+    }
+    if (onDisk === args.companionState.serialized && idOk) {
+      stagePaths.push(stateRel)
+      stateIncluded = true
+    }
+  }
+
   // 🔴 가드는 **우리가 커밋할 경로**에만 건다 — index 전체가 아니다(phase-3 리뷰 P1).
   //    index 전체를 보면 설계 문서를 stage한 정상 승인 경로에서 항상 실패한다. pathspec 범위 커밋이라
   //    무관한 staged 변경은 애초에 이 커밋에 들어갈 수 없고, 커밋 후에도 index에 그대로 남는다.
+  // 🔴 REQ-2026-121: 허용 목록 = responses/** ∪ {state.json 정확 일치}. 그 밖은 여전히 fail-closed —
+  //    REQ-2026-057 DEC-1의 누수 방어(코드가 증거 커밋에 실리는 것)는 그대로다.
   const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
-  const outside = stagePaths.filter((p) => !p.replace(/\\/g, '/').startsWith(prefix))
+  const outside = stagePaths.filter((p) => {
+    const norm = p.replace(/\\/g, '/')
+    return !norm.startsWith(prefix) && norm !== stateRel
+  })
   if (outside.length) throw new Error(`design evidence 커밋 대상이 티켓 responses/ 밖: ${outside.join(', ')}`)
   // REQ-2026-085 DEC-6: 메시지에 부기 trailer만 더한다 — stagePaths는 그대로다.
-  ports.commitPaths(stagePaths, bookkeepingMessage(`chore(${args.ticketId}): design-finalize — design 승인 approvals.jsonl 기록`))
-  return { outcome: onDiskRow ? 'recommitted' : 'committed', stagePaths }
+  ports.commitPaths(
+    stagePaths,
+    bookkeepingMessage(
+      `chore(${args.ticketId}): design-finalize — design 승인 approvals.jsonl${stateIncluded ? '·state' : ''} 기록`,
+    ),
+  )
+  return { outcome: onDiskRow ? 'recommitted' : 'committed', stagePaths, stateIncluded }
 }
 
 // ───────────────────── DONE 게이트: 커밋된 증거 검증 (REQ-2026-048 DEC-4) ──

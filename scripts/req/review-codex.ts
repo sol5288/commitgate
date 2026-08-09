@@ -3074,13 +3074,20 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
           validPhaseIds: readPhases(persistedState).map((ph) => ph.id),
           nowIso: approvedAt,
           ports: createEvidencePorts(cfg.root, `${ticketRelForEvidence}/responses`),
+          // REQ-2026-121: 방금 기록한 승인 상태를 같은 커밋에 동승(검증·경로 계산은 함수 소관).
+          companionState: { serialized: serializeState(persistedState) },
         })
         if (r.outcome !== 'already-durable')
-          console.log('[req:review-codex] design 승인 증거를 커밋했습니다(아카이브·approvals.jsonl).')
+          console.log(
+            `[req:review-codex] design 승인 증거를 커밋했습니다(아카이브·approvals.jsonl${r.stateIncluded ? '·state' : ''}).`,
+          )
         // REQ-2026-057 DEC-5: 승인 상태 durable checkpoint — **증거 커밋 직후**에만 낸다.
         // 증거 커밋이 실패했다면(위 throw) 여기 도달하지 않는다 — 증거 없이 "design_approved=true"만
         // 커밋되어 상태가 증거를 앞서는 일을 만들지 않는다. 실패 정책도 같은 catch를 공유한다(승인 판정 불변).
+        // REQ-2026-121: 동승됐으면 checkpoint는 낼 것이 없다(무변경 no-op) — 호출 자체를 생략한다.
+        //    동승 생략(stateIncluded=false — already-durable·검증 불일치)이면 기존 폴백 그대로.
         if (
+          !r.stateIncluded &&
           commitStateCheckpoint({
             root: cfg.root,
             ticketRel: ticketRelForEvidence,
