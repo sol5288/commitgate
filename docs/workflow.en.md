@@ -49,6 +49,19 @@ If a change is too fundamental to judge as a delta, the reviewer requests a full
 
 Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses the required status checks**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. In that case CI runs **after** the push, so its green is post-hoc verification, and the agent must not omit that from its report. tag, npm publish, and GitHub release are control points of their own, requested after CI is green and never bundled with the integration approval. See [AGENTS.template.md](../AGENTS.template.md) and [docs/RELEASING.md](../docs/RELEASING.md) for the full contract.
 
+## Pre-merge local verification — GitHub CI is optional
+
+**GitHub CI is not a requirement of CommitGate.** GitHub Actions can consume usage quota and cost money, so CommitGate neither requires nor auto-triggers it. Before an integration approval you can verify the range's approval evidence locally:
+
+```sh
+npx commitgate verify-range            # classify merge-base(trunk)..HEAD
+npx commitgate verify-range --strict   # exit 1 when unproven commits exist (gate mode)
+```
+
+Each commit in the range is classified as **approved** (a consumption record in the committed `approvals.jsonl`), **tool bookkeeping** (trailer), **merge**, or **unproven**. It works without GitHub auth, `gh`, or network access. "Unproven" is not an accusation of bypass — it means "not provable from evidence" (legitimate out-of-workflow commits such as install scaffolding or release commits appear here too). History rewritten by squash/rebase no longer matches the consumption-time SHAs and shows up as unproven — this check reports the given range as-is.
+
+An interactive run ends by asking **"GitHub CI 검사를 실행하시겠습니까? 비용 또는 사용량이 발생할 수 있습니다. [y/N]"** (run GitHub CI checks? may incur usage/cost). The default is No; Enter or `n` continues without CI (skipping is a normal state). Only on `y` or `--github-ci` does it **query** the head SHA's check-runs once (it never dispatches workflows), and an explicitly requested check that fails stops with exit 1 instead of being silently ignored. Non-interactive runs skip unless a flag is given. The choice applies to that run only and is never stored.
+
 ## Manual Commands
 
 Most users should use the prompt flow above. This section is for understanding what the workflow runs internally or for debugging.

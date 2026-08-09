@@ -99,7 +99,7 @@ VCCR만 높이기 위해 위험한 변경을 쉽게 승인하면 안 되므로, 
 
 | 순위 | ID | 개선 축 | 우선순위 | 핵심 결과 | 주요 선행 |
 |---:|---|---|---|---|---|
-| 1 | **STR-01** | CI 증거 검증과 정책 프로필 | P0 | 직접 커밋 우회를 원격 경계에서 탐지·차단 | 증거 포맷 버전화 |
+| 1 | **STR-01** | 증거 검증과 정책 프로필(로컬 `verify-range` **실현** — §7.1) | P0 | 승인 증거 없는 커밋을 로컬에서 탐지 — 원격 강제는 opt-in 확장 | 증거 포맷 버전화 |
 | 2 | **STR-02** | 재구축 가능한 상태·원자적 복구 | P0 | fresh clone에서도 동일한 `req:next` 판정 | 이벤트 계약 |
 | 3 | **STR-03** | 외부 전송 안전 경계 | P0 | secret/크기/경로 정책 위반을 Codex 호출 전에 차단 | 오류 코드 |
 | 4 | **STR-04** | 리뷰 수렴·델타 재리뷰·escalation | P0 | 무한 리뷰 제거, P95 5라운드 이내 의사결정 | 내구 이벤트·지표 |
@@ -112,17 +112,28 @@ VCCR만 높이기 위해 위험한 변경을 쉽게 승인하면 안 되므로, 
 
 ## 7. 핵심 개선 설계
 
-### 7.1 STR-01 — CI 증거 검증과 정책 프로필
+### 7.1 STR-01 — 증거 검증과 정책 프로필 (일부 실현됨 — REQ-2026-116)
 
 **문제**: 로컬 `req:commit`은 정확하지만 직접 `git commit`으로 우회할 수 있고, 현재 CI는 타입·테스트·스모크만 실행한다.
 
-**설계**
+**확정 정책(2026-08-09)** — GitHub CI는 사용량·비용이 발생하므로 **CommitGate의 필수 게이트가 아니다.**
+기본 검증 경로는 **로컬**이며, 원격(GitHub Actions) 검증은 사용자가 명시적으로 선택할 때만 실행·설치한다.
+CommitGate가 워크플로를 자동 트리거하거나 required workflow로 배포하는 일은 하지 않는다.
 
-- `commitgate verify --base <sha> --head <sha> --json`을 추가한다.
-- 범위 내 각 source commit에 대해 승인 아카이브 sha, approved tree, 소비 커밋, schema version을 검증한다.
-- `solo`, `team`, `regulated` 정책 프로필을 둔다. 예: `solo`는 경고 허용, `team`은 증거 누락 FAIL, `regulated`는 전송 정책·HIGH 사람 승인까지 요구한다.
-- GitHub Actions용 공식 예제를 제공하고 protected branch의 required check로 사용한다.
-- 로컬 hook은 선택적 편의 기능으로만 제공한다. 보안 경계는 서버 측 CI다.
+**실현된 부분(REQ-2026-116)**
+
+- `commitgate verify-range [--base <ref>] [--head <ref>] [--strict] [--json]` — 범위 내 커밋을
+  승인 소비(`consumed_by_commit_sha`)·도구 부기(trailer)·머지·**미입증**으로 로컬 분류한다.
+  기본은 보고(exit 0), `--strict`가 게이트 모드다. GitHub 인증·네트워크 무의존.
+- 머지 직전 GitHub CI **opt-in**(조회 전용): 대화형 [y/N] 기본 No · `--github-ci`/`--no-github-ci` ·
+  비대화형 기본 생략 · 명시 요청 실패는 exit 1.
+
+**남은 설계(미구현)**
+
+- 승인 아카이브 sha·approved tree·schema version까지의 심층 검증(현재는 소비 SHA·trailer 분류까지).
+- `solo`, `team`, `regulated` 정책 프로필. 예: `solo`는 경고 허용, `team`은 증거 누락 FAIL, `regulated`는 전송 정책·HIGH 사람 승인까지 요구한다.
+- GitHub Actions용 공식 예제 — **명시적으로 선택한 사용자만 설치·실행**하는 opt-in 예제로 제공한다(기본 설치·자동 트리거 금지).
+- 로컬 hook은 선택적 편의 기능으로만 제공한다. 사람의 우회까지 막아야 하는 조직의 최종 경계는 서버 측 검증이지만, 그 선택이 CommitGate 사용의 전제가 되어서는 안 된다.
 
 **수용 기준**
 

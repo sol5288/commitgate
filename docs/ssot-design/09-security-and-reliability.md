@@ -89,7 +89,9 @@ flowchart LR
 - **`trunkBranch` 하드코딩** `'main'` — 설정화 미구현.
 - **상태 자동 재구축 없음** — `state.json` scratch 변경이 사라지면 커밋된 증거에서 실행 상태를 복원하는 명령이 없음.
 - **설치 정책 버전 원장 없음** — 대상 repo가 어느 CommitGate 계약을 쓰는지 기계적으로 증명·업그레이드하기 어려움. Stage B에서도 **자산↔런타임 skew 자동 감지 수단이 없다**: D14는 `devDependencies.commitgate` 키 존재만 확인하고, `node_modules` realpath 검증은 **제거됐다**(그 검증도 upgrade 후 자산 skew를 풀지 못했다). doctor D19는 `req:*` 값의 형태만 본다. 자산 업그레이드·3-way merge·lockfile/manifest 파서·Yarn PnP·nested workspace는 **범위 밖**이다.
-- **CI evidence verifier 없음** — 로컬 게이트 우회를 원격 protected branch에서 검증하지 않음.
+- **원격 evidence verifier 없음** — 로컬 게이트 우회를 원격 protected branch에서 검증하지 않음.
+  로컬로는 `commitgate verify-range`(REQ-2026-116)가 커밋 범위의 승인 증거를 분류·보고한다(기본 보고·`--strict` 게이트).
+  GitHub CI는 확정 정책상 **선택 사항**이라, 원격 강제는 요구가 아니라 opt-in 확장으로 남는다.
 
 ## 5. 감사 로그
 - 승인 증거는 `responses/approvals.jsonl`(append-only) + `responses/<...>.json` 아카이브에 영구 보존.

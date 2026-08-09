@@ -2,6 +2,24 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+- **`commitgate verify-range` — 머지 직전 로컬 승인 증거 검증 + GitHub CI opt-in** (REQ-2026-116).
+  base..head 범위의 커밋을 로컬 git과 커밋된 `approvals.jsonl`만으로 **승인 소비 · 도구 부기 ·
+  머지 · 미입증**으로 분류합니다(GitHub 인증·네트워크 불필요). 기본은 보고(exit 0)이고
+  `--strict`일 때만 미입증 커밋이 게이트가 됩니다.
+  - **GitHub CI는 기본 비활성입니다** — 사용량·비용이 발생할 수 있으므로 CommitGate의 필수
+    조건이 아닙니다. 대화형에서는 매번 `[y/N]`(기본 No)으로 묻고, `--github-ci`/`--no-github-ci`로
+    명시할 수 있으며, 비대화형은 플래그 없이는 생략합니다. opt-in 시에도 head SHA의 check-runs를
+    **1회 조회**할 뿐 워크플로를 트리거하지 않고, 명시 요청한 확인이 실패하면 exit 1로 드러냅니다.
+    선택은 실행 단위이며 저장되지 않습니다.
+  - 실행 요약(SHA·범주별 개수·CI 선택)은 `workflow/.verify-runs.jsonl`(gitignored)에 쌓입니다 —
+    내용(커밋 메시지·파일 본문)은 담지 않으며, 기록 실패는 판정을 바꾸지 않습니다.
+    기존 설치본은 `npx commitgate sync --gitignore`로 규칙을 백필할 수 있습니다(규칙이 없으면
+    기록을 건너뛰고 경고만 냅니다).
+  - `req:next`의 통합 안내와 문서(workflow·guarantees 한/영)에 사용법을 배선했고, SSOT 로드맵
+    STR-01을 "로컬 검증 우선 · 원격 강제는 opt-in 확장"으로 정정했습니다.
+
 ## 0.20.0 (2026-08-02)
 
 > **도구가 자기 자신을 관측하고, 자기 서술을 사실로 맞춘 묶음입니다.**

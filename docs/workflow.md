@@ -47,6 +47,19 @@ npm run req:next -- 2026-002
 
 main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 required checks를 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. 그리고 이때 CI는 push **이후에** 도는 **사후 검증**이라, 그 사실을 보고에서 생략하지 않습니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 별도 통제점이고 CI green 이후에 요청합니다. 자세한 계약은 [AGENTS.template.md](../AGENTS.template.md)와 [docs/RELEASING.md](../docs/RELEASING.md)를 참고하세요.
 
+## 머지 직전 로컬 검증 — GitHub CI는 선택입니다
+
+**GitHub CI는 CommitGate의 필수 조건이 아닙니다.** GitHub Actions는 사용량·비용이 발생할 수 있으므로 CommitGate는 CI를 요구하지도, 자동 실행하지도 않습니다. 통합 승인 전에 로컬만으로 이 범위의 승인 증거를 확인할 수 있습니다:
+
+```sh
+npx commitgate verify-range            # trunk와의 merge-base..HEAD를 분류
+npx commitgate verify-range --strict   # 미입증 커밋이 있으면 exit 1 (게이트로 쓸 때)
+```
+
+범위의 각 커밋을 **승인 소비**(커밋된 `approvals.jsonl`의 소비 기록) · **도구 부기**(trailer) · **머지** · **미입증**으로 분류합니다. GitHub 인증·`gh`·네트워크 없이 동작하며, 미입증 커밋은 우회 단정이 아니라 "증거로 입증되지 않음"의 표시입니다(설치 스캐폴드·릴리스 커밋 등 규정된 워크플로 외 커밋도 여기 나옵니다). squash/rebase로 재작성된 이력은 소비 시점 SHA와 달라 미입증으로 나옵니다 — 이 검사는 주어진 범위를 있는 그대로 보고합니다.
+
+대화형 실행에서는 마지막에 **"GitHub CI 검사를 실행하시겠습니까? 비용 또는 사용량이 발생할 수 있습니다. [y/N]"** 를 묻습니다. 기본값은 No이고, Enter나 `n`이면 CI 없이 계속합니다(생략은 정상 상태입니다). `y` 또는 `--github-ci`일 때만 head SHA의 check-runs를 **1회 조회**하며(워크플로를 트리거하지 않습니다), 명시적으로 요청한 확인이 실패하면 조용히 넘어가지 않고 exit 1로 멈춥니다. 비대화형에서는 플래그가 없으면 생략합니다. 선택은 실행 단위이며 저장되지 않습니다.
+
 ## 수동 명령
 
 대부분의 사용자는 `req:next`가 시키는 대로만 하면 됩니다. 아래는 내부에서 어떤 명령이 실행되는지 이해하거나 직접 디버깅할 때만 보면 됩니다.
