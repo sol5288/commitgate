@@ -2,16 +2,54 @@
   "id": "REQ-2026-117",
   "branch": "feat/req-2026-117-doctor-d30-observability",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fe703-bccd-7f51-9f7b-f50e8d928104",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "be31706624e3199dea061eb4f80bd7d82caf6570b2de8ca175581ac891cb2337",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "7ebc74ca042abde231132dafb47f41707002a13da1a2536d1eb0eccdc0d88ceb",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-09T14:54:23.294Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "123a15e434ad54f612adeaa0fdafe673a454bde7",
+    "design": "4de7dd66d5c93aa10f856a66e3ecbea23a670979",
+    "plan": "163042ec55f3f709554fe4e7d615524ef2cac93b"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-117/responses/design-r03-approved.json",
+    "response_sha256": "179503e82a12fafa217efae5a7d13f9998581fdfa4f4b9bbf433b69e8c4b9d60",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "fef9a1fae837d04060d9294b6dd4d2c34ea5e9a8",
+    "codex_thread_id": "019fe703-bccd-7f51-9f7b-f50e8d928104",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-09T14:54:23.294Z",
+    "design_hash": "be31706624e3199dea061eb4f80bd7d82caf6570b2de8ca175581ac891cb2337"
+  }
 }
