@@ -2,15 +2,20 @@
   "id": "REQ-2026-121",
   "branch": "feat/req-2026-121-finalize-state-companion",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe7cf-ba67-7203-bc3f-b3820d91e4cc",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fe7da-f61e-7701-ac43-1d1cdc6c6794",
+  "review_base_sha": "eceb4146e2af8a37ef8db0fba619c0cfca2f3771",
+  "review_diff_hash": "a98e7d6c13156b185d6516397133e826dc1f8046",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "59c2a8c3379e3e2866cda735e3ae9573e1c6b0f69734faac93a386b3dcf383f2",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-design-companion",
+  "phases": [
+    {
+      "id": "phase-1-design-companion",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -19,6 +24,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-design-companion#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-design-companion",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -42,14 +54,23 @@
     "design_hash": "59c2a8c3379e3e2866cda735e3ae9573e1c6b0f69734faac93a386b3dcf383f2"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-design-companion",
     "outcome": "approved",
-    "compare_hash": "c059bc1a6827b6aa2ff36c2743f604cc68cbf83f76050f126734ffc923871196",
+    "compare_hash": "56c19979733924e5918a5b7df668abf77363a76cb26733ae5ab5f464d4426c65",
     "count": 1,
     "errors": [],
-    "at": "2026-08-09T18:37:33.501Z",
+    "at": "2026-08-09T18:49:28.679Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "a98e7d6c13156b185d6516397133e826dc1f8046",
+      "phase_id": "phase-1-design-companion",
+      "consumed_by_commit_sha": "af1cca6b855c77db22bd7581a2868417949d2c7c",
+      "approval_consumed_at": "2026-08-09T18:50:01.222Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
