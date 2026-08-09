@@ -2,16 +2,54 @@
   "id": "REQ-2026-116",
   "branch": "feat/req-2026-116-verify-range-and-ci-optin",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fe6d6-21fa-77b2-a898-a44f89c3c9b6",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "52f565f194a5e71047666d128688addbba6a7dbd2051b78f81a0d6663c798775",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "06d34bff4e9f854ca3059b5b45b8864493bc4cd40d8ab37bf39624aa49f4675c",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-09T14:04:08.109Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "a8ea7bcd7043cb67b8a8fb6f0270b79db5f078a6",
+    "design": "d85de86607c3327cdedd6ed93302e0337cc9a5e0",
+    "plan": "bd85f5a643b505a4853ec524a1aee6af2c1b44ec"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-116/responses/design-r02-approved.json",
+    "response_sha256": "8fb806f3a0a03c9a33cb5a6672f39801b3d2794207a8729b94fa5702dcdb6d90",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "2afe926ebd92476996187bee1e3a65f4720c09b7",
+    "codex_thread_id": "019fe6d6-21fa-77b2-a898-a44f89c3c9b6",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-09T14:04:08.109Z",
+    "design_hash": "52f565f194a5e71047666d128688addbba6a7dbd2051b78f81a0d6663c798775"
+  }
 }
