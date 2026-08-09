@@ -261,7 +261,10 @@ function fakePorts(opts: { failCommit?: boolean } = {}): EvidencePorts & {
   }
 }
 
-const run = (ports: EvidencePorts): ReturnType<typeof durableDesignEvidence> =>
+const run = (
+  ports: EvidencePorts,
+  companionState?: { serialized: string },
+): ReturnType<typeof durableDesignEvidence> =>
   durableDesignEvidence({
     ticketId: 'REQ-2026-048',
     ticketRel: T2,
@@ -269,6 +272,7 @@ const run = (ports: EvidencePorts): ReturnType<typeof durableDesignEvidence> =>
     validPhaseIds: [],
     nowIso: '2026-07-22T00:00:01.000Z',
     ports,
+    companionState,
   })
 
 describe('[REQ-2026-048] durableDesignEvidence — 정상 경로', () => {
@@ -291,6 +295,68 @@ describe('[REQ-2026-048] durableDesignEvidence — 정상 경로', () => {
     expect(r2.outcome).toBe('already-durable')
     expect(p.commits).toHaveLength(1) // 새 커밋 없음
     expect(p.disk.get(MANIFEST)).toBe(before) // 매니페스트 무변경(중복 행 없음)
+  })
+})
+
+describe('[REQ-2026-121] durableDesignEvidence — 승인 상태 동승', () => {
+  const STATE_REL = `${T2}/state.json`
+  const stateBody = (id: string): string => `${JSON.stringify({ id, design_approved: true }, null, 2)}\n`
+
+  it('검증 통과(디스크=직렬화·id 일치) → state.json이 같은 커밋에 실리고 메시지에 표기된다(완료 기준 1·R4)', () => {
+    const p = fakePorts()
+    p.disk.set(STATE_REL, stateBody('REQ-2026-048'))
+    const r = run(p, { serialized: stateBody('REQ-2026-048') })
+    expect(r.stateIncluded).toBe(true)
+    expect(p.staged[0]).toContain(STATE_REL)
+    expect(p.head.get(STATE_REL)).toBe(stateBody('REQ-2026-048')) // 같은 커밋으로 HEAD 도달
+    expect(p.commits[0]).toContain('·state') // R4: 커밋 내용과 메시지 일치
+    expect(p.commits).toHaveLength(1) // 별도 checkpoint 커밋 없음 — 이 함수가 낸 커밋은 하나다
+  })
+
+  it('디스크 불일치 → 동승 생략(stateIncluded=false)·증거 커밋은 정상(완료 기준 2 — 증거가 우선)', () => {
+    const p = fakePorts()
+    p.disk.set(STATE_REL, stateBody('REQ-2026-048') + '외부편집')
+    const r = run(p, { serialized: stateBody('REQ-2026-048') })
+    expect(r.outcome).toBe('committed')
+    expect(r.stateIncluded).toBe(false)
+    expect(p.staged[0]).not.toContain(STATE_REL)
+    expect(p.commits[0]).not.toContain('·state')
+  })
+
+  it('id 불일치 → 동승 생략(다른 티켓 상태를 싣지 않는다 — checkpoint와 같은 검증)', () => {
+    const p = fakePorts()
+    p.disk.set(STATE_REL, stateBody('REQ-9999-999'))
+    const r = run(p, { serialized: stateBody('REQ-9999-999') })
+    expect(r.stateIncluded).toBe(false)
+  })
+
+  it('already-durable 재실행 → 커밋 0·stateIncluded=false(폴백 checkpoint 몫 — 완료 기준 4)', () => {
+    const p = fakePorts()
+    p.disk.set(STATE_REL, stateBody('REQ-2026-048'))
+    run(p, { serialized: stateBody('REQ-2026-048') })
+    const r2 = run(p, { serialized: stateBody('REQ-2026-048') })
+    expect(r2.outcome).toBe('already-durable')
+    expect(r2.stateIncluded).toBe(false)
+    expect(p.commits).toHaveLength(1)
+  })
+
+  it('🔴 가드 변이: state.json 허용이 제3 경로를 열지 않는다(완료 기준 3)', () => {
+    // companionState 없이 stagePaths에 임의 경로가 섞이는 상황은 인벤토리 오염으로만 가능 —
+    // 여기서는 함수가 허용하는 두 부류(responses/**·정확한 state.json) 밖 경로가 여전히 throw임을
+    // 인벤토리에 오염 경로를 주입해 고정한다.
+    const p = fakePorts()
+    p.disk.set(MANIFEST, '') // 초기화
+    const evil = { ...designEv, response_path: `${T2}/evil.ts` } as typeof designEv
+    expect(() =>
+      durableDesignEvidence({
+        ticketId: 'REQ-2026-048',
+        ticketRel: T2,
+        evidence: evil,
+        validPhaseIds: [],
+        nowIso: '2026-07-22T00:00:01.000Z',
+        ports: p,
+      }),
+    ).toThrow()
   })
 })
 

@@ -15,6 +15,12 @@
  *    금지" 가드를 완화해야 하는데, 그 가드는 코드/state 누수를 막는 마지막 방어선이다. 대신 티켓
  *    `state.json` **한 경로만** 담는 자기 커밋을 낸다 — `precallCommitLedgerRow`와 같은 pathspec 관용구다.
  *
+ *    ⚠️ **REQ-2026-121이 design 경로에 한해 재개정**: `durableDesignEvidence`는 같은 바이트·id 검증을
+ *    통과한 `<ticketRel>/state.json` **정확히 한 경로**를 finalize 커밋에 동승시킨다(부기 커밋 절감 —
+ *    소비자 3곳 실측 checkpoint 1,526건의 design 짝 제거). 가드의 실질(명시 화이트리스트+검증)은
+ *    유지된다. phase 경로(`finalizeEvidenceAndConsume`)는 "소비는 finalize 성공 뒤" 복구 불변식 때문에
+ *    **여전히 이 모듈의 별도 커밋**을 쓴다 — 이 모듈은 폴백·phase 경로용으로 유지된다.
+ *
  * ⚠️ 원자성: 증거 커밋과 이 커밋 사이에서 중단되면 `state.json`이 dirty로 남는다. 그것은 **이 REQ 이전의
  *    기존 동작**이므로 회귀가 아니고, 재실행(멱등)이나 다음 경계의 checkpoint가 흡수한다.
  */

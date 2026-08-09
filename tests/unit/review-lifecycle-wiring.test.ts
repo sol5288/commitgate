@@ -126,6 +126,33 @@ describe('[REQ-2026-054] dispatch lifecycle 배선(실 git near-e2e)', () => {
     }
   })
 
+  /** REQ-2026-121 완료 기준 1(near-e2e): design 승인 → finalize 커밋 하나에 증거+state.json 동승·별도 checkpoint 커밋 없음. */
+  it('[REQ-2026-121] design 승인 finalize 커밋에 state.json 동승 · state checkpoint 커밋 부재 · 메시지 표기', () => {
+    const { repo, ticket, head } = setupRepo({ evidence_durability_required: true })
+    const git = gitOf(repo)
+    try {
+      const fake = createFakeReviewerAdapter({ lastMessage: cannedApproved(head), threadId: 'TID', rawStdout: '' })
+      reviewCodexMain(['2026-001', '--kind', 'design', '--run', '--root', repo], { reviewer: fake })
+      const subjects = git(['log', '--format=%s', `${head}..HEAD`]).split('\n').filter(Boolean)
+      // 별도 checkpoint 커밋이 없다 — 동승으로 대체됐다.
+      expect(subjects.some((s) => s.includes('state checkpoint'))).toBe(false)
+      // finalize 커밋이 state 동승을 메시지로 표기하고(R4) 파일 목록에 state.json이 있다.
+      const finalizeSha = git(['log', '--format=%H %s', `${head}..HEAD`])
+        .split('\n')
+        .find((l) => l.includes('design-finalize'))
+      expect(finalizeSha, 'design-finalize 커밋이 있어야 한다').toBeTruthy()
+      const sha = (finalizeSha as string).split(' ')[0] as string
+      expect(finalizeSha).toContain('·state')
+      const files = git(['show', '--name-only', '--format=', sha]).split('\n').filter(Boolean)
+      expect(files).toContain('workflow/REQ-2026-001/state.json')
+      expect(files.some((f) => f.includes('/responses/'))).toBe(true) // 증거와 같은 커밋
+      // 워킹트리에 state.json dirty 잔재가 없다(동승 후 상태는 HEAD와 일치).
+      expect(git(['status', '--porcelain', '--', 'workflow/REQ-2026-001/state.json']).trim()).toBe('')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   // ── REQ-2026-085 DEC-5.3: 리뷰 프롬프트가 죽은 `state.phase`를 더 이상 싣지 않는지 **실제 진입점**으로 확인 ──
   // 🔴 setupRepo가 심는 state에는 `phase: 'INTAKE'`가 그대로 있다(옛 티켓 형태). 프롬프트 조립이 그 값을
   //    읽지 않아야 한다 — 빌더 함수만 단위로 보면 배선이 살아 있어도 통과한다.
