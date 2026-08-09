@@ -32,6 +32,7 @@ import { createHash } from 'node:crypto'
 import Ajv from 'ajv'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { autoFullReviewReason, type FullReviewReason } from './lib/full-review'
+import { secretScanGate } from './lib/secret-scan'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget, type GranularityGate } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
@@ -2767,6 +2768,18 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       if (cfg.granularityGate === 'block') throw new Error(msg)
       console.warn(`[req:review-codex] ⚠️ ${msg}`) // granularityGate:'warn' — 이전 동작(경고만).
     }
+  }
+
+  // 🔴 REQ-2026-120 DEC-3: secret scan — **예산 gate·attempt 기록·pre-call 원장 커밋·유료 호출보다 앞**이다.
+  //    뒤에 두면 차단해도 예산이 이미 차감돼 "아무것도 소모하지 않고 되돌린다"가 거짓이 된다(granularity
+  //    게이트와 같은 순서 규칙). 스캔 대상은 전송될 **최종 조립 형태의 프롬프트**다 — 이 시점 binding
+  //    값(sha 문자열)은 pre-call 커밋으로 바뀔 수 있으나 hex라 스캔 결과에 영향이 없고, 내용(diff·문서·
+  //    persona)은 동일하다. 판정은 순수 게이트(secretScanGate)가 하고 여기는 verdict만 해석한다.
+  if (cfg.secretScan !== 'off') {
+    const preBinding = captureGitBinding()
+    const scan = secretScanGate(buildPromptFor(preBinding.reviewBaseSha, preBinding.reviewTree), cfg.secretScan)
+    if (scan.verdict === 'block') throw new Error(scan.message ?? 'secret scan 차단')
+    if (scan.verdict === 'warn') console.warn(`[req:review-codex] ⚠️ ${scan.message}`)
   }
 
   // DEC-A6 step 3: 예산/예외 gate + attempt-opened 기록(state.json scratch). 반환 state가 이후 base(R9).

@@ -396,6 +396,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   reviewBudget: { autoBudget: 5, hardCap: 8 },
   phaseCommit: { autoApprove: 'never' },
   lockfilePromptFull: false,
+  secretScan: 'block',
   riskPaths: null,
   setup: null,
   stopGate: 'phase',

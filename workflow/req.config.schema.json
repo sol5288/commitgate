@@ -37,6 +37,14 @@
       ],
       "minLength": 1
     },
+    "secretScan": {
+      "type": "string",
+      "enum": [
+        "block",
+        "warn",
+        "off"
+      ]
+    },
     "riskPaths": {
       "type": [
         "array",
