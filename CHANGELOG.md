@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- **(개발) 테스트 계층 실행 스크립트** (REQ-2026-122). 실측(2026-08-10)에서 테스트 시간의 91.2%를
+  차지한 스폰 계열 12파일을 통합 계층(`tests/tiers.ts`)으로 분리하고 `npm run test:fast`(~3분)·
+  `npm run test:integration`을 추가했습니다. `npm test`(전체)의 의미·권위는 그대로이며, 가드가
+  목록 실재성과 fast ∪ integration = 전체를 강제합니다. 게이트는 여전히 테스트를 실행하지 않습니다.
 - **design 승인의 부기 커밋이 2개에서 1개가 됩니다** (REQ-2026-121). 승인 증거(finalize) 커밋
   직후 항상 따라오던 `state checkpoint` 커밋을 없애고, **같은 검증**(바이트·티켓 id 대조)을 통과한
   `state.json`을 finalize 커밋에 함께 싣습니다 — 파일 내용은 동일하고 커밋 경계만 합쳐집니다

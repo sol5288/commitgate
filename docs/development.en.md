@@ -17,6 +17,13 @@ Current verification:
   them, and `req.config.json` has no test-related setting. When to run tests is **human/agent
   discipline**; the canonical guidance is [AGENTS.template.md](../AGENTS.template.md) §1-1.
 
+- **Fast subset** (REQ-2026-122): `npm run test:fast` runs everything except the **12 integration-tier
+  files** (spawn/hermetic-git tests — canonical list in `tests/tiers.ts`; measured 2026-08-10 at 91.2%
+  of total test time), finishing in ~3 minutes versus 13+ for the full suite. `npm run test:integration`
+  runs only those 12. Both are development feedback tools — they do not replace the authority of
+  `npm test` (full suite once before integration). A guard (`tests/unit/test-tiers.test.ts`) enforces
+  that every listed file exists and that fast ∪ integration equals the whole suite.
+
 ### CI jobs have a 20-minute cap
 
 `timeout-minutes: 20` in `.github/workflows/ci.yml` cuts off a hung job (GitHub's default is **360 minutes**).
