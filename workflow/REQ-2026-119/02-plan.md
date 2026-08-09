@@ -8,9 +8,16 @@
 > - **phase 진행 중**: 변경한 소스를 import하는 테스트만(빠른 피드백). 예: `grep -rl "<변경한 모듈>" tests/`
 > - **통합(main 병합) 직전 1회**: **전체 스위트**. 범위 한정은 이것을 **대체하지 않는다** — 영향 분석은 놓친 회귀를 통과시킨다.
 
-## Phase 1 — (제목) (`phase-1-...`)
-범위:
-Exit: typecheck0 · 변경 범위 단위 그린 · Codex phase 리뷰 승인.
+## Phase 1 — 실효 위험 감지 (`phase-1-risk-detect`)
+
+범위: `scripts/req/lib/effective-risk.ts` 신설(순수 매처 `effectiveRiskHits`·`DEFAULT_RISK_PATTERNS` —
+설계 DEC-1), config `riskPaths` 선택 키(스키마·로더·기본값 — DEC-2, 대체 의미), D31 등록·판정·수집
+(WARN 전용·staged 입력 재사용·subjects 없음 — DEC-3), `docs/ssot-design/07` §3 표 갱신(R4),
+`tests/unit/effective-risk.test.ts` 신규 + `tests/unit/req-doctor.test.ts` D31 케이스, `CHANGELOG.md`.
+
+단일 phase(설계 §Phase별 구현의 근거 — 매처와 D31은 서로 없이는 리뷰 불가능한 중간 상태).
+
+Exit: typecheck 0 · 신규·갱신 테스트 그린(`npx vitest run tests/unit/effective-risk.test.ts tests/unit/req-doctor.test.ts`) · 등록부↔정본 표 가드 그린 · Codex phase 리뷰 승인.
 
 ## 완료
 - 게이트 해당분(typecheck·해당 시 lint) · **통합 직전 전체 스위트 1회** · 사용자 main 머지(별도 승인).

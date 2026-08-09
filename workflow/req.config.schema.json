@@ -37,6 +37,16 @@
       ],
       "minLength": 1
     },
+    "riskPaths": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "branchPrefix": {
       "type": "string",
       "minLength": 1

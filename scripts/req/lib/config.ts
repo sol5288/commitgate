@@ -118,6 +118,12 @@ export interface RawConfig {
   phaseCommit?: PhaseCommit
   /** REQ-2026-056: true면 리뷰 프롬프트에 lockfile diff 전문을 담는다. 미지정/false = 요약(기본). */
   lockfilePromptFull?: boolean
+  /**
+   * REQ-2026-119: 실효 위험 감지(D31)의 민감 경로 패턴(소문자 부분 문자열).
+   * 미지정/null = 내장 기본 목록 · 지정 = **대체**(합집합 아님 — 기본 목록의 오탐 항목을 제거할 수
+   * 있어야 한다) · `[]` = 감지 비활성(그것도 유효한 선택).
+   */
+  riskPaths?: string[] | null
   /** REQ-2026-062: setup 완료 마커. 부재 = 아직 setup을 하지 않음. */
   setup?: SetupMarker
   /** REQ-2026-063: 멈춤 위치(의미 SSOT). 미지정 = `phaseCommit`에서 역파생하거나 DEFAULTS. */
@@ -144,6 +150,8 @@ export interface ResolvedConfig {
   reviewBudget: ReviewBudget
   phaseCommit: PhaseCommit
   lockfilePromptFull: boolean
+  /** REQ-2026-119: D31 민감 경로 패턴. `null` = 내장 기본 목록 사용 · `[]` = 감지 비활성. */
+  riskPaths: string[] | null
   /** REQ-2026-062: setup 완료 마커. `null` = 미완료(게이트 판정 입력). */
   setup: SetupMarker | null
   /** REQ-2026-063: 멈춤 위치. `phaseCommit`과 **항상 정합**(둘 중 하나가 다른 하나에서 파생된다). */
@@ -209,6 +217,8 @@ export const DEFAULTS = {
   phaseCommit: { autoApprove: AUTO_APPROVE_OF['req'] } as PhaseCommit,
   // REQ-2026-056: lockfile 프롬프트 기본 요약(false). 전문이 필요하면 config에 true 명시(opt-in).
   lockfilePromptFull: false,
+  // REQ-2026-119: null = 내장 기본 목록(lib/effective-risk의 DEFAULT_RISK_PATTERNS). `as`는 trunkBranch와 같은 이유.
+  riskPaths: null as string[] | null,
   // REQ-2026-062: setup 미완료가 기본. `as` 는 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
   setup: null as SetupMarker | null,
   // REQ-2026-063: 현행 기본(매 phase 정지) = phaseCommit.never 와 같은 값.
@@ -259,6 +269,8 @@ export const CONFIG_SCHEMA = {
     // null = 의도적 비활성. 문자열이면 minLength 1(빈 문자열은 "비활성"의 애매한 표현 → 거부, null을 쓰게 한다).
     reviewPersonaPath: { type: ['string', 'null'], minLength: 1 },
     branchPrefix: { type: 'string', minLength: 1 }, // 빈 prefix는 D11 무력화 → 금지
+    // REQ-2026-119: 항목은 비지 않은 문자열(빈 패턴은 전 경로 일치 — 의미 없는 전량 오탐 금지).
+    riskPaths: { type: ['array', 'null'], items: { type: 'string', minLength: 1 } },
     packageManager: { type: 'string', enum: ['pnpm', 'npm', 'yarn'] },
     granularityMaxFiles: { type: 'integer', minimum: 1 },
     // REQ-2026-086: 강제 수준. enum이 정책을 고정한다 — 임의 문자열로 게이트를 무력화할 수 없다.
@@ -433,6 +445,8 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     setup: raw.setup ?? DEFAULTS.setup,
     // REQ-2026-056: 미지정 → DEFAULTS(false = 요약).
     lockfilePromptFull: raw.lockfilePromptFull ?? DEFAULTS.lockfilePromptFull,
+    // REQ-2026-119: null = 명시적 "기본 목록 사용"·[] = 비활성 — undefined만 DEFAULTS로 채운다.
+    riskPaths: raw.riskPaths !== undefined ? raw.riskPaths : DEFAULTS.riskPaths,
   }
 
   // REQ-2026-028 R7: 교차검증(스키마가 표현 못 함). AJV가 이미 hardCap∈[1,8]·autoBudget≥1을 잡았고,
