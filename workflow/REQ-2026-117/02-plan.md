@@ -8,9 +8,20 @@
 > - **phase 진행 중**: 변경한 소스를 import하는 테스트만(빠른 피드백). 예: `grep -rl "<변경한 모듈>" tests/`
 > - **통합(main 병합) 직전 1회**: **전체 스위트**. 범위 한정은 이것을 **대체하지 않는다** — 영향 분석은 놓친 회귀를 통과시킨다.
 
-## Phase 1 — (제목) (`phase-1-...`)
-범위:
-Exit: typecheck0 · 변경 범위 단위 그린 · Codex phase 리뷰 승인.
+## Phase 1 — D30 상태 분류 (`phase-1-d30-classify`)
+
+범위: `req-doctor.ts`에 `classifyStranded` 순수 함수(설계 DEC-1)·`readReviewCallStats`(DEC-3)·
+수집부(upstream ref 해석·원격 trunk 트리 티켓 집합·로컬 브랜치 목록·신선도 — DEC-2, git +4회·fetch 0회)·
+D30 메시지 재구성(DEC-4, level 불변). `tests/unit/d30-classify.test.ts` 신규 + 기존 D30 기대 갱신.
+
+Exit: typecheck 0 · 신규·갱신 테스트 그린 · Codex phase 리뷰 승인.
+
+## Phase 2 — 실행 로그에 발화 대상 (`phase-2-runlog-subjects`)
+
+범위: `Check.subjects?`(설계 DEC-5) + D25·D29·D30 채움 + `buildDoctorRunRow` 선택 직렬화 +
+허용 규칙(티켓 id·계약 파일명만) 테스트 + 하위호환(기존 행 파싱) 테스트 + `CHANGELOG.md` Unreleased.
+
+Exit: typecheck 0 · doctor-run-log 테스트 그린 · Codex phase 리뷰 승인.
 
 ## 완료
 - 게이트 해당분(typecheck·해당 시 lint) · **통합 직전 전체 스위트 1회** · 사용자 main 머지(별도 승인).
