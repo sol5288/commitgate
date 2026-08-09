@@ -2,16 +2,54 @@
   "id": "REQ-2026-121",
   "branch": "feat/req-2026-121-finalize-state-companion",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fe7cf-ba67-7203-bc3f-b3820d91e4cc",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "59c2a8c3379e3e2866cda735e3ae9573e1c6b0f69734faac93a386b3dcf383f2",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "a9bae0531458d8adf43030f0dc8da678b6823766",
+    "design": "50c712703fbc0b52dfd40c76b39a2506d57e41db",
+    "plan": "3c2be3283780806a33ef3e4e343de7d8a0e4655f"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-121/responses/design-r01-approved.json",
+    "response_sha256": "852e1865a9b46ebe3d51dc1509109bffd051cae99f0efe2bdb4d00b62f1ef220",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "5457f1bda27095f01e041cbe2103da50315d2385",
+    "codex_thread_id": "019fe7cf-ba67-7203-bc3f-b3820d91e4cc",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-09T18:37:33.501Z",
+    "design_hash": "59c2a8c3379e3e2866cda735e3ae9573e1c6b0f69734faac93a386b3dcf383f2"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "c059bc1a6827b6aa2ff36c2743f604cc68cbf83f76050f126734ffc923871196",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-09T18:37:33.501Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
