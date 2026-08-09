@@ -2,15 +2,24 @@
   "id": "REQ-2026-120",
   "branch": "feat/req-2026-120-review-transmit-safety",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe792-c893-7162-b876-0435d2b7d255",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fe79f-d828-7a11-9c15-f535c5960efc",
+  "review_base_sha": "db02349ec07b8976215fa3b927d4aeacc5172f78",
+  "review_diff_hash": "2a4309a51626e3e7925be5e04ea8b3333c4185d0",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "b053c88280187ad434dcff0889caa2f781c0e7f60bea70308b77dbc95c1bcec4",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-secret-scan",
+  "phases": [
+    {
+      "id": "phase-1-secret-scan",
+      "approved": true
+    },
+    {
+      "id": "phase-2-size-surface",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -21,16 +30,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-secret-scan#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-secret-scan",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-secret-scan",
     "outcome": "approved",
-    "compare_hash": "35ea598a7b16b37c976eec5e773a2ea5caddfcddb07d8d7ca926b52ddb07c23d",
+    "compare_hash": "ed6e716a9060b0bf149029344c30c71cce37147df0dea8f2719353fd64243d41",
     "count": 1,
     "errors": [],
-    "at": "2026-08-09T17:30:16.947Z",
+    "at": "2026-08-09T17:45:20.113Z",
     "findings": [],
     "elided_count": 0
   },
@@ -51,5 +67,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-09T17:30:16.947Z",
     "design_hash": "b053c88280187ad434dcff0889caa2f781c0e7f60bea70308b77dbc95c1bcec4"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "2a4309a51626e3e7925be5e04ea8b3333c4185d0",
+      "phase_id": "phase-1-secret-scan",
+      "consumed_by_commit_sha": "cf583c6c4b0141fac018b7a5635c15aa6098ca91",
+      "approval_consumed_at": "2026-08-09T17:45:53.893Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
