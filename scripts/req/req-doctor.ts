@@ -96,6 +96,12 @@ export interface Check {
   id: CheckId
   level: Level
   msg: string
+  /**
+   * 발화 **대상의 기계 식별자**(REQ-2026-117 DEC-5) — 실행 로그(`.doctor-runs.jsonl`)에 실린다.
+   * 🔴 저위험 식별자만: 티켓 id(`REQ-…`)·계약 파일명(`CONTRACT_FILE_RELS`). 워킹트리 경로·메시지
+   *    본문은 넣지 않는다(REQ-2026-111의 프라이버시 결정 계승 — D10 등 경로 주체 검사는 의도적 제외).
+   */
+  subjects?: string[]
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -142,6 +148,14 @@ export interface DoctorInputs {
    * `undefined` = 판정 불가(trunk ref 없음·로그 없음·git 실패) → D30은 OK.
    */
   strandedEvidence?: { id: string; reviews: number }[]
+  /**
+   * D30 상태 분류(REQ-2026-117): `strandedEvidence`와 같은 티켓들의 분류 결과. `main()`이
+   * `collectStrandedContext`+`classifyStranded`로 채운다. undefined면 분류 없는 단순 나열로 렌더링
+   * (판정·level은 어느 쪽이든 동일 — 분류는 메시지 내용만 바꾼다).
+   */
+  strandedClassified?: ClassifiedStranded[]
+  /** 원격 추적 ref의 마지막 커밋 시각. null = 원격 축 판정 불가("원격 추적 ref 없음" 표기). */
+  remoteTrunkFreshness?: string | null
   declaredMaxFiles?: number | null
   /**
    * 🔴 REQ-2026-107: D18이 셀 **staged 코드 파일**(티켓 문서·scratch 제외). `main()`이
@@ -868,6 +882,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
       msg:
         `종결됐지만 trunk(${inp.trunkBranch ?? '-'})에 없는 티켓 ${inp.unmergedClosedTickets.length}건: ` +
         `${inp.unmergedClosedTickets.join(', ')} — 쌓일수록 브랜치가 서로의 조상이 되어 **순서를 바꿔 병합하거나 되돌릴 수 없게** 됩니다. 통합하거나 정리하세요.`,
+      subjects: [...inp.unmergedClosedTickets],
     })
   }
 
@@ -972,6 +987,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
         '계약 파일에 더 이상 사실이 아닌 서술이 있습니다 — ' +
         inp.retiredClaimHits.map((h) => `${h.file}: "${h.claim.text}"(${h.claim.why})`).join(' / ') +
         '. 해당 문장을 지우거나 현재 동작으로 갱신하세요(도구는 이 파일을 고치지 않습니다).',
+      subjects: [...new Set(inp.retiredClaimHits.map((h) => h.file))],
     })
 
   /**
@@ -987,7 +1003,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
     c.push({ id: 'D30', level: 'OK', msg: '미병합 리뷰 증거 점검 불요(trunk 없음·로그 없음·미계산)' })
   else if (inp.strandedEvidence.length === 0)
     c.push({ id: 'D30', level: 'OK', msg: `리뷰 증거가 모두 trunk(${inp.trunkBranch ?? '-'})에 반영됨` })
-  else
+  else if (inp.strandedClassified === undefined)
     c.push({
       id: 'D30',
       level: 'WARN',
@@ -995,7 +1011,45 @@ export function runChecks(inp: DoctorInputs): Check[] {
         `리뷰 증거가 trunk(${inp.trunkBranch ?? '-'})에 없는 티켓 ${inp.strandedEvidence.length}건 — ` +
         inp.strandedEvidence.map((s) => `${s.id}(리뷰 ${s.reviews}회)`).join(' · ') +
         '. 진행 중이면 정상입니다. 병합되지 않으면 이 증거는 메인라인에 남지 않습니다(감사 추적은 브랜치-지역적).',
+      subjects: inp.strandedEvidence.map((s) => s.id),
     })
+  else {
+    /**
+     * 분류 렌더링(REQ-2026-117 DEC-4): **조치 대상을 앞세운다** — stranded → branch-alive → remote-trunk.
+     * level은 WARN 그대로다: 전부 branch-alive여도 강등하지 않는다(실측된 유실 2건이 정확히
+     * branch-alive였다 — 침묵 강등은 그 실신호를 지운다).
+     */
+    const groups = {
+      stranded: inp.strandedClassified.filter((t) => t.category === 'stranded'),
+      branch: inp.strandedClassified.filter((t) => t.category === 'branch-alive'),
+      remote: inp.strandedClassified.filter((t) => t.category === 'remote-trunk'),
+    }
+    const parts: string[] = []
+    if (groups.stranded.length > 0)
+      parts.push(`조치 대상 ${groups.stranded.length}건: ${groups.stranded.map(renderStrandedTicket).join(' · ')}`)
+    if (groups.branch.length > 0)
+      parts.push(
+        `미병합 브랜치에 있음(진행 중이면 정상 — 병합하면 해소) ${groups.branch.length}건: ` +
+          groups.branch.map(renderStrandedTicket).join(' · '),
+      )
+    if (groups.remote.length > 0)
+      parts.push(
+        `로컬 ${inp.trunkBranch ?? '-'}가 원격 추적 ref(마지막 커밋 ${inp.remoteTrunkFreshness ?? '시각 미상'}·fetch 안 함)보다 뒤처짐 — pull로 해소 ${groups.remote.length}건: ` +
+          groups.remote.map(renderStrandedTicket).join(' · '),
+      )
+    const remoteAxisNote =
+      inp.remoteTrunkFreshness === null ? ' (원격 추적 ref 없음 — 원격 존재 여부는 판정하지 않음)' : ''
+    c.push({
+      id: 'D30',
+      level: 'WARN',
+      msg:
+        `리뷰 증거가 trunk(${inp.trunkBranch ?? '-'})에 없는 티켓 ${inp.strandedEvidence.length}건 — ` +
+        parts.join(' / ') +
+        remoteAxisNote +
+        '. 병합되지 않으면 이 증거는 메인라인에 남지 않습니다(감사 추적은 브랜치-지역적).',
+      subjects: inp.strandedEvidence.map((s) => s.id),
+    })
+  }
 
   return c
 }
@@ -1029,13 +1083,25 @@ export function runChecks(inp: DoctorInputs): Check[] {
  *    빈 파일(줄이 아예 없음)은 정상적인 "아직 리뷰 없음"이므로 빈 Map이 맞다.
  */
 export function readReviewCallCounts(absPath: string): Map<string, number> | null {
+  const stats = readReviewCallStats(absPath)
+  if (stats === null) return null
+  return new Map([...stats.entries()].map(([id, s]) => [id, s.count]))
+}
+
+/**
+ * 티켓별 리뷰 호출 **횟수 + 마지막 시각**(REQ-2026-117 DEC-3). 파싱 규칙은 `readReviewCallCounts`와
+ * 동일하며 counts는 이 함수의 파생이다(계약 이원화 방지). 시각 키는 리뷰 호출 로그의 실제 키인
+ * **`timestamp`**다(REQ-2026-025가 정의 — `at`이 아니다). 키가 없거나 파싱 불가한 행은 count에만
+ * 기여한다 — 그 티켓의 `lastAt`은 다른 유효 시각이 없으면 null로 남는다.
+ */
+export function readReviewCallStats(absPath: string): Map<string, { count: number; lastAt: string | null }> | null {
   let raw: string
   try {
     raw = readFileSync(absPath, 'utf8')
   } catch {
     return null // 파일 없음·권한 없음 → 판정 불가
   }
-  const counts = new Map<string, number>()
+  const stats = new Map<string, { count: number; lastAt: string | null }>()
   let seen = 0
   let parsed = 0
   for (const line of raw.split('\n')) {
@@ -1043,15 +1109,22 @@ export function readReviewCallCounts(absPath: string): Map<string, number> | nul
     if (t === '') continue
     seen++
     try {
-      const id = (JSON.parse(t) as { ticket_id?: unknown }).ticket_id
+      const row = JSON.parse(t) as { ticket_id?: unknown; timestamp?: unknown }
       parsed++
-      if (typeof id === 'string' && id !== '') counts.set(id, (counts.get(id) ?? 0) + 1)
+      const id = row.ticket_id
+      if (typeof id !== 'string' || id === '') continue
+      const prev = stats.get(id) ?? { count: 0, lastAt: null }
+      const at = typeof row.timestamp === 'string' && !Number.isNaN(Date.parse(row.timestamp)) ? row.timestamp : null
+      stats.set(id, {
+        count: prev.count + 1,
+        lastAt: at !== null && (prev.lastAt === null || at > prev.lastAt) ? at : prev.lastAt,
+      })
     } catch {
       // 손상된 줄 하나는 건너뛴다 — 나머지 관측은 유효하다.
     }
   }
   if (seen > 0 && parsed === 0) return null // 통째로 손상 → 판정 불가(빈 결과로 단언하지 않는다)
-  return counts
+  return stats
 }
 
 /**
@@ -1084,6 +1157,113 @@ export function strandedReviewedTickets(
     .filter(([id]) => id !== selfTicketId && !inTrunk.has(id))
     .map(([id, reviews]) => ({ id, reviews }))
     .sort((a, b) => (b.reviews - a.reviews) || a.id.localeCompare(b.id))
+}
+
+// ───────────────────────────── D30 상태 분류(REQ-2026-117) — 순수 ──
+
+export type StrandedCategory = 'remote-trunk' | 'branch-alive' | 'stranded'
+
+export interface ClassifiedStranded {
+  id: string
+  reviews: number
+  category: StrandedCategory
+  /** 마지막 리뷰 이후 경과일(내림). null = 시각 미기록 — 렌더링이 "마지막 리뷰 시각 미기록"으로 표기(생략 금지 — 설계 r02 P1). */
+  ageDays: number | null
+}
+
+/**
+ * branch-alive 일치(설계 DEC-1·r01 P1): 브랜치명 소문자에 **전체 티켓 id 소문자**가 **비영숫자 경계**로
+ * 나타날 때만 참 — 앞 문자가 영숫자가 아니고 뒤 문자가 숫자가 아니어야 한다.
+ * 숫자부만 일치(`fix/2026-009-x`)·접두 관계(`req-2026-0091`)는 불일치다 — 관련 없는 브랜치가
+ * 실제 조치 대상을 가리는 false-positive를 막는다.
+ */
+export function ticketIdInBranchNames(ticketId: string, branchNames: readonly string[]): boolean {
+  const needle = ticketId.toLowerCase()
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`(^|[^a-z0-9])${escaped}([^0-9]|$)`)
+  return branchNames.some((b) => re.test(b.toLowerCase()))
+}
+
+/**
+ * 미도달 티켓 분류(설계 DEC-1, 순수). 우선순위 `remote-trunk` → `branch-alive` → `stranded`:
+ * 원격 메인라인 트리의 증거 실재는 **결정적 사실**(pull로 해소)이고, 브랜치명 일치는 휴리스틱이라 뒤다.
+ * 임계값 판정은 하지 않는다 — 연령(`ageDays`)은 표시용이고 판단은 사람이 한다(D30 기존 원칙).
+ */
+export function classifyStranded(input: {
+  stranded: readonly { id: string; reviews: number }[]
+  /** 원격 추적 ref 트리에 responses/가 있는 티켓 집합. null = 그 축 판정 불가(원격 ref 없음 등). */
+  remoteTrunkTickets: ReadonlySet<string> | null
+  localBranches: readonly string[]
+  lastReviewAt: ReadonlyMap<string, string>
+  nowIso: string
+}): ClassifiedStranded[] {
+  const nowMs = Date.parse(input.nowIso)
+  return input.stranded.map(({ id, reviews }) => {
+    const lastAt = input.lastReviewAt.get(id)
+    const lastMs = lastAt !== undefined ? Date.parse(lastAt) : Number.NaN
+    const ageDays =
+      Number.isNaN(nowMs) || Number.isNaN(lastMs) ? null : Math.max(0, Math.floor((nowMs - lastMs) / 86_400_000))
+    const category: StrandedCategory =
+      input.remoteTrunkTickets?.has(id) === true
+        ? 'remote-trunk'
+        : ticketIdInBranchNames(id, input.localBranches)
+          ? 'branch-alive'
+          : 'stranded'
+    return { id, reviews, category, ageDays }
+  })
+}
+
+/** `REQ-x(리뷰 n회·마지막 리뷰 N일 전)` — 세 범주 공통 표기(설계 r01 P1: 연령은 범주와 무관). */
+export function renderStrandedTicket(t: ClassifiedStranded): string {
+  const age = t.ageDays === null ? '마지막 리뷰 시각 미기록' : `마지막 리뷰 ${t.ageDays}일 전`
+  return `${t.id}(리뷰 ${t.reviews}회·${age})`
+}
+
+export interface StrandedContext {
+  /** 원격 추적 ref 트리의 responses/ 보유 티켓. null = 축 판정 불가. */
+  remoteTrunkTickets: Set<string> | null
+  /** 원격 추적 ref의 마지막 커밋 시각(%cI). 축 판정 불가면 null. */
+  remoteFreshness: string | null
+  localBranches: string[]
+}
+
+/**
+ * D30 분류 입력 수집(설계 DEC-2). 🔴 **fetch·네트워크 호출을 하지 않는다** — 이미 존재하는
+ * remote-tracking ref만 읽는다(git 호출 최대 4회: rev-parse·ls-tree·log·branch). upstream 미설정·
+ * ref 부재는 그 축의 판정 불가(null)로 남고 나머지 분류는 계속된다.
+ */
+export function collectStrandedContext(
+  gitExec: (args: string[]) => string,
+  trunkBranch: string,
+  ticketRoot: string,
+): StrandedContext {
+  let remoteTrunkTickets: Set<string> | null = null
+  let remoteFreshness: string | null = null
+  try {
+    const upstream = gitExec(['rev-parse', '--abbrev-ref', `${trunkBranch}@{upstream}`]).trim()
+    const root = toPosix(ticketRoot).replace(/\/+$/, '')
+    const re = new RegExp(`^${root}/([^/]+)/responses/`)
+    const set = new Set<string>()
+    for (const p of gitExec(['ls-tree', '-r', '--name-only', upstream, '--', ticketRoot]).split('\n')) {
+      const m = re.exec(p.trim())
+      if (m?.[1]) set.add(m[1])
+    }
+    remoteTrunkTickets = set
+    remoteFreshness = gitExec(['log', '-1', '--format=%cI', upstream]).trim() || null
+  } catch {
+    remoteTrunkTickets = null // upstream 미설정·ref 없음 — 모르는 것을 단언하지 않는다.
+    remoteFreshness = null
+  }
+  let localBranches: string[] = []
+  try {
+    localBranches = gitExec(['branch', '--list', '--format=%(refname:short)'])
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  } catch {
+    localBranches = [] // 브랜치 목록 실패 → branch-alive 축만 침묵(stranded로 보수적 분류).
+  }
+  return { remoteTrunkTickets, remoteFreshness, localBranches }
 }
 
 export function unmergedClosedTickets(
@@ -1299,13 +1479,23 @@ export interface DoctorRunRow {
    *    "몇 번 FAIL했는가"까지다. 필드 추가로 확장 가능하다(append-only JSONL).
    */
   evaluated: number
-  /** level !== 'OK' 인 것만, `runChecks` 반환 순서 유지. */
-  nonok: { id: CheckId; level: Level }[]
+  /**
+   * level !== 'OK' 인 것만, `runChecks` 반환 순서 유지.
+   * `subjects`(REQ-2026-117): 발화 대상 기계 식별자 — **선택 키**다. 기존 행(키 부재)은 계속 유효하고,
+   * 검사가 subjects를 내지 않으면 직렬화에서도 키가 빠진다(append-only JSONL 하위호환).
+   */
+  nonok: { id: CheckId; level: Level; subjects?: string[] }[]
 }
 
 /** 순수 — 관측 행 조립. 부작용이 없어 단독 테스트된다. */
 export function buildDoctorRunRow(checks: readonly Check[], meta: { ticketId: string; at: string }): DoctorRunRow {
-  const nonok = checks.filter((c) => c.level !== 'OK').map((c) => ({ id: c.id, level: c.level }))
+  const nonok = checks
+    .filter((c) => c.level !== 'OK')
+    .map((c) =>
+      c.subjects !== undefined && c.subjects.length > 0
+        ? { id: c.id, level: c.level, subjects: [...c.subjects] }
+        : { id: c.id, level: c.level },
+    )
   return {
     ticket_id: meta.ticketId,
     at: meta.at,
@@ -1412,6 +1602,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
    * D25와 **같은 `ls-tree` 결과를 쓴다** — git 호출을 늘리지 않는다.
    */
   let stranded: { id: string; reviews: number }[] | undefined
+  let strandedClassified: ClassifiedStranded[] | undefined
+  let remoteTrunkFreshness: string | null | undefined
   if (cfg.trunkBranch !== null) {
     try {
       git(['rev-parse', '--verify', '--quiet', `${cfg.trunkBranch}^{commit}`])
@@ -1426,12 +1618,29 @@ export function main(argv: string[] = process.argv.slice(2)): void {
         : []
       unmerged = unmergedClosedTickets(closed, trunkPaths, cfg.ticketRoot, String(state.id ?? ''))
       // 🔴 로그가 없거나 손상돼도 **조용히 통과**한다(요구 제약 2) — 진단이 사람을 막지 않는다.
-      const counts = readReviewCallCounts(join(cfg.root, ...REVIEW_CALL_LOG_REL.split('/')))
+      const stats = readReviewCallStats(join(cfg.root, ...REVIEW_CALL_LOG_REL.split('/')))
+      const counts = stats === null ? null : new Map([...stats.entries()].map(([id, s]) => [id, s.count]))
       stranded =
         counts === null ? undefined : strandedReviewedTickets(counts, trunkPaths, cfg.ticketRoot, String(state.id ?? ''))
+      // D30 상태 분류(REQ-2026-117): 미도달이 있을 때만 수집한다 — fetch 없이 로컬 ref만(+git 4회).
+      if (stats !== null && stranded !== undefined && stranded.length > 0) {
+        const ctx = collectStrandedContext(git, cfg.trunkBranch, cfg.ticketRoot)
+        const lastReviewAt = new Map<string, string>()
+        for (const [id, s] of stats.entries()) if (s.lastAt !== null) lastReviewAt.set(id, s.lastAt)
+        strandedClassified = classifyStranded({
+          stranded,
+          remoteTrunkTickets: ctx.remoteTrunkTickets,
+          localBranches: ctx.localBranches,
+          lastReviewAt,
+          nowIso: new Date().toISOString(),
+        })
+        remoteTrunkFreshness = ctx.remoteFreshness
+      }
     } catch {
       unmerged = undefined // trunk ref 없음 등 — 알림을 낼 근거가 없다.
       stranded = undefined
+      strandedClassified = undefined
+      remoteTrunkFreshness = undefined
     }
   }
 
@@ -1495,6 +1704,9 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     unmergedClosedTickets: unmerged,
     // D30(REQ-2026-114): 같은 `ls-tree` 결과에서 파생 — git 호출 증가 0.
     strandedEvidence: stranded,
+    // D30 상태 분류(REQ-2026-117): 미도달 존재 시에만 계산됨(fetch 없음).
+    strandedClassified,
+    remoteTrunkFreshness,
     trunkBranch: cfg.trunkBranch,
     stagedTree: git(['write-tree']),
     // `-z`: 경로 인용 없음(설계 D11) → core.quotePath 불필요. --untracked-files=all: `?? responses/` collapse 방지.
