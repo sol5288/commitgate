@@ -12,6 +12,7 @@ import { resolve, join, relative, dirname } from 'node:path'
 import { createHash } from 'node:crypto'
 import { parseStatusZ, entryPaths, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
+import { effectiveRiskHits, DEFAULT_RISK_PATTERNS, type RiskHit } from './lib/effective-risk'
 // REQ-2026-048 phase-1: confinement 술어는 leaf `lib/evidence.ts`가 정본 — 여기서 재수출(기존 경로 보존).
 import { isConfinedArchivePath } from './lib/evidence'
 export { isConfinedArchivePath } from './lib/evidence'
@@ -86,7 +87,7 @@ export type Level = 'OK' | 'WARN' | 'FAIL'
  */
 export const D_CHECK_IDS = [
   'D2', 'D3', 'D5', 'D6', 'D9', 'D10', 'D11', 'D13', 'D15', 'D16', 'D17', 'D18', 'D19',
-  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30',
+  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30', 'D31',
 ] as const
 
 /** D-체크 id — `D_CHECK_IDS` 등재분만. 새 id는 등록부에 먼저 추가해야 컴파일된다. */
@@ -148,6 +149,14 @@ export interface DoctorInputs {
    * `undefined` = 판정 불가(trunk ref 없음·로그 없음·git 실패) → D30은 OK.
    */
   strandedEvidence?: { id: string; reviews: number }[]
+  /**
+   * D31(REQ-2026-119): staged 경로의 민감 패턴 일치. `main()`이 `effectiveRiskHits`(staged 경로 ×
+   * config `riskPaths` 또는 내장 기본)로 계산해 채운다 — `runChecks`는 순수하다.
+   *
+   * `undefined` = 점검 불요(staged 없음·감지 비활성 `[]`) → D31은 OK. **WARN 상한** — 어떤 경우에도
+   * 커밋을 막지 않는다(관측 우선 — 강제는 발화 데이터 후 별도 REQ).
+   */
+  riskHits?: RiskHit[]
   /**
    * D30 상태 분류(REQ-2026-117): `strandedEvidence`와 같은 티켓들의 분류 결과. `main()`이
    * `collectStrandedContext`+`classifyStranded`로 채운다. undefined면 분류 없는 단순 나열로 렌더링
@@ -1051,6 +1060,29 @@ export function runChecks(inp: DoctorInputs): Check[] {
     })
   }
 
+  /**
+   * D31(REQ-2026-119): phase 실효 위험 — staged 경로의 민감 패턴 일치를 **알린다**(WARN 상한).
+   *
+   * 🔴 티켓 위험도(`state.risk_level`)는 생성 시 입력값이고, phase가 실제로 무엇을 건드리는지는
+   *    아무 표면도 보지 않았다 — LOW 티켓의 phase가 결제 웹훅을 수정해도 조용했다. 이 검사는 그
+   *    간극을 표시한다. **강제하지 않는다** — 확인 강제는 발화율 데이터가 쌓인 뒤 별도 REQ의
+   *    결정이다(0.13.0 block→warn 정정·REQ-2026-066 "조건은 실제 데이터로 측정" 선례).
+   * 🔴 subjects를 내지 않는다 — 경로는 실행 로그의 저위험 식별자 허용 목록 밖이다(REQ-2026-117 DEC-5).
+   */
+  if (inp.riskHits === undefined)
+    c.push({ id: 'D31', level: 'OK', msg: '실효 위험 점검 불요(staged 없음·감지 비활성·미계산)' })
+  else if (inp.riskHits.length === 0)
+    c.push({ id: 'D31', level: 'OK', msg: 'staged 변경에 민감 경로 패턴 일치 없음' })
+  else
+    c.push({
+      id: 'D31',
+      level: 'WARN',
+      msg:
+        `staged 변경이 민감 경로 패턴 ${inp.riskHits.length}종에 일치 — ` +
+        inp.riskHits.map((h) => `${h.pattern}(${h.count}건: ${h.samples.join(', ')})`).join(' · ') +
+        `. 티켓 위험도(${String((inp.state as { risk_level?: unknown }).risk_level ?? '미상')})와 별개로 이 phase의 실효 위험을 확인하세요 — 민감 변경이면 리뷰·사람 검토를 여기에 집중하십시오.`,
+    })
+
   return c
 }
 
@@ -1669,6 +1701,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     }
   })()
 
+  // 상태는 한 번만 읽는다 — statusEntries와 D31 입력이 같은 스냅샷을 본다(이중 조회 = 판독 갈림 위험).
+  const statusEntries = parseStatusZ(git([...STATUS_Z_ARGS]))
   const inp: DoctorInputs = {
     state,
     currentBranch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
@@ -1710,7 +1744,15 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     trunkBranch: cfg.trunkBranch,
     stagedTree: git(['write-tree']),
     // `-z`: 경로 인용 없음(설계 D11) → core.quotePath 불필요. --untracked-files=all: `?? responses/` collapse 방지.
-    statusEntries: parseStatusZ(git([...STATUS_Z_ARGS])),
+    statusEntries,
+    // D31(REQ-2026-119): staged 경로 × 민감 패턴(config riskPaths 대체 의미 — null=내장 기본·[]=비활성).
+    riskHits: (() => {
+      const patterns = cfg.riskPaths ?? DEFAULT_RISK_PATTERNS
+      if (patterns.length === 0) return undefined // 비활성 — 점검 불요
+      const stagedPaths = statusEntries.filter((e) => e.index !== ' ' && e.index !== '?').flatMap(entryPaths)
+      if (stagedPaths.length === 0) return undefined // staged 없음 — 점검 불요
+      return effectiveRiskHits(stagedPaths, patterns)
+    })(),
     scratch: reviewScratchPaths(ticketRel),
     // 🔴 REQ-2026-107: D18은 리뷰 preflight와 **같은 정본**으로 판정한다.
     //    임계 = 현재 phase의 `max_files` 선언(없으면 config), 대상 = staged 코드 파일.
