@@ -2,14 +2,14 @@
   "id": "REQ-2026-118",
   "branch": "feat/req-2026-118-deterministic-full-review",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe742-8b75-7962-9f75-efb0fc2e41d2",
-  "review_base_sha": "7905add18a134b0f3002e3d1721c05e42bf27038",
-  "review_diff_hash": "04aee84042e768bfd5e3020e683344e3cdb85da1",
+  "codex_thread_id": "019fe74b-d5d7-7150-9053-907ac9c1e620",
+  "review_base_sha": "75b5d6d2842506392ad2e7d5cff611a4311c86ff",
+  "review_diff_hash": "cf50b98f141c39aba96528e18b226c48b95558dc",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "06d652276739589a84ce8fc8eae405a5d0bb00d01bc287e05ec490fd58b76d2f",
-  "current_phase": "phase-1-reason-core",
+  "current_phase": "phase-2-wiring-log",
   "phases": [
     {
       "id": "phase-1-reason-core",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-wiring-log",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -35,6 +35,13 @@
       "series_id": "phase:phase-1-reason-core#1",
       "review_kind": "phase",
       "phase_id": "phase-1-reason-core",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-wiring-log#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-wiring-log",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -59,12 +66,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-reason-core",
+    "phase_id": "phase-2-wiring-log",
     "outcome": "approved",
-    "compare_hash": "57d9fe337c4dd27a9db2966e0ad5d4cd5eaa376843904aa0bd4d4b954a03837a",
+    "compare_hash": "39b1941184fc676dd9d6c3ef334a1e45ad658b19a9d05c7e450df0d88f5fecc1",
     "count": 1,
     "errors": [],
-    "at": "2026-08-09T16:03:04.852Z",
+    "at": "2026-08-09T16:13:02.698Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,6 +81,12 @@
       "phase_id": "phase-1-reason-core",
       "consumed_by_commit_sha": "a21091673e07573ee716b3103b8e2ee39a0f8ebc",
       "approval_consumed_at": "2026-08-09T16:03:29.847Z"
+    },
+    {
+      "approved_tree": "cf50b98f141c39aba96528e18b226c48b95558dc",
+      "phase_id": "phase-2-wiring-log",
+      "consumed_by_commit_sha": "8a116d367d3ce7b3aaaddb730157d493fa1276ad",
+      "approval_consumed_at": "2026-08-09T16:13:37.027Z"
     }
   ],
   "user_commit_confirmed": null
