@@ -35,10 +35,11 @@ describe('consumedShasFromManifests', () => {
     expect(r.problems).toBe(1)
   })
 
-  it('consumed_by_commit_sha가 없거나 OID가 아닌 행도 problems로 센다(스키마 이탈을 숨기지 않는다)', () => {
-    const r = consumedShasFromManifests([`${JSON.stringify({ kind: 'phase' })}\n${JSON.stringify({ consumed_by_commit_sha: 'zzz' })}\n`])
+  it('consumed_by_commit_sha 키가 있는데 OID가 아니면 problems — 키가 없는 행(rebind 등)은 소비 행이 아니므로 조용히 통과', () => {
+    const rebindRow = JSON.stringify({ kind: 'rebind', phase_id: 'p1', to_design_ref: 'x' }) // 실재하는 행 유형(REQ-2026-069)
+    const r = consumedShasFromManifests([`${rebindRow}\n${JSON.stringify({ consumed_by_commit_sha: 'zzz' })}\n`])
     expect(r.shas.size).toBe(0)
-    expect(r.problems).toBe(2)
+    expect(r.problems).toBe(1)
   })
 })
 

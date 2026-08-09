@@ -19,6 +19,10 @@ workflow/.review-calls.jsonl
 # 담기는 것은 ticket_id·시각·검사 id·level뿐이다(메시지 본문·경로는 담지 않는다).
 workflow/.doctor-runs.jsonl
 
+# verify-range 실행 관측 로그(REQ-2026-116). 같은 이유로 커밋 대상이 아니다 —
+# 담기는 것은 SHA·범주별 개수·CI 선택 결과뿐이다(커밋 메시지·파일 내용은 담지 않는다).
+workflow/.verify-runs.jsonl
+
 # Codex 리뷰 요청서(일회용 핸드오프, 커밋 대상 아님)
 codex-review-request*.md
 

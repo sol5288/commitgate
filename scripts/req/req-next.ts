@@ -889,7 +889,7 @@ function resolveNextCore(input: NextInput): NextAction {
       return {
         kind: 'AWAIT_HUMAN',
         detail:
-          '모든 phase가 자동 커밋됐다. feature→main 통합은 사람 승인이 필요하다 — 경로(PR 또는 direct push)와 승인 문장은 AGENTS.md 통제점표(I1/I2/B1)를 따른다.',
+          '모든 phase가 자동 커밋됐다. feature→main 통합은 사람 승인이 필요하다 — 경로(PR 또는 direct push)와 승인 문장은 AGENTS.md 통제점표(I1/I2/B1)를 따른다. 승인 전에 `npx commitgate verify-range` 로 이 범위의 승인 증거를 로컬에서 확인할 수 있다(GitHub CI는 opt-in — 기본 생략).',
         controlPoint: '통합(feature→main)',
         approvalSentence:
           '통합 경로를 택하고 그 통제점의 정본 승인 문장을 받는다 — [I1] feature branch push + PR 생성 승인 → [I2] required checks green 확인 후 PR merge 승인, 또는 [B1] branch protection bypass를 사용한 direct push 승인',

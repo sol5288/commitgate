@@ -63,6 +63,10 @@ export function consumedShasFromManifests(contents: readonly string[]): Consumed
         continue
       }
       const sha = (raw as { consumed_by_commit_sha?: unknown }).consumed_by_commit_sha
+      // 키가 아예 없는 행은 **소비 행이 아니다** — manifest에는 `rebind` 등 소비 SHA를 갖지 않는
+      // 정당한 행 유형이 실재한다(이 저장소 HEAD 실측: kind=rebind 12행). 문제로 세지 않는다.
+      if (sha === undefined) continue
+      // 키가 있는데 OID가 아니면 스키마 이탈이다 — 숨기지 않는다.
       if (typeof sha !== 'string' || !OID_RE.test(sha)) {
         problems++
         continue
