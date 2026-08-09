@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { scanSecrets, secretScanGate } from '../../scripts/req/lib/secret-scan'
+import { promptSizeGate } from '../../scripts/req/review-codex'
 
 /**
  * 형식만 유효한 합성 픽스처(실제 자격증명 아님).
@@ -86,5 +87,38 @@ describe('secretScanGate — 정책(설계 DEC-2·DEC-3)', () => {
   })
   it('깨끗한 프롬프트는 pass·메시지 없음', () => {
     expect(secretScanGate('regular diff content', 'block').verdict).toBe('pass')
+  })
+})
+
+describe('promptSizeGate — 크기 표면(REQ-2026-120 phase-2·설계 DEC-4)', () => {
+  const gate = (totalBytes: number, warnBytes: number, maxBytes: number | null) =>
+    promptSizeGate({ totalBytes, personaBytes: 100, payloadBytes: 200, warnBytes, maxBytes })
+
+  it('warn 경계: 임계와 같으면 pass, +1이면 warn(전송은 진행 — 완료 기준 5)', () => {
+    expect(gate(1000, 1000, null).verdict).toBe('pass')
+    expect(gate(1001, 1000, null).verdict).toBe('warn')
+  })
+  it('warn 메시지에 구성 분해가 있고 분해 합 = 전체(완료 기준 5)', () => {
+    const r = promptSizeGate({ totalBytes: 300 * 1024, personaBytes: 50 * 1024, payloadBytes: 200 * 1024, warnBytes: 262144, maxBytes: null })
+    expect(r.verdict).toBe('warn')
+    // 분해: persona 50KB · 본문 200KB · 문맥 = 300-50-200 = 50KB
+    expect(r.message).toContain('persona 50KB')
+    expect(r.message).toContain('본문 200KB')
+    expect(r.message).toContain('문맥 50KB')
+  })
+  it('max 초과 → block + 절단 없음·축소 안내(완료 기준 6)', () => {
+    const r = gate(2000, 262144, 1000)
+    expect(r.verdict).toBe('block')
+    expect(r.message).toContain('절단하지 않습니다')
+    expect(r.message).toContain('예산도 차감되지 않았습니다')
+  })
+  it('max < warn 조합은 유효한 정책이다 — max 우선 차단·설정 오류 아님(설계 r01 P1)', () => {
+    // warn=256KiB(기본) 유지 + max=1KB의 작은 전송 예산: 2KB 프롬프트는 config 오류가 아니라 max 차단.
+    expect(gate(2048, 262144, 1024).verdict).toBe('block')
+    // max 이내면 pass(warn 임계 미달) — 두 정책이 독립적으로 동작한다.
+    expect(gate(512, 262144, 1024).verdict).toBe('pass')
+  })
+  it('max 이내·warn 초과면 warn만(중복 신호 없음)', () => {
+    expect(gate(1500, 1000, 4096).verdict).toBe('warn')
   })
 })

@@ -45,6 +45,17 @@
         "off"
       ]
     },
+    "promptWarnBytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "promptMaxBytes": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
     "riskPaths": {
       "type": [
         "array",

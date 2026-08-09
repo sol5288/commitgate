@@ -120,6 +120,10 @@ export interface RawConfig {
   lockfilePromptFull?: boolean
   /** REQ-2026-120: 전송 전 secret scan 정책. 미지정 = 기본 'block'(고신뢰 패턴·비가역 유출 방지). */
   secretScan?: 'block' | 'warn' | 'off'
+  /** REQ-2026-120: 프롬프트 크기 경고 임계(바이트). 초과 시 구성 분해와 함께 경고하고 전송은 진행. */
+  promptWarnBytes?: number
+  /** REQ-2026-120: 프롬프트 크기 상한(바이트·opt-in). null/미지정 = 무제한. 초과 시 fail-closed(절단 없음). */
+  promptMaxBytes?: number | null
   /**
    * REQ-2026-119: 실효 위험 감지(D31)의 민감 경로 패턴(소문자 부분 문자열).
    * 미지정/null = 내장 기본 목록 · 지정 = **대체**(합집합 아님 — 기본 목록의 오탐 항목을 제거할 수
@@ -154,6 +158,10 @@ export interface ResolvedConfig {
   lockfilePromptFull: boolean
   /** REQ-2026-120: 전송 전 secret scan 정책(기본 'block'). */
   secretScan: 'block' | 'warn' | 'off'
+  /** REQ-2026-120: 프롬프트 크기 경고 임계(기본 256KiB). */
+  promptWarnBytes: number
+  /** REQ-2026-120: 프롬프트 크기 상한(기본 null=무제한·opt-in). warn과 독립 — max 우선 판정. */
+  promptMaxBytes: number | null
   /** REQ-2026-119: D31 민감 경로 패턴. `null` = 내장 기본 목록 사용 · `[]` = 감지 비활성. */
   riskPaths: string[] | null
   /** REQ-2026-062: setup 완료 마커. `null` = 미완료(게이트 판정 입력). */
@@ -224,6 +232,10 @@ export const DEFAULTS = {
   // REQ-2026-120: 기본 차단 — 고신뢰 패턴뿐이라 오탐 근접 0이고 유출은 비가역이다(0.13.1 warn-first
   // 선례는 수렴 마찰 맥락 — 적용 경계 밖). 오탐 시 탈출구는 'warn'/'off'.
   secretScan: 'block' as 'block' | 'warn' | 'off',
+  // REQ-2026-120: 256KiB — 소비자 실측 중앙값을 크게 웃도는 값(관측된 최대 ~721KB만 걸리는 수준).
+  promptWarnBytes: 262144,
+  // REQ-2026-120: 상한은 opt-in. warn보다 작아도 유효하다(작은 전송 예산 + 기본 경고 — max 우선 판정).
+  promptMaxBytes: null as number | null,
   // REQ-2026-119: null = 내장 기본 목록(lib/effective-risk의 DEFAULT_RISK_PATTERNS). `as`는 trunkBranch와 같은 이유.
   riskPaths: null as string[] | null,
   // REQ-2026-062: setup 미완료가 기본. `as` 는 handoffPath와 같은 이유(직접 import 소비자의 `| null` 계약 보존).
@@ -308,6 +320,8 @@ export const CONFIG_SCHEMA = {
     // REQ-2026-056: lockfile 프롬프트 전문 opt-in.
     lockfilePromptFull: { type: 'boolean' },
     secretScan: { type: 'string', enum: ['block', 'warn', 'off'] },
+    promptWarnBytes: { type: 'integer', minimum: 1 },
+    promptMaxBytes: { type: ['integer', 'null'], minimum: 1 },
     // REQ-2026-063: 멈춤 위치. 🔴 enum은 **2값만** — `merge`는 delivery set 없이는 동작이 없어 거짓 UI가 된다.
     //    `null`을 넣지 않으므로 "비움" 입력은 기존 검증 경로가 자동으로 거부한다(전역 상속 개념이 없는 축).
     stopGate: { type: 'string', enum: ['phase', 'req', 'merge'] },
@@ -455,6 +469,9 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     lockfilePromptFull: raw.lockfilePromptFull ?? DEFAULTS.lockfilePromptFull,
     // REQ-2026-120: 미지정 → 기본 차단.
     secretScan: raw.secretScan ?? DEFAULTS.secretScan,
+    promptWarnBytes: raw.promptWarnBytes ?? DEFAULTS.promptWarnBytes,
+    // null = 명시적 무제한(기본과 동일) — undefined만 DEFAULTS로 채운다(handoffPath 관례).
+    promptMaxBytes: raw.promptMaxBytes !== undefined ? raw.promptMaxBytes : DEFAULTS.promptMaxBytes,
     // REQ-2026-119: null = 명시적 "기본 목록 사용"·[] = 비활성 — undefined만 DEFAULTS로 채운다.
     riskPaths: raw.riskPaths !== undefined ? raw.riskPaths : DEFAULTS.riskPaths,
   }

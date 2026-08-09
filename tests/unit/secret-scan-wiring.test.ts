@@ -20,8 +20,11 @@ const SECRET = 'AKIA' + 'ABCDEFGH12345678' // 합성 — 형식만 유효
 const gitOf = (repo: string) => (args: string[]): string =>
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
 
-/** review-lifecycle-wiring.test.ts의 hermetic 픽스처와 같은 최소 형태 + secretScan config. */
-const setupRepo = (secretScan?: 'block' | 'warn' | 'off'): { repo: string; ticket: string; head: string } => {
+/** review-lifecycle-wiring.test.ts의 hermetic 픽스처와 같은 최소 형태 + config 오버라이드. */
+const setupRepo = (
+  secretScan?: 'block' | 'warn' | 'off',
+  configExtra: Record<string, unknown> = {},
+): { repo: string; ticket: string; head: string } => {
   const repo = mkdtempSync(join(tmpdir(), 'req120-wiring-'))
   const git = gitOf(repo)
   git(['init', '-q'])
@@ -33,7 +36,7 @@ const setupRepo = (secretScan?: 'block' | 'warn' | 'off'): { repo: string; ticke
   writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n')
   writeFileSync(
     join(repo, 'req.config.json'),
-    JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null, ...(secretScan ? { secretScan } : {}) }),
+    JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null, ...(secretScan ? { secretScan } : {}), ...configExtra }),
   )
   const ticket = join(repo, 'workflow', 'REQ-2026-001')
   mkdirSync(ticket, { recursive: true })
@@ -106,6 +109,25 @@ describe('[REQ-2026-120] secret scan 배선(near-e2e)', () => {
 
   it("off: 스캔 없이 진행 — 비밀이 있어도 호출된다(명시적 opt-out)", () => {
     const { repo } = setupRepo('off')
+    const reviewer = cannedApproved()
+    const { threw } = run(repo, reviewer)
+    expect(threw).toBeNull()
+    expect(reviewer.requests).toHaveLength(1)
+  })
+
+  it('🔴 promptMaxBytes 초과: reviewer 미호출·attempt-opened 부재·절단 없음(phase-2·완료 기준 6)', () => {
+    // 비밀 없이 크기만 초과시킨다 — secretScan 축과 독립 판정임을 함께 고정.
+    const { repo, ticket } = setupRepo('off', { promptMaxBytes: 64 })
+    const reviewer = cannedApproved()
+    const { threw } = run(repo, reviewer)
+    expect(threw).toContain('promptMaxBytes')
+    expect(threw).toContain('절단하지 않습니다')
+    expect(reviewer.requests).toHaveLength(0)
+    expect(ledgerEvents(ticket)).toEqual([])
+  })
+
+  it('promptWarnBytes 초과: 경고만 — 호출은 진행된다(완료 기준 5)', () => {
+    const { repo } = setupRepo('off', { promptWarnBytes: 64 })
     const reviewer = cannedApproved()
     const { threw } = run(repo, reviewer)
     expect(threw).toBeNull()

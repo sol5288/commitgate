@@ -397,6 +397,8 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   phaseCommit: { autoApprove: 'never' },
   lockfilePromptFull: false,
   secretScan: 'block',
+  promptWarnBytes: 262144,
+  promptMaxBytes: null,
   riskPaths: null,
   setup: null,
   stopGate: 'phase',
