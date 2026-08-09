@@ -17,6 +17,13 @@
   코드가 없고 `req.config.json`에 테스트 설정도 없습니다. 테스트를 언제 돌릴지는 **사람·에이전트의
   규율**이며, 그 권고는 [AGENTS.template.md](../AGENTS.template.md) §1-1이 정본입니다.
 
+- **빠른 부분집합**(REQ-2026-122): `npm run test:fast`는 스폰·hermetic-git 계열 **통합 계층
+  12파일**(`tests/tiers.ts`가 정본 — 2026-08-10 실측에서 테스트 시간의 91.2%)을 제외한 나머지를
+  돌립니다(실측 약 3분 vs 전체 13분+). `npm run test:integration`은 그 12파일만 돌립니다.
+  둘은 **개발 중 피드백용**이고 `npm test`(전체)의 권위를 대체하지 않습니다 — 통합 직전 전량
+  1회는 그대로입니다. 목록이 낡으면 가드(`tests/unit/test-tiers.test.ts`)가 실재성·집합 동일성을
+  강제합니다.
+
 ### CI 잡에는 20분 상한이 있습니다
 
 `.github/workflows/ci.yml`의 `timeout-minutes: 20`이 교착한 잡을 끊습니다(GitHub 기본값은 **360분**).

@@ -8,9 +8,15 @@
 > - **phase 진행 중**: 변경한 소스를 import하는 테스트만(빠른 피드백). 예: `grep -rl "<변경한 모듈>" tests/`
 > - **통합(main 병합) 직전 1회**: **전체 스위트**. 범위 한정은 이것을 **대체하지 않는다** — 영향 분석은 놓친 회귀를 통과시킨다.
 
-## Phase 1 — (제목) (`phase-1-...`)
-범위:
-Exit: typecheck0 · 변경 범위 단위 그린 · Codex phase 리뷰 승인.
+## Phase 1 — 계층 목록·스크립트·가드 (`phase-1-tier-scripts`)
+
+범위: `tests/tiers.ts`(실측 12파일 SSOT — 설계 DEC-1), `vitest.workspace.ts`(fast/integration
+`extends` 프로젝트 — DEC-2, `npm test` 의미 무변경), `package.json` `test:fast`·`test:integration`,
+`tests/unit/test-tiers.test.ts`(실재성·집합 동일성·중복 금지 — DEC-3), `docs/development.md`/`.en`,
+`CHANGELOG.md`.
+
+Exit: typecheck 0 · `npx vitest run tests/unit/test-tiers.test.ts` 그린 · `npm run test:fast` 완주
+확인(파일 수 = 전체−12) · Codex phase 리뷰 승인.
 
 ## 완료
 - 게이트 해당분(typecheck·해당 시 lint) · **통합 직전 전체 스위트 1회** · 사용자 main 머지(별도 승인).
