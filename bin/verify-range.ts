@@ -6,8 +6,8 @@
  * (merge/bookkeeping/approved/**unproven**) 통합 통제점(I1/B1)의 사람 승인자에게 판단 재료를 준다.
  * 분류·판정은 순수 코어(`scripts/req/lib/verify-range.ts`)가 하고, 이 파일은 수집·프롬프트·출력만 한다.
  *
- * 🔴 **GitHub CI는 기본 비활성이다.** CI 확인은 (a) 대화형 [y/N]에서 y, (b) `--github-ci` 명시일 때만
- *    실행되고, 그때도 **조회**(head SHA의 check-runs 1회)이지 워크플로 트리거가 아니다(설계 DEC-3).
+ * 🔴 **GitHub CI는 기본 비활성이다.** CI 확인은 (a) 대화형 [y/N]에서 y, (b) `--check-github-ci` 명시일
+ *    때만 수행되고, 그것도 **조회**(head SHA의 check-runs 1회)이지 워크플로 트리거가 아니다(설계 DEC-3).
  *    CI를 요청하지 않은 경로는 gh CLI·GitHub 인증·네트워크에 일절 의존하지 않는다.
  * 🔴 **읽기 전용 + 로컬 관측 로그뿐이다.** 어떤 게이트에도 배선되지 않고(check.ts와 같은 지위),
  *    미입증 커밋이 있어도 기본 exit 0(보고 우선 — 설계 DEC-1). `--strict`만 게이트화한다.
@@ -34,8 +34,10 @@ export interface Opts {
   strict: boolean
   base: string | null
   head: string | null
-  /** true=`--github-ci` · false=`--no-github-ci` · null=미지정(대화형이면 질문, 아니면 생략). */
+  /** true=`--check-github-ci` · false=`--no-check-github-ci` · null=미지정(대화형이면 질문, 아니면 생략). */
   githubCi: boolean | null
+  /** deprecated alias 사용 시 호출부가 stderr로 낼 안내(순수 파서는 출력하지 않는다). */
+  deprecations: string[]
 }
 
 export class HelpRequested extends Error {
@@ -45,6 +47,10 @@ export class HelpRequested extends Error {
   }
 }
 
+/** deprecated alias 안내(고정 문구 — REQ-2026-125 DEC-2). 의미는 동일(조회)·조용한 의미 변경 금지. */
+export const CI_FLAG_DEPRECATION =
+  '⚠️ --github-ci/--no-github-ci 는 --check-github-ci/--no-check-github-ci 로 이름이 바뀌었습니다(동작 동일 — 기존 결과 조회). 다음 릴리스에서 제거될 수 있습니다'
+
 export function parseArgs(argv: string[]): Opts {
   let dir = process.cwd()
   let json = false
@@ -52,10 +58,16 @@ export function parseArgs(argv: string[]): Opts {
   let base: string | null = null
   let head: string | null = null
   let githubCi: boolean | null = null
+  const deprecations: string[] = []
   const takeValue = (flag: string, v: string | undefined): string => {
     // 값 자리에 온 옵션을 값으로 삼키지 않는다(check.ts phase-1 r01 P1과 같은 규칙).
     if (v === undefined || v.startsWith('-')) throw new Error(`${flag} 에 값이 필요합니다 (받음: ${v ?? '(없음)'})`)
     return v
+  }
+  // 충돌 검사는 alias 해석 **후** 공통 지점에서 한다(설계 DEC-2) — 교차 지정(--github-ci --no-check-github-ci)도 잡는다.
+  const setCi = (value: boolean) => {
+    if (githubCi === !value) throw new Error('--check-github-ci 와 --no-check-github-ci 는 함께 쓸 수 없습니다(alias 포함)')
+    githubCi = value
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -64,16 +76,18 @@ export function parseArgs(argv: string[]): Opts {
     else if (a === '--head') head = takeValue(a, argv[++i])
     else if (a === '--json') json = true
     else if (a === '--strict') strict = true
+    else if (a === '--check-github-ci') setCi(true)
+    else if (a === '--no-check-github-ci') setCi(false)
     else if (a === '--github-ci') {
-      if (githubCi === false) throw new Error('--github-ci 와 --no-github-ci 는 함께 쓸 수 없습니다')
-      githubCi = true
+      if (!deprecations.includes(CI_FLAG_DEPRECATION)) deprecations.push(CI_FLAG_DEPRECATION)
+      setCi(true)
     } else if (a === '--no-github-ci') {
-      if (githubCi === true) throw new Error('--github-ci 와 --no-github-ci 는 함께 쓸 수 없습니다')
-      githubCi = false
+      if (!deprecations.includes(CI_FLAG_DEPRECATION)) deprecations.push(CI_FLAG_DEPRECATION)
+      setCi(false)
     } else if (a === '-h' || a === '--help') throw new HelpRequested()
     else throw new Error(`알 수 없는 옵션: ${a}`)
   }
-  return { dir: resolve(dir), json, strict, base, head, githubCi }
+  return { dir: resolve(dir), json, strict, base, head, githubCi, deprecations }
 }
 
 // ───────────────────────────────── GitHub CI 포트(설계 DEC-3) ──
@@ -131,8 +145,8 @@ export function createGhCiAdapter(cwd: string, spawn: typeof safeSpawnSync = saf
 
 // ───────────────────────────────── CI opt-in 결정(설계 DEC-4, 순수) ──
 
-/** 확정 정책의 질문 문구(고정). 기본은 No — Enter/n은 생략이다. */
-export const CI_PROMPT = 'GitHub CI 검사를 실행하시겠습니까? 비용 또는 사용량이 발생할 수 있습니다. [y/N] '
+/** 확정 정책의 질문 문구(고정). 기본은 No — Enter/n은 생략이다. 🔴 조회다 — 워크플로 실행이 아니다(REQ-2026-125). */
+export const CI_PROMPT = '기존 GitHub CI 결과를 조회하시겠습니까? 워크플로를 실행하지 않습니다(GitHub API 조회 1회). [y/N] '
 
 export type CiMode = 'check' | 'skip-explicit' | 'skip-default' | 'ask'
 
@@ -251,7 +265,7 @@ export async function runVerifyRange(opts: Opts, deps: RunDeps): Promise<RunResu
   if (mode === 'check') {
     const result = deps.ci.check(headSha)
     ci = result.ok ? 'checked-ok' : 'checked-fail'
-    deps.log(result.ok ? `GitHub CI: 확인 성공 — ${result.detail}` : `🔴 GitHub CI: 확인 실패 — ${result.detail}`)
+    deps.log(result.ok ? `GitHub CI: 조회 성공 — ${result.detail}` : `🔴 GitHub CI: 조회 실패 — ${result.detail}`)
   } else {
     ci = mode === 'skip-explicit' ? 'skipped-explicit' : 'skipped-default'
     // 생략은 **정상 상태**다 — 실패처럼 보이면 안 된다(정책 9).
@@ -296,7 +310,7 @@ export function renderHuman(r: RunResult, strict: boolean): string {
   lines.push(
     r.exit === 0
       ? `PASS — ${strict ? 'strict' : '보고'} 기준 통과`
-      : `FAIL — ${strict && c.unproven > 0 ? `미입증 ${c.unproven}건(--strict)` : '명시 요청한 GitHub CI 확인 실패'}`,
+      : `FAIL — ${strict && c.unproven > 0 ? `미입증 ${c.unproven}건(--strict)` : '명시 요청한 GitHub CI 조회 실패'}`,
   )
   return lines.join('\n')
 }
@@ -322,7 +336,7 @@ export function printHelp(): void {
 
 사용법:
   npx commitgate verify-range [--base <ref>] [--head <ref>] [--strict] [--json]
-                              [--github-ci | --no-github-ci] [--dir <대상repo>]
+                              [--check-github-ci | --no-check-github-ci] [--dir <대상repo>]
 
 동작:
   base..head 커밋을 로컬 증거만으로 분류합니다 — 승인 소비(approvals.jsonl의
@@ -332,16 +346,18 @@ export function printHelp(): void {
   --base <ref>     비교 기준(기본: req.config.json trunkBranch와의 merge-base)
   --head <ref>     검증 대상(기본: HEAD)
   --strict         미입증 커밋이 있으면 exit 1 (기본은 보고만 — exit 0)
-  --github-ci      GitHub CI 결과 확인을 명시 실행(head SHA의 check-runs 1회 조회 — 사용량 발생 가능)
-  --no-github-ci   GitHub CI 확인을 명시 생략
+  --check-github-ci     기존 GitHub CI 결과를 명시 조회(head SHA의 check-runs 1회 — 워크플로를 실행하지 않습니다)
+  --no-check-github-ci  GitHub CI 조회를 명시 생략
+  --github-ci / --no-github-ci   위 옵션의 deprecated alias(동작 동일 — 다음 릴리스에서 제거될 수 있음)
   --json           기계용 JSON 출력(질문하지 않음)
   --dir <path>     대상 repo 루트(기본: 현재 디렉터리)
   -h, --help       도움말
 
 GitHub CI는 기본 비활성입니다:
   대화형에서는 "[y/N]"로 매번 묻고(기본 No), 비대화형·--json 에서는 플래그 없이는 생략합니다.
-  선택은 이번 실행에만 적용되며 저장되지 않습니다. 생략은 정상 상태입니다.
-  명시 요청한 CI 확인이 실패하면 exit 1 로 명확히 실패합니다(조용히 무시하지 않음).
+  조회는 기존 check-run 결과를 읽을 뿐 워크플로를 실행하지 않습니다(Actions 사용량을 새로
+  발생시키지 않음 — GitHub API 조회 1회). 선택은 이번 실행에만 적용되며 저장되지 않습니다.
+  생략은 정상 상태입니다. 명시 요청한 조회가 실패하면 exit 1 로 명확히 실패합니다.
 
 exit: 0 = 검증 수행(기본) · 1 = --strict 미입증 / 명시 CI 확인 실패 / 사용 오류.
 `)
@@ -377,6 +393,7 @@ export function makeAppendLog(rootAbs: string, git: GitAdapter, warn: (line: str
 export async function runCli(argv: string[]): Promise<void> {
   try {
     const opts = parseArgs(argv)
+    for (const d of opts.deprecations) console.error(d)
     const cfg = loadConfig({ root: opts.dir })
     const git = createGitAdapter(cfg.root)
     const result = await runVerifyRange(opts, {
