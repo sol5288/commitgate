@@ -2,14 +2,14 @@
   "id": "REQ-2026-124",
   "branch": "feat/req-2026-124-local-observability-report",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe960-53a7-75b2-9eb6-30453fbd15c2",
-  "review_base_sha": "3c749fd9b5f1a02502947c6df81030a36d6065c2",
-  "review_diff_hash": "0cda41b886f95ee7d601cb24807a68eebc5749bb",
+  "codex_thread_id": "019fe964-0466-7581-a83e-10e1a11cce91",
+  "review_base_sha": "f8e2c4bc3d2dc60df6467f94e9bb017563df23c3",
+  "review_diff_hash": "8764a5124a03efe1fbeefe9df0260cb190d66ee6",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "80d38a0b8f80c4818b2c90a4348df46ed124958ffbc9a5061396d0eaf0b64c85",
-  "current_phase": "phase-1-report-lib",
+  "current_phase": "phase-2-report-verb",
   "phases": [
     {
       "id": "phase-1-report-lib",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-report-verb",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -36,6 +36,13 @@
       "review_kind": "phase",
       "phase_id": "phase-1-report-lib",
       "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-report-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-report-verb",
+      "attempts": 1,
       "closed_reason": "approved"
     }
   ],
@@ -59,12 +66,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-report-lib",
+    "phase_id": "phase-2-report-verb",
     "outcome": "approved",
-    "compare_hash": "dd47915bd50fe57b685ac855471b364ab3ee794d5849a34c05083c1c20b68eb3",
+    "compare_hash": "45634543999e63574c486761528e2a65207508955fc4dd1fa6b4a8a2917cb12d",
     "count": 1,
     "errors": [],
-    "at": "2026-08-10T01:54:38.129Z",
+    "at": "2026-08-10T01:58:32.389Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,6 +81,12 @@
       "phase_id": "phase-1-report-lib",
       "consumed_by_commit_sha": "775ac06ecd39bc042b7be723b7094947b87f5036",
       "approval_consumed_at": "2026-08-10T01:55:05.676Z"
+    },
+    {
+      "approved_tree": "8764a5124a03efe1fbeefe9df0260cb190d66ee6",
+      "phase_id": "phase-2-report-verb",
+      "consumed_by_commit_sha": "6c609a65930ddfef247f13e1b76c01e7965d1061",
+      "approval_consumed_at": "2026-08-10T01:59:00.795Z"
     }
   ],
   "user_commit_confirmed": null
