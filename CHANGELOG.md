@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+- **feat(verify-range): 심층 증거 검증 — 6범주 (REQ-2026-127)** — 표시자 매칭을 검증으로.
+  승인 소비=행 스키마(validateManifest 재사용)+아카이브 실재+SHA-256 일치+중복 소비 부재,
+  부기=trailer+변경 경로 전부 워크플로 하위(사용자 코드 혼입=손상 증거), 머지=conflict resolution
+  변경 시 미입증 강등. 검증 불가(blob 읽기 실패·state 부재)는 손상 단정 대신 미입증+축소 표기.
+  `--strict`는 미입증+손상 증거에서 실패, attested는 통과. blob 읽기는 `git cat-file --batch`
+  1프로세스 배치(N+1 금지 — 프로세스 수 회귀 테스트 고정). `.verify-runs.jsonl` counts는 6키
+  additive(구행 호환).
+- **feat(attest): `commitgate attest <sha> --reason "..."` (REQ-2026-127)** — 승인 증거가 없는 것이
+  정상인 커밋(release·setup·수동 충돌 정정·승인된 우회)의 명시 예외 승인. `workflow/attestations.jsonl`
+  append-only 감사 기록(sha·tree·이유·시각·로컬 identity — 서명 아님) + 부기 커밋. verify-range/
+  integrate가 attested로 분류. 손상 증거는 attest로 구제되지 않는다.
 - **feat(integrate): `commitgate integrate` — feature→trunk 로컬 통합 seam (REQ-2026-126)** —
   통합 직전 절차를 도구가 소유한다: 전제 확인 → **항상-strict** 승인 증거 검증(미입증·손상 시 차단·
   목록 표시) → GitHub CI **실행** opt-in → 사람 최종 확인([y/N] 기본 No) → 로컬 `merge --no-ff`

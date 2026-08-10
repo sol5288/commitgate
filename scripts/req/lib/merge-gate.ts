@@ -18,11 +18,12 @@ export interface IntegrationFacts {
   mergeInProgress: boolean
   rebaseInProgress: boolean
   trunkExists: boolean
-  /** verify-range 코어 산출 — null = 아직 계산 불가(전제 실패 등). 미입증 목록을 보존한다(설계 r03 P1). */
+  /** verify-range 심층 산출(REQ-2026-127 — 6범주) — null = 아직 계산 불가(전제 실패 등). 목록 보존(설계 r03 P1). */
   verify: {
-    counts: { merge: number; bookkeeping: number; approved: number; unproven: number }
+    counts: { merge: number; bookkeeping: number; approved: number; attested: number; 'invalid-evidence': number; unproven: number }
     manifestProblems: number
-    unproven: { sha: string; subject: string }[]
+    unproven: { sha: string; subject: string; note?: string }[]
+    invalid: { sha: string; subject: string; problems: string[] }[]
   } | null
 }
 
@@ -54,8 +55,15 @@ export function planIntegration(f: IntegrationFacts): IntegrationPlan {
     problems.push('승인 증거 검증을 수행할 수 없었습니다 — 위 전제를 해소한 뒤 다시 실행하세요')
   } else {
     if (f.verify.counts.unproven > 0) {
-      problems.push(`미입증 커밋 ${f.verify.counts.unproven}건 — integrate는 strict입니다(승인 증거 없는 커밋은 병합하지 않음):`)
+      problems.push(
+        `미입증 커밋 ${f.verify.counts.unproven}건 — integrate는 strict입니다(승인 증거 없는 커밋은 병합하지 않음). 정당하면 \`commitgate attest\`로 예외 승인을 기록하세요:`,
+      )
       for (const u of f.verify.unproven) problems.push(`  ? ${u.sha.slice(0, 8)} ${u.subject}`)
+    }
+    // REQ-2026-127: 손상 증거는 attest로 면제되지 않는다 — 수정이 답이다.
+    if (f.verify.counts['invalid-evidence'] > 0) {
+      problems.push(`손상 증거 커밋 ${f.verify.counts['invalid-evidence']}건 — attest로 구제되지 않습니다. 증거를 수정하세요:`)
+      for (const inv of f.verify.invalid) problems.push(`  ✗ ${inv.sha.slice(0, 8)} ${inv.subject} — ${inv.problems[0] ?? ''}`)
     }
     if (f.verify.manifestProblems > 0)
       problems.push(`approvals.jsonl 파싱 문제 ${f.verify.manifestProblems}행 — 증거 손상을 해소해야 병합할 수 있습니다`)

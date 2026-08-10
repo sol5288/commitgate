@@ -19,12 +19,17 @@ import { loadConfig } from '../scripts/req/lib/config'
 import { createGitAdapter, safeSpawnSync, type GitAdapter } from '../scripts/req/lib/adapters'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 import {
-  verifyRange,
+  verifyRangeDeep,
   computeExit,
   type CiOutcome,
   type CommitMeta,
-  type VerifyRangeReport,
+  type DeepCommitMeta,
+  type DeepVerifyInput,
+  type DeepVerifyReport,
 } from '../scripts/req/lib/verify-range'
+import { attestationsPath, parseAttestations } from '../scripts/req/lib/attestations'
+import { readBlobsAtRef } from '../scripts/req/lib/git-batch'
+import { createHash } from 'node:crypto'
 
 // ───────────────────────────────── 인자 파싱(fail-closed — check.ts 관례) ──
 
@@ -175,7 +180,8 @@ export interface VerifyRunRow {
   at: string
   base: string
   head: string
-  counts: VerifyRangeReport['counts']
+  /** REQ-2026-127: 6범주(additive — 구행은 4키·report의 관대 파서가 부재 키를 0으로 본다). */
+  counts: DeepVerifyReport['counts']
   manifest_problems: number
   strict: boolean
   ci: CiOutcome
@@ -196,6 +202,8 @@ export interface RunDeps {
   now: () => string
   trunkBranch: string | null
   ticketRoot: string
+  /** head tree blob 배치 읽기(REQ-2026-127 — cat-file --batch 1프로세스). 테스트는 fake 주입. */
+  readBlobs: (ref: string, paths: readonly string[]) => Map<string, Buffer | null>
 }
 
 /** `%x00` 레코드 분리로 한 번에 수집한다(메시지에 NUL은 올 수 없다 — git이 금지). */
@@ -230,9 +238,145 @@ export function collectManifestContents(git: GitAdapter, head: string, ticketRoo
   return paths.map((p) => git.exec(['show', `${head}:${p}`]))
 }
 
+// ───────────────────────── 심층 수집(REQ-2026-127 — 프로세스 수 상한 계약) ──
+//
+// git 프로세스: log×2(메타·name-only) + ls-tree×1 + diff-tree×(merge 수) + readBlobs 배치 ≤2회.
+// manifest·아카이브 수 N에 비례한 프로세스를 만들지 않는다(완료 기준 7 — fake 호출 기록 오라클).
+
+export function collectDeepInput(
+  git: GitAdapter,
+  readBlobs: RunDeps['readBlobs'],
+  base: string,
+  head: string,
+  ticketRoot: string,
+): DeepVerifyInput {
+  // 1) 커밋 메타(+tree — attestation identity 대조용).
+  const raw = git.exec(['log', `--format=%H%x1f%T%x1f%P%x1f%B%x00`, `${base}..${head}`])
+  const metas: (DeepCommitMeta & { tree: string; changedPaths: string[]; ccPaths: string[] })[] = raw
+    .split('\0')
+    .map((r) => r.replace(/^\n+/, ''))
+    .filter((r) => r !== '')
+    .map((rec) => {
+      const i1 = rec.indexOf('\x1f')
+      const i2 = rec.indexOf('\x1f', i1 + 1)
+      const i3 = rec.indexOf('\x1f', i2 + 1)
+      const sha = rec.slice(0, i1)
+      const tree = rec.slice(i1 + 1, i2)
+      const parents = rec.slice(i2 + 1, i3).trim()
+      const message = rec.slice(i3 + 1)
+      return {
+        sha,
+        tree,
+        parentCount: parents === '' ? 0 : parents.split(' ').length,
+        subject: message.split('\n')[0] ?? '',
+        message,
+        changedPaths: [],
+        ccPaths: [],
+      }
+    })
+  const bySha = new Map(metas.map((m) => [m.sha, m]))
+
+  // 2) non-merge 변경 경로 — name-only 1회(merge는 기본 diff 미출력 → 빈 목록 유지).
+  const nameOnly = git.exec(['log', `--format=%x01%H`, '--name-only', `${base}..${head}`])
+  for (const block of nameOnly.split('\x01')) {
+    const lines = block.split('\n').map((l) => l.trim())
+    const sha = lines[0] ?? ''
+    const m = bySha.get(sha)
+    if (m === undefined) continue
+    m.changedPaths = lines.slice(1).filter(Boolean)
+  }
+
+  // 3) merge의 conflict resolution/evil-merge 경로 — merge 커밋당 diff-tree --cc 1회(소수).
+  for (const m of metas) {
+    if (m.parentCount < 2) continue
+    const cc = git.exec(['diff-tree', '--cc', '--name-only', m.sha])
+    m.ccPaths = cc
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '' && l !== m.sha)
+  }
+
+  // 4) head tree 경로 목록 1회 → manifest·state·attestations·아카이브 실재 판정의 공통 원천.
+  const treePaths = new Set(
+    git
+      .exec(['ls-tree', '-r', '--name-only', head, '--', ticketRoot])
+      .split('\n')
+      .map((s2) => s2.trim())
+      .filter(Boolean),
+  )
+  const manifestPaths = [...treePaths].filter((p) => p.endsWith('/responses/approvals.jsonl'))
+  const ticketRels = manifestPaths.map((p) => p.split('/').slice(0, 2).join('/'))
+  const statePaths = ticketRels.map((t) => `${t}/state.json`).filter((p) => treePaths.has(p))
+  const attPath = attestationsPath(ticketRoot)
+  const wantAtt = treePaths.has(attPath)
+
+  // 5) 배치 1회차: manifest + state + attestations.
+  const batch1 = readBlobs(head, [...manifestPaths, ...statePaths, ...(wantAtt ? [attPath] : [])])
+  const manifests = manifestPaths.map((p) => ({ path: p, content: batch1.get(p)?.toString('utf8') ?? '' }))
+
+  const statePhases = new Map<string, readonly string[] | null>()
+  for (const t of ticketRels) {
+    const buf = batch1.get(`${t}/state.json`)
+    if (buf === undefined || buf === null) {
+      statePhases.set(t, null)
+      continue
+    }
+    try {
+      const st = JSON.parse(buf.toString('utf8')) as { phases?: { id?: unknown }[] }
+      const ids = Array.isArray(st.phases)
+        ? st.phases.map((ph) => ph.id).filter((id): id is string => typeof id === 'string')
+        : null
+      statePhases.set(t, ids)
+    } catch {
+      statePhases.set(t, null)
+    }
+  }
+
+  const attParsed = wantAtt ? parseAttestations(batch1.get(attPath)?.toString('utf8') ?? '') : { rows: [], problems: 0 }
+
+  // 6) 배치 2회차: 소비 행이 참조하는 아카이브만 읽어 SHA-256 산출. 실재 여부는 treePaths가 판정
+  //    (map에 없음=트리 부재=invalid · 값 null=읽기 실패=검증 불가).
+  const rangeShas = new Set(metas.map((m) => m.sha))
+  const referenced = new Set<string>()
+  for (const mf of manifests) {
+    for (const line of mf.content.split('\n')) {
+      if (line.trim() === '') continue
+      try {
+        const row = JSON.parse(line) as { consumed_by_commit_sha?: unknown; response_path?: unknown }
+        if (
+          typeof row.consumed_by_commit_sha === 'string' &&
+          rangeShas.has(row.consumed_by_commit_sha) &&
+          typeof row.response_path === 'string'
+        )
+          referenced.add(row.response_path)
+      } catch {
+        /* 손상 행은 코어가 센다 */
+      }
+    }
+  }
+  const inTree = [...referenced].filter((p) => treePaths.has(p))
+  const batch2 = inTree.length > 0 ? readBlobs(head, inTree) : new Map<string, Buffer | null>()
+  const archiveSha256 = new Map<string, string | null>()
+  for (const p2 of inTree) {
+    const buf = batch2.get(p2)
+    archiveSha256.set(p2, buf === null || buf === undefined ? null : createHash('sha256').update(buf).digest('hex'))
+  }
+
+  return {
+    commits: metas,
+    manifests,
+    ticketRoot,
+    statePhases,
+    attestations: attParsed.rows,
+    attestationProblems: attParsed.problems,
+    commitTrees: new Map(metas.map((m) => [m.sha, m.tree])),
+    archiveSha256,
+  }
+}
+
 export interface RunResult {
   exit: 0 | 1
-  report: VerifyRangeReport
+  report: DeepVerifyReport
   ci: CiOutcome
   base: string
   head: string
@@ -251,11 +395,8 @@ export async function runVerifyRange(opts: Opts, deps: RunDeps): Promise<RunResu
     baseSha = deps.git.exec(['merge-base', deps.trunkBranch, headSha]).trim()
   }
 
-  // 1. 로컬 검증 — CI 선택과 무관하게 **항상** 수행한다(완료 기준 8).
-  const report = verifyRange({
-    commits: collectCommits(deps.git, baseSha, headSha),
-    manifestContents: collectManifestContents(deps.git, headSha, deps.ticketRoot),
-  })
+  // 1. 로컬 검증 — CI 선택과 무관하게 **항상** 수행한다(완료 기준 8). REQ-2026-127: 심층 6범주.
+  const report = verifyRangeDeep(collectDeepInput(deps.git, deps.readBlobs, baseSha, headSha, deps.ticketRoot))
 
   // 2. GitHub CI opt-in — 선택은 이번 실행에만 유효하고 저장하지 않는다(설계 DEC-4).
   let mode = decideCiMode(opts, deps.interactive)
@@ -272,7 +413,12 @@ export async function runVerifyRange(opts: Opts, deps: RunDeps): Promise<RunResu
     deps.log('GitHub CI: 생략(정상 — 로컬 검증만으로 계속합니다)')
   }
 
-  const exit = computeExit({ unprovenCount: report.counts.unproven, strict: opts.strict, ci })
+  const exit = computeExit({
+    unprovenCount: report.counts.unproven,
+    invalidCount: report.counts['invalid-evidence'],
+    strict: opts.strict,
+    ci,
+  })
 
   // 3. 감사 로그 — 쓰기 실패는 경고만, 판정·exit 불변(설계 DEC-5).
   try {
@@ -298,19 +444,28 @@ export async function runVerifyRange(opts: Opts, deps: RunDeps): Promise<RunResu
 export function renderHuman(r: RunResult, strict: boolean): string {
   const lines: string[] = []
   const c = r.report.counts
-  lines.push(`verify-range ${r.base.slice(0, 8)}..${r.head.slice(0, 8)} — 커밋 ${r.report.entries.length}개`)
-  lines.push(`  승인 소비 ${c.approved} · 도구 부기 ${c.bookkeeping} · 머지 ${c.merge} · 미입증 ${c.unproven}`)
+  lines.push(`verify-range ${r.base.slice(0, 8)}..${r.head.slice(0, 8)} — 커밋 ${r.report.entries.length}개 (심층 검증)`)
+  lines.push(
+    `  승인 소비 ${c.approved} · 도구 부기 ${c.bookkeeping} · 머지 ${c.merge} · attested ${c.attested} · 손상 증거 ${c['invalid-evidence']} · 미입증 ${c.unproven}`,
+  )
   if (r.report.manifestProblems > 0)
     lines.push(`  ⚠️ approvals.jsonl 파싱 문제 ${r.report.manifestProblems}행(건너뜀 — 손상을 숨기지 않되 검증은 계속)`)
-  for (const u of r.report.unproven) lines.push(`  ? ${u.sha.slice(0, 8)} ${u.subject}`)
+  for (const n of r.report.verificationNotes) lines.push(`  ℹ️ ${n}`)
+  for (const inv of r.report.invalid) {
+    lines.push(`  ✗ ${inv.sha.slice(0, 8)} ${inv.subject}`)
+    for (const p of inv.problems) lines.push(`      ${p}`)
+  }
+  for (const u of r.report.unproven) lines.push(`  ? ${u.sha.slice(0, 8)} ${u.subject}${u.note !== undefined ? ` — ${u.note}` : ''}`)
   if (c.unproven > 0)
     lines.push(
-      `  미입증 = 승인 소비 기록·부기 trailer가 없는 커밋입니다. 규정된 워크플로 외 커밋(설치 스캐폴드·릴리스 등)일 수 있습니다 — 통합 승인 전에 사람이 확인하세요.`,
+      `  미입증 = 승인 소비 기록·부기 trailer가 없는 커밋입니다. 규정된 워크플로 외 커밋(설치 스캐폴드·릴리스 등)일 수 있습니다 — 정당하면 \`commitgate attest <sha> --reason "..."\`로 예외 승인을 기록하세요.`,
     )
+  if (c['invalid-evidence'] > 0)
+    lines.push(`  손상 증거 = 승인 기록이 있으나 검증에 실패한 커밋입니다. attest로 구제되지 않습니다 — 증거를 수정하세요.`)
   lines.push(
     r.exit === 0
       ? `PASS — ${strict ? 'strict' : '보고'} 기준 통과`
-      : `FAIL — ${strict && c.unproven > 0 ? `미입증 ${c.unproven}건(--strict)` : '명시 요청한 GitHub CI 조회 실패'}`,
+      : `FAIL — ${strict && c.unproven + c['invalid-evidence'] > 0 ? `미입증 ${c.unproven}건·손상 ${c['invalid-evidence']}건(--strict)` : '명시 요청한 GitHub CI 조회 실패'}`,
   )
   return lines.join('\n')
 }
@@ -322,6 +477,8 @@ export function renderJson(r: RunResult): string {
       head: r.head,
       counts: r.report.counts,
       unproven: r.report.unproven,
+      invalid: r.report.invalid,
+      verification_notes: r.report.verificationNotes,
       manifest_problems: r.report.manifestProblems,
       ci: r.ci,
       exit: r.exit,
@@ -406,6 +563,7 @@ export async function runCli(argv: string[]): Promise<void> {
       now: () => new Date().toISOString(),
       trunkBranch: cfg.trunkBranch,
       ticketRoot: cfg.ticketRoot,
+      readBlobs: (ref, paths) => readBlobsAtRef(cfg.root, ref, paths),
     })
     console.log(opts.json ? renderJson(result) : renderHuman(result, opts.strict))
     if (result.exit !== 0) process.exitCode = result.exit

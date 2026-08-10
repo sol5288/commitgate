@@ -12,9 +12,10 @@ const okFacts = (over: Partial<IntegrationFacts> = {}): IntegrationFacts => ({
   rebaseInProgress: false,
   trunkExists: true,
   verify: {
-    counts: { merge: 1, bookkeeping: 3, approved: 2, unproven: 0 },
+    counts: { merge: 1, bookkeeping: 3, approved: 2, attested: 0, 'invalid-evidence': 0, unproven: 0 },
     manifestProblems: 0,
     unproven: [],
+    invalid: [],
   },
   ...over,
 })
@@ -78,12 +79,13 @@ describe('planIntegration — 항상 strict 증거 판정', () => {
     const p = planIntegration(
       okFacts({
         verify: {
-          counts: { merge: 0, bookkeeping: 0, approved: 1, unproven: 2 },
+          counts: { merge: 0, bookkeeping: 0, approved: 1, attested: 0, 'invalid-evidence': 0, unproven: 2 },
           manifestProblems: 0,
           unproven: [
             { sha: 'a'.repeat(40), subject: 'chore: setup' },
             { sha: 'b'.repeat(40), subject: 'wip' },
           ],
+          invalid: [],
         },
       }),
     )
@@ -96,7 +98,14 @@ describe('planIntegration — 항상 strict 증거 판정', () => {
 
   it('manifest 문제 > 0 → 차단', () => {
     const p = planIntegration(
-      okFacts({ verify: { counts: { merge: 0, bookkeeping: 0, approved: 1, unproven: 0 }, manifestProblems: 2, unproven: [] } }),
+      okFacts({
+        verify: {
+          counts: { merge: 0, bookkeeping: 0, approved: 1, attested: 0, 'invalid-evidence': 0, unproven: 0 },
+          manifestProblems: 2,
+          unproven: [],
+          invalid: [],
+        },
+      }),
     )
     expect(p.ok).toBe(false)
     expect(p.problems.some((x) => x.includes('approvals.jsonl'))).toBe(true)
@@ -104,6 +113,34 @@ describe('planIntegration — 항상 strict 증거 판정', () => {
 
   it('verify 미계산(null) → 차단(추정하지 않는다)', () => {
     expect(planIntegration(okFacts({ verify: null })).ok).toBe(false)
+  })
+
+  it('[REQ-2026-127] invalid-evidence > 0 → 차단(attest 구제 불가 문구 + 문제 표시), attested는 통과', () => {
+    const blocked = planIntegration(
+      okFacts({
+        verify: {
+          counts: { merge: 0, bookkeeping: 0, approved: 1, attested: 2, 'invalid-evidence': 1, unproven: 0 },
+          manifestProblems: 0,
+          unproven: [],
+          invalid: [{ sha: 'c'.repeat(40), subject: 'feat: x', problems: ['아카이브 SHA-256 불일치: …'] }],
+        },
+      }),
+    )
+    expect(blocked.ok).toBe(false)
+    expect(blocked.problems.some((x) => x.includes('구제되지 않습니다'))).toBe(true)
+    expect(blocked.problems.some((x) => x.includes('cccccccc'))).toBe(true)
+
+    const attestedOnly = planIntegration(
+      okFacts({
+        verify: {
+          counts: { merge: 0, bookkeeping: 0, approved: 0, attested: 3, 'invalid-evidence': 0, unproven: 0 },
+          manifestProblems: 0,
+          unproven: [],
+          invalid: [],
+        },
+      }),
+    )
+    expect(attestedOnly.ok).toBe(true)
   })
 })
 

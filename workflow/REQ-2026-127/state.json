@@ -1,0 +1,75 @@
+{
+  "id": "REQ-2026-127",
+  "branch": "feat/req-2026-127-verify-range-deep-evidence-attest",
+  "risk_level": "LOW",
+  "codex_thread_id": "019feb79-28da-7463-9a3f-78464b758d45",
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "d0e580b4ada743db78d35327ced6a760cd81239fcc1c8ce19ac1f11a792ec878",
+  "current_phase": null,
+  "phases": [
+    {
+      "id": "phase-1-deep-core",
+      "approved": false
+    },
+    {
+      "id": "phase-2-attest-verb",
+      "approved": false
+    },
+    {
+      "id": "phase-3-wire-strict",
+      "approved": false
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-deep-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-deep-core",
+      "attempts": 2,
+      "closed_reason": null
+    }
+  ],
+  "design_baseline": {
+    "requirement": "e88ba03bc0e0872efd9817c5061e12f3c6ed4056",
+    "design": "02130d92b81330540377e30edc60ea9deab47f4d",
+    "plan": "d47b868dc91a1e6305d255c7700007ea921140d6"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-127/responses/design-r01-approved.json",
+    "response_sha256": "faba82514109e260abcac80ba06c9015f18e52afdf3af7ab1ea08414227c2bd3",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "3dc7d9e015300a293505966a107877d27e4b36bb",
+    "codex_thread_id": "019feb79-28da-7463-9a3f-78464b758d45",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-10T11:41:46.827Z",
+    "design_hash": "d0e580b4ada743db78d35327ced6a760cd81239fcc1c8ce19ac1f11a792ec878"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "20d3c395f2cdd3287924344128dec9fb75552f7b1ce44ce41e8039a12980569e",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-10T11:41:46.827Z",
+    "findings": [],
+    "elided_count": 0
+  }
+}
