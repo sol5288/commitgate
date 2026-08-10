@@ -2,7 +2,20 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.21.0 (2026-08-10)
+
+> **로컬만으로 머지까지 지키는 묶음입니다 — GitHub CI는 이제 공식적으로 선택 사항입니다.**
+>
+> 지금까지 "이 브랜치의 커밋들이 전부 리뷰를 통과했는가"는 확인할 방법이 없었고, 확인하려면
+> 유료 CI를 붙이는 길뿐이었습니다. 이 릴리스는 그 검증을 **로컬 명령**으로 제공하고
+> (`verify-range`), 비밀이 리뷰 프롬프트에 실려 나가기 **전에** 차단하며(`secretScan` 기본
+> `block`), 경고를 상태별로 분류하고(D30), phase가 실제로 건드리는 민감 경로를 알리고(D31),
+> 그 모든 관측을 한 명령으로 요약합니다(`report`).
+>
+> **업그레이드 시 알아둘 것** — ① `secretScan`은 기본 차단입니다(고신뢰 패턴만 — 오탐이면
+> `"warn"`/`"off"`). ② 새 로컬 로그 `workflow/.verify-runs.jsonl`이 생깁니다(gitignored —
+> 기존 설치본은 `npx commitgate sync --gitignore`로 규칙 백필). ③ design 승인의 부기 커밋이
+> 2개→1개가 됩니다. 나머지는 전부 추가·경고 전용이라 기존 워크플로를 막지 않습니다.
 
 - **`commitgate report` — 로컬 관측 요약** (REQ-2026-124). 도구가 쌓는 관측 로그 3종
   (`.doctor-runs`·`.review-calls`·`.verify-runs`)을 읽기 전용으로 요약합니다: 검사별 발화·FAIL과
