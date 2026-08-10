@@ -2,15 +2,28 @@
   "id": "REQ-2026-125",
   "branch": "feat/req-2026-125-guidance-ci-terms-hotfix",
   "risk_level": "LOW",
-  "codex_thread_id": "019feb18-013c-7570-93b9-5937e8c915e4",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019feb1d-4584-76d0-a248-0a164d957903",
+  "review_base_sha": "5804c3dd91308718749f6f845e71e655dfe6bd5d",
+  "review_diff_hash": "92994fcd475c4a287be626636226731a48c9c1ac",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "e53d2b820b3e557a0bfb6357b889d67206918f66b8643d5412fc2501d22d49de",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-sync-apply-guidance",
+  "phases": [
+    {
+      "id": "phase-1-sync-apply-guidance",
+      "approved": true
+    },
+    {
+      "id": "phase-2-ci-query-terms",
+      "approved": false
+    },
+    {
+      "id": "phase-3-upgrade-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -21,16 +34,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-sync-apply-guidance#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-sync-apply-guidance",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-sync-apply-guidance",
     "outcome": "approved",
-    "compare_hash": "987e8b8d19dd2ac454e545323e5e07e6d2292657a0fdcfc3e2db2ba7738d79b3",
+    "compare_hash": "1863781c6164c2d77dd06063d4f5ccfcbef193d01cbcc228fc4de1027617d39d",
     "count": 1,
     "errors": [],
-    "at": "2026-08-10T09:55:50.499Z",
+    "at": "2026-08-10T10:01:09.788Z",
     "findings": [],
     "elided_count": 0
   },
@@ -51,5 +71,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-10T09:55:50.499Z",
     "design_hash": "e53d2b820b3e557a0bfb6357b889d67206918f66b8643d5412fc2501d22d49de"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "92994fcd475c4a287be626636226731a48c9c1ac",
+      "phase_id": "phase-1-sync-apply-guidance",
+      "consumed_by_commit_sha": "bc8811b451494d6469fef48a5be2be77352e9fa5",
+      "approval_consumed_at": "2026-08-10T10:01:53.694Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
