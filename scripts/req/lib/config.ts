@@ -138,6 +138,18 @@ export interface RawConfig {
   trunkBranch?: string | null
   /** REQ-2026-086: granularity 강제 수준. 미지정 = DEFAULTS(`block`). */
   granularityGate?: GranularityGate
+  /**
+   * REQ-2026-126: GitHub CI **실행**(workflow_dispatch) 설정. 미지정 = null(미구성 — integrate가
+   * CI 실행을 제안조차 하지 않는다). CommitGate는 워크플로를 추측하지 않는다 — `workflow`는 사용자 소유.
+   */
+  githubCi?: GithubCiConfig
+}
+
+/** REQ-2026-126: CI 실행 설정. workflow = `.github/workflows/` 파일명(예: `ci.yml`). */
+export interface GithubCiConfig {
+  workflow: string
+  /** 전체 마감(분) — dispatch 시각부터 완료까지 단일 시계. 미지정 = 30. */
+  timeoutMinutes?: number
 }
 
 /** 해소된 config(DEFAULTS 병합 + 파생 절대경로). */
@@ -172,6 +184,8 @@ export interface ResolvedConfig {
   trunkBranch: string | null
   /** REQ-2026-086: granularity 강제 수준. `block` = 리뷰 전 차단(기본). */
   granularityGate: GranularityGate
+  /** REQ-2026-126: CI 실행 설정(해소됨 — timeoutMinutes 기본 30 채움). `null` = 미구성. */
+  githubCi: { workflow: string; timeoutMinutes: number } | null
   // 파생(절대경로)
   workflowDirAbs: string
   schemaPathAbs: string
@@ -268,7 +282,12 @@ export const DEFAULTS = {
    *    차단이 필요한 팀은 `"granularityGate": "block"`으로 켠다.
    */
   granularityGate: 'warn' as GranularityGate,
+  // REQ-2026-126: CI 실행은 미구성이 기본 — GitHub CI는 CommitGate의 필수 조건이 아니다(확정 정책).
+  githubCi: null as { workflow: string; timeoutMinutes: number } | null,
 }
+
+/** REQ-2026-126: githubCi.timeoutMinutes 기본(분). 스키마 상한 120과 짝. */
+export const GITHUB_CI_TIMEOUT_MINUTES_DEFAULT = 30
 
 /** ISO instant(UTC). `close-proof`의 `isValidIsoInstant`와 같은 형태를 스키마 수준에서 강제한다. */
 const ISO_INSTANT_RE = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$'
@@ -315,6 +334,17 @@ export const CONFIG_SCHEMA = {
       required: ['autoApprove'],
       properties: {
         autoApprove: { type: 'string', enum: ['never', 'low-only'] },
+      },
+    },
+    // REQ-2026-126: CI 실행(workflow_dispatch) 설정. workflow는 basename만(경로 조작·API 세그먼트 주입 방지).
+    // 🔴 vendored `workflow/req.config.schema.json`과 **동시에** 확장(setup 키와 같은 이유).
+    githubCi: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['workflow'],
+      properties: {
+        workflow: { type: 'string', pattern: BASENAME_RE },
+        timeoutMinutes: { type: 'integer', minimum: 1, maximum: 120 },
       },
     },
     // REQ-2026-056: lockfile 프롬프트 전문 opt-in.
@@ -474,6 +504,11 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     promptMaxBytes: raw.promptMaxBytes !== undefined ? raw.promptMaxBytes : DEFAULTS.promptMaxBytes,
     // REQ-2026-119: null = 명시적 "기본 목록 사용"·[] = 비활성 — undefined만 DEFAULTS로 채운다.
     riskPaths: raw.riskPaths !== undefined ? raw.riskPaths : DEFAULTS.riskPaths,
+    // REQ-2026-126: 미지정 = null(미구성). 지정 시 timeoutMinutes 기본 30을 여기서 채운다(해소된 형태).
+    githubCi:
+      raw.githubCi === undefined
+        ? DEFAULTS.githubCi
+        : { workflow: raw.githubCi.workflow, timeoutMinutes: raw.githubCi.timeoutMinutes ?? GITHUB_CI_TIMEOUT_MINUTES_DEFAULT },
   }
 
   // REQ-2026-028 R7: 교차검증(스키마가 표현 못 함). AJV가 이미 hardCap∈[1,8]·autoBudget≥1을 잡았고,

@@ -404,6 +404,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   stopGate: 'phase',
   trunkBranch: 'main',
   granularityGate: 'block',
+  githubCi: null,
   workflowDirAbs: '/repo/workflow',
   schemaPathAbs: '/repo/workflow/machine.schema.json',
   handoffPathAbs: null,
