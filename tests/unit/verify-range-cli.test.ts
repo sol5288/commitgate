@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  CI_FLAG_DEPRECATION,
   parseArgs,
   HelpRequested,
   decideCiMode,
@@ -98,7 +99,7 @@ function makeDeps(over?: Partial<RunDeps> & { ci?: GithubCiPort & { calls: strin
 }
 
 function opts(over?: Partial<Opts>): Opts {
-  return { dir: '.', json: false, strict: false, base: null, head: null, githubCi: null, ...over }
+  return { dir: '.', json: false, strict: false, base: null, head: null, githubCi: null, deprecations: [], ...over }
 }
 
 describe('완료 기준 1~6·9 — CI opt-in 기본값과 플래그', () => {
@@ -133,7 +134,9 @@ describe('완료 기준 1~6·9 — CI opt-in 기본값과 플래그', () => {
     expect(r.ci).toBe('checked-ok')
     expect(asked[0]).toBe(CI_PROMPT)
     expect(CI_PROMPT).toContain('[y/N]')
-    expect(CI_PROMPT).toContain('비용 또는 사용량')
+    // REQ-2026-125 R2: 조회임과 워크플로 미실행을 문구가 명시한다("실행" 오해 회귀 방지).
+    expect(CI_PROMPT).toContain('조회')
+    expect(CI_PROMPT).toContain('실행하지 않')
   })
 
   it('4: 비대화형·옵션 없음 → 미호출·질문도 없음(기본 생략)', async () => {
@@ -174,7 +177,7 @@ describe('완료 기준 7·8 — 요청 실패·로컬 검증 불변', () => {
     const r = await runVerifyRange(opts({ githubCi: true }), deps)
     expect(r.ci).toBe('checked-fail')
     expect(r.exit).toBe(1)
-    expect(deps.logs.some((l) => l.includes('확인 실패'))).toBe(true)
+    expect(deps.logs.some((l) => l.includes('조회 실패'))).toBe(true)
   })
 
   it('8: CI 생략 실행도 4범주 분류·미입증 목록을 산출한다', async () => {
@@ -226,9 +229,20 @@ describe('exit·감사 로그 계약(설계 DEC-1·DEC-5)', () => {
 })
 
 describe('parseArgs — fail-closed', () => {
-  it('--github-ci 와 --no-github-ci 동시 지정은 오류(순서 무관)', () => {
+  it('긍정·부정 동시 지정은 오류(순서·alias 교차 무관)', () => {
+    expect(() => parseArgs(['--check-github-ci', '--no-check-github-ci'])).toThrow()
     expect(() => parseArgs(['--github-ci', '--no-github-ci'])).toThrow()
     expect(() => parseArgs(['--no-github-ci', '--github-ci'])).toThrow()
+    expect(() => parseArgs(['--github-ci', '--no-check-github-ci'])).toThrow()
+    expect(() => parseArgs(['--check-github-ci', '--no-github-ci'])).toThrow()
+  })
+  it('[REQ-2026-125] 정식 옵션은 deprecation 없이, alias는 동작 유지 + deprecation 안내', () => {
+    expect(parseArgs(['--check-github-ci'])).toMatchObject({ githubCi: true, deprecations: [] })
+    expect(parseArgs(['--no-check-github-ci'])).toMatchObject({ githubCi: false, deprecations: [] })
+    expect(parseArgs(['--github-ci'])).toMatchObject({ githubCi: true, deprecations: [CI_FLAG_DEPRECATION] })
+    expect(parseArgs(['--no-github-ci'])).toMatchObject({ githubCi: false, deprecations: [CI_FLAG_DEPRECATION] })
+    // 의미가 "조회"임이 안내 문구에 남는다 — 조용한 의미 변경(조회→실행) 금지 계약.
+    expect(CI_FLAG_DEPRECATION).toContain('조회')
   })
   it('값 자리에 온 옵션을 값으로 삼키지 않는다', () => {
     expect(() => parseArgs(['--base', '--json'])).toThrow()

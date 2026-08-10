@@ -55,6 +55,45 @@ npx commitgate quickstart --apply      # 관리 블록만 주입(블록 밖 내�
 새 버전으로 넘어갈 때 **그 버전에서만** 챙겨야 하는 것을 여기 모읍니다. 지나온 버전의 절은 지우지 않으니,
 예전 버전에서 올라온다면 **자기 버전 이후의 절을 순서대로** 읽으세요.
 
+### 0.20/0.21 → 0.22 — caret는 minor를 넘지 않습니다: 명시 설치 + gitignore 백필
+
+**① 자동으로 올라가지 않습니다.** npm semver에서 `^0.20.0`은 `>=0.20.0 <0.21.0`이므로
+`npm update`는 0.21/0.22로 넘어가지 않습니다. 범위를 명시적으로 올리세요(lockfile도 이 명령이 함께 갱신합니다 —
+`package-lock.json` 변경이 커밋에 포함됐는지 확인하세요):
+
+```sh
+npm install -D commitgate@^0.22.0
+npx commitgate sync --apply --gitignore   # vendored 스키마 재동기화 + workflow/.gitignore 누락 kit 규칙 백필
+npx commitgate check                      # 준비 상태 진단(읽기 전용)
+npx commitgate report                     # 로컬 관측 요약(읽기 전용) — 정상 동작 확인용
+```
+
+**② `sync --apply --gitignore`가 필요한 이유.** 0.21에서 로컬 로그 `workflow/.verify-runs.jsonl`이
+새로 생겼습니다(gitignored). 기존 설치본의 `workflow/.gitignore`에는 그 규칙이 없어, 백필하지 않으면
+verify-range가 기록을 건너뛰고 경고만 냅니다(동작은 정상 — 관측 로그만 안 쌓입니다).
+`--apply` 없는 `sync`는 계획만 출력하는 dry-run이라 파일을 바꾸지 않습니다.
+
+**③ 0.21에서 온 동작 변화(0.20에서 올라올 때 해당).**
+
+- **secretScan 기본 `block`** — 리뷰 전송 전에 고신뢰 비밀 패턴이 staged에 있으면 전송을 막습니다.
+  오탐이면 `req.config.json`에 `"secretScan": "warn"` 또는 `"off"`.
+- **D31은 WARN 전용** — 민감 경로 패턴 경고는 커밋을 막지 않습니다.
+- **GitHub CI는 선택 사항** — CommitGate는 CI를 요구하지도 자동 실행하지도 않습니다. verify-range의
+  CI 조회는 opt-in([y/N] 기본 No)이며, 기존 결과를 읽을 뿐 워크플로를 실행하지 않습니다.
+  GitHub 인증·네트워크 없이 로컬 검증 경로가 전부 동작합니다.
+
+**④ 로그 하위호환.** 기존 로컬 로그(`.doctor-runs.jsonl`·`.review-calls.jsonl`)와 커밋된
+원장(`review-ledger.jsonl`·`approvals.jsonl`)은 그대로 읽힙니다 — 스키마 변경은 additive이고,
+구버전 행은 새 필드 없이도 유효합니다. 새 버전이 기존 로그를 다시 쓰거나 변환하지 않습니다.
+
+**⑤ 소비자 파일을 자동으로 덮어쓰지 않습니다.** `AGENTS.md`·`CLAUDE.md`·`req.config.json`·
+`workflow/.gitignore`의 기존 행은 어떤 명령도 임의 수정하지 않습니다 — `sync`/`quickstart`는
+opt-in 축과 관리 블록만 다룹니다.
+
+**⑥ 되돌리기.** 문제가 생기면 `npm install -D commitgate@0.20.0`(또는 `@0.21.0`)으로 내리면 됩니다.
+vendored 자산은 그대로 둬도 되고(구버전은 모르는 필드를 무시), 새 로컬 로그 파일은 구버전이 읽지
+않으므로 지울 필요가 없습니다.
+
 ### 0.11 → 0.12 — Node 20 이상이 필요합니다
 
 `engines.node`가 `>=18.17`에서 **`>=20`**으로 올라갔습니다. **Node 18에서는 더 이상 지원되지 않습니다.**

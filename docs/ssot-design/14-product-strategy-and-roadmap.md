@@ -125,8 +125,8 @@ CommitGate가 워크플로를 자동 트리거하거나 required workflow로 배
 - `commitgate verify-range [--base <ref>] [--head <ref>] [--strict] [--json]` — 범위 내 커밋을
   승인 소비(`consumed_by_commit_sha`)·도구 부기(trailer)·머지·**미입증**으로 로컬 분류한다.
   기본은 보고(exit 0), `--strict`가 게이트 모드다. GitHub 인증·네트워크 무의존.
-- 머지 직전 GitHub CI **opt-in**(조회 전용): 대화형 [y/N] 기본 No · `--github-ci`/`--no-github-ci` ·
-  비대화형 기본 생략 · 명시 요청 실패는 exit 1.
+- 머지 직전 GitHub CI **opt-in**(조회 전용): 대화형 [y/N] 기본 No · `--check-github-ci`/`--no-check-github-ci`
+  (구 `--github-ci`/`--no-github-ci`는 deprecated alias) · 비대화형 기본 생략 · 명시 요청 실패는 exit 1.
 
 **남은 설계(미구현)**
 

@@ -229,10 +229,10 @@ Files CommitGate creates in the consuming repository while it runs, and how each
 
 | File | Created in | Ignore policy | Shipped by init | sync owner | Persisted in Git |
 |---|---|---|---|---|---|
-| `workflow/.review-calls.jsonl` | `workflow/` at repo root | `/.review-calls.jsonl` in `workflow/.gitignore` | Yes (`templates/workflow.gitignore`) | `sync --gitignore` | No (measurement only) |
-| `workflow/REQ-*/codex-response.json` | Ticket root | `/REQ-*/codex-response.json` | Yes (same) | `sync --gitignore` | No (scratch) |
-| `workflow/REQ-*/.review-preview.txt` | Ticket root | `/REQ-*/.review-preview.txt` | Yes (same) | `sync --gitignore` | No (scratch) |
-| `workflow/REQ-*/.codex-*.tmp` | Ticket root | `/REQ-*/.codex-*.tmp` | Yes (same) | `sync --gitignore` | No (temporary) |
+| `workflow/.review-calls.jsonl` | `workflow/` at repo root | `/.review-calls.jsonl` in `workflow/.gitignore` | Yes (`templates/workflow.gitignore`) | `sync --apply --gitignore` | No (measurement only) |
+| `workflow/REQ-*/codex-response.json` | Ticket root | `/REQ-*/codex-response.json` | Yes (same) | `sync --apply --gitignore` | No (scratch) |
+| `workflow/REQ-*/.review-preview.txt` | Ticket root | `/REQ-*/.review-preview.txt` | Yes (same) | `sync --apply --gitignore` | No (scratch) |
+| `workflow/REQ-*/.codex-*.tmp` | Ticket root | `/REQ-*/.codex-*.tmp` | Yes (same) | `sync --apply --gitignore` | No (temporary) |
 | `workflow/REQ-*/state.json` | Ticket root | None (tracked) | No (created by `req:new`) | None | Yes (scaffold only) — runtime changes are working state and are not committed |
 | `workflow/REQ-*/responses/*-rNN-*.json` | Ticket `responses/` | None (tracked) | No | None | **Yes (approval evidence)** |
 | `workflow/REQ-*/responses/approvals.jsonl` | Ticket `responses/` | None (tracked) | No | None | **Yes (approval ledger)** |
