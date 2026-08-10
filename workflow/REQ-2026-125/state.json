@@ -2,14 +2,14 @@
   "id": "REQ-2026-125",
   "branch": "feat/req-2026-125-guidance-ci-terms-hotfix",
   "risk_level": "LOW",
-  "codex_thread_id": "019feb22-4d4f-73c3-8815-b8d743f235c1",
-  "review_base_sha": "ea5daa38da809e1ad50ca1fecf67f856be34652e",
-  "review_diff_hash": "63bc2eb9d6ecb34bf1d17bd8a5d4aa28c04816df",
+  "codex_thread_id": "019feb25-9a7a-7d73-9b29-be328dfa2cc4",
+  "review_base_sha": "ac45f1fae58d867627e3705781b5865a45b90edb",
+  "review_diff_hash": "9979637b6d145ead3f96b7276c38ed5558e43073",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "e53d2b820b3e557a0bfb6357b889d67206918f66b8643d5412fc2501d22d49de",
-  "current_phase": "phase-2-ci-query-terms",
+  "current_phase": "phase-3-upgrade-docs",
   "phases": [
     {
       "id": "phase-1-sync-apply-guidance",
@@ -21,7 +21,7 @@
     },
     {
       "id": "phase-3-upgrade-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -48,16 +48,23 @@
       "phase_id": "phase-2-ci-query-terms",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-upgrade-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-upgrade-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-ci-query-terms",
+    "phase_id": "phase-3-upgrade-docs",
     "outcome": "approved",
-    "compare_hash": "73506df69d368266c342da49d71298ee59a22a8bdd366823d5c72af8083f59a2",
+    "compare_hash": "ec0fbe54d83fa9733e440cd79fe9718ca7952912ac2c62603330531ddc27987a",
     "count": 1,
     "errors": [],
-    "at": "2026-08-10T10:06:39.794Z",
+    "at": "2026-08-10T10:10:50.697Z",
     "findings": [],
     "elided_count": 0
   },
@@ -91,6 +98,12 @@
       "phase_id": "phase-2-ci-query-terms",
       "consumed_by_commit_sha": "3d30cea5bdb5e799d4804a61e61cea9a781ebcec",
       "approval_consumed_at": "2026-08-10T10:07:03.027Z"
+    },
+    {
+      "approved_tree": "9979637b6d145ead3f96b7276c38ed5558e43073",
+      "phase_id": "phase-3-upgrade-docs",
+      "consumed_by_commit_sha": "5eb1b9c90c7c8ea05d23289b87bc76341a1b08e6",
+      "approval_consumed_at": "2026-08-10T10:11:18.760Z"
     }
   ],
   "user_commit_confirmed": null
