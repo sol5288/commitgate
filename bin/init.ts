@@ -1493,6 +1493,7 @@ export const HELP_TEXT = `commitgate — AI REQ workflow(커밋 게이트) 설�
   npx commitgate check [--dir <대상repo>] [--json]      # 준비 상태 진단(읽기 전용 — 아무것도 고치지 않음)
   npx commitgate verify-range [--strict] [--check-github-ci]  # 머지 직전 로컬 승인 증거 검증(GitHub CI 조회는 opt-in — 기본 생략)
   npx commitgate integrate [--run]                      # feature→trunk 로컬 통합(strict 검증·CI 실행 opt-in·사람 확인·push 없음)
+  npx commitgate attest <sha> --reason "..." [--run]   # 승인 증거 없는 정당한 커밋의 예외 승인 기록(append-only)
   npx commitgate report [--dir <대상repo>] [--json]     # 로컬 관측 요약(doctor·리뷰·증거·CI 선택 — 읽기 전용)
   npx commitgate sync [--apply] [--dir <대상repo>]      # vendored 자산(스키마·persona·gitignore) 재동기화(기본: 계획만)
   npx commitgate quickstart [--apply] [--dir <대상repo>] # 기존 CLAUDE.md/AGENTS.md에 Quick Start 블록 백필(기본: 계획만)

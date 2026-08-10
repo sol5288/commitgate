@@ -31,6 +31,7 @@ export const VERB_MODULES = {
   check: 'check.ts',
   'verify-range': 'verify-range.ts',
   integrate: 'integrate.ts',
+  attest: 'attest.ts',
   report: 'report.ts',
   delivery: 'delivery.ts',
   init: 'init.ts',
