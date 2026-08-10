@@ -49,6 +49,21 @@ If a change is too fundamental to judge as a delta, the reviewer requests a full
 
 Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses the required status checks**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. In that case CI runs **after** the push, so its green is post-hoc verification, and the agent must not omit that from its report. tag, npm publish, and GitHub release are control points of their own, requested after CI is green and never bundled with the integration approval. See [AGENTS.template.md](../AGENTS.template.md) and [docs/RELEASING.md](../docs/RELEASING.md) for the full contract.
 
+## Observability summary — commitgate report
+
+Summarizes the three local observation logs the tool accumulates (`.doctor-runs` · `.review-calls` ·
+`.verify-runs`) in one read-only command (writes nothing, no network):
+
+```sh
+npx commitgate report          # doctor firings, review convergence, evidence, CI choices
+npx commitgate report --json   # machine-readable
+```
+
+It shows per-check fired/FAIL counts and warning fatigue (WARN-only ratio), calls-per-target
+distribution with prompt-size/duration percentiles, an approval-evidence summary against trunk
+(verify-range), and the GitHub CI opt-in/skip distribution. Missing sources render as "no data" —
+nothing is estimated.
+
 ## Pre-merge local verification — GitHub CI is optional
 
 **GitHub CI is not a requirement of CommitGate.** GitHub Actions can consume usage quota and cost money, so CommitGate neither requires nor auto-triggers it. Before an integration approval you can verify the range's approval evidence locally:

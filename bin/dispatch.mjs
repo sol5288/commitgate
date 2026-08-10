@@ -30,6 +30,7 @@ export const VERB_MODULES = {
   setup: 'setup.ts',
   check: 'check.ts',
   'verify-range': 'verify-range.ts',
+  report: 'report.ts',
   delivery: 'delivery.ts',
   init: 'init.ts',
 }

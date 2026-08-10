@@ -47,6 +47,20 @@ npm run req:next -- 2026-002
 
 main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 required checks를 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. 그리고 이때 CI는 push **이후에** 도는 **사후 검증**이라, 그 사실을 보고에서 생략하지 않습니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 별도 통제점이고 CI green 이후에 요청합니다. 자세한 계약은 [AGENTS.template.md](../AGENTS.template.md)와 [docs/RELEASING.md](../docs/RELEASING.md)를 참고하세요.
 
+## 관측 요약 — commitgate report
+
+도구가 로컬에 쌓는 관측 로그 3종(`.doctor-runs` · `.review-calls` · `.verify-runs`)을 한 번에
+요약합니다(읽기 전용 — 아무것도 쓰지 않고 네트워크도 쓰지 않습니다):
+
+```sh
+npx commitgate report          # doctor 발화·리뷰 수렴·증거·CI 선택 요약
+npx commitgate report --json   # 기계용
+```
+
+검사별 발화·FAIL 수와 경고 피로(WARN-only 비율), 리뷰 대상당 호출 분포와 프롬프트 크기·소요
+분위수, trunk 대비 승인 증거 요약(verify-range), GitHub CI opt-in/생략 분포를 보여줍니다.
+원천 로그가 없으면 그 섹션은 "데이터 없음"으로 표기합니다 — 추정하지 않습니다.
+
 ## 머지 직전 로컬 검증 — GitHub CI는 선택입니다
 
 **GitHub CI는 CommitGate의 필수 조건이 아닙니다.** GitHub Actions는 사용량·비용이 발생할 수 있으므로 CommitGate는 CI를 요구하지도, 자동 실행하지도 않습니다. 통합 승인 전에 로컬만으로 이 범위의 승인 증거를 확인할 수 있습니다:
