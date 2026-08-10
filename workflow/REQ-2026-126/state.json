@@ -2,14 +2,14 @@
   "id": "REQ-2026-126",
   "branch": "feat/req-2026-126-merge-gate-ci-run-optin",
   "risk_level": "LOW",
-  "codex_thread_id": "019feb4c-f870-7b11-ab9a-e752ae74c297",
-  "review_base_sha": "6be2855d51849f7b4c61aae4767aa8139889b42e",
-  "review_diff_hash": "7c24f400d02d9f93ef8f791e732ce6f5a18d23ae",
+  "codex_thread_id": "019feb55-70ce-7643-89ba-faf6722e2e18",
+  "review_base_sha": "0c5b0a9bfe179909f55e2e64fcf0e872cab4b70c",
+  "review_diff_hash": "c7f825295f5abfd541b2b8b9064c99a9ac3b6671",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "03f37860bf9a6a5dbb2105ecd6ebf15af4dcc0e78afe5741f721ee6a9c6be23a",
-  "current_phase": "phase-2-merge-gate-core",
+  "current_phase": "phase-3-integrate-verb",
   "phases": [
     {
       "id": "phase-1-ci-run-port",
@@ -21,7 +21,7 @@
     },
     {
       "id": "phase-3-integrate-verb",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-4-docs",
@@ -52,16 +52,23 @@
       "phase_id": "phase-2-merge-gate-core",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-integrate-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-integrate-verb",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-merge-gate-core",
+    "phase_id": "phase-3-integrate-verb",
     "outcome": "approved",
-    "compare_hash": "b642d482b80ab0c94ea8ab71f6a58c33aafb432f20cb3d9cd0b0ef449987ba1b",
+    "compare_hash": "f37854e4494a395476675edc512d29cbf42b642fcc498ab67432ea19c4fd9735",
     "count": 1,
     "errors": [],
-    "at": "2026-08-10T10:52:58.199Z",
+    "at": "2026-08-10T11:02:48.571Z",
     "findings": [],
     "elided_count": 0
   },
@@ -95,6 +102,12 @@
       "phase_id": "phase-2-merge-gate-core",
       "consumed_by_commit_sha": "abc3b250a1d76958d095d56daf3b74d780ec3bff",
       "approval_consumed_at": "2026-08-10T10:53:19.228Z"
+    },
+    {
+      "approved_tree": "c7f825295f5abfd541b2b8b9064c99a9ac3b6671",
+      "phase_id": "phase-3-integrate-verb",
+      "consumed_by_commit_sha": "88b6fc77c2924f198f64e1655b6c7fb68287f4ef",
+      "approval_consumed_at": "2026-08-10T11:03:19.895Z"
     }
   ],
   "user_commit_confirmed": null
