@@ -58,6 +58,47 @@ npx commitgate quickstart --apply      # inject only the managed block (preserve
 Anything you only need to handle **for a specific version** lives here. Sections are never removed, so if you
 are coming from an older version, read **every section after yours, in order**.
 
+### 0.20/0.21 → 0.22 — caret does not cross minors: install explicitly + backfill gitignore
+
+**① It does not upgrade automatically.** In npm semver, `^0.20.0` means `>=0.20.0 <0.21.0`, so
+`npm update` never crosses into 0.21/0.22. Raise the range explicitly (this command also updates the
+lockfile — make sure the `package-lock.json` change is part of your commit):
+
+```sh
+npm install -D commitgate@^0.22.0
+npx commitgate sync --apply --gitignore   # re-sync vendored schemas + backfill missing kit rules into workflow/.gitignore
+npx commitgate check                      # readiness diagnosis (read-only)
+npx commitgate report                     # local observation summary (read-only) — sanity check
+```
+
+**② Why `sync --apply --gitignore` is needed.** 0.21 introduced a new local log,
+`workflow/.verify-runs.jsonl` (gitignored). Existing installs don't have that rule in
+`workflow/.gitignore`; without the backfill, verify-range skips logging and only prints a warning
+(behavior is otherwise normal — you just lose the observation log). A `sync` without `--apply` is a
+dry-run that only prints the plan and changes nothing.
+
+**③ Behavior changes coming from 0.21 (relevant when upgrading from 0.20).**
+
+- **secretScan defaults to `block`** — if a high-confidence secret pattern is staged, the review
+  prompt is not sent. For false positives set `"secretScan": "warn"` or `"off"` in `req.config.json`.
+- **D31 is WARN-only** — the sensitive-path warning never blocks a commit.
+- **GitHub CI is optional** — CommitGate neither requires nor auto-runs CI. The verify-range CI check
+  is opt-in ([y/N], default No) and only *queries* existing results; it never dispatches workflows.
+  The entire local verification path works without GitHub auth or network.
+
+**④ Log backward compatibility.** Existing local logs (`.doctor-runs.jsonl`, `.review-calls.jsonl`)
+and committed ledgers (`review-ledger.jsonl`, `approvals.jsonl`) remain readable — schema changes are
+additive and old rows are valid without the new fields. The new version never rewrites or migrates
+existing logs.
+
+**⑤ Consumer files are never overwritten automatically.** No command arbitrarily edits existing lines
+in `AGENTS.md`, `CLAUDE.md`, `req.config.json`, or `workflow/.gitignore` — `sync`/`quickstart` only
+touch opt-in axes and managed blocks.
+
+**⑥ Rollback.** If something breaks, `npm install -D commitgate@0.20.0` (or `@0.21.0`) downgrades the
+runtime. Vendored assets can stay (older versions ignore unknown fields), and the new local log files
+can be left in place — older versions simply never read them.
+
 ### 0.11 → 0.12 — Node 20 or newer is required
 
 `engines.node` moved from `>=18.17` to **`>=20`**. **Node 18 is no longer supported.**

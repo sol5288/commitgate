@@ -2,6 +2,20 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+- **fix(guidance): gitignore 백필 안내 정정 (REQ-2026-125)** — `sync` 기본은 dry-run이므로
+  `--apply` 없는 백필 안내(verify-range 런타임 경고·0.21.0 업그레이드 안내·문서 표)는 복사-실행해도
+  무효였다. 전부 `npx commitgate sync --apply --gitignore`로 정정하고, `sync --gitignore` 줄은 같은
+  줄에 `--apply`를 요구하는 회귀 가드를 추가.
+- **fix(verify-range): CI "조회"와 "실행" 용어 분리 (REQ-2026-125)** — `--github-ci`는 기존
+  check-runs **조회**일 뿐 워크플로 실행이 아니다. 정식 옵션명을 `--check-github-ci`/
+  `--no-check-github-ci`로 바꾸고(기존 옵션은 deprecated alias — 동작 동일·안내 1줄), 대화형 질문을
+  "기존 GitHub CI 결과를 조회하시겠습니까? 워크플로를 실행하지 않습니다"로 정정. 워크플로 실행은
+  별도 opt-in(`--run-github-ci`)으로만 추가될 예정이며 조용한 의미 변경은 하지 않는다.
+- **docs(upgrade): 0.20/0.21 → 0.22 업그레이드 절 (REQ-2026-125)** — caret가 minor를 넘지 않는
+  이유·권장 설치 명령·gitignore 백필·rollback을 `docs/upgrade.md`/`.en.md`에 추가.
+
 ## 0.21.0 (2026-08-10)
 
 > **로컬만으로 머지까지 지키는 묶음입니다 — GitHub CI는 이제 공식적으로 선택 사항입니다.**
