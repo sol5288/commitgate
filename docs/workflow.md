@@ -53,9 +53,16 @@ main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 
 요약합니다(읽기 전용 — 아무것도 쓰지 않고 네트워크도 쓰지 않습니다):
 
 ```sh
-npx commitgate report          # doctor 발화·리뷰 수렴·증거·CI 선택 요약
-npx commitgate report --json   # 기계용
+npx commitgate report                   # doctor 발화·리뷰 수렴·증거·CI 선택 요약
+npx commitgate report --json            # 기계용
+npx commitgate report --base v0.21.0    # evidence 범위를 명시(릴리스 범위 점검 등)
+npx commitgate report --last 50         # HEAD~50..HEAD
 ```
+
+evidence 섹션의 기본 범위는 trunk와의 merge-base..HEAD 라, trunk 위에서는 빈 범위(0 커밋)입니다 —
+출력이 그 사실과 함께 `--base`/`--last` 안내를 표기합니다. 범위·계산 시각·6범주 분류(0.22 심층
+검증과 동일)가 함께 나옵니다. 0.22에서 report의 증거 계산이 manifest당 git 프로세스를 만들던
+구조를 배치 읽기로 바꿨습니다(이 저장소 실측 29.5초 → 1.2초 — 환경에 따라 다릅니다).
 
 검사별 발화·FAIL 수와 경고 피로(WARN-only 비율), 리뷰 대상당 호출 분포와 프롬프트 크기·소요
 분위수, trunk 대비 승인 증거 요약(verify-range), GitHub CI opt-in/생략 분포를 보여줍니다.

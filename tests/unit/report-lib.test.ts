@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { buildReport } from '../../scripts/req/lib/report'
-import type { VerifyRangeReport } from '../../scripts/req/lib/verify-range'
+
 
 const doctorLog = [
   // run0: D30이 REQ-A·REQ-B 발화(WARN) + D10 FAIL
@@ -30,11 +30,22 @@ const verifyLog = [
   { at: 't', base: 'b', head: 'h', counts: { merge: 0, bookkeeping: 1, approved: 1, unproven: 0 }, manifest_problems: 0, strict: false, ci: 'checked-ok', exit: 0 },
 ].map((r) => JSON.stringify(r)).join('\n') + '\n'
 
-const vr: VerifyRangeReport = {
-  entries: [],
-  counts: { merge: 1, bookkeeping: 5, approved: 2, unproven: 1 },
-  unproven: [{ sha: 'a'.repeat(40), subject: 'chore: setup' }],
-  manifestProblems: 0,
+const vr = {
+  report: {
+    entries: [],
+    counts: { merge: 1, bookkeeping: 5, approved: 2, attested: 0, 'invalid-evidence': 0, unproven: 1 },
+    unproven: [{ sha: 'a'.repeat(40), subject: 'chore: setup' }],
+    invalid: [],
+    manifestProblems: 0,
+    verificationNotes: [],
+  },
+  range: {
+    base: 'b'.repeat(40),
+    head: 'h'.repeat(8) + 'a'.repeat(32),
+    source: 'merge-base' as const,
+    empty: false,
+    generatedAt: '2026-08-10T00:00:00.000Z',
+  },
 }
 
 describe('[REQ-2026-124] buildReport — 섹션 산식(손계산 대조)', () => {

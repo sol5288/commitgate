@@ -13,13 +13,18 @@ import { readFileSync, existsSync } from 'node:fs'
 import { loadConfig } from '../scripts/req/lib/config'
 import { createGitAdapter } from '../scripts/req/lib/adapters'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
-import { buildReport, type Report } from '../scripts/req/lib/report'
-import { verifyRange, type VerifyRangeReport } from '../scripts/req/lib/verify-range'
-import { collectCommits, collectManifestContents } from './verify-range'
+import { buildReport, type Report, type EvidenceRange } from '../scripts/req/lib/report'
+import { verifyRangeDeep, type DeepVerifyReport } from '../scripts/req/lib/verify-range'
+import { readBlobsAtRef } from '../scripts/req/lib/git-batch'
+import { collectDeepInput } from './verify-range'
 
 export interface Opts {
   dir: string
   json: boolean
+  /** REQ-2026-128(0.22): evidence 범위 지정. 미지정 = trunk와의 merge-base..HEAD. */
+  base: string | null
+  head: string | null
+  last: number | null
 }
 
 export class HelpRequested extends Error {
@@ -33,17 +38,28 @@ export class HelpRequested extends Error {
 export function parseArgs(argv: string[]): Opts {
   let dir = process.cwd()
   let json = false
+  let base: string | null = null
+  let head: string | null = null
+  let last: number | null = null
+  const takeValue = (flag: string, v: string | undefined): string => {
+    if (v === undefined || v.startsWith('-')) throw new Error(`${flag} 에 값이 필요합니다 (받음: ${v ?? '(없음)'})`)
+    return v
+  }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
-    if (a === '--dir') {
-      const v = argv[++i]
-      if (v === undefined || v.startsWith('-')) throw new Error(`--dir 에 경로가 필요합니다 (받음: ${v ?? '(없음)'})`)
-      dir = v
+    if (a === '--dir') dir = takeValue(a, argv[++i])
+    else if (a === '--base') base = takeValue(a, argv[++i])
+    else if (a === '--head') head = takeValue(a, argv[++i])
+    else if (a === '--last') {
+      const v = takeValue(a, argv[++i])
+      last = Number.parseInt(v, 10)
+      if (!Number.isInteger(last) || last < 1) throw new Error(`--last 는 1 이상의 정수여야 합니다 (받음: ${v})`)
     } else if (a === '--json') json = true
     else if (a === '-h' || a === '--help') throw new HelpRequested()
     else throw new Error(`알 수 없는 옵션: ${a}`)
   }
-  return { dir: resolve(dir), json }
+  if (base !== null && last !== null) throw new Error('--base 와 --last 는 함께 쓸 수 없습니다(범위 기준이 둘이 됩니다)')
+  return { dir: resolve(dir), json, base, head, last }
 }
 
 /** 로그 파일 읽기 — 부재는 null(섹션 부재로 흐른다 — 추정 금지). */
@@ -52,29 +68,51 @@ function readLog(rootAbs: string, rel: string): string | null {
   return existsSync(abs) ? readFileSync(abs, 'utf8') : null
 }
 
-/** trunk 기준 verify-range — 계산 불가(trunk 없음·git 실패)는 null(섹션 부재). */
-function tryVerifyRange(rootAbs: string, trunkBranch: string | null): VerifyRangeReport | null {
-  if (trunkBranch === null) return null
+/**
+ * evidence 범위 verify — 계산 불가(trunk 없음·git 실패)는 null(섹션 부재).
+ * 🔴 심층 수집(REQ-2026-127)을 verify-range CLI와 공유한다 — manifest당 `git show` N+1이었던
+ *    0.21 경로(실측 ~29.5초)를 cat-file --batch 배치로 대체(REQ-2026-128).
+ */
+function tryVerifyRange(rootAbs: string, ticketRoot: string, trunkBranch: string | null, opts: Opts): { report: DeepVerifyReport; range: EvidenceRange } | null {
   try {
     const git = createGitAdapter(rootAbs)
-    const head = git.exec(['rev-parse', '--verify', 'HEAD^{commit}']).trim()
-    const base = git.exec(['merge-base', trunkBranch, head]).trim()
-    return verifyRange({
-      commits: collectCommits(git, base, head),
-      manifestContents: collectManifestContents(git, head, loadConfig({ root: rootAbs }).ticketRoot),
-    })
+    const headSha = git.exec(['rev-parse', '--verify', `${opts.head ?? 'HEAD'}^{commit}`]).trim()
+    let baseSha: string
+    let source: EvidenceRange['source']
+    if (opts.base !== null) {
+      baseSha = git.exec(['rev-parse', '--verify', `${opts.base}^{commit}`]).trim()
+      source = 'explicit'
+    } else if (opts.last !== null) {
+      // HEAD~N이 이력보다 깊으면 루트까지로 좁힌다(전 범위) — 실패보다 정직한 축소.
+      try {
+        baseSha = git.exec(['rev-parse', '--verify', `${headSha}~${opts.last}^{commit}`]).trim()
+      } catch {
+        baseSha = git.exec(['rev-list', '--max-parents=0', headSha]).trim().split('\n')[0] as string
+      }
+      source = 'last'
+    } else {
+      if (trunkBranch === null) return null
+      baseSha = git.exec(['merge-base', trunkBranch, headSha]).trim()
+      source = 'merge-base'
+    }
+    const report = verifyRangeDeep(collectDeepInput(git, (ref, paths) => readBlobsAtRef(rootAbs, ref, paths), baseSha, headSha, ticketRoot))
+    return {
+      report,
+      range: { base: baseSha, head: headSha, source, empty: baseSha === headSha, generatedAt: new Date().toISOString() },
+    }
   } catch {
     return null
   }
 }
 
-export function collectReport(dir: string): Report {
+export function collectReport(dir: string, opts?: Pick<Opts, 'base' | 'head' | 'last'>): Report {
   const cfg = loadConfig({ root: dir })
+  const rangeOpts: Opts = { dir, json: false, base: opts?.base ?? null, head: opts?.head ?? null, last: opts?.last ?? null }
   return buildReport({
     doctorRuns: readLog(cfg.root, 'workflow/.doctor-runs.jsonl'),
     reviewCalls: readLog(cfg.root, 'workflow/.review-calls.jsonl'),
     verifyRuns: readLog(cfg.root, 'workflow/.verify-runs.jsonl'),
-    verifyRange: tryVerifyRange(cfg.root, cfg.trunkBranch),
+    verifyRange: tryVerifyRange(cfg.root, cfg.ticketRoot, cfg.trunkBranch, rangeOpts),
   })
 }
 
@@ -104,10 +142,17 @@ export function renderHuman(r: Report): string {
     lines.push(`  프롬프트 바이트 p50/p95: ${v.promptBytesP50 ?? '-'} / ${v.promptBytesP95 ?? '-'} · 소요 ms p50/p95: ${v.durationMsP50 ?? '-'} / ${v.durationMsP95 ?? '-'}`)
   }
   lines.push('', '## evidence')
-  if (!r.evidence) lines.push('(판정 불가 — trunk 없음·git 실패, 또는 미계산)')
+  if (!r.evidence) lines.push('(판정 불가 — trunk 없음·git 실패, 또는 미계산. --base <ref>로 범위를 지정할 수 있습니다)')
   else {
     const e = r.evidence
-    lines.push(`trunk 대비 커밋: 승인 소비 ${e.counts.approved} · 부기 ${e.counts.bookkeeping} · 머지 ${e.counts.merge} · 미입증 ${e.counts.unproven}`)
+    lines.push(`검증 범위: ${e.range.base.slice(0, 8)}..${e.range.head.slice(0, 8)} (${e.range.source}) · 계산 시각 ${e.range.generatedAt}`)
+    if (e.range.empty)
+      lines.push('  빈 범위 — base==head(trunk 위 기본 실행 등). 과거 이력을 보려면 --base <ref> 또는 --last <N>을 지정하세요.')
+    lines.push(
+      `커밋 분류: 승인 소비 ${e.counts.approved} · 부기 ${e.counts.bookkeeping} · 머지 ${e.counts.merge} · attested ${e.counts.attested} · 손상 증거 ${e.counts['invalid-evidence']} · 미입증 ${e.counts.unproven}`,
+    )
+    for (const n of e.verificationNotes) lines.push(`  ℹ️ ${n}`)
+    for (const inv of e.invalid) lines.push(`  ✗ ${inv.sha.slice(0, 8)} ${inv.subject} — ${inv.problems[0] ?? ''}`)
     for (const u of e.unproven) lines.push(`  ? ${u.sha.slice(0, 8)} ${u.subject}`)
     if (e.manifestProblems) lines.push(`  ⚠️ approvals.jsonl 파싱 문제 ${e.manifestProblems}행`)
     lines.push(`  최신 doctor 관측(${e.latestDoctorAt ?? '-'}): D25 [${e.d25Subjects.join(', ') || '없음'}] · D30 [${e.d30Subjects.join(', ') || '없음'}]`)
@@ -129,6 +174,12 @@ export function printHelp(): void {
 
 사용법:
   npx commitgate report [--dir <대상repo>] [--json]
+                        [--base <ref>] [--head <ref>] [--last <N>]
+
+범위(evidence 섹션):
+  기본은 trunk와의 merge-base..HEAD 입니다. trunk 위에서는 빈 범위(0 커밋)가 되므로,
+  과거 이력을 보려면 --base <ref>(예: v0.21.0) 또는 --last <N>(HEAD~N..HEAD)을 지정하세요.
+  --head 로 검증 대상 끝점을 바꿀 수 있습니다. --base 와 --last 는 동시 지정 불가.
 
 섹션:
   doctor    실행·티켓·검사별 발화/FAIL·WARN-only 비율·해소 관측(subjects 검사 한정)
@@ -147,7 +198,7 @@ exit: 사용 오류만 1, 그 외 0(데이터 부재도 0 — 진단이 아니�
 export function runCli(argv: string[]): void {
   try {
     const opts = parseArgs(argv)
-    const report = collectReport(opts.dir)
+    const report = collectReport(opts.dir, opts)
     console.log(opts.json ? renderJson(report) : renderHuman(report))
   } catch (err) {
     if (err instanceof HelpRequested) {

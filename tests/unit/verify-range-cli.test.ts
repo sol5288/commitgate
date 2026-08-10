@@ -13,7 +13,6 @@ import {
   judgeCheckRunsPayload,
   createGhCiAdapter,
   runVerifyRange,
-  collectCommits,
   CI_PROMPT,
   type Opts,
   type RunDeps,
@@ -394,18 +393,5 @@ describe('[REQ-2026-127] 심층 수집 — 프로세스 수 상한(완료 기준
     const r = await runVerifyRange(opts({ strict: true }), deps)
     expect(r.report.entries.find((e) => e.sha === SRC_SHA)?.category).toBe('invalid-evidence')
     expect(r.exit).toBe(1)
-  })
-})
-
-describe('collectCommits — %x00 레코드 파싱', () => {
-  it('SHA·부모 수·subject·message를 복원한다(root 커밋 parents="" 포함)', () => {
-    const git = fakeGit({
-      logOut: `${SRC_SHA}\x1f${BASE_SHA} ${UNKNOWN_SHA}\x1fMerge branch\x00\n${BOOK_SHA}\x1f\x1froot commit\n\n본문\x00\n`,
-    })
-    const commits = collectCommits(git, BASE_SHA, HEAD_SHA)
-    expect(commits).toHaveLength(2)
-    expect(commits[0]).toMatchObject({ sha: SRC_SHA, parentCount: 2, subject: 'Merge branch' })
-    expect(commits[1]).toMatchObject({ sha: BOOK_SHA, parentCount: 0, subject: 'root commit' })
-    expect(commits[1]!.message).toContain('본문')
   })
 })

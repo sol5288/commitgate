@@ -27,103 +27,12 @@ export interface CommitMeta {
   message: string
 }
 
-/** 분류 4범주(설계 DEC-2 — 판정 순서 고정). */
-export type CommitCategory = 'merge' | 'bookkeeping' | 'approved' | 'unproven'
-
-/** git OID(SHA-1 40 / SHA-256 64 hex). `evidence.ts`의 검증과 같은 형태 — 여기서는 소비 SHA 추출에 쓴다. */
+/** git OID(SHA-1 40 / SHA-256 64 hex). 소비 SHA 추출·검증에 쓴다. */
 const OID_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
-
-export interface ConsumedShas {
-  shas: Set<string>
-  /** 파싱 실패·스키마 이탈 행 수 — 손상을 숨기지 않되, 손상 하나가 전체 검증을 죽이지 않는다(DEC-2). */
-  problems: number
-}
-
-/**
- * head 트리의 `workflow/REQ-*⁠/responses/approvals.jsonl` 본문들에서 `consumed_by_commit_sha` 집합을 뽑는다.
- *
- * 🔴 **관대 파싱이다**: JSON 파싱 실패 행·consumed_by_commit_sha가 유효 OID가 아닌 행은 건너뛰고
- *    `problems`로 센다. `parseApprovalsManifest`(evidence.ts)를 쓰지 않는 이유 — 그쪽은 매니페스트
- *    **전체의 무결성**을 fail-closed로 판정하는 게이트 입력이고, 여기는 범위 밖 티켓의 낡은 매니페스트
- *    한 줄 때문에 검증 전체가 죽으면 안 되는 **감사 보고**다(D30의 fail-open 태도).
- */
-export function consumedShasFromManifests(contents: readonly string[]): ConsumedShas {
-  const shas = new Set<string>()
-  let problems = 0
-  for (const content of contents) {
-    for (const line of content.split('\n')) {
-      if (line.trim() === '') continue
-      let raw: unknown
-      try {
-        raw = JSON.parse(line)
-      } catch {
-        problems++
-        continue
-      }
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        problems++
-        continue
-      }
-      const sha = (raw as { consumed_by_commit_sha?: unknown }).consumed_by_commit_sha
-      // 키가 아예 없는 행은 **소비 행이 아니다** — manifest에는 `rebind` 등 소비 SHA를 갖지 않는
-      // 정당한 행 유형이 실재한다(이 저장소 HEAD 실측: kind=rebind 12행). 문제로 세지 않는다.
-      if (sha === undefined) continue
-      // 키가 있는데 OID가 아니면 스키마 이탈이다 — 숨기지 않는다.
-      if (typeof sha !== 'string' || !OID_RE.test(sha)) {
-        problems++
-        continue
-      }
-      shas.add(sha)
-    }
-  }
-  return { shas, problems }
-}
 
 /** 메시지에 부기 trailer **줄**이 있는가 — 본문 산문에 섞인 언급은 부기가 아니다(줄 단위 일치). */
 function hasBookkeepingTrailer(message: string): boolean {
   return message.split('\n').some((l) => l.trim() === BOOKKEEPING_TRAILER)
-}
-
-/**
- * 커밋 1개 분류(설계 DEC-2 — 첫 일치가 범주):
- * merge(부모 2+) → bookkeeping(trailer 줄) → approved(소비 SHA 집합) → unproven.
- */
-export function classifyCommit(commit: CommitMeta, consumedShas: ReadonlySet<string>): CommitCategory {
-  if (commit.parentCount >= 2) return 'merge'
-  if (hasBookkeepingTrailer(commit.message)) return 'bookkeeping'
-  if (consumedShas.has(commit.sha)) return 'approved'
-  return 'unproven'
-}
-
-export interface VerifyRangeInput {
-  commits: readonly CommitMeta[]
-  /** head 트리에서 읽은 approvals.jsonl 본문들(경로 나열·읽기는 호출부). */
-  manifestContents: readonly string[]
-}
-
-export interface VerifyRangeReport {
-  entries: { sha: string; subject: string; category: CommitCategory }[]
-  counts: Record<CommitCategory, number>
-  /** 사람 승인자가 볼 목록 — 이 verb의 1차 산출물(DEC-1). */
-  unproven: { sha: string; subject: string }[]
-  manifestProblems: number
-}
-
-/** 범위 전체 분류(순수). 빈 범위도 정상 수행이다 — "검증 생략"과 구별된다(완료 기준 8). */
-export function verifyRange(input: VerifyRangeInput): VerifyRangeReport {
-  const { shas, problems } = consumedShasFromManifests(input.manifestContents)
-  const counts: Record<CommitCategory, number> = { merge: 0, bookkeeping: 0, approved: 0, unproven: 0 }
-  const entries = input.commits.map((c) => {
-    const category = classifyCommit(c, shas)
-    counts[category]++
-    return { sha: c.sha, subject: c.subject, category }
-  })
-  return {
-    entries,
-    counts,
-    unproven: entries.filter((e) => e.category === 'unproven').map((e) => ({ sha: e.sha, subject: e.subject })),
-    manifestProblems: problems,
-  }
 }
 
 /** CI 선택 결과(설계 DEC-5의 감사 로그 어휘와 동일 — phase-2의 CLI가 이 값을 만든다). */
@@ -144,8 +53,8 @@ export function computeExit(input: { unprovenCount: number; invalidCount?: numbe
 
 // ═══════════════════════════ 심층 검증 (REQ-2026-127) ═══════════════════════════
 //
-// 표시자 매칭(위 4범주)을 증거 **검증**으로 확장한 6범주 분류다. 기존 `verifyRange`는 하위호환
-// (report 등 4범주 소비자)을 위해 그대로 두고, CLI(verify-range·integrate)가 이쪽을 쓴다.
+// 표시자 매칭(0.21의 4범주)을 증거 **검증**으로 확장한 6범주 분류다. 0.22에서 verify-range CLI·
+// integrate·report가 전부 이쪽을 쓴다(REQ-2026-128에서 4범주 레거시 제거).
 
 /** 심층 분류 6범주(설계 DEC-1 — 판정 순서 고정·invalid는 attestation으로 구제 불가). */
 export type DeepCategory = 'merge' | 'bookkeeping' | 'approved' | 'attested' | 'invalid-evidence' | 'unproven'
