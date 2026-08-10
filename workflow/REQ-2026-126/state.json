@@ -2,14 +2,14 @@
   "id": "REQ-2026-126",
   "branch": "feat/req-2026-126-merge-gate-ci-run-optin",
   "risk_level": "LOW",
-  "codex_thread_id": "019feb49-bd69-7583-9182-a90c4716589f",
-  "review_base_sha": "6b37c4f4bd91d0be9f415730fdcec72af33fdfae",
-  "review_diff_hash": "9b9728ac7ac465ec5ffda5a8d6eb68b9584cb0f9",
+  "codex_thread_id": "019feb4c-f870-7b11-ab9a-e752ae74c297",
+  "review_base_sha": "6be2855d51849f7b4c61aae4767aa8139889b42e",
+  "review_diff_hash": "7c24f400d02d9f93ef8f791e732ce6f5a18d23ae",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "03f37860bf9a6a5dbb2105ecd6ebf15af4dcc0e78afe5741f721ee6a9c6be23a",
-  "current_phase": "phase-1-ci-run-port",
+  "current_phase": "phase-2-merge-gate-core",
   "phases": [
     {
       "id": "phase-1-ci-run-port",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-merge-gate-core",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-integrate-verb",
@@ -45,16 +45,23 @@
       "phase_id": "phase-1-ci-run-port",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-merge-gate-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-merge-gate-core",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-ci-run-port",
+    "phase_id": "phase-2-merge-gate-core",
     "outcome": "approved",
-    "compare_hash": "b22f321d8f959f9dcfe34753c1df8ba5e06926f67d848d3833dfffe7f3e7e5ac",
+    "compare_hash": "b642d482b80ab0c94ea8ab71f6a58c33aafb432f20cb3d9cd0b0ef449987ba1b",
     "count": 1,
     "errors": [],
-    "at": "2026-08-10T10:50:06.180Z",
+    "at": "2026-08-10T10:52:58.199Z",
     "findings": [],
     "elided_count": 0
   },
@@ -82,6 +89,12 @@
       "phase_id": "phase-1-ci-run-port",
       "consumed_by_commit_sha": "4c31ab5b8b3341ab25fc1b394ec8f2bf33602506",
       "approval_consumed_at": "2026-08-10T10:50:27.742Z"
+    },
+    {
+      "approved_tree": "7c24f400d02d9f93ef8f791e732ce6f5a18d23ae",
+      "phase_id": "phase-2-merge-gate-core",
+      "consumed_by_commit_sha": "abc3b250a1d76958d095d56daf3b74d780ec3bff",
+      "approval_consumed_at": "2026-08-10T10:53:19.228Z"
     }
   ],
   "user_commit_confirmed": null
