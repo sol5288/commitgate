@@ -234,6 +234,7 @@ CommitGate 실행 중 소비 저장소에 만들어지는 파일과 그 처리 �
 | 파일 | 생성 위치 | ignore 정책 | init 배포 자산 | sync 소유자 | Git 영속 |
 |---|---|---|---|---|---|
 | `workflow/.review-calls.jsonl` | 저장소 루트의 `workflow/` | `workflow/.gitignore`의 `/.review-calls.jsonl` | 예(`templates/workflow.gitignore`) | `sync --apply --gitignore` | 아니오(측정 전용) |
+| `workflow/.integrate-runs.jsonl` | 저장소 루트의 `workflow/` | `workflow/.gitignore`의 `/.integrate-runs.jsonl` | 예(동일) | `sync --apply --gitignore` | 아니오(감사 관측 전용) |
 | `workflow/REQ-*/codex-response.json` | 티켓 직계 | `/REQ-*/codex-response.json` | 예(동일) | `sync --apply --gitignore` | 아니오(스크래치) |
 | `workflow/REQ-*/.review-preview.txt` | 티켓 직계 | `/REQ-*/.review-preview.txt` | 예(동일) | `sync --apply --gitignore` | 아니오(스크래치) |
 | `workflow/REQ-*/.codex-*.tmp` | 티켓 직계 | `/REQ-*/.codex-*.tmp` | 예(동일) | `sync --apply --gitignore` | 아니오(임시) |

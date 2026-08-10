@@ -1,0 +1,127 @@
+{
+  "id": "REQ-2026-126",
+  "branch": "feat/req-2026-126-merge-gate-ci-run-optin",
+  "risk_level": "LOW",
+  "codex_thread_id": "019feb5b-0c32-7760-bf98-c8302ecead6e",
+  "review_base_sha": "e1597e3622055c5d88f8775949fc9127db71a5d7",
+  "review_diff_hash": "4e5041a1aa520e3b41ed872329375019222c4cd7",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "03f37860bf9a6a5dbb2105ecd6ebf15af4dcc0e78afe5741f721ee6a9c6be23a",
+  "current_phase": "phase-4-docs",
+  "phases": [
+    {
+      "id": "phase-1-ci-run-port",
+      "approved": true
+    },
+    {
+      "id": "phase-2-merge-gate-core",
+      "approved": true
+    },
+    {
+      "id": "phase-3-integrate-verb",
+      "approved": true
+    },
+    {
+      "id": "phase-4-docs",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 5,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-ci-run-port#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-ci-run-port",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-merge-gate-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-merge-gate-core",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-integrate-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-integrate-verb",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4-docs",
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-4-docs",
+    "outcome": "approved",
+    "compare_hash": "f378f22fc5e7418b4d002cf0b810835a4c967a1a841d70dcc985f8813ae32f4f",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-10T11:08:24.235Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "b3cbb1f0fe7069db19b8c2f6445cccdfd7272af0",
+    "design": "b0cceadf369454a2e842bf6cb55b14c9f72b6b0f",
+    "plan": "8a776a0edd93cce69b17a6d8037cc22b7d292ca6"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-126/responses/design-r05-approved.json",
+    "response_sha256": "ee885675f15abfec67e3cb7510e281beda7bdb461a8aa714ddad4b68bdd5cca7",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "293a570ce59886398dab2396c3be357d0c116951",
+    "codex_thread_id": "019feb44-64f2-7172-b99a-8c6697d7d354",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-10T10:43:39.826Z",
+    "design_hash": "03f37860bf9a6a5dbb2105ecd6ebf15af4dcc0e78afe5741f721ee6a9c6be23a"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "9b9728ac7ac465ec5ffda5a8d6eb68b9584cb0f9",
+      "phase_id": "phase-1-ci-run-port",
+      "consumed_by_commit_sha": "4c31ab5b8b3341ab25fc1b394ec8f2bf33602506",
+      "approval_consumed_at": "2026-08-10T10:50:27.742Z"
+    },
+    {
+      "approved_tree": "7c24f400d02d9f93ef8f791e732ce6f5a18d23ae",
+      "phase_id": "phase-2-merge-gate-core",
+      "consumed_by_commit_sha": "abc3b250a1d76958d095d56daf3b74d780ec3bff",
+      "approval_consumed_at": "2026-08-10T10:53:19.228Z"
+    },
+    {
+      "approved_tree": "c7f825295f5abfd541b2b8b9064c99a9ac3b6671",
+      "phase_id": "phase-3-integrate-verb",
+      "consumed_by_commit_sha": "88b6fc77c2924f198f64e1655b6c7fb68287f4ef",
+      "approval_consumed_at": "2026-08-10T11:03:19.895Z"
+    },
+    {
+      "approved_tree": "4e5041a1aa520e3b41ed872329375019222c4cd7",
+      "phase_id": "phase-4-docs",
+      "consumed_by_commit_sha": "d77adffe1f3046fe92e30c1a20f2cf47ab913b1d",
+      "approval_consumed_at": "2026-08-10T11:08:55.932Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

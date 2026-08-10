@@ -230,6 +230,7 @@ Files CommitGate creates in the consuming repository while it runs, and how each
 | File | Created in | Ignore policy | Shipped by init | sync owner | Persisted in Git |
 |---|---|---|---|---|---|
 | `workflow/.review-calls.jsonl` | `workflow/` at repo root | `/.review-calls.jsonl` in `workflow/.gitignore` | Yes (`templates/workflow.gitignore`) | `sync --apply --gitignore` | No (measurement only) |
+| `workflow/.integrate-runs.jsonl` | `workflow/` at repo root | `/.integrate-runs.jsonl` in `workflow/.gitignore` | Yes (same) | `sync --apply --gitignore` | No (audit observation only) |
 | `workflow/REQ-*/codex-response.json` | Ticket root | `/REQ-*/codex-response.json` | Yes (same) | `sync --apply --gitignore` | No (scratch) |
 | `workflow/REQ-*/.review-preview.txt` | Ticket root | `/REQ-*/.review-preview.txt` | Yes (same) | `sync --apply --gitignore` | No (scratch) |
 | `workflow/REQ-*/.codex-*.tmp` | Ticket root | `/REQ-*/.codex-*.tmp` | Yes (same) | `sync --apply --gitignore` | No (temporary) |

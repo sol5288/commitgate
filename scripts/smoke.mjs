@@ -152,6 +152,15 @@ try {
         '배포 템플릿 규칙이 아니라 다른 ignore 원천이 매칭했다. 이 상태면 clean consumer에서 P0가 재발한다(REQ-2026-047)',
     )
 
+  // 4b-3) integrate 감사 로그(REQ-2026-126) — 같은 자리·같은 성격의 repo-root 스크래치. 경로별 단언이라
+  //   새 로그 파일은 자동으로 덮이지 않는다(유지 규칙) — 여기 명시적으로 추가한다.
+  writeFileSync(join(target, 'workflow', '.integrate-runs.jsonl'), '{"smoke":1}\n')
+  const ciIntegrate = spawn.sync('git', ['check-ignore', '-q', '--', 'workflow/.integrate-runs.jsonl'], { cwd: target })
+  if (ciIntegrate.status !== 0)
+    throw new Error(
+      'smoke: workflow/.gitignore가 .integrate-runs.jsonl을 무시하지 못한다 — templates/workflow.gitignore에 앵커형 `/.integrate-runs.jsonl` 누락(REQ-2026-126)',
+    )
+
   // ── 4c) **Stage B 인수 기준(REQ-2026-014)** — packed 설치본에서만 드러나는 것들.
   const pkgAfter = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'))
 
