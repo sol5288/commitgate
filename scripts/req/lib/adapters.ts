@@ -304,6 +304,16 @@ export type StatusSpawn = (file: string, args: readonly string[], opts?: SafeSpa
  * - spawn 자체 실패(`res.error` throw — ENOENT 등): subprocess 미기동 = `pre-dispatch`(청구 불가·환불 대상).
  * - `res.status !== 0`(subprocess는 떴고 non-zero — usage limit 등 모델 부분 실행 가능): `dispatched`(차감).
  */
+/**
+ * REQ-2026-130(0.22): 테스트 환경에서 실제 외부 호출 차단. 생성 시점이 아니라 **호출 시점** 가드다 —
+ * codex 어댑터는 모듈 로드 시 생성되므로(review-codex.ts 전역) 생성 가드는 모든 import를 죽인다.
+ * escape hatch는 없다 — 테스트는 fake 어댑터(programmatic 주입)만 쓴다.
+ */
+export function assertNotTestEnv(what: string): void {
+  if (process.env.COMMITGATE_TEST === '1')
+    throw new Error(`COMMITGATE_TEST: 테스트에서 ${what} 실호출 금지 — fake 어댑터를 주입하세요(REQ-2026-130)`)
+}
+
 export function makeCodexRunner(spawn: StatusSpawn): CodexRunner {
   return (args, input, cwd) => {
     // shell 없이 안전 실행(cross-spawn). 프롬프트는 stdin(input). 과거 `shell:true`의 명령 주입/공백 경로 결함 방지.
@@ -319,7 +329,12 @@ export function makeCodexRunner(spawn: StatusSpawn): CodexRunner {
   }
 }
 
-const defaultCodexRunner: CodexRunner = makeCodexRunner(safeSpawnSyncStatus)
+// 🔴 kill switch는 **기본(실제) spawn 경로에만** 건다 — makeCodexRunner에 fake spawn을 주입하는
+//    분류 로직 테스트는 실호출이 아니므로 막지 않는다(주입이 곧 테스트 seam).
+const defaultCodexRunner: CodexRunner = makeCodexRunner((file, args, opts) => {
+  assertNotTestEnv('codex')
+  return safeSpawnSyncStatus(file, args, opts)
+})
 
 /** unknown → 평범한 객체(배열·null 제외). 스키마 경로 탐색용. */
 function asPlainObject(v: unknown): Record<string, unknown> | null {

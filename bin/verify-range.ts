@@ -16,7 +16,7 @@ import { resolve, join, dirname } from 'node:path'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { loadConfig } from '../scripts/req/lib/config'
-import { createGitAdapter, safeSpawnSync, type GitAdapter } from '../scripts/req/lib/adapters'
+import { createGitAdapter, safeSpawnSync, assertNotTestEnv, type GitAdapter } from '../scripts/req/lib/adapters'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 import {
   verifyRangeDeep,
@@ -130,8 +130,11 @@ export function judgeCheckRunsPayload(raw: unknown): CiCheckResult {
 
 /** gh CLI 어댑터. 폴링하지 않는다 — 1회 조회(비인증 rate limit 이력). 실패 사유는 그대로 표출한다. */
 export function createGhCiAdapter(cwd: string, spawn: typeof safeSpawnSync = safeSpawnSync): GithubCiPort {
+  // kill switch는 기본(실제) spawn일 때만 — 주입 spawn은 테스트 seam이다(REQ-2026-130).
+  const isRealSpawn = spawn === safeSpawnSync
   return {
     check(headSha: string): CiCheckResult {
+      if (isRealSpawn) assertNotTestEnv('gh(GitHub API 조회)')
       let out: string
       try {
         out = spawn('gh', ['api', `repos/{owner}/{repo}/commits/${headSha}/check-runs?per_page=100`], { cwd })

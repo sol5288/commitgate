@@ -2883,7 +2883,9 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   writeFileSync(previewPath, prompt, 'utf8')
   const promptSha256 = createHash('sha256').update(prompt, 'utf8').digest('hex')
   // REQ-2026-013 P4: 재리뷰는 항상 stateless(exec). `state.codex_thread_id`는 감사용으로 저장만 하고 읽지 않는다.
-  console.warn('⚠️  codex 실제 호출 (exec) — 호출 1회 발생 (DEC-WF-026: 호출 직전 확인)')
+  // REQ-2026-130: fake reviewer 주입 시 "실제 호출" 문구를 내지 않는다 — 자동 안전 검토가
+  // 테스트 출력을 실제 외부 호출로 오독하던 표면(0.21 관측)을 닫는다.
+  if (opts2?.reviewer === undefined) console.warn('⚠️  codex 실제 호출 (exec) — 호출 1회 발생 (DEC-WF-026: 호출 직전 확인)')
   let reviewDurationMs = 0 // REQ-2026-045: callReviewer 소요(측정 전용).
   // 🔴 REQ-2026-054(DEC-C4): dispatch 구간(callReviewer → 사후 tamper 검증 → 응답 파싱)을 try/catch로 감싼다.
   //    실패 시 lifecycle을 분류해 **보상 attempt-closed**를 남기고(durable이면 pathspec 커밋), **명백한

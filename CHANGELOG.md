@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+- **test: 외부 호출 kill switch — COMMITGATE_TEST (0.22 REQ F)** — 테스트 setup이
+  `COMMITGATE_TEST=1`을 설정(자식 프로세스에 env 상속)하고, production 어댑터의 **실제 spawn
+  경로**(codex·gh 조회·gh workflow_dispatch·git ls-remote)와 fetch가 테스트 환경에서 호출 즉시
+  실패한다. fake spawn 주입은 테스트 seam이라 막지 않는다. escape hatch 없음 — 가드 실재를
+  고정하는 메타 테스트 동반. fake reviewer 주입 시 "codex 실제 호출" 경고를 더 이상 출력하지
+  않는다(자동 안전 검토가 테스트 출력을 실호출로 오독하던 표면 제거).
+- **test: fast 계층 재조정 (0.22 REQ F)** — 실 git 회복·결속 테스트 3파일(rebind-reentry·
+  doctor-stranded-evidence·doctor-terminal-wiring, 파일별 테스트 시간 합 ~86초)을 통합 계층으로
+  이동. 같은 부류의 secret-scan-wiring은 **대표 wiring으로 fast에 유지** — fast만 돌려도 리뷰
+  게이트 배선 회귀는 잡힌다. 로컬 실측 fast 벽시계 ~2분(0.21.0 실측 ~2.8분 — 머신 부하에 따라
+  변동, 하드 단언은 프로세스 수·계층 목록 가드로만 한다).
 - **feat(doctor): 관측 스키마 v2 — 검사별 적용 가능 분모·reason code (0.22 REQ E)** —
   `.doctor-runs.jsonl` 행에 `schema_version: 2`와 `evaluations`(OK 포함 전 평가 — id·applicable·
   outcome pass|warn|fail|not-applicable·blocked·reason_code·subjects)를 additive로 추가.

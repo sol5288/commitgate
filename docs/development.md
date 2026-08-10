@@ -17,12 +17,16 @@
   코드가 없고 `req.config.json`에 테스트 설정도 없습니다. 테스트를 언제 돌릴지는 **사람·에이전트의
   규율**이며, 그 권고는 [AGENTS.template.md](../AGENTS.template.md) §1-1이 정본입니다.
 
-- **빠른 부분집합**(REQ-2026-122): `npm run test:fast`는 스폰·hermetic-git 계열 **통합 계층
-  12파일**(`tests/tiers.ts`가 정본 — 2026-08-10 실측에서 테스트 시간의 91.2%)을 제외한 나머지를
-  돌립니다(실측 약 3분 vs 전체 13분+). `npm run test:integration`은 그 12파일만 돌립니다.
-  둘은 **개발 중 피드백용**이고 `npm test`(전체)의 권위를 대체하지 않습니다 — 통합 직전 전량
-  1회는 그대로입니다. 목록이 낡으면 가드(`tests/unit/test-tiers.test.ts`)가 실재성·집합 동일성을
-  강제합니다.
+- **빠른 부분집합**(REQ-2026-122·0.22 확장): `npm run test:fast`는 스폰·hermetic-git 계열 **통합 계층
+  15파일**(`tests/tiers.ts`가 정본 — 실 git 회복·결속 테스트 포함)을 제외한 나머지를
+  돌립니다(로컬 실측 약 2분 vs 전체 17분±). `npm run test:integration`은 그 15파일만 돌립니다.
+  같은 부류 중 `secret-scan-wiring`은 **대표 wiring으로 fast에 남습니다** — fast만 돌려도 리뷰
+  게이트 배선 회귀는 잡힙니다. 둘은 **개발 중 피드백용**이고 `npm test`(전체)의 권위를 대체하지
+  않습니다 — 통합 직전 전량 1회는 그대로입니다. 목록이 낡으면 가드(`tests/unit/test-tiers.test.ts`)가
+  실재성·집합 동일성을 강제합니다.
+- **외부 호출 차단**(0.22): 테스트 setup이 `COMMITGATE_TEST=1`을 설정하고, production 어댑터의
+  실제 spawn 경로(codex·gh·git ls-remote)와 fetch는 테스트 환경에서 호출 즉시 실패합니다 —
+  테스트가 실수로 유료 리뷰·GitHub Actions·네트워크에 닿을 수 없습니다. fake 주입이 유일한 경로입니다.
 
 ### CI 잡에는 20분 상한이 있습니다
 

@@ -77,3 +77,17 @@ process.env.HOME = dir
 process.env.USERPROFILE = dir
 // 🔴 상속된 identity 환경변수 제거(설정하지 않는 것만으로는 부족 — 이미 있으면 그대로 새어 들어온다).
 scrubIdentityEnv(process.env)
+
+// ═══════════════ 외부 호출 kill switch (REQ-2026-130 / 0.22 REQ F) ═══════════════
+//
+// 테스트 환경 표식 — 자식 프로세스에도 env로 상속된다. production 어댑터(codex·gh·git ls-remote)는
+// 이 값이 '1'이면 **호출 시점에** 즉시 throw한다(생성 시점이 아닌 이유: codex 어댑터는 모듈 로드
+// 시점에 생성되므로 생성 가드는 모든 import를 죽인다). 테스트는 fake 어댑터를 주입해야 한다.
+process.env.COMMITGATE_TEST = '1'
+
+// 네트워크 표면 차단 — 이 저장소의 production 코드는 fetch를 쓰지 않지만, 새 코드가 조용히
+// 추가되는 것을 막는다(테스트에서 실 네트워크 = 즉시 실패).
+const origFetch = globalThis.fetch
+globalThis.fetch = ((..._args: unknown[]) => {
+  throw new Error('COMMITGATE_TEST: 테스트에서 네트워크 호출(fetch) 금지 — fake를 주입하세요')
+}) as typeof origFetch
