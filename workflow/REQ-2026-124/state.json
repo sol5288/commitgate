@@ -2,15 +2,24 @@
   "id": "REQ-2026-124",
   "branch": "feat/req-2026-124-local-observability-report",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe95a-864e-70a2-ab79-5e2363d85cef",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fe960-53a7-75b2-9eb6-30453fbd15c2",
+  "review_base_sha": "3c749fd9b5f1a02502947c6df81030a36d6065c2",
+  "review_diff_hash": "0cda41b886f95ee7d601cb24807a68eebc5749bb",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "80d38a0b8f80c4818b2c90a4348df46ed124958ffbc9a5061396d0eaf0b64c85",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-report-lib",
+  "phases": [
+    {
+      "id": "phase-1-report-lib",
+      "approved": true
+    },
+    {
+      "id": "phase-2-report-verb",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -20,6 +29,13 @@
       "review_kind": "design",
       "phase_id": null,
       "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-report-lib#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-report-lib",
+      "attempts": 2,
       "closed_reason": "approved"
     }
   ],
@@ -42,14 +58,23 @@
     "design_hash": "80d38a0b8f80c4818b2c90a4348df46ed124958ffbc9a5061396d0eaf0b64c85"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-report-lib",
     "outcome": "approved",
-    "compare_hash": "25b3ee495c36c228e0ac69f2de8fad08cf900d97c8c30daf69eac856072bfa9b",
+    "compare_hash": "dd47915bd50fe57b685ac855471b364ab3ee794d5849a34c05083c1c20b68eb3",
     "count": 1,
     "errors": [],
-    "at": "2026-08-10T01:48:36.619Z",
+    "at": "2026-08-10T01:54:38.129Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "0cda41b886f95ee7d601cb24807a68eebc5749bb",
+      "phase_id": "phase-1-report-lib",
+      "consumed_by_commit_sha": "775ac06ecd39bc042b7be723b7094947b87f5036",
+      "approval_consumed_at": "2026-08-10T01:55:05.676Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
