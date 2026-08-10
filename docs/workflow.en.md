@@ -55,9 +55,16 @@ Summarizes the three local observation logs the tool accumulates (`.doctor-runs`
 `.verify-runs`) in one read-only command (writes nothing, no network):
 
 ```sh
-npx commitgate report          # doctor firings, review convergence, evidence, CI choices
-npx commitgate report --json   # machine-readable
+npx commitgate report                   # doctor firings, review convergence, evidence, CI choices
+npx commitgate report --json            # machine-readable
+npx commitgate report --base v0.21.0    # explicit evidence range (e.g. release-range check)
+npx commitgate report --last 50         # HEAD~50..HEAD
 ```
+
+The evidence section's default range is merge-base(trunk)..HEAD, which is empty when you are on trunk —
+the output says so and points to `--base`/`--last`. The range, computation time, and the six deep-verification
+categories (same as 0.22 verify-range) are shown. 0.22 also replaced the per-manifest git process spawning
+with batched reads (29.5s → 1.2s measured on this repo — varies by environment).
 
 It shows per-check fired/FAIL counts and warning fatigue (WARN-only ratio), calls-per-target
 distribution with prompt-size/duration percentiles, an approval-evidence summary against trunk

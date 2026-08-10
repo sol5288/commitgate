@@ -22,7 +22,6 @@ import {
   verifyRangeDeep,
   computeExit,
   type CiOutcome,
-  type CommitMeta,
   type DeepCommitMeta,
   type DeepVerifyInput,
   type DeepVerifyReport,
@@ -204,38 +203,6 @@ export interface RunDeps {
   ticketRoot: string
   /** head tree blob 배치 읽기(REQ-2026-127 — cat-file --batch 1프로세스). 테스트는 fake 주입. */
   readBlobs: (ref: string, paths: readonly string[]) => Map<string, Buffer | null>
-}
-
-/** `%x00` 레코드 분리로 한 번에 수집한다(메시지에 NUL은 올 수 없다 — git이 금지). */
-export function collectCommits(git: GitAdapter, base: string, head: string): CommitMeta[] {
-  const raw = git.exec(['log', `--format=%H%x1f%P%x1f%B%x00`, `${base}..${head}`])
-  return raw
-    .split('\0')
-    .map((r) => r.replace(/^\n+/, ''))
-    .filter((r) => r !== '')
-    .map((rec) => {
-      const i1 = rec.indexOf('\x1f')
-      const i2 = rec.indexOf('\x1f', i1 + 1)
-      const sha = rec.slice(0, i1)
-      const parents = rec.slice(i1 + 1, i2).trim()
-      const message = rec.slice(i2 + 1)
-      return {
-        sha,
-        parentCount: parents === '' ? 0 : parents.split(' ').length,
-        subject: message.split('\n')[0] ?? '',
-        message,
-      }
-    })
-}
-
-/** head **트리**에서 approvals.jsonl 본문들을 읽는다 — 워킹트리·체크아웃 무의존(설계 DEC-2). */
-export function collectManifestContents(git: GitAdapter, head: string, ticketRoot: string): string[] {
-  const paths = git
-    .exec(['ls-tree', '-r', '--name-only', head, '--', ticketRoot])
-    .split('\n')
-    .map((s) => s.trim())
-    .filter((p) => p.endsWith('/responses/approvals.jsonl'))
-  return paths.map((p) => git.exec(['show', `${head}:${p}`]))
 }
 
 // ───────────────────────── 심층 수집(REQ-2026-127 — 프로세스 수 상한 계약) ──

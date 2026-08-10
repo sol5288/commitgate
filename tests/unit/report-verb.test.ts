@@ -72,3 +72,56 @@ describe('[REQ-2026-124] report verb', () => {
     }
   })
 })
+
+describe('[REQ-2026-128] evidence 범위 옵션·심층 반영', () => {
+  it('parseArgs: --base/--head/--last 파싱·--base+--last 동시 지정 오류·--last 검증', () => {
+    expect(parseArgs(['--base', 'v0.21.0'])).toMatchObject({ base: 'v0.21.0', head: null, last: null })
+    expect(parseArgs(['--head', 'HEAD~1', '--last', '5'])).toMatchObject({ head: 'HEAD~1', last: 5 })
+    expect(() => parseArgs(['--base', 'x', '--last', '3'])).toThrow('함께 쓸 수 없습니다')
+    expect(() => parseArgs(['--last', '0'])).toThrow('--last')
+    expect(() => parseArgs(['--last', 'abc'])).toThrow('--last')
+  })
+
+  /** emptyRepo는 기본 브랜치가 master라 trunk(main) 부재 → evidence 부재 경계를 검증한다. 여기는 main 필요. */
+  const mainRepo = (): string => {
+    const repo = emptyRepo()
+    execFileSync('git', ['branch', '-M', 'main'], { cwd: repo, encoding: 'utf8' })
+    return repo
+  }
+
+  it('trunk 위 기본 실행 → 빈 범위 표기 + 범위 지정 안내(추정 금지)', () => {
+    const repo = mainRepo()
+    const r = collectReport(repo)
+    expect(r.evidence).toBeDefined()
+    expect(r.evidence!.range.empty).toBe(true)
+    expect(r.evidence!.range.source).toBe('merge-base')
+    const human = renderHuman(r)
+    expect(human).toContain('빈 범위')
+    expect(human).toContain('--last')
+  })
+
+  it('--last N: HEAD~N..HEAD, 이력보다 깊으면 루트까지 축소(실패 대신 정직한 축소)', () => {
+    const repo = emptyRepo()
+    const git = (args: string[]): string =>
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+    writeFileSync(join(repo, 'a.txt'), 'x')
+    git(['add', '-A'])
+    git(['commit', '-qm', 'second'])
+    const r = collectReport(repo, { base: null, head: null, last: 100 })
+    expect(r.evidence!.range.source).toBe('last')
+    expect(r.evidence!.range.empty).toBe(false)
+    // 커밋 2개 중 루트를 base로 — 검증 대상은 1개(second)·미입증.
+    expect(r.evidence!.counts.unproven).toBe(1)
+    expect(r.evidence!.counts.attested).toBe(0)
+  })
+
+  it('심층 6범주 counts가 JSON에 그대로 실린다(generatedAt 포함)', () => {
+    const repo = emptyRepo()
+    const r = collectReport(repo, { base: null, head: null, last: 1 })
+    const parsed = JSON.parse(renderJson(r)) as { evidence: { counts: Record<string, number>; range: { generatedAt: string } } }
+    expect(Object.keys(parsed.evidence.counts).sort()).toEqual(
+      ['approved', 'attested', 'bookkeeping', 'invalid-evidence', 'merge', 'unproven'].sort(),
+    )
+    expect(parsed.evidence.range.generatedAt).toMatch(/^\d{4}-/)
+  })
+})

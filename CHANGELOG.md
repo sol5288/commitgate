@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+- **perf(report): evidence 계산 N+1 제거 — 실측 29.5초 → 1.2초 (0.22)** — manifest마다
+  `git show` 프로세스를 만들던 구조를 `git cat-file --batch` 배치 읽기(심층 수집 공유)로 대체.
+  수치는 이 저장소(티켓 ~127개) 로컬 실측이며 환경에 따라 다르다. Git 프로세스 수는 manifest
+  수와 무관하게 고정(회귀 테스트).
+- **feat(report): evidence 범위 옵션 `--base <ref>` / `--head <ref>` / `--last <N>` (0.22)** —
+  기본(merge-base..HEAD)이 trunk 위에서 빈 범위가 되는 문제를 표기+안내로 해소하고, 명시 범위
+  (예: `--base v0.21.0`)의 6범주 심층 분류·검증 범위·계산 시각을 출력. `--base`+`--last` 동시
+  지정은 오류. `--last`가 이력보다 깊으면 루트까지로 정직하게 축소.
 - **feat(verify-range): 심층 증거 검증 — 6범주 (REQ-2026-127)** — 표시자 매칭을 검증으로.
   승인 소비=행 스키마(validateManifest 재사용)+아카이브 실재+SHA-256 일치+중복 소비 부재,
   부기=trailer+변경 경로 전부 워크플로 하위(사용자 코드 혼입=손상 증거), 머지=conflict resolution

@@ -8,7 +8,7 @@
  * 🔴 정직한 명명: review 분포는 "시리즈당"이 아니라 **대상당 총 호출**이다(`archive_round`는 시리즈
  *    리셋이 없다 — 가설 폴더 M-7 정정). "검사별 적용 가능 수"는 로그에 없으므로 제공하지 않는다.
  */
-import type { VerifyRangeReport } from './verify-range'
+import type { DeepVerifyReport } from './verify-range'
 
 // ───────────────────────────── 공용: 관대 JSONL 파서 ──
 
@@ -75,10 +75,24 @@ export interface CiSection {
   byChoice: Record<string, number>
 }
 
+export interface EvidenceRange {
+  base: string
+  head: string
+  /** 범위 결정 방식 — merge-base(기본) | explicit(--base/--head) | last(--last N). */
+  source: 'merge-base' | 'explicit' | 'last'
+  /** base==head — trunk 위 기본 실행 등. 0건은 "검증할 것이 없음"이지 "전부 정상"이 아니다. */
+  empty: boolean
+  /** 이 요약을 계산한 시각(로그 재사용이 아니라 지금 계산했음을 명시). */
+  generatedAt: string
+}
+
 export interface EvidenceSection {
-  /** verify-range 요약(호출부가 trunk 기준으로 산출 — 계산 불가면 섹션 부재). */
-  counts: VerifyRangeReport['counts']
-  unproven: { sha: string; subject: string }[]
+  /** verify-range **심층** 요약(REQ-2026-127 6범주 — 호출부가 산출·계산 불가면 섹션 부재). */
+  range: EvidenceRange
+  counts: DeepVerifyReport['counts']
+  unproven: { sha: string; subject: string; note?: string }[]
+  invalid: { sha: string; subject: string; problems: string[] }[]
+  verificationNotes: string[]
   manifestProblems: number
   /** doctor 최신 실행의 D25/D30 subjects(재실행 없음 — 관측 시점은 그 행의 at). */
   latestDoctorAt: string | null
@@ -217,7 +231,7 @@ export interface BuildReportInput {
   doctorRuns: string | null
   reviewCalls: string | null
   verifyRuns: string | null
-  verifyRange: VerifyRangeReport | null
+  verifyRange: { report: DeepVerifyReport; range: EvidenceRange } | null
 }
 
 export function buildReport(input: BuildReportInput): Report {
@@ -229,9 +243,12 @@ export function buildReport(input: BuildReportInput): Report {
   if (input.verifyRange !== null) {
     const latest = input.doctorRuns !== null ? latestDoctorSubjects(input.doctorRuns) : { latestDoctorAt: null, d25Subjects: [], d30Subjects: [] }
     report.evidence = {
-      counts: input.verifyRange.counts,
-      unproven: input.verifyRange.unproven.slice(0, 8),
-      manifestProblems: input.verifyRange.manifestProblems,
+      range: input.verifyRange.range,
+      counts: input.verifyRange.report.counts,
+      unproven: input.verifyRange.report.unproven.slice(0, 8),
+      invalid: input.verifyRange.report.invalid.slice(0, 8),
+      verificationNotes: input.verifyRange.report.verificationNotes,
+      manifestProblems: input.verifyRange.report.manifestProblems,
       ...latest,
     }
   }
