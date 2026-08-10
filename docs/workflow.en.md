@@ -77,6 +77,31 @@ Each commit in the range is classified as **approved** (a consumption record in 
 
 An interactive run ends by asking **"기존 GitHub CI 결과를 조회하시겠습니까? 워크플로를 실행하지 않습니다(GitHub API 조회 1회). [y/N]"** (check existing GitHub CI results? — does not run workflows; one GitHub API query). The default is No; Enter or `n` continues without the query (skipping is a normal state). Only on `y` or `--check-github-ci` does it **query** the head SHA's check-runs once (it never dispatches workflows, so no new Actions usage is incurred), and an explicitly requested query that fails stops with exit 1 instead of being silently ignored. Non-interactive runs skip unless a flag is given. The choice applies to that run only and is never stored. The old `--github-ci`/`--no-github-ci` flags remain as deprecated aliases with identical (query-only) behavior.
 
+## Integration seam — `commitgate integrate` (0.22)
+
+Where verify-range is a **report**, `integrate` is a **procedure** — it binds the pre-merge checks to the actual `git merge`:
+
+```sh
+npx commitgate integrate          # dry-run — prints check results and the execution plan only
+npx commitgate integrate --run    # actual integration (interactive runs end with a final [y/N])
+```
+
+Order: ① preconditions (feature branch, clean worktree, no merge/rebase in progress) → ② approval-evidence
+verification (**always strict** — unproven commits or manifest corruption block the merge, with the list shown) →
+③ GitHub CI **run** opt-in (below) → ④ final human confirmation → ⑤ local `merge --no-ff` (automatic
+restore on conflict) → ⑥ one audit-log row (`workflow/.integrate-runs.jsonl`, gitignored). **It never pushes.**
+
+Running CI (as opposed to querying it) requires user-owned config in `req.config.json`:
+
+```json
+{ "githubCi": { "workflow": "ci.yml", "timeoutMinutes": 30 } }
+```
+
+A run happens only via explicit `--run --run-github-ci` (CI runs are a step inside the actual integration, so `--run` is required — a dry-run never touches CI), or (when configured, under `--run`) answering `y` to the interactive
+**"GitHub CI workflow를 실행하시겠습니까? GitHub Actions 사용량 또는 비용이 발생할 수 있습니다. [y/N]"** (run the GitHub CI workflow? may incur Actions usage/cost). Without config the question is skipped entirely (skipping is normal, not a failure). Before dispatching, the remote branch SHA must equal the local HEAD (otherwise it fails clearly without auto-pushing), and only the dispatched run — identified by time, branch, and head SHA — is awaited; timeout, red, cancelled, or unidentifiable runs all fail, in which case nothing is merged. The choice applies to that run only and is never stored.
+
+> `delivery integrate` (feature→delivery branch, inside a delivery set) is a different layer — this command merges feature→trunk.
+
 ## Manual Commands
 
 Most users should use the prompt flow above. This section is for understanding what the workflow runs internally or for debugging.

@@ -85,6 +85,12 @@ dry-run that only prints the plan and changes nothing.
 - **GitHub CI is optional** — CommitGate neither requires nor auto-runs CI. The verify-range CI check
   is opt-in ([y/N], default No) and only *queries* existing results; it never dispatches workflows.
   The entire local verification path works without GitHub auth or network.
+- **New in 0.22: `commitgate integrate`** — a seam that owns the pre-merge procedure (strict evidence
+  verification, CI-run opt-in, human confirmation, local merge, no push). *Running* CI (distinct from
+  querying) happens only with `"githubCi": { "workflow": "ci.yml" }` in `req.config.json` plus an
+  explicit request (`integrate --run --run-github-ci`) — without config it is never even offered. A new local log,
+  `workflow/.integrate-runs.jsonl` (gitignored), appears; the `sync --apply --gitignore` backfill above
+  adds this rule too.
 
 **④ Log backward compatibility.** Existing local logs (`.doctor-runs.jsonl`, `.review-calls.jsonl`)
 and committed ledgers (`review-ledger.jsonl`, `approvals.jsonl`) remain readable — schema changes are

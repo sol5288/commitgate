@@ -74,6 +74,30 @@ npx commitgate verify-range --strict   # 미입증 커밋이 있으면 exit 1 (�
 
 대화형 실행에서는 마지막에 **"기존 GitHub CI 결과를 조회하시겠습니까? 워크플로를 실행하지 않습니다(GitHub API 조회 1회). [y/N]"** 를 묻습니다. 기본값은 No이고, Enter나 `n`이면 조회 없이 계속합니다(생략은 정상 상태입니다). `y` 또는 `--check-github-ci`일 때만 head SHA의 check-runs를 **1회 조회**하며(워크플로를 실행하지 않으므로 Actions 사용량을 새로 발생시키지 않습니다), 명시적으로 요청한 조회가 실패하면 조용히 넘어가지 않고 exit 1로 멈춥니다. 비대화형에서는 플래그가 없으면 생략합니다. 선택은 실행 단위이며 저장되지 않습니다. 기존 `--github-ci`/`--no-github-ci`는 deprecated alias로 동작이 유지됩니다(동일 의미 — 조회).
 
+## 통합 seam — `commitgate integrate` (0.22)
+
+verify-range가 **보고**라면 `integrate`는 **절차**입니다 — 통합 직전 검사를 실제 `git merge`와 결속합니다:
+
+```sh
+npx commitgate integrate          # dry-run — 전제·증거 검사 결과와 실행 계획만 출력
+npx commitgate integrate --run    # 실제 통합(대화형이면 마지막에 [y/N] 최종 확인)
+```
+
+순서: ① 전제 확인(feature 브랜치·clean worktree·진행 중 merge/rebase 없음) → ② 승인 증거 검증
+(**항상 strict** — 미입증 커밋·manifest 손상이 있으면 병합하지 않고 목록을 보여줍니다) →
+③ GitHub CI **실행** opt-in(아래) → ④ 사람의 최종 확인 → ⑤ 로컬 `merge --no-ff`(충돌 시 자동
+원상 복구) → ⑥ 감사 로그 1행(`workflow/.integrate-runs.jsonl` — gitignored). **push는 하지 않습니다.**
+
+CI **실행**(조회와 다릅니다)은 `req.config.json`에 사용자 소유 설정이 있을 때만 가능합니다:
+
+```json
+{ "githubCi": { "workflow": "ci.yml", "timeoutMinutes": 30 } }
+```
+
+실행은 `--run --run-github-ci` 명시(CI 실행은 실제 통합 실행 중의 한 단계라 `--run`이 함께 필요합니다 — dry-run은 CI에 닿지 않습니다) 또는(설정이 있을 때) `--run` 대화형 **"GitHub CI workflow를 실행하시겠습니까? GitHub Actions 사용량 또는 비용이 발생할 수 있습니다. [y/N]"** 의 `y` 뿐입니다. 설정이 없으면 질문하지 않고 생략합니다(생략은 정상 — 실패가 아닙니다). 실행 전 원격 브랜치 SHA가 로컬 HEAD와 같아야 하며(다르면 자동 push 없이 명확히 실패), dispatch한 run만 시각·브랜치·head SHA로 식별해 완료를 확인합니다 — timeout·red·cancelled·식별 불가는 전부 실패이고 그 경우 병합하지 않습니다. 선택은 실행 단위이며 저장되지 않습니다.
+
+> `delivery integrate`(feature→delivery 브랜치, delivery set 내부)와는 층이 다릅니다 — 이 명령은 feature→trunk 통합입니다.
+
 ## 수동 명령
 
 대부분의 사용자는 `req:next`가 시키는 대로만 하면 됩니다. 아래는 내부에서 어떤 명령이 실행되는지 이해하거나 직접 디버깅할 때만 보면 됩니다.

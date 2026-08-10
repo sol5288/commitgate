@@ -81,6 +81,11 @@ verify-range가 기록을 건너뛰고 경고만 냅니다(동작은 정상 — 
 - **GitHub CI는 선택 사항** — CommitGate는 CI를 요구하지도 자동 실행하지도 않습니다. verify-range의
   CI 조회는 opt-in([y/N] 기본 No)이며, 기존 결과를 읽을 뿐 워크플로를 실행하지 않습니다.
   GitHub 인증·네트워크 없이 로컬 검증 경로가 전부 동작합니다.
+- **0.22 신설: `commitgate integrate`** — 통합 직전 절차(strict 증거 검증·CI 실행 opt-in·사람 확인·
+  로컬 merge·push 없음)를 소유하는 seam입니다. CI **실행**(조회와 별개)은 `req.config.json`의
+  `"githubCi": { "workflow": "ci.yml" }` 설정 + 명시 요청(`integrate --run --run-github-ci`)에서만 일어납니다 — 설정이 없으면 제안조차
+  하지 않습니다. 새 로컬 로그 `workflow/.integrate-runs.jsonl`(gitignored)이 생기며, 위의
+  `sync --apply --gitignore` 백필이 이 규칙도 함께 넣습니다.
 
 **④ 로그 하위호환.** 기존 로컬 로그(`.doctor-runs.jsonl`·`.review-calls.jsonl`)와 커밋된
 원장(`review-ledger.jsonl`·`approvals.jsonl`)은 그대로 읽힙니다 — 스키마 변경은 additive이고,

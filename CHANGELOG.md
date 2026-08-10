@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+- **feat(integrate): `commitgate integrate` — feature→trunk 로컬 통합 seam (REQ-2026-126)** —
+  통합 직전 절차를 도구가 소유한다: 전제 확인 → **항상-strict** 승인 증거 검증(미입증·손상 시 차단·
+  목록 표시) → GitHub CI **실행** opt-in → 사람 최종 확인([y/N] 기본 No) → 로컬 `merge --no-ff`
+  (충돌 시 자동 원상 복구) → 감사 로그 1행(`workflow/.integrate-runs.jsonl`, gitignored).
+  push·PR·자동 stash/reset은 하지 않는다. `delivery integrate`(feature→delivery)와 층이 다르다.
+- **feat(ci-run): GitHub CI 실행(workflow_dispatch) 명시 opt-in (REQ-2026-126)** — 조회
+  (`--check-github-ci`)와 분리된 실행 축. config `"githubCi": { "workflow", "timeoutMinutes" }`가
+  있어야 하며(도구가 워크플로를 추측하지 않음), `--run --run-github-ci`(실제 통합 실행 중의 단계 — dry-run은 CI에 닿지 않음) 또는 `--run` 대화형 [y/N]의 y에서만
+  실행한다. dispatch 전 원격 SHA=로컬 HEAD 대조(자동 push 없음), dispatch 이전 시각·브랜치·
+  head SHA로 해당 run만 식별(오연결 금지), 단일 timeout, 실패·식별 불가 시 통합 중단. 선택은
+  실행 단위이며 저장되지 않는다 — 다음 통합에서 자동 실행되지 않는다.
 - **fix(guidance): gitignore 백필 안내 정정 (REQ-2026-125)** — `sync` 기본은 dry-run이므로
   `--apply` 없는 백필 안내(verify-range 런타임 경고·0.21.0 업그레이드 안내·문서 표)는 복사-실행해도
   무효였다. 전부 `npx commitgate sync --apply --gitignore`로 정정하고, `sync --gitignore` 줄은 같은
