@@ -2,16 +2,54 @@
   "id": "REQ-2026-125",
   "branch": "feat/req-2026-125-guidance-ci-terms-hotfix",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019feb18-013c-7570-93b9-5937e8c915e4",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "e53d2b820b3e557a0bfb6357b889d67206918f66b8643d5412fc2501d22d49de",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "987e8b8d19dd2ac454e545323e5e07e6d2292657a0fdcfc3e2db2ba7738d79b3",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-10T09:55:50.499Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "938a87a6c5ef52eaca33c2b097061021e553e0d2",
+    "design": "42463699333f3609e4a9047eda611f0ceb753ca0",
+    "plan": "286d2f24e2dda8a299379305bbdef6fb2d94c211"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-125/responses/design-r02-approved.json",
+    "response_sha256": "6c84841850b965a9eef6ebbd68f0347c9501021f3c5a437154280cefbd8174ed",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "e79c569c86f6aeb98166e9451eaab54f9527a27a",
+    "codex_thread_id": "019feb18-013c-7570-93b9-5937e8c915e4",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-10T09:55:50.499Z",
+    "design_hash": "e53d2b820b3e557a0bfb6357b889d67206918f66b8643d5412fc2501d22d49de"
+  }
 }
