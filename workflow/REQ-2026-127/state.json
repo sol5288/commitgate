@@ -34,6 +34,13 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-deep-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-deep-core",
+      "attempts": 2,
+      "closed_reason": null
     }
   ],
   "design_baseline": {
