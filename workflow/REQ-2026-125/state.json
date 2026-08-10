@@ -2,14 +2,14 @@
   "id": "REQ-2026-125",
   "branch": "feat/req-2026-125-guidance-ci-terms-hotfix",
   "risk_level": "LOW",
-  "codex_thread_id": "019feb1d-4584-76d0-a248-0a164d957903",
-  "review_base_sha": "5804c3dd91308718749f6f845e71e655dfe6bd5d",
-  "review_diff_hash": "92994fcd475c4a287be626636226731a48c9c1ac",
+  "codex_thread_id": "019feb22-4d4f-73c3-8815-b8d743f235c1",
+  "review_base_sha": "ea5daa38da809e1ad50ca1fecf67f856be34652e",
+  "review_diff_hash": "63bc2eb9d6ecb34bf1d17bd8a5d4aa28c04816df",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "e53d2b820b3e557a0bfb6357b889d67206918f66b8643d5412fc2501d22d49de",
-  "current_phase": "phase-1-sync-apply-guidance",
+  "current_phase": "phase-2-ci-query-terms",
   "phases": [
     {
       "id": "phase-1-sync-apply-guidance",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-ci-query-terms",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-upgrade-docs",
@@ -41,16 +41,23 @@
       "phase_id": "phase-1-sync-apply-guidance",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-ci-query-terms#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-ci-query-terms",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-sync-apply-guidance",
+    "phase_id": "phase-2-ci-query-terms",
     "outcome": "approved",
-    "compare_hash": "1863781c6164c2d77dd06063d4f5ccfcbef193d01cbcc228fc4de1027617d39d",
+    "compare_hash": "73506df69d368266c342da49d71298ee59a22a8bdd366823d5c72af8083f59a2",
     "count": 1,
     "errors": [],
-    "at": "2026-08-10T10:01:09.788Z",
+    "at": "2026-08-10T10:06:39.794Z",
     "findings": [],
     "elided_count": 0
   },
@@ -78,6 +85,12 @@
       "phase_id": "phase-1-sync-apply-guidance",
       "consumed_by_commit_sha": "bc8811b451494d6469fef48a5be2be77352e9fa5",
       "approval_consumed_at": "2026-08-10T10:01:53.694Z"
+    },
+    {
+      "approved_tree": "63bc2eb9d6ecb34bf1d17bd8a5d4aa28c04816df",
+      "phase_id": "phase-2-ci-query-terms",
+      "consumed_by_commit_sha": "3d30cea5bdb5e799d4804a61e61cea9a781ebcec",
+      "approval_consumed_at": "2026-08-10T10:07:03.027Z"
     }
   ],
   "user_commit_confirmed": null
