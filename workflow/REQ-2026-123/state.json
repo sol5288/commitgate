@@ -2,15 +2,20 @@
   "id": "REQ-2026-123",
   "branch": "feat/req-2026-123-conflict-marker-guard",
   "risk_level": "LOW",
-  "codex_thread_id": "019fe941-1e2f-7ce0-a8b1-ff626b0aa8ce",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fe943-6f3b-7270-af5e-885e81edb54b",
+  "review_base_sha": "1d68d9303093d711c44ece9fd79be3d64925de64",
+  "review_diff_hash": "f959de3fcd2c46bbf4ec5b37feaee178ebadd955",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "11c98e31c660eac0db6ce245f4ed1f353944d041e5bccdd8364cc7b03f6e5115",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-marker-guard",
+  "phases": [
+    {
+      "id": "phase-1-marker-guard",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -21,16 +26,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-marker-guard#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-marker-guard",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-marker-guard",
     "outcome": "approved",
-    "compare_hash": "a5a1c411ff08729434342f43487c767ac88cd1d52004e31cc87a1b0f7fa3f585",
+    "compare_hash": "94e31fbccb3a015d2108a1693d120e55cbfde6e33cfc46669a52131be5bb0abc",
     "count": 1,
     "errors": [],
-    "at": "2026-08-10T01:20:10.004Z",
+    "at": "2026-08-10T01:23:14.074Z",
     "findings": [],
     "elided_count": 0
   },
@@ -51,5 +63,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-10T01:20:10.004Z",
     "design_hash": "11c98e31c660eac0db6ce245f4ed1f353944d041e5bccdd8364cc7b03f6e5115"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "f959de3fcd2c46bbf4ec5b37feaee178ebadd955",
+      "phase_id": "phase-1-marker-guard",
+      "consumed_by_commit_sha": "d82e8554c31d404d1b19f8ec59d6473016c4a9de",
+      "approval_consumed_at": "2026-08-10T01:24:10.326Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
