@@ -1,0 +1,1 @@
+{"ticket_id":"REQ-2026-127","event":"abandoned","series_id":null,"resolution":null,"phase_inventory":null,"design_ref":null,"at":"2026-08-10T12:34:08.278Z","reconstructed":false,"evidence_basis":null,"abandon_reason":"범위는 attested 커밋으로 구현·main 통합됨(81dffad). Codex 사용량 한도로 리뷰 승인 증거를 만들 수 없어 dev-complete 불가","method":"사용자 지시(2026-08-10) — 게이트 우회 및 자체 진행 승인"}
