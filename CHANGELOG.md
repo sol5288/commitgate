@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+- **feat(doctor): 관측 스키마 v2 — 검사별 적용 가능 분모·reason code (0.22 REQ E)** —
+  `.doctor-runs.jsonl` 행에 `schema_version: 2`와 `evaluations`(OK 포함 전 평가 — id·applicable·
+  outcome pass|warn|fail|not-applicable·blocked·reason_code·subjects)를 additive로 추가.
+  v1 필드(verdict·evaluated·nonok)는 그대로 유지돼 구소비자가 계속 동작한다. applicable은
+  msg 문자열 매칭이 아니라 검사가 명시하는 필드다(관찰에서 권위를 구하지 않음). reason_code는
+  검사 명시값 또는 `<id>-<outcome>` 안정 폴백. 민감 경로·메시지 본문은 여전히 기록하지 않는다.
+- **feat(report): doctor v2 분모 집계 (0.22 REQ E)** — 검사별 적용 가능 수·발화율·FAIL·실제 차단
+  수·reason code 분포를 v2 행에서만 계산하고, 구버전 v1 행 수를 "분모 계산 불가로 제외"로 명시.
+  "무발화=무가치"로 읽지 않는 안내 유지.
 - **perf(report): evidence 계산 N+1 제거 — 실측 29.5초 → 1.2초 (0.22)** — manifest마다
   `git show` 프로세스를 만들던 구조를 `git cat-file --batch` 배치 읽기(심층 수집 공유)로 대체.
   수치는 이 저장소(티켓 ~127개) 로컬 실측이며 환경에 따라 다르다. Git 프로세스 수는 manifest

@@ -81,6 +81,10 @@ verify-range가 기록을 건너뛰고 경고만 냅니다(동작은 정상 — 
 - **GitHub CI는 선택 사항** — CommitGate는 CI를 요구하지도 자동 실행하지도 않습니다. verify-range의
   CI 조회는 opt-in([y/N] 기본 No)이며, 기존 결과를 읽을 뿐 워크플로를 실행하지 않습니다.
   GitHub 인증·네트워크 없이 로컬 검증 경로가 전부 동작합니다.
+- **0.22 신설: doctor 관측 스키마 v2** — `.doctor-runs.jsonl` 새 행에 검사별 적용 가능 여부·
+  outcome·차단·reason code가 실립니다(additive — 기존 행·구버전 소비자는 그대로 유효).
+  `commitgate report`가 검사별 분모·발화율을 v2 행 기준으로 보여주고, 구버전 행은 "분모 계산
+  불가"로 표기합니다. 로그를 변환하거나 다시 쓰지 않습니다.
 - **0.22 신설: verify-range 심층 검증 + `commitgate attest`** — 분류가 6범주(승인 소비·부기·머지·
   attested·손상 증거·미입증)로 확장되고, 승인 소비는 스키마·아카이브 실재·SHA-256까지 검증합니다.
   release 커밋 등 정당한 예외는 `commitgate attest <sha> --reason "..." --run`으로 기록하면

@@ -51,6 +51,16 @@ export interface DoctorSection {
   resolved: number
   openSubjects: number
   resolvableChecks: string[]
+  /**
+   * REQ-2026-129(스키마 v2가 연 축): 검사별 적용 가능 분모·발화율·차단 수. v2 행(evaluations 보유)만
+   * 집계 — v1 행에서는 계산 불가라 `v1Rows`로 그 사실을 표기한다(추정 금지).
+   */
+  v2: {
+    rows: number
+    v1Rows: number
+    checks: { id: string; applicable: number; notApplicable: number; fired: number; fail: number; blocked: number }[]
+    reasonCodes: Record<string, number>
+  } | null
 }
 
 export interface ReviewSection {
@@ -147,6 +157,26 @@ function doctorSection(content: string, problems: Report['problems']): DoctorSec
     }
     if (!hasFail && hasWarn) warnOnly++
   })
+  // REQ-2026-129: v2 행(evaluations)만으로 분모·발화율·차단·reason 분포를 집계한다.
+  interface Ev { id?: unknown; applicable?: unknown; outcome?: unknown; blocked?: unknown; reason_code?: unknown }
+  let v2Rows = 0
+  const v2ByCheck = new Map<string, { applicable: number; notApplicable: number; fired: number; fail: number; blocked: number }>()
+  const reasonCodes: Record<string, number> = {}
+  for (const r of rows) {
+    if (!Array.isArray(r.evaluations)) continue
+    v2Rows++
+    for (const raw of r.evaluations as Ev[]) {
+      const id = typeof raw.id === 'string' ? raw.id : '?'
+      const e = v2ByCheck.get(id) ?? { applicable: 0, notApplicable: 0, fired: 0, fail: 0, blocked: 0 }
+      if (raw.applicable === false) e.notApplicable++
+      else e.applicable++
+      if (raw.outcome === 'warn' || raw.outcome === 'fail') e.fired++
+      if (raw.outcome === 'fail') e.fail++
+      if (raw.blocked === true) e.blocked++
+      v2ByCheck.set(id, e)
+      if (typeof raw.reason_code === 'string') reasonCodes[raw.reason_code] = (reasonCodes[raw.reason_code] ?? 0) + 1
+    }
+  }
   // 해소 = 마지막 발화 이후의 실행이 존재(같은 쌍이 그 뒤 실행들에서 다시 안 나타남 — lastFiredAt이 곧 마지막 발화).
   let resolved = 0
   let open = 0
@@ -154,6 +184,17 @@ function doctorSection(content: string, problems: Report['problems']): DoctorSec
   return {
     runs: rows.length,
     tickets: tickets.size,
+    v2:
+      v2Rows === 0
+        ? null
+        : {
+            rows: v2Rows,
+            v1Rows: rows.length - v2Rows,
+            checks: [...v2ByCheck.entries()]
+              .map(([id, e]) => ({ id, ...e }))
+              .sort((a, b) => b.fired - a.fired || a.id.localeCompare(b.id)),
+            reasonCodes,
+          },
     warnOnlyRuns: warnOnly,
     checks: [...byCheck.entries()].map(([id, v]) => ({ id, ...v })).sort((a, b) => b.fired - a.fired),
     resolved,
