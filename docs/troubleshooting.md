@@ -233,10 +233,10 @@ CommitGate 실행 중 소비 저장소에 만들어지는 파일과 그 처리 �
 
 | 파일 | 생성 위치 | ignore 정책 | init 배포 자산 | sync 소유자 | Git 영속 |
 |---|---|---|---|---|---|
-| `workflow/.review-calls.jsonl` | 저장소 루트의 `workflow/` | `workflow/.gitignore`의 `/.review-calls.jsonl` | 예(`templates/workflow.gitignore`) | `sync --gitignore` | 아니오(측정 전용) |
-| `workflow/REQ-*/codex-response.json` | 티켓 직계 | `/REQ-*/codex-response.json` | 예(동일) | `sync --gitignore` | 아니오(스크래치) |
-| `workflow/REQ-*/.review-preview.txt` | 티켓 직계 | `/REQ-*/.review-preview.txt` | 예(동일) | `sync --gitignore` | 아니오(스크래치) |
-| `workflow/REQ-*/.codex-*.tmp` | 티켓 직계 | `/REQ-*/.codex-*.tmp` | 예(동일) | `sync --gitignore` | 아니오(임시) |
+| `workflow/.review-calls.jsonl` | 저장소 루트의 `workflow/` | `workflow/.gitignore`의 `/.review-calls.jsonl` | 예(`templates/workflow.gitignore`) | `sync --apply --gitignore` | 아니오(측정 전용) |
+| `workflow/REQ-*/codex-response.json` | 티켓 직계 | `/REQ-*/codex-response.json` | 예(동일) | `sync --apply --gitignore` | 아니오(스크래치) |
+| `workflow/REQ-*/.review-preview.txt` | 티켓 직계 | `/REQ-*/.review-preview.txt` | 예(동일) | `sync --apply --gitignore` | 아니오(스크래치) |
+| `workflow/REQ-*/.codex-*.tmp` | 티켓 직계 | `/REQ-*/.codex-*.tmp` | 예(동일) | `sync --apply --gitignore` | 아니오(임시) |
 | `workflow/REQ-*/state.json` | 티켓 직계 | 없음(추적 대상) | 아니오(`req:new`가 생성) | 없음 | 예(스캐폴드만) — 실행 중 변경은 커밋하지 않는 작업 상태 |
 | `workflow/REQ-*/responses/*-rNN-*.json` | 티켓 `responses/` | 없음(추적 대상) | 아니오 | 없음 | **예(승인 증거)** |
 | `workflow/REQ-*/responses/approvals.jsonl` | 티켓 `responses/` | 없음(추적 대상) | 아니오 | 없음 | **예(승인 원장)** |

@@ -14,7 +14,7 @@
 >
 > **업그레이드 시 알아둘 것** — ① `secretScan`은 기본 차단입니다(고신뢰 패턴만 — 오탐이면
 > `"warn"`/`"off"`). ② 새 로컬 로그 `workflow/.verify-runs.jsonl`이 생깁니다(gitignored —
-> 기존 설치본은 `npx commitgate sync --gitignore`로 규칙 백필). ③ design 승인의 부기 커밋이
+> 기존 설치본은 `npx commitgate sync --apply --gitignore`로 규칙 백필). ③ design 승인의 부기 커밋이
 > 2개→1개가 됩니다. 나머지는 전부 추가·경고 전용이라 기존 워크플로를 막지 않습니다.
 
 - **`commitgate report` — 로컬 관측 요약** (REQ-2026-124). 도구가 쌓는 관측 로그 3종
@@ -73,7 +73,7 @@
     선택은 실행 단위이며 저장되지 않습니다.
   - 실행 요약(SHA·범주별 개수·CI 선택)은 `workflow/.verify-runs.jsonl`(gitignored)에 쌓입니다 —
     내용(커밋 메시지·파일 본문)은 담지 않으며, 기록 실패는 판정을 바꾸지 않습니다.
-    기존 설치본은 `npx commitgate sync --gitignore`로 규칙을 백필할 수 있습니다(규칙이 없으면
+    기존 설치본은 `npx commitgate sync --apply --gitignore`로 규칙을 백필할 수 있습니다(규칙이 없으면
     기록을 건너뛰고 경고만 냅니다).
   - `req:next`의 통합 안내와 문서(workflow·guarantees 한/영)에 사용법을 배선했고, SSOT 로드맵
     STR-01을 "로컬 검증 우선 · 원격 강제는 opt-in 확장"으로 정정했습니다.

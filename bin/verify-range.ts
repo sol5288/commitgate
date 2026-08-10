@@ -365,7 +365,7 @@ export function makeAppendLog(rootAbs: string, git: GitAdapter, warn: (line: str
     try {
       git.exec(['check-ignore', '-q', VERIFY_RUN_LOG_REL])
     } catch {
-      warn(`⚠️ ${VERIFY_RUN_LOG_REL} 이 .gitignore 대상이 아니라 기록을 건너뜁니다 — \`npx commitgate sync --gitignore\` 로 규칙을 백필할 수 있습니다`)
+      warn(`⚠️ ${VERIFY_RUN_LOG_REL} 이 .gitignore 대상이 아니라 기록을 건너뜁니다 — \`npx commitgate sync --apply --gitignore\` 로 규칙을 백필할 수 있습니다`)
       return
     }
     const abs = join(rootAbs, ...VERIFY_RUN_LOG_REL.split('/'))
