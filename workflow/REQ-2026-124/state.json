@@ -1,0 +1,93 @@
+{
+  "id": "REQ-2026-124",
+  "branch": "feat/req-2026-124-local-observability-report",
+  "risk_level": "LOW",
+  "codex_thread_id": "019fe964-0466-7581-a83e-10e1a11cce91",
+  "review_base_sha": "f8e2c4bc3d2dc60df6467f94e9bb017563df23c3",
+  "review_diff_hash": "8764a5124a03efe1fbeefe9df0260cb190d66ee6",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "80d38a0b8f80c4818b2c90a4348df46ed124958ffbc9a5061396d0eaf0b64c85",
+  "current_phase": "phase-2-report-verb",
+  "phases": [
+    {
+      "id": "phase-1-report-lib",
+      "approved": true
+    },
+    {
+      "id": "phase-2-report-verb",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-report-lib#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-report-lib",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-report-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-report-verb",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "93874d8aab8980e7a068d32db33683dc89bf0fb5",
+    "design": "c5ff49553ce79fb7675bb6f3ebb15f23e94ee0e8",
+    "plan": "e00a76a807971d679855f771a8f9ae2b871a271e"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-124/responses/design-r01-approved.json",
+    "response_sha256": "13bde1f16a77d82525650188ddb1f7f9d698f48b3564ce62d40f79d71d00e1ac",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "f44bb29a68c25e12e975d63511ebfdfe99b09f7a",
+    "codex_thread_id": "019fe95a-864e-70a2-ab79-5e2363d85cef",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-10T01:48:36.619Z",
+    "design_hash": "80d38a0b8f80c4818b2c90a4348df46ed124958ffbc9a5061396d0eaf0b64c85"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-report-verb",
+    "outcome": "approved",
+    "compare_hash": "45634543999e63574c486761528e2a65207508955fc4dd1fa6b4a8a2917cb12d",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-10T01:58:32.389Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "0cda41b886f95ee7d601cb24807a68eebc5749bb",
+      "phase_id": "phase-1-report-lib",
+      "consumed_by_commit_sha": "775ac06ecd39bc042b7be723b7094947b87f5036",
+      "approval_consumed_at": "2026-08-10T01:55:05.676Z"
+    },
+    {
+      "approved_tree": "8764a5124a03efe1fbeefe9df0260cb190d66ee6",
+      "phase_id": "phase-2-report-verb",
+      "consumed_by_commit_sha": "6c609a65930ddfef247f13e1b76c01e7965d1061",
+      "approval_consumed_at": "2026-08-10T01:59:00.795Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}
