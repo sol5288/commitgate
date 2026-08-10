@@ -2,16 +2,54 @@
   "id": "REQ-2026-124",
   "branch": "feat/req-2026-124-local-observability-report",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019fe95a-864e-70a2-ab79-5e2363d85cef",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "80d38a0b8f80c4818b2c90a4348df46ed124958ffbc9a5061396d0eaf0b64c85",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "93874d8aab8980e7a068d32db33683dc89bf0fb5",
+    "design": "c5ff49553ce79fb7675bb6f3ebb15f23e94ee0e8",
+    "plan": "e00a76a807971d679855f771a8f9ae2b871a271e"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-124/responses/design-r01-approved.json",
+    "response_sha256": "13bde1f16a77d82525650188ddb1f7f9d698f48b3564ce62d40f79d71d00e1ac",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "f44bb29a68c25e12e975d63511ebfdfe99b09f7a",
+    "codex_thread_id": "019fe95a-864e-70a2-ab79-5e2363d85cef",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-10T01:48:36.619Z",
+    "design_hash": "80d38a0b8f80c4818b2c90a4348df46ed124958ffbc9a5061396d0eaf0b64c85"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "25b3ee495c36c228e0ac69f2de8fad08cf900d97c8c30daf69eac856072bfa9b",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-10T01:48:36.619Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
