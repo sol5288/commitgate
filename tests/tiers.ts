@@ -23,4 +23,11 @@ export const INTEGRATION_TIER: readonly string[] = [
   'tests/unit/doctor-retired-claims.test.ts', // 26,428ms
   'tests/unit/req-next.test.ts', // 22,161ms
   'tests/unit/req-commit.test.ts', // 19,199ms
+  // ── REQ-2026-130(0.22 REQ F) 추가 — 2026-08-10 실측에서 fast 잔존 상위였던 실 git **회복·결속**
+  //    테스트 3파일. "느리면 전부 이동"이 아니다: 같은 부류 중 secret-scan-wiring(리뷰 직전 게이트
+  //    배선·fake reviewer 주입)은 **대표 wiring으로 fast에 남긴다** — fast만 돌려도 리뷰 게이트
+  //    배선 회귀는 잡힌다. 아래 3개는 복구/터미널 상태 재구성 성격이라 통합 계층 정의에 맞다.
+  'tests/unit/rebind-reentry.test.ts', // ~39,000ms — 티켓 재결속 회복(테스트마다 새 repo·의도적 격리)
+  'tests/unit/doctor-stranded-evidence.test.ts', // ~23,000ms — trunk 미도달 증거(D30) 실 git 재구성
+  'tests/unit/doctor-terminal-wiring.test.ts', // ~24,000ms — 종결 상태 doctor 배선(rebind 포함)
 ]

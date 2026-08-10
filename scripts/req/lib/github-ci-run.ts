@@ -15,7 +15,7 @@
  *
  * 🔴 테스트는 fake 포트만 쓴다 — 실제 gh·git 스폰은 어댑터 팩토리에만 존재한다.
  */
-import { safeSpawnSync } from './adapters'
+import { safeSpawnSync, assertNotTestEnv } from './adapters'
 
 export interface RunInfo {
   id: number
@@ -153,11 +153,15 @@ function msg(err: unknown): string {
  * gh api 응답의 민감 본문은 다루지 않는다(run 메타데이터만).
  */
 export function createGhCiRunAdapter(cwd: string, spawn: typeof safeSpawnSync = safeSpawnSync): GithubCiRunPort {
+  // kill switch는 기본(실제) spawn일 때만 — 주입 spawn은 테스트 seam이다(REQ-2026-130).
+  const isRealSpawn = spawn === safeSpawnSync
   return {
     async dispatch(workflow: string, ref: string): Promise<void> {
+      if (isRealSpawn) assertNotTestEnv('gh(workflow_dispatch)')
       spawn('gh', ['api', '-X', 'POST', `repos/{owner}/{repo}/actions/workflows/${workflow}/dispatches`, '-f', `ref=${ref}`], { cwd })
     },
     async listRuns(workflow: string, ref: string, createdSince: string): Promise<RunInfo[]> {
+      if (isRealSpawn) assertNotTestEnv('gh(run 조회)')
       const out = spawn(
         'gh',
         [
@@ -170,9 +174,11 @@ export function createGhCiRunAdapter(cwd: string, spawn: typeof safeSpawnSync = 
       return (parsed.workflow_runs ?? []).map(toRunInfo)
     },
     async getRun(id: number): Promise<RunInfo> {
+      if (isRealSpawn) assertNotTestEnv('gh(run 상태 조회)')
       return toRunInfo(JSON.parse(spawn('gh', ['api', `repos/{owner}/{repo}/actions/runs/${id}`], { cwd })))
     },
     async remoteBranchSha(ref: string): Promise<string | null> {
+      if (isRealSpawn) assertNotTestEnv('git ls-remote(원격 조회)')
       const out = spawn('git', ['ls-remote', 'origin', `refs/heads/${ref}`], { cwd }).trim()
       if (out === '') return null
       const sha = out.split(/\s+/)[0]
