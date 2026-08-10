@@ -8,9 +8,13 @@
 > - **phase 진행 중**: 변경한 소스를 import하는 테스트만(빠른 피드백). 예: `grep -rl "<변경한 모듈>" tests/`
 > - **통합(main 병합) 직전 1회**: **전체 스위트**. 범위 한정은 이것을 **대체하지 않는다** — 영향 분석은 놓친 회귀를 통과시킨다.
 
-## Phase 1 — (제목) (`phase-1-...`)
-범위:
-Exit: typecheck0 · 변경 범위 단위 그린 · Codex phase 리뷰 승인.
+## Phase 1 — 마커 가드 (`phase-1-marker-guard`)
+
+범위: `tests/unit/no-conflict-markers.test.ts` 신규 — 순수 검사 함수 `scanConflictMarkers`(설계
+DEC-1: 두 종 줄-시작 마커·동적 패턴 구성) + `git ls-files` 전수 스캔(DEC-2: responses 아카이브·
+바이너리 제외) + 변이 케이스(DEC-3). `CHANGELOG.md` Unreleased 1항목.
+
+Exit: typecheck 0 · `npx vitest run tests/unit/no-conflict-markers.test.ts` 그린 · Codex phase 리뷰 승인.
 
 ## 완료
 - 게이트 해당분(typecheck·해당 시 lint) · **통합 직전 전체 스위트 1회** · 사용자 main 머지(별도 승인).
