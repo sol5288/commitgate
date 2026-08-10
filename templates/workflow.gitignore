@@ -15,3 +15,5 @@
 /.doctor-runs.jsonl
 # verify-range 실행 관측 로그(REQ-2026-116). 위와 같은 자리·같은 성격이며 커밋 대상이 아니다.
 /.verify-runs.jsonl
+# integrate 실행 감사 로그(REQ-2026-126). 위와 같은 자리·같은 성격이며 커밋 대상이 아니다.
+/.integrate-runs.jsonl
