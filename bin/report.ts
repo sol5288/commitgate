@@ -128,7 +128,19 @@ export function renderHuman(r: Report): string {
     lines.push(`실행 ${d.runs} · 티켓 ${d.tickets} · WARN-only 실행 ${d.warnOnlyRuns}${d.runs ? ` (${Math.round((100 * d.warnOnlyRuns) / d.runs)}%)` : ''}`)
     for (const c of d.checks) lines.push(`  ${c.id}: 발화 ${c.fired}${c.fail ? ` (FAIL ${c.fail})` : ''}`)
     lines.push(`  해소 관측: ${d.resolved} 해소 · ${d.openSubjects} 미해소 — 대상 추적 가능 검사(${d.resolvableChecks.join(', ') || '없음'})에 한함`)
-    lines.push('  ("검사별 적용 가능 수"는 기록되지 않아 제공하지 않습니다 — 로그는 발화만 담습니다)')
+    if (d.v2 === null) {
+      lines.push('  ("검사별 적용 가능 수"는 v1 행에서 계산할 수 없습니다 — 0.22의 스키마 v2 행이 쌓이면 여기 나옵니다)')
+    } else {
+      lines.push(`  [스키마 v2 — ${d.v2.rows}실행 기준${d.v2.v1Rows ? ` · 구버전 v1 행 ${d.v2.v1Rows}건은 분모 계산 불가로 제외` : ''}]`)
+      for (const c of d.v2.checks) {
+        if (c.fired === 0 && c.notApplicable === 0) continue
+        const rate = c.applicable > 0 ? ` (발화율 ${Math.round((100 * c.fired) / c.applicable)}%)` : ''
+        lines.push(`    ${c.id}: 적용 가능 ${c.applicable} · 발화 ${c.fired}${rate} · FAIL ${c.fail} · 차단 ${c.blocked}${c.notApplicable ? ` · 해당없음 ${c.notApplicable}` : ''}`)
+      }
+      const rc = Object.entries(d.v2.reasonCodes).sort((a, b) => b[1] - a[1])
+      if (rc.length) lines.push(`    reason: ${rc.map(([k, n]) => `${k} ${n}`).join(' · ')}`)
+      lines.push('    (무발화 = 이 창에서 조건이 없었다는 뜻이지 검사가 무가치하다는 뜻이 아닙니다)')
+    }
   }
   lines.push('', '## review')
   if (!r.review) lines.push(NONE)

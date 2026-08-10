@@ -85,6 +85,10 @@ dry-run that only prints the plan and changes nothing.
 - **GitHub CI is optional** — CommitGate neither requires nor auto-runs CI. The verify-range CI check
   is opt-in ([y/N], default No) and only *queries* existing results; it never dispatches workflows.
   The entire local verification path works without GitHub auth or network.
+- **New in 0.22: doctor observation schema v2** — new `.doctor-runs.jsonl` rows carry per-check
+  applicability, outcome, blocked, and reason codes (additive — old rows and old consumers stay
+  valid). `commitgate report` computes per-check denominators/firing rates from v2 rows only and
+  labels old rows as "denominator unavailable". Logs are never rewritten or migrated.
 - **New in 0.22: deep verification + `commitgate attest`** — classification expands to six categories
   (approved, bookkeeping, merge, attested, invalid-evidence, unproven), and approvals are verified down
   to row schema, archive existence, and SHA-256. Legitimate exceptions (release commits, etc.) are

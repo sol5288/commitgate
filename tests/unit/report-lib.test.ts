@@ -118,3 +118,38 @@ describe('[REQ-2026-124] 부재·손상 — 추정 금지', () => {
     expect(r.doctor!.runs).toBe(3)
   })
 })
+
+describe('[REQ-2026-129] doctor v2 집계 — 분모·발화율·차단·reason 분포', () => {
+  const v2Row = (evals: unknown[], over: Record<string, unknown> = {}): string =>
+    JSON.stringify({ ticket_id: 'REQ-1', at: 't', verdict: 'PASS', evaluated: evals.length, nonok: [], schema_version: 2, evaluations: evals, ...over })
+  const v1Row = JSON.stringify({ ticket_id: 'REQ-0', at: 't0', verdict: 'PASS', evaluated: 25, nonok: [] })
+
+  it('v2 행만 분모로 집계하고 v1 행 수를 표기한다(추정 금지)', () => {
+    const log = [
+      v1Row,
+      v2Row([
+        { id: 'D30', applicable: true, outcome: 'warn', blocked: false, reason_code: 'stranded' },
+        { id: 'D25', applicable: false, outcome: 'not-applicable', blocked: false },
+        { id: 'D10', applicable: true, outcome: 'fail', blocked: true, reason_code: 'd10-fail' },
+      ]),
+      v2Row([
+        { id: 'D30', applicable: true, outcome: 'pass', blocked: false },
+        { id: 'D25', applicable: true, outcome: 'pass', blocked: false },
+        { id: 'D10', applicable: true, outcome: 'pass', blocked: false },
+      ]),
+    ].join('\n') + '\n'
+    const r = buildReport({ doctorRuns: log, reviewCalls: null, verifyRuns: null, verifyRange: null })
+    const v2 = r.doctor!.v2!
+    expect(v2.rows).toBe(2)
+    expect(v2.v1Rows).toBe(1)
+    expect(v2.checks.find((c) => c.id === 'D30')).toEqual({ id: 'D30', applicable: 2, notApplicable: 0, fired: 1, fail: 0, blocked: 0 })
+    expect(v2.checks.find((c) => c.id === 'D25')).toEqual({ id: 'D25', applicable: 1, notApplicable: 1, fired: 0, fail: 0, blocked: 0 })
+    expect(v2.checks.find((c) => c.id === 'D10')).toEqual({ id: 'D10', applicable: 2, notApplicable: 0, fired: 1, fail: 1, blocked: 1 })
+    expect(v2.reasonCodes).toEqual({ stranded: 1, 'd10-fail': 1 })
+  })
+
+  it('v2 행이 없으면 v2=null — 구버전 로그에서는 분모 계산 불가를 명시', () => {
+    const r = buildReport({ doctorRuns: `${v1Row}\n`, reviewCalls: null, verifyRuns: null, verifyRange: null })
+    expect(r.doctor!.v2).toBeNull()
+  })
+})

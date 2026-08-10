@@ -276,3 +276,47 @@ describe('[REQ-2026-111] gitignore 자산 skew 방지', () => {
     expect(active).not.toContain(ROOT_RULE)
   })
 })
+
+describe('[REQ-2026-129] 스키마 v2 — evaluations·applicable·reason_code', () => {
+
+
+  it('v2 행: schema_version=2 + v1 필드(verdict·evaluated·nonok) 유지(하위호환)', () => {
+    const row = buildDoctorRunRow(
+      [
+        { id: 'D9', level: 'OK', msg: 'ok' },
+        { id: 'D30', level: 'WARN', msg: 'w', subjects: ['REQ-1'] },
+      ],
+      { ticketId: 'REQ-X', at: 'T' },
+    )
+    expect(row.schema_version).toBe(2)
+    expect(row.verdict).toBe('PASS')
+    expect(row.evaluated).toBe(2)
+    expect(row.nonok).toEqual([{ id: 'D30', level: 'WARN', subjects: ['REQ-1'] }])
+  })
+
+  it('outcome 매핑: OK→pass · OK+applicable:false→not-applicable · WARN→warn · FAIL→fail(blocked)', () => {
+    const row = buildDoctorRunRow(
+      [
+        { id: 'D9', level: 'OK', msg: 'ok' },
+        { id: 'D25', level: 'OK', applicable: false, msg: '점검 불요' },
+        { id: 'D30', level: 'WARN', msg: 'w' },
+        { id: 'D10', level: 'FAIL', msg: 'f' },
+      ],
+      { ticketId: 'REQ-X', at: 'T' },
+    )
+    expect(row.evaluations).toEqual([
+      { id: 'D9', applicable: true, outcome: 'pass', blocked: false },
+      { id: 'D25', applicable: false, outcome: 'not-applicable', blocked: false },
+      { id: 'D30', applicable: true, outcome: 'warn', blocked: false, reason_code: 'd30-warn' },
+      { id: 'D10', applicable: true, outcome: 'fail', blocked: true, reason_code: 'd10-fail' },
+    ])
+  })
+
+  it('reason_code: 검사 명시값 우선·미지정은 안정 폴백 슬러그·subjects 보존', () => {
+    const row = buildDoctorRunRow(
+      [{ id: 'D22', level: 'WARN', reason_code: 'unprotected-scratch', msg: 'w', subjects: ['workflow/.x'] }],
+      { ticketId: 'REQ-X', at: 'T' },
+    )
+    expect(row.evaluations?.[0]).toMatchObject({ reason_code: 'unprotected-scratch', subjects: ['workflow/.x'] })
+  })
+})

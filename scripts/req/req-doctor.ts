@@ -98,6 +98,17 @@ export interface Check {
   level: Level
   msg: string
   /**
+   * REQ-2026-129(0.22, 스키마 v2): 이 실행에서 검사가 **적용 가능**했는가. 미지정 = true.
+   * false = "점검 불요/미계산/해당 없음" — 분모(적용 가능 티켓 수) 계산의 입력이다.
+   * 🔴 msg 문자열 매칭으로 파생하지 않는다(관찰에서 권위를 구하지 않는다 — REQ-2026-099 교훈).
+   */
+  applicable?: boolean
+  /**
+   * REQ-2026-129: 비-OK 발화의 안정적 사유 코드(kebab-case). 미지정 시 로그가 `<id소문자>-<outcome>`
+   * 폴백을 쓴다 — 한 검사에 원인이 여럿인 검사(D30 분류 등)만 명시하면 된다.
+   */
+  reason_code?: string
+  /**
    * 발화 **대상의 기계 식별자**(REQ-2026-117 DEC-5) — 실행 로그(`.doctor-runs.jsonl`)에 실린다.
    * 🔴 저위험 식별자만: 티켓 id(`REQ-…`)·계약 파일명(`CONTRACT_FILE_RELS`). 워킹트리 경로·메시지
    *    본문은 넣지 않는다(REQ-2026-111의 프라이버시 결정 계승 — D10 등 경로 주체 검사는 의도적 제외).
@@ -579,7 +590,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
     if (reasons.length)
       c.push({ id: 'D6', level: 'FAIL', msg: `commit_allowed=true 재검증 실패: ${reasons.join('; ')}` })
     else c.push({ id: 'D6', level: 'OK', msg: '재검증 OK(승인 verdict + 바인딩 정합)' })
-  } else c.push({ id: 'D6', level: 'OK', msg: 'commit_allowed=false(점검 불요)' })
+  } else c.push({ id: 'D6', level: 'OK', applicable: false, msg: 'commit_allowed=false(점검 불요)' })
 
   // D9: commit_allowed=true → tree == approved_diff_hash(§8.4). 정상=staged tree, **finalize(B3)=현재 HEAD 커밋 tree**.
   // finalize는 우회가 아니라 비교 **대상만** 교체(여전히 fail-closed) — source 재커밋 없이 evidence/consume만 복구.
@@ -696,34 +707,34 @@ export function runChecks(inp: DoctorInputs): Check[] {
         msg: `NEEDS_FIX 응답인데 actionable 아님(findings ${findingsOk ? 'OK' : '없음'}, next_action ${nextOk ? 'OK' : '공백'})`,
       })
     else c.push({ id: 'D15', level: 'OK', msg: 'NEEDS_FIX 응답 actionable(findings + next_action)' })
-  } else c.push({ id: 'D15', level: 'OK', msg: 'NEEDS_FIX 응답 아님(점검 불요)' })
+  } else c.push({ id: 'D15', level: 'OK', applicable: false, msg: 'NEEDS_FIX 응답 아님(점검 불요)' })
 
   // D16(A2/D-016-5): phase 승인 증거 아카이브 정본 검증. commit_allowed=true일 때만.
   // 신규 REQ(approval_evidence_required)면 누락/불일치 FAIL, legacy면 (증거 없음=OK / 증거 있는데 불일치=WARN). 기존 D6/D9 대체 아님(추가 게이트).
   if (commitAllowed) {
     const required = inp.approvalEvidenceRequired === true
     if (!required && !inp.approvalEvidence) {
-      c.push({ id: 'D16', level: 'OK', msg: 'legacy(증거 미요구) — 점검 불요' })
+      c.push({ id: 'D16', level: 'OK', applicable: false, msg: 'legacy(증거 미요구) — 점검 불요' })
     } else {
       const problems = evidenceProblems(inp.approvalEvidence, inp.approvalArchive, 'phase', s, inp.ticketRel, inp.liveResponseSha256)
       if (problems.length === 0) c.push({ id: 'D16', level: 'OK', msg: 'phase 승인 증거 아카이브 정합' })
       else if (required) c.push({ id: 'D16', level: 'FAIL', msg: `phase 승인 증거 검증 실패: ${problems.join('; ')}` })
       else c.push({ id: 'D16', level: 'WARN', msg: `phase 승인 증거 미정합(legacy): ${problems.join('; ')}` })
     }
-  } else c.push({ id: 'D16', level: 'OK', msg: 'commit_allowed=false(점검 불요)' })
+  } else c.push({ id: 'D16', level: 'OK', applicable: false, msg: 'commit_allowed=false(점검 불요)' })
 
   // D17(A2/D-016-5·6): design 승인 증거 아카이브 정본 검증. design_approved=true일 때만(D13 freshness와 별개의 증거 게이트).
   if (inp.designApproved === true) {
     const required = inp.approvalEvidenceRequired === true
     if (!required && !inp.designApprovalEvidence) {
-      c.push({ id: 'D17', level: 'OK', msg: 'legacy(증거 미요구) — 점검 불요' })
+      c.push({ id: 'D17', level: 'OK', applicable: false, msg: 'legacy(증거 미요구) — 점검 불요' })
     } else {
       const problems = evidenceProblems(inp.designApprovalEvidence, inp.designArchive, 'design', s, inp.ticketRel)
       if (problems.length === 0) c.push({ id: 'D17', level: 'OK', msg: 'design 승인 증거 아카이브 정합' })
       else if (required) c.push({ id: 'D17', level: 'FAIL', msg: `design 승인 증거 검증 실패: ${problems.join('; ')}` })
       else c.push({ id: 'D17', level: 'WARN', msg: `design 승인 증거 미정합(legacy): ${problems.join('; ')}` })
     }
-  } else c.push({ id: 'D17', level: 'OK', msg: 'design_approved=false(점검 불요)' })
+  } else c.push({ id: 'D17', level: 'OK', applicable: false, msg: 'design_approved=false(점검 불요)' })
 
   // D19(REQ-2026-014): 설치 모드 진단 — `req:*` 값의 **형태**만 본다(manifest·lockfile·node_modules 미사용).
   //
@@ -732,7 +743,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
   //    FAIL이면 **이 저장소 자신의 커밋과 정당한 Stage A 소비자 전원의 커밋이 영구 차단**된다.
   //    Stage A는 결함이 아니라 지원되는 설치 형태다 → mixed만 WARN한다.
   if (inp.reqScripts === undefined || inp.reqScripts === null) {
-    c.push({ id: 'D19', level: 'OK', msg: 'package.json scripts 미조회/없음(점검 불요)' })
+    c.push({ id: 'D19', level: 'OK', applicable: false, msg: 'package.json scripts 미조회/없음(점검 불요)' })
   } else {
     const mode = classifyInstallMode(inp.reqScripts)
     if (mode === 'mixed')
@@ -754,11 +765,11 @@ export function runChecks(inp: DoctorInputs): Check[] {
   //    버전으로는 이 skew를 못 잡는다. sha256(shipped) vs sha256(vendored)만 잡는다.
   // 결정표(D19의 undefined→OK 선례): dev repo/dogfood·custom schemaPath·조회 불가·동일 → OK. 상이 → WARN.
   if (inp.packageRootDiffers === false) {
-    c.push({ id: 'D20', level: 'OK', msg: '자산 skew 점검 불요(dev repo/dogfood — packageRoot === config root)' })
+    c.push({ id: 'D20', level: 'OK', applicable: false, msg: '자산 skew 점검 불요(dev repo/dogfood — packageRoot === config root)' })
   } else if (inp.schemaPathIsDefault === false) {
-    c.push({ id: 'D20', level: 'OK', msg: 'custom schemaPath(kit 관리 자산 아님 — unmanaged, 점검 불요)' })
+    c.push({ id: 'D20', level: 'OK', applicable: false, msg: 'custom schemaPath(kit 관리 자산 아님 — unmanaged, 점검 불요)' })
   } else if (!inp.packagedSchemaSha || !inp.vendoredSchemaSha) {
-    c.push({ id: 'D20', level: 'OK', msg: '자산 skew 점검 불요(shipped/vendored 스키마 조회 불가 — Stage A/미설치/2-arg)' })
+    c.push({ id: 'D20', level: 'OK', applicable: false, msg: '자산 skew 점검 불요(shipped/vendored 스키마 조회 불가 — Stage A/미설치/2-arg)' })
   } else if (inp.packagedSchemaSha === inp.vendoredSchemaSha) {
     c.push({ id: 'D20', level: 'OK', msg: 'vendored machine.schema.json 동기화됨(shipped와 동일)' })
   } else {
@@ -774,13 +785,13 @@ export function runChecks(inp: DoctorInputs): Check[] {
   // (D20과 동일 근거: req:commit이 이 doctor를 하드 게이트로 spawn하므로 FAIL이면 커밋이 벽돌이 된다).
   // seed-once라 REQ-2026-039 이전 설치본/기존 파일엔 신규 블록이 닿지 않는다 — 백필 필요를 알릴 뿐 막지 않는다.
   if (inp.packageRootDiffers === false) {
-    c.push({ id: 'D21', level: 'OK', msg: 'Quick Start 백필 점검 불요(dev repo/dogfood — packageRoot === config root)' })
+    c.push({ id: 'D21', level: 'OK', applicable: false, msg: 'Quick Start 백필 점검 불요(dev repo/dogfood — packageRoot === config root)' })
   } else if (inp.quickstartBackfill === undefined) {
     // 판정 불가(shipped 블록 조회 실패·2-arg/미계산) → 조용히 통과(REQ-2026-101 DEC-7).
     // D19 `undefined→OK`·D20 "조회 불가→OK"·D24 "미계산→OK"와 같은 선례다.
-    c.push({ id: 'D21', level: 'OK', msg: 'Quick Start 백필 점검 불요(2-arg/미계산·shipped 블록 조회 불가)' })
+    c.push({ id: 'D21', level: 'OK', applicable: false, msg: 'Quick Start 백필 점검 불요(2-arg/미계산·shipped 블록 조회 불가)' })
   } else if (inp.quickstartBackfill.length === 0) {
-    c.push({ id: 'D21', level: 'OK', msg: '기존 always-loaded 파일의 Quick Start 블록이 설치된 버전과 일치(또는 대상 없음)' })
+    c.push({ id: 'D21', level: 'OK', applicable: false, msg: '기존 always-loaded 파일의 Quick Start 블록이 설치된 버전과 일치(또는 대상 없음)' })
   } else {
     // 🔴 REQ-2026-101 DEC-2: 부재와 드리프트는 사용자에게 **다른 사건**이다. 한 줄에 뭉치면
     //    무엇을 해야 하는지도, 무엇을 잃는지도 알 수 없다. 드리프트에는 덮어쓰기 경고가 붙는다.
@@ -810,15 +821,16 @@ export function runChecks(inp: DoctorInputs): Check[] {
   // tracked인 경우는 여기서 경고하지 않는다(이미 커밋된 상태 = 다른 문제). 그 복구는 `git rm --cached` 절차로
   //    troubleshooting 문서가 다룬다 — ignore 규칙만 넣어서는 tracked 파일이 빠지지 않기 때문이다.
   if (inp.packageRootDiffers === false) {
-    c.push({ id: 'D22', level: 'OK', msg: 'repo-root 스크래치 보호 점검 불요(dev repo/dogfood — packageRoot === config root)' })
+    c.push({ id: 'D22', level: 'OK', applicable: false, msg: 'repo-root 스크래치 보호 점검 불요(dev repo/dogfood — packageRoot === config root)' })
   } else if (inp.repoRootScratchUnprotected === undefined) {
-    c.push({ id: 'D22', level: 'OK', msg: 'repo-root 스크래치 보호 점검 불요(2-arg/미계산)' })
+    c.push({ id: 'D22', level: 'OK', applicable: false, msg: 'repo-root 스크래치 보호 점검 불요(2-arg/미계산)' })
   } else if (inp.repoRootScratchUnprotected.length === 0) {
     c.push({ id: 'D22', level: 'OK', msg: 'repo-root 런타임 스크래치가 모두 ignore(또는 tracked)됨' })
   } else {
     c.push({
       id: 'D22',
       level: 'WARN',
+      reason_code: 'unprotected-scratch',
       msg:
         `${inp.repoRootScratchUnprotected.join(', ')} 이(가) gitignore로 무시되지 않습니다 — ` +
         '다음 review가 이 파일을 만들면 **D10이 FAIL하여 커밋이 막힙니다**. ' +
@@ -832,9 +844,9 @@ export function runChecks(inp: DoctorInputs): Check[] {
   //    spawn하므로 FAIL이면 lockfile 없는 프로젝트의 모든 커밋이 벽돌이 된다. lockfile ↔ package.json 동기
   //    여부는 검사하지 않는다(PM 실행 없이 신뢰 불가) — 존재·tracked 위생만.
   if (inp.lockfileStatus === undefined || inp.lockfileStatus === 'ok') {
-    c.push({ id: 'D23', level: 'OK', msg: inp.lockfileStatus === undefined ? 'lockfile 위생 점검 불요(미계산)' : 'lockfile 존재·git-tracked — 재현 가능한 설치(--frozen-lockfile) 가능' })
+    c.push({ id: 'D23', level: 'OK', applicable: false, msg: inp.lockfileStatus === undefined ? 'lockfile 위생 점검 불요(미계산)' : 'lockfile 존재·git-tracked — 재현 가능한 설치(--frozen-lockfile) 가능' })
   } else if (inp.lockfileStatus === 'no-package-json') {
-    c.push({ id: 'D23', level: 'OK', msg: 'lockfile 위생 점검 불요(package.json 없음)' })
+    c.push({ id: 'D23', level: 'OK', applicable: false, msg: 'lockfile 위생 점검 불요(package.json 없음)' })
   } else {
     c.push({
       id: 'D23',
@@ -853,7 +865,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
   //    워크플로 verb의 preflight(`assertSetupComplete`)이고, 여기는 **그 사실을 보이게 하는 역할**만 한다.
   //    실제로 grandfather 통과한 설치본은 막히지 않으므로, 이 WARN은 "언젠가 setup을 하라"는 안내다.
   if (inp.setupGate === undefined) {
-    c.push({ id: 'D24', level: 'OK', msg: 'setup 완료 점검 불요(2-arg/미계산)' })
+    c.push({ id: 'D24', level: 'OK', applicable: false, msg: 'setup 완료 점검 불요(2-arg/미계산)' })
   } else if (inp.setupGate.kind === 'pass' && inp.setupGate.reason === 'marker') {
     c.push({ id: 'D24', level: 'OK', msg: `setup 완료 기록 있음 (${inp.setupGate.evidence.join(' · ')})` })
   } else if (inp.setupGate.kind === 'pass') {
@@ -881,7 +893,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
   // 🔴 판정 불가(trunk ref 없음·미계산·비활성)는 **조용히 통과**한다(DEC-2). trunk 이름이 다른 repo에
   //    매번 빨간 줄을 내면 사람이 doctor 출력 전체를 무시하게 되고, 그러면 진짜 FAIL까지 죽는다.
   if (inp.unmergedClosedTickets === undefined) {
-    c.push({ id: 'D25', level: 'OK', msg: '미병합 누적 점검 불요(미계산·trunk 없음·비활성)' })
+    c.push({ id: 'D25', level: 'OK', applicable: false, msg: '미병합 누적 점검 불요(미계산·trunk 없음·비활성)' })
   } else if (inp.unmergedClosedTickets.length === 0) {
     c.push({ id: 'D25', level: 'OK', msg: `종결 티켓이 모두 trunk(${inp.trunkBranch ?? '-'})에 반영됨` })
   } else {
@@ -901,7 +913,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
   //    spawn하므로 FAIL이면 **재결속에 필요한 남은 phase를 커밋조차 못 하는 교착**이 된다(재결속하려면
   //    티켓을 끝내야 하는데 끝낼 수가 없다). 진행 중 결속이 끊긴 것 자체는 오류가 아니다 — 마지막에 해소하면 된다.
   if (inp.staleBindingLines === undefined) {
-    c.push({ id: 'D26', level: 'OK', msg: 'design 결속 점검 불요(미계산·매니페스트 없음)' })
+    c.push({ id: 'D26', level: 'OK', applicable: false, msg: 'design 결속 점검 불요(미계산·매니페스트 없음)' })
   } else if (inp.staleBindingLines.length === 0) {
     c.push({ id: 'D26', level: 'OK', msg: '모든 phase 증거가 현재 design 승인에 결속됨' })
   } else {
@@ -926,7 +938,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
   //    그래서 복원 명령을 안내하지 않고 **실제로 가능한 두 경로**만 말한다.
   const cw = inp.consumedWithoutRow ?? []
   if (inp.consumedWithoutRow === undefined || cw.length === 0) {
-    c.push({ id: 'D27', level: 'OK', msg: '승인 증인 일치(소비된 승인 중 매니페스트에 빠진 것 없음)' })
+    c.push({ id: 'D27', level: 'OK', applicable: false, msg: '승인 증인 일치(소비된 승인 중 매니페스트에 빠진 것 없음)' })
   } else {
     const id = String(inp.state.id ?? '<REQ>').replace(/^REQ-/, '')
     c.push({
@@ -969,7 +981,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
   else
     c.push({
       id: 'D28',
-      level: 'OK',
+      level: 'OK', applicable: false,
       msg:
         inp.highConfirm === undefined
           ? 'HIGH 확인 점검 불요(판정 입력 없음)'
@@ -985,7 +997,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
    *    두 표면이 다른 말을 하면 어느 쪽이 맞는지 사람이 판단해야 한다.
    */
   if (inp.retiredClaimHits === undefined)
-    c.push({ id: 'D29', level: 'OK', msg: '계약 파일 폐기 서술 점검 불요(대상 파일 없음·미계산)' })
+    c.push({ id: 'D29', level: 'OK', applicable: false, msg: '계약 파일 폐기 서술 점검 불요(대상 파일 없음·미계산)' })
   else if (inp.retiredClaimHits.length === 0)
     c.push({ id: 'D29', level: 'OK', msg: '계약 파일에 폐기된 서술 없음' })
   else
@@ -1009,7 +1021,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
    *    전체를 무시하게 되고, 그러면 진짜 FAIL까지 죽는다.
    */
   if (inp.strandedEvidence === undefined)
-    c.push({ id: 'D30', level: 'OK', msg: '미병합 리뷰 증거 점검 불요(trunk 없음·로그 없음·미계산)' })
+    c.push({ id: 'D30', level: 'OK', applicable: false, msg: '미병합 리뷰 증거 점검 불요(trunk 없음·로그 없음·미계산)' })
   else if (inp.strandedEvidence.length === 0)
     c.push({ id: 'D30', level: 'OK', msg: `리뷰 증거가 모두 trunk(${inp.trunkBranch ?? '-'})에 반영됨` })
   else if (inp.strandedClassified === undefined)
@@ -1070,7 +1082,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
    * 🔴 subjects를 내지 않는다 — 경로는 실행 로그의 저위험 식별자 허용 목록 밖이다(REQ-2026-117 DEC-5).
    */
   if (inp.riskHits === undefined)
-    c.push({ id: 'D31', level: 'OK', msg: '실효 위험 점검 불요(staged 없음·감지 비활성·미계산)' })
+    c.push({ id: 'D31', level: 'OK', applicable: false, msg: '실효 위험 점검 불요(staged 없음·감지 비활성·미계산)' })
   else if (inp.riskHits.length === 0)
     c.push({ id: 'D31', level: 'OK', msg: 'staged 변경에 민감 경로 패턴 일치 없음' })
   else
@@ -1517,9 +1529,31 @@ export interface DoctorRunRow {
    * 검사가 subjects를 내지 않으면 직렬화에서도 키가 빠진다(append-only JSONL 하위호환).
    */
   nonok: { id: CheckId; level: Level; subjects?: string[] }[]
+  /** REQ-2026-129(v2): 스키마 표식. v1 행(키 부재)은 계속 유효하다. */
+  schema_version?: 2
+  /** REQ-2026-129(v2): OK 포함 전 평가 — 검사별 적용 가능 분모·발화율·차단·reason 분포의 원천. */
+  evaluations?: DoctorEvaluation[]
 }
 
-/** 순수 — 관측 행 조립. 부작용이 없어 단독 테스트된다. */
+/** REQ-2026-129(0.22): 스키마 v2의 평가 1건. v1의 nonok과 달리 **OK 포함 전 평가**를 담는다. */
+export interface DoctorEvaluation {
+  id: CheckId
+  /** 이 실행에서 적용 가능했는가 — 검사별 분모의 입력. */
+  applicable: boolean
+  outcome: 'pass' | 'warn' | 'fail' | 'not-applicable'
+  /** doctor는 커밋의 하드 게이트다 — fail = 이 실행이 커밋을 실제로 막았다. */
+  blocked: boolean
+  /** 비-OK만. 검사 명시값 또는 `<id소문자>-<outcome>` 폴백(안정 슬러그). */
+  reason_code?: string
+  subjects?: string[]
+}
+
+/** 순수 — 관측 행 조립(스키마 v2 — REQ-2026-129). 부작용이 없어 단독 테스트된다.
+ *
+ * 하위호환: v1 필드(`verdict`·`evaluated`·`nonok`)를 **그대로 유지**하고 `schema_version: 2`와
+ * `evaluations`(OK 포함 전 평가·applicable·reason_code)를 additive로 싣는다 — v1만 아는 소비자
+ * (구버전 report·수기 스크립트)는 계속 동작하고, v2 소비자는 분모를 계산할 수 있다.
+ */
 export function buildDoctorRunRow(checks: readonly Check[], meta: { ticketId: string; at: string }): DoctorRunRow {
   const nonok = checks
     .filter((c) => c.level !== 'OK')
@@ -1528,12 +1562,23 @@ export function buildDoctorRunRow(checks: readonly Check[], meta: { ticketId: st
         ? { id: c.id, level: c.level, subjects: [...c.subjects] }
         : { id: c.id, level: c.level },
     )
+  const evaluations: DoctorEvaluation[] = checks.map((c) => {
+    const applicable = c.applicable !== false
+    const outcome: DoctorEvaluation['outcome'] =
+      c.level === 'FAIL' ? 'fail' : c.level === 'WARN' ? 'warn' : applicable ? 'pass' : 'not-applicable'
+    const ev: DoctorEvaluation = { id: c.id, applicable, outcome, blocked: outcome === 'fail' }
+    if (outcome === 'warn' || outcome === 'fail') ev.reason_code = c.reason_code ?? `${c.id.toLowerCase()}-${outcome}`
+    if (c.subjects !== undefined && c.subjects.length > 0) ev.subjects = [...c.subjects]
+    return ev
+  })
   return {
+    schema_version: 2,
     ticket_id: meta.ticketId,
     at: meta.at,
     verdict: checks.some((c) => c.level === 'FAIL') ? 'FAIL' : 'PASS',
     evaluated: checks.length,
     nonok,
+    evaluations,
   }
 }
 
