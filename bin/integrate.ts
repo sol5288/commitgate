@@ -275,7 +275,9 @@ export async function runIntegrate(opts: Opts, deps: RunDeps): Promise<RunResult
   deps.log(`commitgate integrate — ${facts.currentBranch} → ${facts.trunkBranch}`)
   if (facts.verify !== null) {
     const c = facts.verify.counts
-    deps.log(`  증거: 승인 소비 ${c.approved} · 도구 부기 ${c.bookkeeping} · 머지 ${c.merge} · 미입증 ${c.unproven} (strict 통과)`)
+    deps.log(
+      `  증거: 승인 소비 ${c.approved} · 도구 부기 ${c.bookkeeping} · 머지 ${c.merge} · attested ${c.attested} · 미입증 ${c.unproven} (strict 통과)`,
+    )
   }
   deps.log('  실행 계획:')
   for (const s of plan.steps) deps.log(`    ${plan.steps.indexOf(s) + 1}. ${s}`)
