@@ -3,6 +3,7 @@
  * 🔴 실제 GitHub API·gh CLI·네트워크를 호출하지 않는다(완료 기준 10) — `GithubCiPort`는 전부 fake다.
  */
 import { describe, it, expect } from 'vitest'
+import { createHash } from 'node:crypto'
 import {
   CI_FLAG_DEPRECATION,
   parseArgs,
@@ -28,29 +29,63 @@ const HEAD_SHA = '2'.repeat(40)
 const SRC_SHA = '3'.repeat(40)
 const BOOK_SHA = '4'.repeat(40)
 const UNKNOWN_SHA = '5'.repeat(40)
+const TREE_SHA = '6'.repeat(40)
+
+// REQ-2026-127 심층 검증 픽스처 — validateManifest를 통과하는 유효 소비 행 + 아카이브 blob.
+const MANIFEST_PATH = 'workflow/REQ-2026-001/responses/approvals.jsonl'
+const ARCHIVE_PATH = 'workflow/REQ-2026-001/responses/phase-1-r01-approved.json'
+const ARCHIVE_CONTENT = '{"ok":1}'
+const ARCHIVE_SHA256 = createHash('sha256').update(ARCHIVE_CONTENT).digest('hex')
+const VALID_ROW = JSON.stringify({
+  kind: 'phase',
+  phase_id: 'phase-1',
+  response_path: ARCHIVE_PATH,
+  response_sha256: ARCHIVE_SHA256,
+  review_base_sha: BASE_SHA,
+  approved_tree: TREE_SHA,
+  approved_at: '2026-08-10T00:00:00.000Z',
+  consumed_at: '2026-08-10T00:00:01.000Z',
+  consumed_by_commit_sha: SRC_SHA,
+  user_commit_confirmed: null,
+})
 
 /**
  * fake git — `runVerifyRange`가 실제로 내리는 호출만 응답한다. 모르는 호출은 throw(fail-closed:
  * 새 git 의존이 생기면 테스트가 즉시 드러낸다).
  */
-function fakeGit(over?: { logOut?: string; lsTreeOut?: string; manifest?: string; checkIgnoreOk?: boolean }): GitAdapter {
+function fakeGit(over?: {
+  logOut?: string
+  nameOnlyOut?: string
+  lsTreeOut?: string
+  checkIgnoreOk?: boolean
+}): GitAdapter & { calls: string[][] } {
+  // 메타 log 형식(REQ-2026-127): %H %T %P %B — tree가 attestation identity 대조에 쓰인다.
   const logOut =
     over?.logOut ??
     [
-      `${SRC_SHA}\x1f${BASE_SHA}\x1ffeat: approved work\n본문\x00\n`,
-      `${BOOK_SHA}\x1f${BASE_SHA}\x1fchore(REQ-x): ledger\n\n${BOOKKEEPING_TRAILER}\x00\n`,
-      `${UNKNOWN_SHA}\x1f${BASE_SHA}\x1fchore: commitgate setup\x00\n`,
+      `${SRC_SHA}\x1f${TREE_SHA}\x1f${BASE_SHA}\x1ffeat: approved work\n본문\x00\n`,
+      `${BOOK_SHA}\x1f${TREE_SHA}\x1f${BASE_SHA}\x1fchore(REQ-x): ledger\n\n${BOOKKEEPING_TRAILER}\x00\n`,
+      `${UNKNOWN_SHA}\x1f${TREE_SHA}\x1f${BASE_SHA}\x1fchore: commitgate setup\x00\n`,
     ].join('')
-  const lsTreeOut = over?.lsTreeOut ?? 'workflow/REQ-2026-001/responses/approvals.jsonl'
-  const manifest = over?.manifest ?? `${JSON.stringify({ kind: 'phase', consumed_by_commit_sha: SRC_SHA })}\n`
+  const nameOnlyOut =
+    over?.nameOnlyOut ??
+    [
+      `\x01${SRC_SHA}\nsrc/app.ts\n`,
+      `\x01${BOOK_SHA}\nworkflow/REQ-2026-001/responses/review-ledger.jsonl\n`,
+      `\x01${UNKNOWN_SHA}\nsetup.txt\n`,
+    ].join('')
+  const lsTreeOut = over?.lsTreeOut ?? `${MANIFEST_PATH}\n${ARCHIVE_PATH}`
+  const calls: string[][] = []
   return {
+    calls,
     exec(args: string[]): string {
+      calls.push(args)
       const cmd = args[0]
       if (cmd === 'rev-parse') return args[2]?.startsWith('HEAD') ? `${HEAD_SHA}\n` : `${args[2]?.replace(/\^\{commit\}$/, '')}\n`
       if (cmd === 'merge-base') return `${BASE_SHA}\n`
-      if (cmd === 'log') return logOut
+      if (cmd === 'log') return args.includes('--name-only') ? nameOnlyOut : logOut
+      if (cmd === 'diff-tree') return ''
       if (cmd === 'ls-tree') return `${lsTreeOut}\n`
-      if (cmd === 'show') return manifest
       if (cmd === 'check-ignore') {
         if (over?.checkIgnoreOk === false) throw new Error('not ignored')
         return ''
@@ -58,6 +93,12 @@ function fakeGit(over?: { logOut?: string; lsTreeOut?: string; manifest?: string
       throw new Error(`fakeGit: 예상 밖 호출 ${args.join(' ')}`)
     },
   }
+}
+
+/** 심층 수집의 blob 배치 fake — 요청 경로에 픽스처를 응답(모르는 경로는 null). */
+function fakeReadBlobs(extra?: Record<string, string>): (ref: string, paths: readonly string[]) => Map<string, Buffer | null> {
+  const known: Record<string, string> = { [MANIFEST_PATH]: `${VALID_ROW}\n`, [ARCHIVE_PATH]: ARCHIVE_CONTENT, ...extra }
+  return (_ref, paths) => new Map(paths.map((p) => [p, p in known ? Buffer.from(known[p] as string, 'utf8') : null]))
 }
 
 /** 호출 횟수를 세는 fake CI 포트. */
@@ -92,6 +133,7 @@ function makeDeps(over?: Partial<RunDeps> & { ci?: GithubCiPort & { calls: strin
     now: () => '2026-08-09T00:00:00.000Z',
     trunkBranch: over?.trunkBranch === undefined ? TRUNK : over.trunkBranch,
     ticketRoot: 'workflow',
+    readBlobs: over?.readBlobs ?? fakeReadBlobs(),
     logs,
     rows,
     asked,
@@ -183,7 +225,7 @@ describe('완료 기준 7·8 — 요청 실패·로컬 검증 불변', () => {
   it('8: CI 생략 실행도 4범주 분류·미입증 목록을 산출한다', async () => {
     const deps = makeDeps()
     const r = await runVerifyRange(opts(), deps)
-    expect(r.report.counts).toEqual({ merge: 0, bookkeeping: 1, approved: 1, unproven: 1 })
+    expect(r.report.counts).toEqual({ merge: 0, bookkeeping: 1, approved: 1, attested: 0, 'invalid-evidence': 0, unproven: 1 })
     expect(r.report.unproven).toEqual([{ sha: UNKNOWN_SHA, subject: 'chore: commitgate setup' }])
   })
 })
@@ -203,7 +245,7 @@ describe('exit·감사 로그 계약(설계 DEC-1·DEC-5)', () => {
       at: '2026-08-09T00:00:00.000Z',
       base: BASE_SHA,
       head: HEAD_SHA,
-      counts: { merge: 0, bookkeeping: 1, approved: 1, unproven: 1 },
+      counts: { merge: 0, bookkeeping: 1, approved: 1, attested: 0, 'invalid-evidence': 0, unproven: 1 },
       manifest_problems: 0,
       strict: false,
       ci: 'skipped-default',
@@ -319,6 +361,39 @@ describe('createGhCiAdapter — spawn 주입(완료 기준 10: 실 gh 무호출)
   it('JSON 파싱 불가 응답 → fail', () => {
     const adapter = createGhCiAdapter('.', (() => 'not-json') as never)
     expect(adapter.check(HEAD_SHA).ok).toBe(false)
+  })
+})
+
+describe('[REQ-2026-127] 심층 수집 — 프로세스 수 상한(완료 기준 7)', () => {
+  it('manifest·아카이브가 3배로 늘어도 git 호출 수는 불변(N+1 금지)', async () => {
+    const one = makeDeps()
+    await runVerifyRange(opts(), one)
+    const callsOne = (one.git as unknown as { calls: string[][] }).calls.length
+
+    // manifest 3개·아카이브 3개 — 전부 SRC를 소비하지는 않게 서로 다른 티켓 경로.
+    const m2 = 'workflow/REQ-2026-002/responses/approvals.jsonl'
+    const m3 = 'workflow/REQ-2026-003/responses/approvals.jsonl'
+    const three = makeDeps({
+      git: fakeGit({ lsTreeOut: `${MANIFEST_PATH}\n${ARCHIVE_PATH}\n${m2}\n${m3}` }),
+      readBlobs: fakeReadBlobs({ [m2]: '', [m3]: '' }),
+    })
+    await runVerifyRange(opts(), three)
+    const callsThree = (three.git as unknown as { calls: string[][] }).calls.length
+    expect(callsThree).toBe(callsOne)
+  })
+
+  it('심층 검증: 유효 행+해시 일치=approved · state 부재는 검증 축소 note', async () => {
+    const deps = makeDeps()
+    const r = await runVerifyRange(opts(), deps)
+    expect(r.report.entries.find((e) => e.sha === SRC_SHA)?.category).toBe('approved')
+    expect(r.report.verificationNotes.some((n) => n.includes('검증 축소'))).toBe(true)
+  })
+
+  it('아카이브 해시 불일치 → invalid-evidence · strict exit 1', async () => {
+    const deps = makeDeps({ readBlobs: fakeReadBlobs({ [ARCHIVE_PATH]: '{"tampered":1}' }) })
+    const r = await runVerifyRange(opts({ strict: true }), deps)
+    expect(r.report.entries.find((e) => e.sha === SRC_SHA)?.category).toBe('invalid-evidence')
+    expect(r.exit).toBe(1)
   })
 })
 

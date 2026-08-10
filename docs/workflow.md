@@ -66,11 +66,14 @@ npx commitgate report --json   # 기계용
 **GitHub CI는 CommitGate의 필수 조건이 아닙니다.** GitHub Actions는 사용량·비용이 발생할 수 있으므로 CommitGate는 CI를 요구하지도, 자동 실행하지도 않습니다. 통합 승인 전에 로컬만으로 이 범위의 승인 증거를 확인할 수 있습니다:
 
 ```sh
-npx commitgate verify-range            # trunk와의 merge-base..HEAD를 분류
-npx commitgate verify-range --strict   # 미입증 커밋이 있으면 exit 1 (게이트로 쓸 때)
+npx commitgate verify-range            # trunk와의 merge-base..HEAD를 심층 분류
+npx commitgate verify-range --strict   # 미입증·손상 증거가 있으면 exit 1 (게이트로 쓸 때)
+npx commitgate attest <sha> --reason "release 커밋" --run   # 정당한 예외의 명시 승인(append-only 기록)
 ```
 
-범위의 각 커밋을 **승인 소비**(커밋된 `approvals.jsonl`의 소비 기록) · **도구 부기**(trailer) · **머지** · **미입증**으로 분류합니다. GitHub 인증·`gh`·네트워크 없이 동작하며, 미입증 커밋은 우회 단정이 아니라 "증거로 입증되지 않음"의 표시입니다(설치 스캐폴드·릴리스 커밋 등 규정된 워크플로 외 커밋도 여기 나옵니다). squash/rebase로 재작성된 이력은 소비 시점 SHA와 달라 미입증으로 나옵니다 — 이 검사는 주어진 범위를 있는 그대로 보고합니다.
+release·setup·수동 충돌 정정처럼 승인 증거가 없는 것이 정상인 커밋은 `attest`로 이유와 함께 예외 승인을 기록하면 `attested`로 분류됩니다(--strict·integrate 통과). 기록은 `workflow/attestations.jsonl`에 append-only로 커밋되는 감사 데이터이며 서명이 아닙니다 — 로컬 git identity·시각·이유가 남습니다. **손상 증거는 attest로 구제되지 않습니다** — 수정이 답입니다.
+
+범위의 각 커밋을 **승인 소비** · **도구 부기** · **머지** · **attested**(예외 승인 기록) · **손상 증거** · **미입증**의 6범주로 **심층 분류**합니다(0.22). 표시자 매칭이 아니라 검증입니다 — 승인 소비는 매니페스트 행 스키마·응답 아카이브 실재·SHA-256 일치·중복 소비 부재까지 확인하고, 부기는 trailer에 더해 변경 경로가 전부 워크플로 경로인지 확인하며(사용자 코드 혼입 시 손상 증거), 머지는 conflict resolution/evil-merge 변경이 있으면 미입증으로 내립니다. 검증할 수 없는 경우(blob 읽기 실패 등)는 손상으로 단정하지 않고 미입증 + 축소 표기로 남깁니다. GitHub 인증·`gh`·네트워크 없이 동작하며, 미입증 커밋은 우회 단정이 아니라 "증거로 입증되지 않음"의 표시입니다(설치 스캐폴드·릴리스 커밋 등 규정된 워크플로 외 커밋도 여기 나옵니다). squash/rebase로 재작성된 이력은 소비 시점 SHA와 달라 미입증으로 나옵니다 — 이 검사는 주어진 범위를 있는 그대로 보고합니다.
 
 대화형 실행에서는 마지막에 **"기존 GitHub CI 결과를 조회하시겠습니까? 워크플로를 실행하지 않습니다(GitHub API 조회 1회). [y/N]"** 를 묻습니다. 기본값은 No이고, Enter나 `n`이면 조회 없이 계속합니다(생략은 정상 상태입니다). `y` 또는 `--check-github-ci`일 때만 head SHA의 check-runs를 **1회 조회**하며(워크플로를 실행하지 않으므로 Actions 사용량을 새로 발생시키지 않습니다), 명시적으로 요청한 조회가 실패하면 조용히 넘어가지 않고 exit 1로 멈춥니다. 비대화형에서는 플래그가 없으면 생략합니다. 선택은 실행 단위이며 저장되지 않습니다. 기존 `--github-ci`/`--no-github-ci`는 deprecated alias로 동작이 유지됩니다(동일 의미 — 조회).
 

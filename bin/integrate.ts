@@ -19,10 +19,11 @@ import { createInterface } from 'node:readline'
 import { loadConfig } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitAdapter } from '../scripts/req/lib/adapters'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
-import { verifyRange } from '../scripts/req/lib/verify-range'
+import { verifyRangeDeep } from '../scripts/req/lib/verify-range'
+import { readBlobsAtRef } from '../scripts/req/lib/git-batch'
 import { planIntegration, decideCiRun, type IntegrationFacts, type IntegrationPlan } from '../scripts/req/lib/merge-gate'
 import { awaitCiRun, createGhCiRunAdapter, type GithubCiRunPort, type CiRunResult } from '../scripts/req/lib/github-ci-run'
-import { collectCommits, collectManifestContents } from './verify-range'
+import { collectDeepInput, type RunDeps as VerifyRunDeps } from './verify-range'
 
 // ───────────────────────────────── 인자 파싱(fail-closed) ──
 
@@ -174,6 +175,8 @@ export interface RunDeps {
   githubCi: { workflow: string; timeoutMinutes: number } | null
   /** `.git` 디렉터리 하위 존재 검사(merge/rebase 진행 판정). */
   gitStateExists: (name: string) => boolean
+  /** head tree blob 배치 읽기(REQ-2026-127 — verify-range와 같은 심층 수집 공유). 테스트는 fake 주입. */
+  readBlobs: VerifyRunDeps['readBlobs']
 }
 
 export function collectFacts(deps: RunDeps): { facts: IntegrationFacts; base: string | null; head: string | null } {
@@ -199,11 +202,14 @@ export function collectFacts(deps: RunDeps): { facts: IntegrationFacts; base: st
     try {
       head = deps.git.exec(['rev-parse', '--verify', 'HEAD^{commit}']).trim()
       base = deps.git.exec(['merge-base', deps.trunkBranch, head]).trim()
-      const report = verifyRange({
-        commits: collectCommits(deps.git, base, head),
-        manifestContents: collectManifestContents(deps.git, head, deps.ticketRoot),
-      })
-      verify = { counts: report.counts, manifestProblems: report.manifestProblems, unproven: report.unproven }
+      // REQ-2026-127: verify-range CLI와 **같은 심층 수집·분류**를 공유한다(수집 분기 방지 — 설계 리뷰 observation).
+      const report = verifyRangeDeep(collectDeepInput(deps.git, deps.readBlobs, base, head, deps.ticketRoot))
+      verify = {
+        counts: report.counts,
+        manifestProblems: report.manifestProblems,
+        unproven: report.unproven,
+        invalid: report.invalid,
+      }
     } catch {
       verify = null // 계산 불가 — plan이 차단한다(추정 금지)
     }
@@ -414,6 +420,7 @@ export async function runCli(argv: string[]): Promise<void> {
       ticketRoot: cfg.ticketRoot,
       githubCi: cfg.githubCi,
       gitStateExists: (name) => existsSync(resolve(cfg.root, gitDir, name)),
+      readBlobs: (ref, paths) => readBlobsAtRef(cfg.root, ref, paths),
     })
     if (result.exit !== 0) process.exitCode = result.exit
   } catch (err) {

@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   parseArgs,
   HelpRequested,
@@ -30,22 +31,49 @@ import type { GitAdapter } from '../../scripts/req/lib/adapters'
 const BASE = '1'.repeat(40)
 const HEAD = '2'.repeat(40)
 const SRC = '3'.repeat(40)
+const TREE = '6'.repeat(40)
+
+const MANIFEST_PATH = 'workflow/REQ-2026-001/responses/approvals.jsonl'
+const ARCHIVE_PATH = 'workflow/REQ-2026-001/responses/phase-1-r01-approved.json'
+const ARCHIVE_CONTENT = '{"ok":1}'
+const ARCHIVE_SHA256 = createHash('sha256').update(ARCHIVE_CONTENT).digest('hex')
+const VALID_ROW = JSON.stringify({
+  kind: 'phase',
+  phase_id: 'phase-1',
+  response_path: ARCHIVE_PATH,
+  response_sha256: ARCHIVE_SHA256,
+  review_base_sha: BASE,
+  approved_tree: TREE,
+  approved_at: '2026-08-10T00:00:00.000Z',
+  consumed_at: '2026-08-10T00:00:01.000Z',
+  consumed_by_commit_sha: SRC,
+  user_commit_confirmed: null,
+})
+
+function fakeReadBlobs(extra?: Record<string, string>): (ref: string, paths: readonly string[]) => Map<string, Buffer | null> {
+  const known: Record<string, string> = { [MANIFEST_PATH]: `${VALID_ROW}\n`, [ARCHIVE_PATH]: ARCHIVE_CONTENT, ...extra }
+  return (_ref, paths) => new Map(paths.map((p) => [p, p in known ? Buffer.from(known[p] as string, 'utf8') : null]))
+}
 
 function fakeGit(over?: {
   branch?: string
   porcelain?: string
   logOut?: string
-  manifest?: string
+  nameOnlyOut?: string
   trunkMissing?: boolean
   checkIgnoreOk?: boolean
 }): GitAdapter & { calls: string[][] } {
   const calls: string[][] = []
+  // 메타 log(REQ-2026-127): %H %T %P %B.
   const logOut =
     over?.logOut ??
     [
-      `${SRC}\x1f${BASE}\x1ffeat: approved work\x00\n`,
-      `${HEAD}\x1f${SRC}\x1fchore(REQ-x): ledger\n\n${BOOKKEEPING_TRAILER}\x00\n`,
+      `${SRC}\x1f${TREE}\x1f${BASE}\x1ffeat: approved work\x00\n`,
+      `${HEAD}\x1f${TREE}\x1f${SRC}\x1fchore(REQ-x): ledger\n\n${BOOKKEEPING_TRAILER}\x00\n`,
     ].join('')
+  const nameOnlyOut =
+    over?.nameOnlyOut ??
+    [`\x01${SRC}\nsrc/app.ts\n`, `\x01${HEAD}\nworkflow/REQ-2026-001/responses/review-ledger.jsonl\n`].join('')
   return {
     calls,
     exec(args: string[]): string {
@@ -61,9 +89,9 @@ function fakeGit(over?: {
       }
       if (cmd === 'status') return `${over?.porcelain ?? ''}\n`
       if (cmd === 'merge-base') return `${BASE}\n`
-      if (cmd === 'log') return logOut
-      if (cmd === 'ls-tree') return 'workflow/REQ-2026-001/responses/approvals.jsonl\n'
-      if (cmd === 'show') return over?.manifest ?? `${JSON.stringify({ kind: 'phase', consumed_by_commit_sha: SRC })}\n`
+      if (cmd === 'log') return args.includes('--name-only') ? nameOnlyOut : logOut
+      if (cmd === 'diff-tree') return ''
+      if (cmd === 'ls-tree') return `${MANIFEST_PATH}\n${ARCHIVE_PATH}\n`
       if (cmd === 'check-ignore') {
         if (over?.checkIgnoreOk === false) throw new Error('not ignored')
         return ''
@@ -106,6 +134,7 @@ function makeDeps(over?: Partial<RunDeps> & { git?: ReturnType<typeof fakeGit> }
     ticketRoot: 'workflow',
     githubCi: over?.githubCi === undefined ? null : over.githubCi,
     gitStateExists: over?.gitStateExists ?? (() => false),
+    readBlobs: over?.readBlobs ?? fakeReadBlobs(),
     logs,
     rows,
     asked,
@@ -155,7 +184,8 @@ describe('dry-run(기본) — 병합하지 않는다', () => {
 
   it('미입증 존재 → 차단(목록 렌더)·exit 1·로그 1행', async () => {
     const deps = makeDeps({
-      git: fakeGit({ logOut: `${SRC}\x1f${BASE}\x1fwip: unproven\x00\n`, manifest: '{}\n' }),
+      git: fakeGit({ logOut: `${SRC}\x1f${TREE}\x1f${BASE}\x1fwip: unproven\x00\n`, nameOnlyOut: `\x01${SRC}\nsrc/app.ts\n` }),
+      readBlobs: fakeReadBlobs({ [MANIFEST_PATH]: '' }),
     })
     const r = await runIntegrate(opts({ run: true }), deps)
     expect(r.exit).toBe(1)

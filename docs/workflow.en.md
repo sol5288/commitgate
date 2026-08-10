@@ -69,11 +69,17 @@ nothing is estimated.
 **GitHub CI is not a requirement of CommitGate.** GitHub Actions can consume usage quota and cost money, so CommitGate neither requires nor auto-triggers it. Before an integration approval you can verify the range's approval evidence locally:
 
 ```sh
-npx commitgate verify-range            # classify merge-base(trunk)..HEAD
-npx commitgate verify-range --strict   # exit 1 when unproven commits exist (gate mode)
+npx commitgate verify-range            # deep-classify merge-base(trunk)..HEAD
+npx commitgate verify-range --strict   # exit 1 on unproven or invalid evidence (gate mode)
+npx commitgate attest <sha> --reason "release commit" --run   # record a legitimate exception (append-only)
 ```
 
-Each commit in the range is classified as **approved** (a consumption record in the committed `approvals.jsonl`), **tool bookkeeping** (trailer), **merge**, or **unproven**. It works without GitHub auth, `gh`, or network access. "Unproven" is not an accusation of bypass — it means "not provable from evidence" (legitimate out-of-workflow commits such as install scaffolding or release commits appear here too). History rewritten by squash/rebase no longer matches the consumption-time SHAs and shows up as unproven — this check reports the given range as-is.
+Commits that legitimately carry no approval evidence (release, setup, manual conflict fixes) can be
+approved explicitly with `attest`; they then classify as `attested` and pass `--strict`/integrate. The
+record is append-only audit data committed at `workflow/attestations.jsonl` - a local git identity,
+timestamp, and reason, not a signature. **Invalid evidence is never rescued by attest** - fix the evidence instead.
+
+Each commit in the range is **deep-classified** (0.22) into six categories: **approved**, **tool bookkeeping**, **merge**, **attested** (recorded exception), **invalid-evidence**, or **unproven**. This is verification, not marker matching - approval consumption checks the manifest row schema, response-archive existence, SHA-256 equality, and consumption uniqueness; bookkeeping additionally requires every changed path to be a workflow path (user code mixed in means invalid-evidence); merges with conflict-resolution/evil-merge changes drop to unproven. Anything unverifiable (e.g. blob read failure) is reported as unproven with a reduction note rather than asserted as corruption. It works without GitHub auth, `gh`, or network access. "Unproven" is not an accusation of bypass — it means "not provable from evidence" (legitimate out-of-workflow commits such as install scaffolding or release commits appear here too). History rewritten by squash/rebase no longer matches the consumption-time SHAs and shows up as unproven — this check reports the given range as-is.
 
 An interactive run ends by asking **"기존 GitHub CI 결과를 조회하시겠습니까? 워크플로를 실행하지 않습니다(GitHub API 조회 1회). [y/N]"** (check existing GitHub CI results? — does not run workflows; one GitHub API query). The default is No; Enter or `n` continues without the query (skipping is a normal state). Only on `y` or `--check-github-ci` does it **query** the head SHA's check-runs once (it never dispatches workflows, so no new Actions usage is incurred), and an explicitly requested query that fails stops with exit 1 instead of being silently ignored. Non-interactive runs skip unless a flag is given. The choice applies to that run only and is never stored. The old `--github-ci`/`--no-github-ci` flags remain as deprecated aliases with identical (query-only) behavior.
 
