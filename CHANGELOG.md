@@ -2,8 +2,187 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
-## Unreleased
+## 0.22.0 (2026-08-11)
 
+> **통합 seam이 생겼습니다 — 검사가 실제 merge와 결속됩니다.** `commitgate integrate`가 통합 직전
+> 절차(항상-strict 심층 증거 검증 → GitHub CI **실행** opt-in → 사람 확인 → **검증한 SHA만 병합** →
+> 감사 로그)를 소유하고, `commitgate attest`가 정당한 예외를 기록하며, report는 범위 옵션과 함께
+> 크게 빨라졌습니다(아래 실측).
+> GitHub CI는 여전히 **기본 실행하지 않습니다** — 조회(`--check-github-ci`)와 실행(`--run-github-ci`)이
+> 이름부터 분리됐고, 실행은 사용자 소유 config(`githubCi.workflow`) + 명시 요청에서만 일어납니다.
+>
+> **업그레이드**(0.20/0.21에서 — caret는 minor를 자동으로 넘지 않습니다. 상세: `docs/upgrade.md` 0.22 절):
+>
+> ```sh
+> npm install -D commitgate@^0.22.0        # lockfile도 함께 갱신됨 — 커밋에 포함 확인
+> npx commitgate sync --apply --gitignore  # 새 로컬 로그 규칙(.verify-runs/.integrate-runs) 백필
+> npx commitgate check
+> npx commitgate report
+> ```
+>
+> breaking 없음(스키마 additive·기존 명령·로그 하위호환 — `--github-ci`는 deprecated alias로 유지).
+> rollback: `npm install -D commitgate@0.21.0`(자산·로그는 그대로 둬도 됨 — 구버전이 무시).
+> 별도 0.21.1은 없습니다 — 0.21.0의 긴급 정정(gitignore 백필 안내·CI 용어)도 이 릴리스에 포함됩니다.
+
+- **fix: 배포 계약 템플릿의 릴리즈 전제(`verify-range --strict`)를 복원했습니다** — CI green 전제를
+  걷어내면서, 그 자리에 들어갔어야 할 `npx commitgate verify-range --strict` 전제를
+  `AGENTS.template.md`에만 넣지 않았습니다. `docs/RELEASING.md`와 `ssot-design/04`에는 있었지만
+  **실제로 소비자에게 배포되는 템플릿**에는 "반영 이후 각각 따로 요청한다"만 남아, 릴리즈 전제가
+  통째로 사라진 상태였습니다(빌드된 tarball에서도 확인). **GitHub CI가 선택인 것과 로컬 strict 검증이
+  필수인 것은 다른 축인데** 한 번의 편집으로 둘 다 없어졌습니다. R1/R2/R3 문장에 strict 통과 전제와
+  "GitHub CI green은 전제가 아니다"를 함께 넣고, 두 검사를 같은 것으로 취급하지 말라는 주의도 붙였습니다.
+- **fix: 배포 템플릿의 옛 승인 명칭을 정정했습니다** — 통제점표에 존재하지 않는
+  `merge/push 승인`·`required status checks bypass 승인`이 승인 범위 설명에 남아 있어, 사용자가 받아야 할
+  승인 문장을 잘못 말하게 할 수 있었습니다. 현재 정본 두 문장으로 바꿨습니다:
+  `검증 결과 확인 후 PR merge 승인`(I2)은 `branch protection bypass를 사용한 direct push 승인`(B1)이 아니다.
+- **test: 배포 템플릿의 릴리즈 전제를 두 조건으로 함께 고정합니다** — ① R1/R2/R3 전에 strict가 요구되고
+  ② CI green은 릴리즈 전제가 **아니어야** 한다는 것을 한 테스트 묶음에서 검사합니다(한쪽만 보면 이번
+  결함을 놓칩니다). 강조 표시에 의존하지 않도록 정규화 후 줄 단위로 비교하며, 옛 승인 명칭이 템플릿으로
+  되돌아오면 red입니다. 전제가 빠진 R1/R2/R3 문장과 옛 승인 명칭은 폐기 주장으로 등재해 소비자
+  `AGENTS.md`에서도 **C5 WARN**으로 잡히고, **정본 문장에서는 OK**임을 경계 테스트로 고정했습니다.
+- **fix: "CommitGate가 CI를 실행하지 않는다"와 "이 저장소의 CI가 자동 실행되지 않는다"를 구분합니다** —
+  업그레이드 문서가 소비자에게 "push·tag·pull_request로 자동 실행되지 않습니다"라고 적고 있었습니다.
+  그것은 **CommitGate 저장소 자신의 `ci.yml`** 에 대한 사실이지 소비자 저장소에 대한 사실이 아닙니다.
+  실제로 검증한 세 소비자 저장소는 **전부 자동 트리거 워크플로를 갖고 있습니다**(ci.yml의 push/PR,
+  일부는 `v*` tag push). CommitGate가 보장하는 것은 **자동 dispatch를 하지 않는다**와
+  **CI green을 merge·publish의 전제로 강제하지 않는다** 두 가지뿐이며, 저장소 자체 워크플로가
+  CommitGate와 무관하게 도는 것은 **막지 못합니다**. 비용을 완전히 통제하려면 그 저장소의
+  `.github/workflows/*.yml` 트리거를 따로 점검해야 하고, CommitGate는 프로젝트 소유 워크플로를
+  만들거나 고치지 않습니다. 한/영 업그레이드 문서와 폐기 주장 사유 문구를 이 구분에 맞게 고쳤습니다.
+- **fix: C5 WARN이 "무엇을 고쳐야 하는지"를 알려줍니다** — 사유(why)만 내고 **발견한 실제 문장**을
+  보여주지 않아, 사용자가 자기 파일 어디를 고쳐야 하는지 알 수 없었습니다. 이제 파일별로
+  `파일명: "찾은 문장"` + 사유를 줄로 나눠 보여주고, I2 정본 문장과 정확한 비교 경로
+  `node_modules/commitgate/AGENTS.template.md`를 함께 냅니다. CLI 출력이므로 Markdown 강조 기호(`**`)를
+  쓰지 않습니다(터미널에 기호가 그대로 보입니다). 저장소 자체 워크플로가 자동 실행될 수 있다는 주의도
+  같은 메시지에 넣었습니다. 사람용·`--json` 출력은 계속 같은 `CheckReport`에서 파생합니다.
+- **fix: 완료 조건에 CI green을 둔 옛 문장을 폐기 주장으로 등재했습니다** — 소비자(lean_lms) `AGENTS.md`의
+  "완료 정의" 절에 CI green이 완료 조건으로 들어 있었습니다. 통제점표가 아니라 다른 절이라 기존 항목에
+  걸리지 않았습니다. CI 실행이 선택인데 완료 조건에 green을 두면 **CI를 돌리지 않는 정상 경로에서 티켓을
+  끝낼 수 없다**는 말이 됩니다. 일반적인 `CI green` 부정문(정정문)까지 오탐하지 않도록 완료 조건 문맥이
+  붙은 핵심 구절만 등재했고, 오탐 경계 테스트를 함께 넣었습니다.
+- **feat: `commitgate check` C5 — 업그레이드 후 남은 옛 계약 문서를 알려줍니다** — 소비자 세 곳에
+  0.22.0을 실제로 설치하고 `sync --apply --gitignore`를 돌려도 `AGENTS.md`에는 0.21 계약이 그대로
+  남았습니다. `sync`가 **사용자 소유 파일을 덮어쓰지 않기 때문**이고, 그 정책은 유지해야 합니다
+  (프로젝트 고유 규칙이 섞여 있어 자동 교체는 그 내용을 지웁니다). 그래서 고치는 대신 **알립니다**:
+  `AGENTS.md`·`AGENTS.commitgate.md`에 폐기된 CommitGate 서술이 있으면 **C5 WARN**이 뜨고, 파일명·발견한
+  사유·현행 정책·수동 병합 안내를 함께 냅니다. **WARN이지 FAIL이 아니라** 기존 소비자의 작업·커밋을
+  막지 않습니다(`check` exit 0 유지). 판정은 `retiredClaimsIn` **정본을 그대로 재사용**하므로 목록 사본이
+  생기지 않고, 강조·줄바꿈 정규화도 그대로 적용됩니다. `check`는 어떤 파일도 쓰지 않습니다.
+  C1~C4의 의미·순서·exit 계약은 그대로이며 C5는 뒤에만 붙습니다(additive).
+- **fix: `req:next`의 delivery 경로가 옛 I2 문장을 내고 있었습니다** — 일반 통합 경로는 정본 문장으로
+  고쳤는데 delivery 묶음 경로에는 CI green을 전제한 옛 축약형이 남아 있었고, 등재된 폐기 주장과
+  **표현이 달라** 문서 가드까지 통과했습니다. 두 경로의 안내를 `scripts/req/lib/control-points.ts`의
+  **한 상수에서 파생**하도록 바꿔 다시 갈라질 수 없게 했고, 옛 축약형도 폐기 주장으로 등재했습니다.
+  회귀는 문자열 검사가 아니라 **실제 `resolveNext` 결과를 보는 행동 테스트**로 고정합니다 —
+  문자열 등재만으로는 다음 변형을 막지 못한다는 것이 이번 사례의 교훈입니다.
+  폐기 주장 스캔 범위에 **안내를 만드는 코드 표면**(`control-points.ts`·`req-next.ts`·`check.ts`)도 넣었습니다.
+- **docs: 업그레이드 문서에 계약 병합 절차를 추가했습니다** — `sync --apply --gitignore`는 스키마와
+  gitignore만, `quickstart --apply`는 관리 Quick Start 블록만 다루며 **`AGENTS.md`의 계약 본문은 갱신하지
+  않는다**는 사실, `check`의 C5 WARN을 확인하라는 안내, 그리고 파일을 통째로 바꾸지 말고
+  `AGENTS.template.md`와 비교해 **CommitGate 계약 부분만 손으로 병합**하라는 절차를 한/영 문서에 넣었습니다.
+- **fix: GitHub workflow `path@ref` 형식을 받아들이고, workflow 대조를 전체 경로로 합니다** —
+  workflow-run 응답의 `path`는 `.github/workflows/ci.yml` 뿐 아니라
+  `.github/workflows/ci.yml@main` · `…@refs/heads/feat/x` 형태로 올 수 있습니다. 예전 구현은
+  **basename만** 비교해서 두 방향으로 틀렸습니다: `@ref`가 붙은 정상 응답을 **거부**했고(요청한 CI가
+  green이어도 병합이 막힘), 반대로 `other/ci.yml`·`.github/workflows/subdir/ci.yml`처럼 **이름만 같은
+  다른 파일을 통과**시켰습니다. 이제 `@` 뒤 ref 표현만 떼고 `.github/workflows/<workflow>` 전체 경로로
+  대조합니다(브랜치 축은 `head_branch`가 이미 따로 검증합니다). 정상 경로 fake fixture도 공식 응답과
+  같은 `path@ref` 형태로 바꿔, 일반 성공 테스트가 이 계약을 **항상** 지나게 했습니다.
+- **fix: 검증 범위(merge-base)도 고정한 trunk SHA로 계산합니다** — `collect()`가 `trunkHeadSha`를 읽어
+  토큰에 저장해 놓고, 정작 범위는 `git merge-base <trunkBranch> <head>`로 **브랜치 이름**을 넘겨
+  계산하고 있었습니다. 두 호출 사이에 trunk가 움직이면 토큰이 결속한 SHA 쌍과 **다른 범위**를 검증한
+  것이 되고, trunk가 feature를 이미 삼킨 위치라면 범위가 **빈 집합으로 축소**되기까지 합니다.
+  이제 `featureHeadSha`·`trunkHeadSha`·`mergeBaseSha`·`verificationSummary` 네 값이 모두 같은 SHA 쌍에서
+  파생되며, 검증 함수에는 정확히 `mergeBaseSha..featureHeadSha`가 전달됩니다. trunk가 A→B→A로 움직이는
+  ABA 상황도 고정 SHA 기준을 유지합니다(실 git 테스트 포함).
+- **refactor: `IntegrationCoordinator`의 공개 표면을 `collect()`·`merge()` 둘로 줄였습니다** —
+  `revalidate`는 private입니다. 재검증은 병합의 일부이지 호출자가 따로 부를 단계가 아니며,
+  공개해 두면 "재검증만 하고 그 결과로 다른 판단을 하는" 사용법이 생겨 TOCTOU 창이 다시 열립니다.
+- **fix: dispatch 빈 응답 안내에서 원인을 단정하지 않습니다** — 구현은 `gh workflow run`이 아니라
+  raw `gh api`를 쓰므로, 빈 응답을 곧바로 "gh 버전 문제"로 단정하던 문구는 정확하지 않았습니다.
+  이제 `return_run_details` 미지원 API 버전/서버(GitHub Enterprise Server 등) 가능성을 먼저 알리고,
+  확인할 항목(서버 지원 여부 · 요청한 API 버전 · gh 버전)을 나열합니다. 동작은 그대로 fail-closed입니다.
+- **fix: `npm test`가 각 테스트 파일을 정확히 한 번만 실행합니다** — `vitest.workspace.ts`가
+  `extends`로 base config를 상속했는데, vitest는 `include` **배열을 덮어쓰지 않고 이어붙입니다**.
+  그래서 integration 프로젝트가 등재 목록이 아니라 **전체 파일**을 골랐고, `npm test`는 고유 77파일을
+  **138번** 실행했습니다(fast 61 + integration 77). 인프라 값을 `vitest.shared.ts`로 분리하고 두
+  프로젝트에서 명시적으로 공유하며 `extends`를 제거했습니다. 실측: **77파일 · 2919 tests · 308초**
+  (이전 138파일 실행 · 521초). 계층 가드도 정의 검사에 더해 `vitest list`로 **실제 선택 결과**를
+  확인하도록 바꿨습니다 — 구조만 보던 예전 가드는 이 결함을 통과시켰습니다.
+- **docs: `I2` 승인 문장을 선택 CI 정책과 일치시켰습니다** — `required checks green 확인 후 PR merge 승인`은
+  CI를 실행하지 않은 **정상 경로에서 사실대로 쓸 수 없는** 문장이었습니다(확인한 green이 없는데
+  green을 확인했다고 말해야 함). 정본 문장은 **`검증 결과 확인 후 PR merge 승인`** 입니다. 멈추는 시점은
+  "필수 로컬 검증 결과를 확인하고, CI를 실행했으면 그 결과도 함께, 실행하지 않았으면 생략 사실을 보고한 뒤"로
+  명시했습니다. 옛 문장은 폐기 주장으로 등재해 되살아나면 테스트가 red입니다.
+- **docs: SSOT의 남은 자동 CI 서술을 정정하고, 역사 기록은 보존했습니다** — `ssot-design` 04·10·11·README의
+  "트리거 = push/tag/pull_request", "CI green이 publish·I2·R1~R3의 선행조건", "경로 B에서 CI는 사후 검증"
+  서술을 현재 정책으로 바꿨습니다. 반면 **역사 문서는 지우지 않습니다**: `13-review-and-validation-log.md`와
+  `docs/follow-ups-design.md`는 당시 사실·제안을 그대로 두고 **"현재 정책이 아님" 표지**만 덧붙였으며,
+  폐기 주장 검사 대상에서 제외하되 그 표지가 사라지면 테스트가 red가 되도록 고정했습니다.
+- **test: 폐기 주장 검사가 강조 표시·줄바꿈으로 우회되지 않습니다** — 축자 부분 문자열만 보던 매처가
+  `**CI는 push 이후에** 돈다`처럼 강조를 끼우거나 문장을 두 줄로 접으면 통과했습니다. 이제 검사 대상과
+  등재 문자열 양쪽을 정규화(마크다운 강조·코드 표시 문자 제거 + 공백 압축)해서 비교하며,
+  가드가 실제로 문다는 것을 변이 검사로 증명합니다. 어미 변형(`돈다`↔`돕니다`)까지 잡지는 못하므로
+  필요한 변형은 계속 별도 항목으로 등재합니다(정직한 한계 표기).
+- **정책: GitHub CI는 이 저장소에서도 수동 실행 전용이 됐습니다** — `.github/workflows/ci.yml`이
+  `workflow_dispatch` **하나만** 트리거로 갖습니다. 예전에는 `push: branches:[main] + tags:['v*']`와
+  `pull_request`가 걸려 있어 커밋 하나에 3 OS × 3 Node = 9잡이 자동으로 돌았습니다 — "평소 CI 0회,
+  사람이 지시할 때만" 정책과 정반대였고, 문서는 그 정책을 적고 파일은 반대로 동작하고 있었습니다.
+  이제 실행 경로는 `gh workflow run ci.yml --ref <branch>` 또는
+  `commitgate integrate --run --run-github-ci` 둘뿐입니다. 3 OS × 3 Node 검증 내용은 그대로 유지됩니다.
+  트리거 계약과 결정 행렬(Enter/n/y·config 유무·비대화형·`--no-github-ci`)은 회귀 테스트로 잠갔습니다.
+  🔴 소비자 프로젝트에는 아무 영향이 없습니다 — CommitGate는 여러분의 워크플로 파일을 만들지도
+  고치지도 않고, `req.config.json.sample`에 `githubCi`를 넣지 않습니다(CI 설정은 사용자 소유 opt-in).
+- **fix: GitHub CI run을 추정하지 않고 dispatch 응답의 id에 결속합니다** — dispatch 요청에
+  `return_run_details=true`(boolean)를 실어 응답의 `workflow_run_id`만 사용합니다. 예전에는 dispatch 뒤
+  `created_at`·`head_sha`로 실행 **목록을 뒤져** 이번 run을 추측했고, 같은 SHA에서 동시 실행이 있으면
+  원리적으로 갈라졌습니다. 목록 추정 경로는 **삭제**했습니다(포트에 `listRuns`가 없어 fallback을 둘
+  자리 자체가 없습니다). id를 못 받으면(구형 API·`gh` < v2.87.0) 조용히 다른 방법으로 넘어가지 않고
+  실패합니다. 조회한 run은 매 폴링마다 head SHA·`event=workflow_dispatch`·브랜치·워크플로가 요청한
+  것과 같은지 대조합니다. `Accept`·`X-GitHub-Api-Version` 헤더도 명시합니다.
+- **fix: 명시 요청한 CI에서 `success`만 통과입니다** — `skipped`(요청한 검사가 실행되지 않음)와
+  `neutral`(판정 없음)을 더 이상 green으로 세지 않습니다. 이 축은 기존 **조회** 축
+  (`verify-range --check-github-ci`)보다 의도적으로 엄격합니다 — 저쪽은 남이 만든 기존 체크 묶음을
+  읽는 것이고, 이쪽은 우리가 방금 하나를 돌려 그 결과로 병합을 결정하기 때문입니다.
+- **fix: 검증한 SHA와 실제 병합 SHA를 원자적으로 결속합니다(가장 중요한 수정)** — 예전 `integrate`는
+  feature HEAD **SHA**를 검증해 놓고 마지막에 브랜치 **이름**을 병합했습니다. 그 사이에는 CI 대기(최대
+  `timeoutMinutes`분)와 사람의 [y/N] 확인이 있어, 그동안 다른 창에서 커밋 하나가 얹히면 **검증하지 않은
+  커밋이 trunk로 들어갈 수 있었습니다.** trunk 쪽 이동도 무방비였습니다. 이제 증거 검증을 통과하면
+  feature/trunk 두 SHA를 결속하고(`PreparedIntegration`), 병합 직전에 현재 브랜치·양쪽 ref·워킹트리
+  clean·merge/rebase 진행 여부를 **다시** 확인합니다. 하나라도 바뀌었으면 병합하지 않고 재실행을
+  안내합니다. 병합 자체는 `checkout --detach <trunkSHA>` → `merge --no-ff <featureSHA>` →
+  **부모가 그 두 SHA인지 대조** → `update-ref refs/heads/<trunk> <merge> <oldTrunk>`(**비교·교환**)
+  순서라, 재검증과 갱신 사이에 trunk가 움직여도 교환이 거부되고 trunk는 그대로 남습니다. 실패·충돌에서는
+  `merge --abort` 후 원래 feature 브랜치로 복귀합니다(자동 reset·stash·push 없음). 감사 로그에
+  `feature_head_sha`·`trunk_head_sha`·`merge_parents`가 추가됩니다(additive). 실 git 저장소에서
+  ref 이동·CAS 거부·충돌 복구·**검증하지 않은 SHA가 병합되지 않음**(변이 테스트)을 검증합니다.
+- **refactor: `bin/integrate.ts`가 인자 파싱·질문·출력·감사 로그만 합니다** — 준비 토큰 생성·재검증·
+  CAS 병합은 `lib/integration-coordinator.ts`가, 전제·strict 판정은 기존 `lib/merge-gate.ts`가 소유합니다.
+- **feat: `commitgate report`가 검증 불가 사유를 알려줍니다** — verify-range 수집 실패를 null로 삼켜
+  "판정 불가"만 남기던 동작을 고쳤습니다. `verification_available`(boolean)과
+  `verification_unavailable_reason`(안정 문자열 — 예: `base ref not found: v9.9.9`)이 JSON에 **추가**되고
+  사람용 출력도 같은 사유를 보여줍니다. **기존 필드는 제거·변경되지 않았습니다**(계산 실패 시
+  `evidence` 섹션이 부재하는 동작도 그대로).
+- **test: 외부 호출 경계를 목록으로 고정합니다** — `COMMITGATE_TEST` kill switch는 **현재 알려진**
+  production 외부 호출 경로(codex·gh·`git ls-remote`·`fetch`)를 막습니다. 모든 미래 호출을 막는 보편적
+  샌드박스가 아니므로, 프로세스를 스폰하거나 원격·과금 대상을 다루는 production 파일의 allowlist를
+  메타 테스트가 유지합니다 — 목록 밖에서 그런 코드가 생기면 red입니다. **로컬 git은 막지 않습니다**
+  (정상 동작이고 원격 효과가 없습니다). 실제 codex를 호출하는 수동 도구
+  `scripts/verify-review-overrides.mjs`에도 같은 env 가드를 넣었습니다.
+- **docs: SSOT와 구현을 다시 맞췄습니다** — 문서가 코드보다 늦어 있던 서술을 전수 정정했습니다.
+  이미 구현됐는데 "없다"고 적혀 있던 것: 리뷰 전 secret 스캔(기본 차단), trunk 브랜치 설정 키,
+  자산 skew 감지(doctor D20 + `sync`), 심층 범위 검증·`attest`·`integrate`. 정책과 반대로 적혀 있던 것:
+  CI green이 publish·merge의 필수 전제라는 서술, push/tag가 Actions를 시작시킨다는 서술.
+  `docs/RELEASING.md`의 배포 게이트를 **필수 로컬 게이트 + 선택 GitHub CI**로 다시 썼고,
+  SSOT 08에 통합·검증 축(§2.11)·관측 축(§2.12)·kill switch 범위(§2.13)를 신설했습니다.
+  되살아나면 안 되는 문장 8건을 폐기 주장 등재부에 추가해 회귀 테스트로 잠갔습니다.
+  README의 CI 배지도 제거했습니다 — 수동 실행 전용 워크플로에서는 "매 커밋이 검증된다"는 잘못된
+  신호를 주기 때문입니다.
+- **perf 실측 정정** — REQ D의 report 개선 효과를 단일 수치로 과장하지 않습니다. 이번 릴리스 시점
+  재측정(로컬 win32 · `v0.21.0..HEAD` **69커밋** · manifest·아카이브 포함 · 3회 중앙값):
+  **2.19초**(2.19 / 2.19 / 2.08). 개선의 원인은 manifest마다 `git show`를 띄우던 N+1 경로를
+  `git cat-file --batch` 배치 1회로 바꾼 것입니다 — 배수는 범위 내 manifest 수에 따라 달라지므로
+  고정된 보장 값으로 읽지 마세요.
 - **test: 외부 호출 kill switch — COMMITGATE_TEST (0.22 REQ F)** — 테스트 setup이
   `COMMITGATE_TEST=1`을 설정(자식 프로세스에 env 상속)하고, production 어댑터의 **실제 spawn
   경로**(codex·gh 조회·gh workflow_dispatch·git ls-remote)와 fetch가 테스트 환경에서 호출 즉시
