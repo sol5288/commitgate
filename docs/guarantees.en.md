@@ -2,7 +2,8 @@
 
 ## What Does It Enforce?
 
-CommitGate is designed to block **unreviewed changes from being committed**, not just to wrap commands.
+On the standard REQ path, CommitGate is designed to block **unreviewed changes from being committed through
+`req:commit`**, not just to wrap commands.
 
 - No Codex approval means no commit.
 - If the approved staged tree differs from the current staged tree, the commit is blocked.
@@ -16,6 +17,10 @@ CommitGate is designed to block **unreviewed changes from being committed**, not
 - The reviewer returns every P1 it finds in a single call together in `findings[]` (batching). This avoids the serial one-finding-per-round flow that inflated review rounds — it does not lower the P1 bar; it just stops deferring already-known P1s to a later round.
 - During install, existing `cross-spawn` versions below the verified floor warn by default and fail with `--strict`.
 - Approval responses and evidence are kept under `workflow/REQ-.../responses/`.
+- Range verification classifies commits as approved, tool bookkeeping, merge, attested, invalid-evidence,
+  or unproven. A legitimate exception that could not receive a normal review can be recorded in the
+  append-only log with `commitgate attest <sha> --reason "..." --run` after explicit human acceptance.
+  **An attestation is not a review approval** and cannot repair or cover up corrupt approval evidence.
 - Review attempts are recorded in a **committed append-only ledger** (`workflow/REQ-.../responses/review-ledger.jsonl`). Each attempt becomes two rows — `attempt-opened` **before** the external call and `attempt-closed` after the verdict — so an attempt with an `attempt-opened` but no `attempt-closed` is exactly a "budget was spent but the call never completed." Whether a human exception was consumed is recorded here too. The ledger is committed automatically on design approval and phase evidence finalization, and it **never stores prompt/response bodies** (hashes only — bodies live in the archives). If the ledger content is corrupt (e.g. a truncated JSONL line), the next review stops fail-closed before it starts.
 
   Each row also carries the **review model, reasoning effort, and provider pinned for that call**. 🔴 These are *what CommitGate specified in the request*, not *what the reviewer actually ran* — the tool cannot know the latter and does not claim it. A `null` value means "not pinned (inherits the reviewer's global config)"; a **missing key** means the row predates these fields (before 0.9.11).
@@ -28,9 +33,9 @@ In short: **approved changes pass, ambiguous changes stop.**
 
 So that you do not miscalculate where your real defenses are:
 
-- **This is not hard enforcement.** No git hook is installed, so running `git commit` directly instead of `req:commit` bypasses doctor, the approval binding, and the evidence trail. Such commits leave no approval evidence, though, so **`npx commitgate verify-range` surfaces them locally as "unproven"** (meant for the pre-merge check — no GitHub auth or network needed). GitHub CI can consume usage quota and cost money, so it is **optional** and never a requirement of CommitGate — only organizations that want stronger enforcement opt into `verify-range --strict` or remote verification in their own pipeline.
+- **This is not hard enforcement.** No git hook is installed, so running `git commit` directly instead of `req:commit` bypasses doctor, the approval binding, and the evidence trail. Such commits leave no approval evidence, though, so **`npx commitgate verify-range` surfaces them locally as "unproven"** without GitHub auth or network access. `commitgate integrate` always runs that check in strict mode, and a release requires `verify-range --strict` on the final HEAD. **GitHub CI remains optional**: CommitGate neither starts it automatically nor requires a green result. Organizations that want stronger remote enforcement can add it in their own workflow.
 - **It does not fully keep your staged content secret.** `req:review-codex` transmits the full `git diff --cached` to Codex (OpenAI), and codex reads the repository root under `--sandbox read-only`. Right before transmission, **high-confidence secret patterns** (PEM private keys, AWS keys, GitHub/Slack tokens, Google/OpenAI keys, JWTs) are blocked by default (`secretScan: "block"` — no budget is consumed; relax with `"warn"`/`"off"`). But **plenty of secrets are outside that list, and there is no masking or scrubbing** — the "inspect the staged diff before review" duty stands. Size is unlimited by default, with a warning above `promptWarnBytes` (256KiB default) and an opt-in `promptMaxBytes` that refuses (never truncates) oversized prompts.
-- **It does not guarantee anything after the commit.** Approval binds the staged tree at commit time; merge, tag, and publish are each separate control points.
+- **A commit approval does not approve later actions.** `integrate` binds strict verification, human confirmation, and a local merge into one procedure, but it never pushes. Merge or direct push, tag, publish, and GitHub release remain separate control points whose approvals do not carry over.
 - 🔴 **Evidence is branch-local.** Approval responses, `approvals.jsonl`, and the ledger are committed on that ticket's **feature branch**. If you never merge that branch, **the evidence never reaches your mainline.** Nothing is destroyed — it is still on the branch — but it is invisible from mainline, and deleting the branch takes it with you.
 
   Measured (3 consumer repositories, 2,089 review calls, 16 days): **3.1% (65) of responses were absent from mainline**, and **66.2% of those were needs-fix records** (versus 47.9% among the ones that survived). In other words, **a retrospective built only from archived responses systematically undercounts failures.** A young repository with everything merged showed 0% — this skew accumulates over time.

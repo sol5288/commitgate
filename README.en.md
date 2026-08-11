@@ -2,7 +2,8 @@
 
 🌐 [한국어](./README.md) · **English**
 
-**A commit gate that keeps AI-authored changes from being committed without an approved Codex review.**
+**A commit gate that blocks unreviewed AI-authored changes on the standard REQ path and records legitimate
+exceptions without disguising them as approvals.**
 
 [![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
 [![node](https://img.shields.io/node/v/commitgate.svg)](https://nodejs.org)
@@ -64,13 +65,87 @@ By default **you are not stopped in the middle.** You confirm when a piece of wo
 | Decide what to verify before saving, sharing, or shipping | Let the tool compute the next action and the points where you confirm |
 | Step into every stage | Ask for approval only at the defined checkpoints |
 
+## What changed in 0.22.0 — lower CI cost, stronger evidence before merge
+
+0.22.0 separates three checks that serve different purposes. The most important rule is:
+**GitHub CI is optional, but local approval-evidence verification is not.**
+
+| Check | What it checks | When it is needed | Cost and network |
+|---|---|---|---|
+| **Codex review** | Whether this code change has defects | Before `req:commit` in the standard REQ path | External Codex call; consumes usage |
+| **`verify-range --strict`** | Whether every commit in the range has valid approval, bookkeeping, or exception evidence | During `integrate` and before a release | Local Git only; no GitHub Actions usage |
+| **GitHub CI** | Whether the change works in remote environments such as multiple OS and Node versions | Only when the user wants it | May consume Actions quota or incur cost |
+
+Think of a car: Codex review is the **repair inspection**, `verify-range --strict` checks the
+**maintenance records**, and GitHub CI is a **test drive on several road types**. You may skip the test drive,
+but you still check the records.
+
+### What merging looks like
+
+```sh
+npx commitgate integrate          # inspect the plan and strict result first (dry-run)
+npx commitgate integrate --run    # perform the local merge; final confirmation defaults to No
+```
+
+`integrate` checks for a clean worktree, **always** verifies approval evidence in strict mode, asks for final
+human confirmation, and merges locally. It re-verifies if either branch moves, and restores the original state
+when it can after a conflict. **It never pushes.**
+
+In a project that has GitHub CI run configuration, it asks this before the merge:
+
+```text
+GitHub CI workflow를 실행하시겠습니까?
+GitHub Actions 사용량 또는 비용이 발생할 수 있습니다. [y/N]
+```
+
+Enter, an empty answer, and `n` all mean **do not run it**. With no configuration, the question is not shown.
+To request a run explicitly, use `integrate --run --run-github-ci`.
+
+> ⚠️ **"CommitGate does not run CI" does not mean "this repository can never auto-run CI."** If a project's
+> `.github/workflows/*.yml` reacts to `push`, `pull_request`, or a tag, that repository-owned workflow may start
+> after a push even though CommitGate did not dispatch it.
+
+`verify-range --check-github-ci` only **queries** existing GitHub check-runs; it never starts a workflow.
+`integrate --run --run-github-ci`, on the other hand, actually starts the configured workflow.
+
+### Record a legitimate exception without pretending it was reviewed
+
+For an emergency commit that could not receive a normal Codex review, record the reason explicitly:
+
+```sh
+npx commitgate attest <commit-sha> --reason "Emergency production fix — approved by user" --run
+```
+
+`attest` **does not turn an exception into a review approval.** It records who accepted which commit and why in
+an append-only log, so `verify-range` classifies it as `attested`. It cannot repair or cover up corrupt approval
+evidence.
+
+0.22.0 also deep-classifies commits into six categories — approved, bookkeeping, merge, attested,
+invalid-evidence, and unproven. Check C5 points out an old CommitGate contract left in `AGENTS.md` after an
+upgrade. Approval-evidence calculation in `report` improved from about 29.5 seconds to 1.2 seconds on this
+repository (the result varies with environment and history size).
+
+### Upgrading from 0.21.x
+
+```sh
+npm install -D commitgate@^0.22.0
+npx commitgate sync --apply --gitignore
+npx commitgate check
+```
+
+If C5 says WARN, do not replace `AGENTS.md` wholesale. Compare it with
+`node_modules/commitgate/AGENTS.template.md` and manually merge **only the CommitGate contract sections**.
+`sync` deliberately leaves `AGENTS.md` alone so project-specific instructions survive. See
+[Upgrading](https://github.com/sol5288/commitgate/blob/main/docs/upgrade.en.md) for the full procedure.
+
 ## What it guarantees — and what it does not
 
 | Guaranteed | Not guaranteed |
 |---|---|
-| 🔒 **Nothing is committed without an approved Codex review** — until the reviewing AI passes it, saving is blocked | Anything **after** the save — merging, tagging, and publishing are each confirmed separately |
+| 🔒 **On the standard REQ path, nothing is committed without an approved Codex review** — `req:commit` stays blocked until the reviewing AI passes it | A commit approval authorizing later actions — merging, tagging, and publishing are each confirmed separately |
 | 🔁 If the change moves after approval, it **must be checked again** | **Secrecy** of the code you send — nothing is masked or filtered |
-| 🧯 **When in doubt it fails closed** — an answer with neither findings nor approval, a missing review tool, a failed run: all blocked | **Physically preventing** anything — a person who sets out to go around it still can |
+| 🧾 A directly created commit still appears as **unproven** in `verify-range` and is blocked by strict integration and release checks | **Physically preventing** anything — a person who runs `git commit` directly can still bypass the standard path |
+| 🧯 **When in doubt it fails closed** — an answer with neither findings nor approval, a missing review tool, a failed run: all blocked | Turning a no-review exception into a review approval — `attest` transparently records only the exception reason |
 
 The two below are not in the table. They are **things to read before you start**.
 
@@ -206,7 +281,8 @@ npx commitgate check
 [OK] C2: 리뷰어 CLI 확인: codex-cli 0.144.1
 [OK] C3: 리뷰어 로그인 확인: Logged in using ChatGPT
 [OK] C4: 리뷰 모델·추론강도 고정: gpt-5.6-terra / medium
-PASS — OK 4 · WARN 0
+[OK] C5: 계약 문서에 폐기된 CommitGate 서술 없음(AGENTS.md · AGENTS.commitgate.md)
+PASS — OK 5 · WARN 0
 ```
 
 Versions and model names differ per environment. What you are reading is not the numbers but **whether each line says `[OK]` or `FAIL`**.
@@ -237,7 +313,12 @@ More symptoms and answers are in **[Troubleshooting](https://github.com/sol5288/
 |---|---|
 | `npx commitgate setup` | Pick the review model and stop point, sign in to codex (interactive, required) |
 | `npx commitgate check` | Diagnose readiness (read-only) |
-| `npx commitgate sync` | After an upgrade, align the project's vendored assets with the runtime (plan only by default; `--apply` to write) |
+| `npx commitgate report` | Summarize local review, verification, and CI-choice history (read-only) |
+| `npx commitgate verify-range --strict` | Deep-check approval evidence for a commit range; fail on unproven or invalid evidence |
+| `npx commitgate integrate` | Inspect the strict verification and local merge plan (dry-run by default) |
+| `npx commitgate integrate --run` | Merge locally after final confirmation (no push; GitHub CI skipped by default) |
+| `npx commitgate attest <sha> --reason "..." --run` | Record the reason for a legitimate exception that had no normal review |
+| `npx commitgate sync --apply --gitignore` | Apply upgraded assets and backfill local-log `.gitignore` rules |
 | `npx commitgate uninstall` | Print a removal **plan only** (deletes nothing) |
 
 The full command list and `pnpm`/`yarn` forms are in the **[Workflow](https://github.com/sol5288/commitgate/blob/main/docs/workflow.en.md)**. Per-command options are available via `npx commitgate <verb> --help`.
@@ -260,6 +341,9 @@ The full command list and `pnpm`/`yarn` forms are in the **[Workflow](https://gi
 | **fail-closed** | The design rule of blocking rather than passing when the answer is ambiguous |
 | **AWAIT_HUMAN** | The tool has stopped and is waiting for your approval. The approval sentence is printed with it |
 | **delivery set** | Several REQs grouped into one larger unit. Used by `stopGate: merge` |
+| **strict verification** | A check that fails instead of warning when evidence is ambiguous. It reads local Git history, not GitHub CI |
+| **attestation** | A record naming the commit and reason for a no-review exception, without disguising it as an approval |
+| **GitHub CI** | A remote check run by GitHub Actions. It is optional in CommitGate and is skipped by default |
 | **devDependency** | A package needed only while developing, never shipped to production. CommitGate installs here |
 | **companion skill** | A guidance file telling the AI how to work. Advisory, not enforced |
 

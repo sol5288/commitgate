@@ -13,6 +13,7 @@
 | `reviewReasoningEffort` | `"medium"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | 열린 `(review_kind, phase_id)` review series의 재리뷰 시도 예산. 기본값 기준 1~5회차는 자동, 6~8회차는 회차마다 그 series·회차에 바인딩된 사람 예외 기록이 있어야 진행, `hardCap` 회를 이미 소진하면 그 다음 시도(9회차부터)는 예외가 있어도 차단. `hardCap ≤ 8`·`autoBudget ≤ hardCap` |
 | `stopGate` | `"req"` | **사람이 멈추는 지점을 단독으로 정합니다**(권장 축). `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 phase는 자율 커밋하고 확인을 **REQ를 완성시키는 커밋**으로 모음 · `merge`=여러 REQ를 delivery set으로 묶어 **묶음 전체가 끝날 때까지** 미룸. 위험도(`HIGH`)를 포함한 확인 지점 상세는 [워크플로 — HIGH 위험 티켓의 사람 확인](workflow.md#high-위험-티켓의-사람-확인)이 정본입니다. 통합(main 병합) 승인은 어느 값에서나 필요합니다 |
+| `githubCi` | 미설정 (`null`) | `integrate`에서 사용자가 명시적으로 요청할 때 실행할 GitHub Actions 워크플로. 미설정이면 CI 실행을 묻지도, 추측해서 실행하지도 않습니다 |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | phase 자동 커밋 정책. **`low-only`가 기본**이며 Codex 승인 phase를 사람 정지 없이 자동 커밋하고 사람 확인을 뒤로 모은다. `never`를 **명시하면** 매 phase 커밋 전에 사람이 확인한다. `"all"` 같은 값은 없다 — 의미 축은 `stopGate`이고, alias에 값을 늘리면 두 축이 또 갈라진다 |
 
 빈 `branchPrefix`나 프로젝트 밖으로 나가는 경로는 거부됩니다.
@@ -35,6 +36,37 @@
   `phaseCommit`만 있는 설정은 보수적으로 `req`로 해소됩니다 — `merge`를 쓰려면 `stopGate`를 명시하세요.
 - `merge`는 [delivery set](workflow.md#delivery-set--여러-req를-한-묶음으로)이 있어야 의미가 있습니다.
   묶음이 없으면 `req:next` 종단은 그냥 `DONE`이고 다음 REQ를 열 수 있습니다.
+
+### 선택적 GitHub CI 실행 — `githubCi`
+
+GitHub Actions 사용량·비용을 사용자가 통제할 수 있도록 **기본값은 미설정**입니다. CI를 실행할
+가능성을 열어 두려는 프로젝트만 워크플로 파일명을 직접 적습니다.
+
+```json
+{
+  "githubCi": {
+    "workflow": "ci.yml",
+    "timeoutMinutes": 30
+  }
+}
+```
+
+- `workflow`는 `.github/workflows/` 아래의 **파일명 하나**입니다. 경로나 URL이 아니라 `ci.yml`처럼
+  적습니다.
+- `timeoutMinutes`는 dispatch부터 완료까지 기다리는 전체 시간이며 1~120분, 기본값은 30분입니다.
+- 설정을 추가하는 것만으로 CI가 실행되지는 않습니다. 대화형 `integrate --run`에서 `y`로 답하거나,
+  비대화형에서 `integrate --run --run-github-ci`를 명시해야 합니다.
+- 질문은 `[y/N]`이고 기본값은 No입니다. Enter·빈 입력·`n`은 모두 미실행입니다.
+- 설정이 없으면 질문 자체를 생략합니다. `--run-github-ci`를 명시했는데 설정이 없으면 워크플로를
+  추측하지 않고 실패합니다.
+- GitHub CI를 실행하지 않아도 통합 실패가 아닙니다. 다만 `integrate`의 로컬
+  `verify-range --strict`는 항상 실행됩니다.
+- 이 설정은 CommitGate가 `workflow_dispatch`로 실행할 대상을 정할 뿐입니다. 저장소 자체 워크플로가
+  `push`·`pull_request`·tag에 반응하는지는 `.github/workflows/*.yml`의 실제 트리거를 확인하세요.
+
+기존 결과를 **조회만** 하려면 `verify-range --check-github-ci`를 사용합니다. 조회는 워크플로를 실행하지
+않으므로 새 GitHub Actions 사용량을 발생시키지 않습니다. 자세한 실행 순서는
+[워크플로 — 통합 seam](workflow.md#통합-seam--commitgate-integrate-022)을 참고하세요.
 
 ## 대화형 설정 — `commitgate setup`
 

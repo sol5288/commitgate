@@ -13,6 +13,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewReasoningEffort` | `"medium"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically, rounds 6–8 each require a human exception record bound to that series and round, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception. `hardCap ≤ 8`, `autoBudget ≤ hardCap` |
 | `stopGate` | `"req"` | **Decides on its own where a human stops** (preferred axis). `phase` = confirm before every phase commit; `req` = auto-commit phases inside a REQ and gather the confirmation at **the commit that completes the REQ**; `merge` = group several REQs into a delivery set and defer until **the whole set** is done. The per-value confirmation points, including how `HIGH` risk is treated, are defined in [Workflow — Human confirmation for HIGH-risk tickets](workflow.en.md#human-confirmation-for-high-risk-tickets). Integration (main merge) approval is required under every value |
+| `githubCi` | not configured (`null`) | GitHub Actions workflow that `integrate` may run only after an explicit user request. When absent, CommitGate neither asks about a CI run nor guesses a workflow |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | Per-phase auto-commit policy. **`low-only` is the default**: it auto-commits Codex-approved phases without a human stop and defers the human confirmation. Set `never` **explicitly** to stop for a human before every phase commit. There is no `"all"` value — `stopGate` is the semantic axis, and adding values to the alias would split the two axes again |
 
 Empty `branchPrefix` values and paths that escape the project root are rejected.
@@ -36,6 +37,38 @@ Empty `branchPrefix` values and paths that escape the project root are rejected.
   only sets the legacy `phaseCommit` therefore resolves conservatively to `req` — set `stopGate` explicitly to use `merge`.
 - `merge` only means something with a [delivery set](workflow.en.md#delivery-set--several-reqs-as-one-group).
   With no set, the `req:next` terminal is simply `DONE` and you can open the next REQ.
+
+### Optional GitHub CI runs — `githubCi`
+
+The default is **not configured**, so the user controls GitHub Actions quota and cost. Only projects that want
+the option of a run should name the workflow file explicitly.
+
+```json
+{
+  "githubCi": {
+    "workflow": "ci.yml",
+    "timeoutMinutes": 30
+  }
+}
+```
+
+- `workflow` is one filename under `.github/workflows/`, such as `ci.yml` — not a path or URL.
+- `timeoutMinutes` is the single deadline from dispatch to completion. It accepts 1–120 minutes and defaults
+  to 30.
+- Adding the setting does not start CI. Answer `y` during interactive `integrate --run`, or explicitly use
+  `integrate --run --run-github-ci` in a non-interactive run.
+- The prompt is `[y/N]`, so No is the default. Enter, an empty answer, and `n` all skip the run.
+- With no configuration the question is omitted. If `--run-github-ci` is requested without configuration,
+  CommitGate fails instead of guessing a workflow.
+- Skipping GitHub CI is not an integration failure. The local `verify-range --strict` inside `integrate` still
+  always runs.
+- This setting only selects what CommitGate may dispatch through `workflow_dispatch`. Inspect the actual
+  triggers in `.github/workflows/*.yml` to learn whether repository-owned workflows react automatically to
+  `push`, `pull_request`, or a tag.
+
+To **query only** existing results, use `verify-range --check-github-ci`. A query does not start a workflow or
+create new GitHub Actions usage. See [Workflow — integration seam](workflow.en.md#integration-seam--commitgate-integrate-022)
+for the full execution order.
 
 ## Interactive setup — `commitgate setup`
 
