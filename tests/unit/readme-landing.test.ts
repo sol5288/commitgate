@@ -65,7 +65,11 @@ const SAFETY_KO = [
 /** 영문 랜딩의 안전 4문구·헤딩. needle은 README.en.md에 **바이트 그대로** 있어야 한다. */
 const HEADING_EN = '## Install in 3 minutes'
 const SAFETY_EN = [
-  { id: '① no commit without review', needle: 'Nothing is committed without an approved Codex review' },
+  // 🔴 첫 글자는 소문자다. 보장 범위를 정확히 하려고 앞에 수식구가 붙으면서
+  //    (`On the standard REQ path, nothing is …`) 이 문구가 더 이상 문장 첫머리가 아니게 됐다.
+  //    범위를 좁힌 것은 **과잉 약속을 걷어낸 개선**이므로 문서를 되돌리지 않고 needle을 맞춘다.
+  //    ko(`표준 REQ 경로에서는 …`)는 대소문자가 없어 같은 편집에도 그대로 통과했다 — 영문만 깨졌다.
+  { id: '① no commit without review', needle: 'nothing is committed without an approved Codex review' },
   { id: '② staged diff off-machine', needle: 'sends your staged diff in full to an external service' },
   { id: '③ no git hook (bypassable)', needle: 'No git hook is installed' },
   { id: '④ fail-closed', needle: 'it fails closed' },
