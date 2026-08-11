@@ -1,17 +1,20 @@
 #!/usr/bin/env tsx
 /**
- * commitgate integrate — **feature→trunk 로컬 통합 seam** (REQ-2026-126).
+ * commitgate integrate — **feature→trunk 로컬 통합 seam** (REQ-2026-126 · 0.22.0 RC 보완).
  *
- * 통합 직전 절차(전제 확인·strict 승인 증거 검증·GitHub CI 실행 opt-in·사람 최종 확인·로컬 merge)를
- * 소유한다. 판정·계획은 순수 코어(`scripts/req/lib/merge-gate.ts`)가 하고, 이 파일은 수집·질문·실행·
- * 감사 로그만 한다.
+ * 이 파일은 **인자 파싱·질문·출력·감사 로그**만 한다:
+ *  - 전제·strict 증거 판정 → `scripts/req/lib/merge-gate.ts`(순수 코어)
+ *  - 준비 토큰·재검증·CAS 병합 → `scripts/req/lib/integration-coordinator.ts`
+ *  - CI 실행·run 결속 → `scripts/req/lib/github-ci-run.ts`
  *
  * 🔴 `delivery integrate`(feature→**delivery 브랜치**, delivery set 내부)와 층이 다르다 —
  *    이 verb는 trunk(`trunkBranch`) 병합이다.
  * 🔴 **항상 strict**: 미입증 커밋·manifest 문제가 있으면 병합하지 않는다(verify-range 보고 모드와 구별).
  * 🔴 **GitHub CI는 기본 실행하지 않는다.** 실행은 (a) `--run-github-ci` 명시, (b) config `githubCi`가
  *    있고 대화형 [y/N]에서 y일 때만. 생략은 정상 상태다. CI 실패·식별 불가면 병합하지 않는다.
- * 🔴 push·PR·자동 stash/reset·브랜치 삭제를 하지 않는다. 충돌 시 `merge --abort` 후 원래 브랜치 복귀.
+ * 🔴 **검증한 SHA만 병합한다.** CI 대기·사람 확인 중에 feature/trunk ref가 움직였으면 병합하지 않고
+ *    재실행을 안내한다(상세: integration-coordinator.ts의 불변식).
+ * 🔴 push·PR·자동 stash/reset·브랜치 삭제를 하지 않는다.
  */
 import { resolve, join, dirname } from 'node:path'
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
@@ -21,7 +24,13 @@ import { createGitAdapter, type GitAdapter } from '../scripts/req/lib/adapters'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 import { verifyRangeDeep } from '../scripts/req/lib/verify-range'
 import { readBlobsAtRef } from '../scripts/req/lib/git-batch'
-import { planIntegration, decideCiRun, type IntegrationFacts, type IntegrationPlan } from '../scripts/req/lib/merge-gate'
+import { decideCiRun, type IntegrationPlan } from '../scripts/req/lib/merge-gate'
+import {
+  IntegrationCoordinator,
+  type CoordinatorDeps,
+  type PreparedIntegration,
+  type VerifySummary,
+} from '../scripts/req/lib/integration-coordinator'
 import { awaitCiRun, createGhCiRunAdapter, type GithubCiRunPort, type CiRunResult } from '../scripts/req/lib/github-ci-run'
 import { collectDeepInput, type RunDeps as VerifyRunDeps } from './verify-range'
 
@@ -73,7 +82,7 @@ export function finalMergePrompt(feature: string, trunk: string): string {
   return `${feature} 를 ${trunk} 에 병합합니다(로컬 merge — push 없음). 계속하시겠습니까? [y/N] `
 }
 
-/** y/Y만 긍정 — 그 외 전부 부정(기본 No). */
+/** y/Y만 긍정 — 그 외 전부 부정(기본 No). Enter·빈 문자열·n 모두 부정이다. */
 export function isYes(answer: string): boolean {
   return answer.trim().toLowerCase() === 'y'
 }
@@ -89,6 +98,10 @@ export interface IntegrateRunRow {
   feature: string
   base: string | null
   head: string | null
+  /** 🔴 결속 증거(0.22.0 RC 보완): 검증한 두 SHA와 실제 merge 부모를 남긴다. */
+  feature_head_sha: string | null
+  trunk_head_sha: string | null
+  merge_parents: [string, string] | null
   counts: { merge: number; bookkeeping: number; approved: number; unproven: number } | null
   manifest_problems: number | null
   /** null = dry-run(실행 안 함). */
@@ -115,49 +128,7 @@ export function makeAppendLog(rootAbs: string, git: GitAdapter, warn: (line: str
   }
 }
 
-// ───────────────────────────────── 실행(설계 DEC-2 — 순서는 이 함수 하나가 소유) ──
-
-export interface ExecuteResult {
-  merged: boolean
-  mergeSha: string | null
-  detail: string
-}
-
-/**
- * trunk 체크아웃 → merge --no-ff. 실패 시 `merge --abort`(시도) → 원래 브랜치 복귀(시도).
- * 자동 reset/stash는 하지 않는다 — 복귀까지 실패하면 상태를 그대로 두고 수동 안내를 담아 반환한다.
- */
-export function executeIntegration(git: GitAdapter, trunk: string, feature: string): ExecuteResult {
-  try {
-    git.exec(['checkout', trunk])
-  } catch (err) {
-    return { merged: false, mergeSha: null, detail: `trunk 체크아웃 실패: ${msg(err)}` }
-  }
-  try {
-    git.exec(['merge', '--no-ff', feature, '-m', `merge: ${feature} → ${trunk} (commitgate integrate)`])
-  } catch (err) {
-    const failure = msg(err)
-    try {
-      git.exec(['merge', '--abort'])
-    } catch {
-      /* abort 불가(충돌 전 실패 등) — 복귀 시도는 계속한다 */
-    }
-    try {
-      git.exec(['checkout', feature])
-      return { merged: false, mergeSha: null, detail: `병합 실패(원상 복구함 — ${feature} 로 복귀): ${failure}` }
-    } catch {
-      return {
-        merged: false,
-        mergeSha: null,
-        detail: `병합 실패 + 원래 브랜치 복귀도 실패 — 현재 상태를 그대로 두었습니다. \`git status\`로 확인 후 수동 복구하세요: ${failure}`,
-      }
-    }
-  }
-  const sha = git.exec(['rev-parse', 'HEAD']).trim()
-  return { merged: true, mergeSha: sha, detail: `병합 완료 — ${trunk} @ ${sha.slice(0, 8)} (push는 하지 않았습니다)` }
-}
-
-// ───────────────────────────────── 수집·오케스트레이션 ──
+// ───────────────────────────────── 오케스트레이션 ──
 
 export interface RunDeps {
   git: GitAdapter
@@ -179,55 +150,20 @@ export interface RunDeps {
   readBlobs: VerifyRunDeps['readBlobs']
 }
 
-export function collectFacts(deps: RunDeps): { facts: IntegrationFacts; base: string | null; head: string | null } {
-  const currentBranch = deps.git.exec(['rev-parse', '--abbrev-ref', 'HEAD']).trim()
-  let trunkExists = false
-  if (deps.trunkBranch !== null) {
-    try {
-      deps.git.exec(['rev-parse', '--verify', `refs/heads/${deps.trunkBranch}`])
-      trunkExists = true
-    } catch {
-      trunkExists = false
-    }
-  }
-  const worktreeClean = deps.git.exec(['status', '--porcelain']).trim() === ''
-  const mergeInProgress = deps.gitStateExists('MERGE_HEAD')
-  const rebaseInProgress =
-    deps.gitStateExists('REBASE_HEAD') || deps.gitStateExists('rebase-merge') || deps.gitStateExists('rebase-apply')
-
-  let verify: IntegrationFacts['verify'] = null
-  let base: string | null = null
-  let head: string | null = null
-  if (deps.trunkBranch !== null && trunkExists && currentBranch !== deps.trunkBranch) {
-    try {
-      head = deps.git.exec(['rev-parse', '--verify', 'HEAD^{commit}']).trim()
-      base = deps.git.exec(['merge-base', deps.trunkBranch, head]).trim()
-      // REQ-2026-127: verify-range CLI와 **같은 심층 수집·분류**를 공유한다(수집 분기 방지 — 설계 리뷰 observation).
-      const report = verifyRangeDeep(collectDeepInput(deps.git, deps.readBlobs, base, head, deps.ticketRoot))
-      verify = {
-        counts: report.counts,
-        manifestProblems: report.manifestProblems,
-        unproven: report.unproven,
-        invalid: report.invalid,
-      }
-    } catch {
-      verify = null // 계산 불가 — plan이 차단한다(추정 금지)
-    }
-  }
-
+/**
+ * `RunDeps` → coordinator 의존성. verify는 **verify-range CLI와 같은 수집·분류**를 주입한다
+ * (수집 분기 방지 — 설계 리뷰 observation).
+ */
+export function makeCoordinatorDeps(deps: RunDeps): CoordinatorDeps {
   return {
-    facts: {
-      currentBranch,
-      trunkBranch: deps.trunkBranch,
-      branchPrefix: deps.branchPrefix,
-      worktreeClean,
-      mergeInProgress,
-      rebaseInProgress,
-      trunkExists,
-      verify,
+    git: deps.git,
+    gitStateExists: deps.gitStateExists,
+    trunkBranch: deps.trunkBranch,
+    branchPrefix: deps.branchPrefix,
+    verify: (base, head): VerifySummary | null => {
+      const report = verifyRangeDeep(collectDeepInput(deps.git, deps.readBlobs, base, head, deps.ticketRoot))
+      return { counts: report.counts, manifestProblems: report.manifestProblems, unproven: report.unproven, invalid: report.invalid }
     },
-    base,
-    head,
   }
 }
 
@@ -237,9 +173,10 @@ export interface RunResult {
   merged: boolean
 }
 
-export async function runIntegrate(opts: Opts, deps: RunDeps): Promise<RunResult> {
-  const { facts, base, head } = collectFacts(deps)
-  const plan = planIntegration(facts)
+export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: IntegrationCoordinator): Promise<RunResult> {
+  const coord = coordinator ?? new IntegrationCoordinator(makeCoordinatorDeps(deps))
+  const { facts, plan, prepared, base, head } = coord.collect()
+
   // 감사 로그 실패는 결과·exit를 바꾸지 않는다(R4 — phase-3 r01 P1). 경고만 남긴다.
   const safeAppend = (r: IntegrateRunRow): void => {
     try {
@@ -254,6 +191,9 @@ export async function runIntegrate(opts: Opts, deps: RunDeps): Promise<RunResult
     feature: facts.currentBranch,
     base,
     head,
+    feature_head_sha: prepared?.featureHeadSha ?? null,
+    trunk_head_sha: prepared?.trunkHeadSha ?? null,
+    merge_parents: null,
     counts: facts.verify?.counts ?? null,
     manifest_problems: facts.verify?.manifestProblems ?? null,
     ci: null,
@@ -265,22 +205,20 @@ export async function runIntegrate(opts: Opts, deps: RunDeps): Promise<RunResult
     ...over,
   })
 
-  if (!plan.ok) {
+  if (!plan.ok || prepared === null) {
     deps.log('commitgate integrate — 차단:')
     for (const p of plan.problems) deps.log(`  - ${p}`)
+    if (plan.ok && prepared === null) deps.log('  - 통합 계획을 결속할 SHA를 확정하지 못했습니다(내부 상태 불일치) — 다시 실행하세요')
     safeAppend(row({ exit: 1 }))
     return { exit: 1, plan, merged: false }
   }
 
-  deps.log(`commitgate integrate — ${facts.currentBranch} → ${facts.trunkBranch}`)
-  if (facts.verify !== null) {
-    const c = facts.verify.counts
-    deps.log(
-      `  증거: 승인 소비 ${c.approved} · 도구 부기 ${c.bookkeeping} · 머지 ${c.merge} · attested ${c.attested} · 미입증 ${c.unproven} (strict 통과)`,
-    )
-  }
+  deps.log(`commitgate integrate — ${prepared.featureBranch} → ${prepared.trunkBranch}`)
+  const c = prepared.verificationSummary.counts
+  deps.log(`  증거: 승인 소비 ${c.approved} · 도구 부기 ${c.bookkeeping} · 머지 ${c.merge} · attested ${c.attested} · 미입증 ${c.unproven} (strict 통과)`)
+  deps.log(`  결속: feature ${prepared.featureHeadSha.slice(0, 8)} · trunk ${prepared.trunkHeadSha.slice(0, 8)} (이 두 SHA가 그대로일 때만 병합합니다)`)
   deps.log('  실행 계획:')
-  for (const s of plan.steps) deps.log(`    ${plan.steps.indexOf(s) + 1}. ${s}`)
+  plan.steps.forEach((s, i) => deps.log(`    ${i + 1}. ${s}`))
 
   if (!opts.run) {
     deps.log('DRY-RUN — 병합하지 않았습니다. 실행하려면 --run 을 지정하세요.')
@@ -302,12 +240,13 @@ export async function runIntegrate(opts: Opts, deps: RunDeps): Promise<RunResult
 
   let ci: IntegrateRunRow['ci'] = 'skipped'
   let ciResult: CiRunResult | null = null
-  if (wantCi && deps.githubCi !== null && head !== null) {
-    deps.log(`GitHub CI 실행: ${deps.githubCi.workflow} @ ${facts.currentBranch} (마감 ${deps.githubCi.timeoutMinutes}분)`)
+  if (wantCi && deps.githubCi !== null) {
+    deps.log(`GitHub CI 실행: ${deps.githubCi.workflow} @ ${prepared.featureBranch} (마감 ${deps.githubCi.timeoutMinutes}분)`)
+    // 🔴 CI가 검사하는 대상은 **결속된 feature SHA**다 — 브랜치 tip이 아니다.
     ciResult = await awaitCiRun(deps.ciPort, {
       workflow: deps.githubCi.workflow,
-      ref: facts.currentBranch,
-      expectedHeadSha: head,
+      ref: prepared.featureBranch,
+      expectedHeadSha: prepared.featureHeadSha,
       timeoutMinutes: deps.githubCi.timeoutMinutes,
       now: deps.nowMs,
       sleep: deps.sleep,
@@ -319,14 +258,14 @@ export async function runIntegrate(opts: Opts, deps: RunDeps): Promise<RunResult
       safeAppend(row({ ci, ci_run_id: ciResult.runId, ci_conclusion: ciResult.conclusion, exit: 1 }))
       return { exit: 1, plan, merged: false }
     }
-    deps.log(`GitHub CI: run #${ciResult.runId} ${ciResult.conclusion} — 통과`)
+    deps.log(`GitHub CI: run #${ciResult.runId} ${ciResult.conclusion} — 통과${ciResult.runHtmlUrl === null ? '' : ` (${ciResult.runHtmlUrl})`}`)
   } else {
     deps.log('GitHub CI: 실행 생략(정상 — 로컬 검증만으로 계속합니다)')
   }
 
   // 사람의 최종 통합 확인(설계 DEC-5). 대화형은 [y/N] 기본 No, 비대화형은 --run 자체가 확정 동작.
   if (deps.interactive) {
-    const ans = await deps.ask(finalMergePrompt(facts.currentBranch, facts.trunkBranch ?? ''))
+    const ans = await deps.ask(finalMergePrompt(prepared.featureBranch, prepared.trunkBranch))
     if (!isYes(ans)) {
       deps.log('통합을 취소했습니다(병합하지 않았습니다).')
       safeAppend(row({ ci, ci_run_id: ciResult?.runId ?? null, ci_conclusion: ciResult?.conclusion ?? null, exit: 0 }))
@@ -334,7 +273,8 @@ export async function runIntegrate(opts: Opts, deps: RunDeps): Promise<RunResult
     }
   }
 
-  const exec = executeIntegration(deps.git, facts.trunkBranch as string, facts.currentBranch)
+  // 🔴 재검증 + CAS 병합 — CI 대기·사람 확인 사이에 상태가 바뀌었으면 여기서 멈춘다.
+  const exec = coord.merge(prepared)
   deps.log(exec.merged ? `✅ ${exec.detail}` : `🔴 ${exec.detail}`)
   const exit: 0 | 1 = exec.merged ? 0 : 1
   safeAppend(
@@ -344,6 +284,7 @@ export async function runIntegrate(opts: Opts, deps: RunDeps): Promise<RunResult
       ci_conclusion: ciResult?.conclusion ?? null,
       merged: exec.merged,
       merge_sha: exec.mergeSha,
+      merge_parents: exec.mergeParents,
       exit,
     }),
   )
@@ -365,9 +306,11 @@ export function printHelp(): void {
 동작(순서):
   1. 전제 확인 — feature 브랜치·clean worktree·진행 중 merge/rebase 없음·trunk 존재
   2. 로컬 승인 증거 검증(항상 strict) — merge-base(trunk, HEAD)..HEAD 분류, 미입증·손상 시 차단
+     → 통과하면 feature/trunk 두 SHA를 **결속**한다(이후 절차는 이 SHA만 대상으로 한다)
   3. GitHub CI 실행 opt-in — 기본 실행하지 않음(아래 참조)
   4. 사람의 최종 확인([y/N] 기본 No — 비대화형은 --run 자체가 확정 동작)
-  5. 로컬 merge --no-ff (충돌 시 원상 복구) — push는 하지 않습니다
+  5. 재검증 + 병합 — 결속한 두 SHA가 그대로일 때만, 그 SHA를 정확히 merge --no-ff 하고
+     trunk ref를 비교·교환(update-ref CAS)으로 갱신한다. push는 하지 않습니다
   6. 감사 로그 1행(workflow/.integrate-runs.jsonl — gitignored)
 
 옵션:
@@ -380,8 +323,13 @@ export function printHelp(): void {
 GitHub CI는 기본 실행하지 않습니다:
   실행은 --run-github-ci 명시 또는(githubCi 설정이 있을 때) 대화형 [y/N]의 y 뿐입니다.
   설정이 없으면 질문하지 않고 생략합니다(생략은 정상 상태). 선택은 실행 단위이며 저장되지 않습니다.
-  실행 전 원격 브랜치 SHA가 로컬 HEAD와 같아야 하며(자동 push 없음), dispatch한 run만 식별해
-  완료를 확인합니다. 실패·timeout·식별 불가면 병합하지 않습니다.
+  실행 전 원격 브랜치 SHA가 결속한 feature SHA와 같아야 하며(자동 push 없음), dispatch 응답이 준
+  run id로만 그 실행을 확인합니다(목록 추정 없음). success 이외의 결과·timeout·식별 불가면 병합하지 않습니다.
+
+검증한 것만 병합합니다:
+  CI 대기·사람 확인 중에 feature/trunk ref가 움직이거나 워킹트리가 더러워지면 병합하지 않고
+  재실행을 안내합니다. 병합은 브랜치 이름이 아니라 결속한 SHA로 하며, 만들어진 merge commit의
+  부모가 그 두 SHA인지 확인한 뒤에야 trunk ref를 갱신합니다.
 
 참고: \`delivery integrate\` 는 delivery set 내부(feature→delivery 브랜치) 통합으로 이 명령과 층이 다릅니다.
 
@@ -437,3 +385,5 @@ export async function runCli(argv: string[]): Promise<void> {
 
 const isMain = isEntrypoint(import.meta.url)
 if (isMain) void runCli(process.argv.slice(2))
+
+export type { PreparedIntegration }

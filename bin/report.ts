@@ -13,7 +13,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { loadConfig } from '../scripts/req/lib/config'
 import { createGitAdapter } from '../scripts/req/lib/adapters'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
-import { buildReport, type Report, type EvidenceRange } from '../scripts/req/lib/report'
+import { buildReport, type Report, type EvidenceRange, type VerifyRangeOutcome } from '../scripts/req/lib/report'
 import { verifyRangeDeep, type DeepVerifyReport } from '../scripts/req/lib/verify-range'
 import { readBlobsAtRef } from '../scripts/req/lib/git-batch'
 import { collectDeepInput } from './verify-range'
@@ -69,40 +69,75 @@ function readLog(rootAbs: string, rel: string): string | null {
 }
 
 /**
- * evidence 범위 verify — 계산 불가(trunk 없음·git 실패)는 null(섹션 부재).
+ * evidence 범위 verify.
+ *
+ * 🔴 0.22.0 RC 보완: 실패를 **null로 삼키지 않는다.** 예전에는 어떤 실패든 `catch { return null }`
+ *    이어서 사람이 보는 화면에 "분모 계산 불가"만 남았고 — trunk 미설정인지, base ref 오타인지,
+ *    수집이 터진 것인지 구별할 방법이 없었다. 이제 각 실패 지점이 **안정 문자열 사유**를 들고 온다.
  * 🔴 심층 수집(REQ-2026-127)을 verify-range CLI와 공유한다 — manifest당 `git show` N+1이었던
  *    0.21 경로(실측 ~29.5초)를 cat-file --batch 배치로 대체(REQ-2026-128).
  */
-function tryVerifyRange(rootAbs: string, ticketRoot: string, trunkBranch: string | null, opts: Opts): { report: DeepVerifyReport; range: EvidenceRange } | null {
+function tryVerifyRange(rootAbs: string, ticketRoot: string, trunkBranch: string | null, opts: Opts): VerifyRangeOutcome {
+  let git: ReturnType<typeof createGitAdapter>
   try {
-    const git = createGitAdapter(rootAbs)
-    const headSha = git.exec(['rev-parse', '--verify', `${opts.head ?? 'HEAD'}^{commit}`]).trim()
-    let baseSha: string
-    let source: EvidenceRange['source']
-    if (opts.base !== null) {
+    git = createGitAdapter(rootAbs)
+  } catch (err) {
+    return { ok: false, reason: `git repository not available: ${errMsg(err)}` }
+  }
+
+  const headRef = opts.head ?? 'HEAD'
+  let headSha: string
+  try {
+    headSha = git.exec(['rev-parse', '--verify', `${headRef}^{commit}`]).trim()
+  } catch {
+    return { ok: false, reason: `head ref not found: ${headRef}` }
+  }
+
+  let baseSha: string
+  let source: EvidenceRange['source']
+  if (opts.base !== null) {
+    try {
       baseSha = git.exec(['rev-parse', '--verify', `${opts.base}^{commit}`]).trim()
-      source = 'explicit'
-    } else if (opts.last !== null) {
-      // HEAD~N이 이력보다 깊으면 루트까지로 좁힌다(전 범위) — 실패보다 정직한 축소.
-      try {
-        baseSha = git.exec(['rev-parse', '--verify', `${headSha}~${opts.last}^{commit}`]).trim()
-      } catch {
-        baseSha = git.exec(['rev-list', '--max-parents=0', headSha]).trim().split('\n')[0] as string
-      }
-      source = 'last'
-    } else {
-      if (trunkBranch === null) return null
-      baseSha = git.exec(['merge-base', trunkBranch, headSha]).trim()
-      source = 'merge-base'
+    } catch {
+      return { ok: false, reason: `base ref not found: ${opts.base}` }
     }
+    source = 'explicit'
+  } else if (opts.last !== null) {
+    // HEAD~N이 이력보다 깊으면 루트까지로 좁힌다(전 범위) — 실패보다 정직한 축소.
+    try {
+      baseSha = git.exec(['rev-parse', '--verify', `${headSha}~${opts.last}^{commit}`]).trim()
+    } catch {
+      try {
+        baseSha = git.exec(['rev-list', '--max-parents=0', headSha]).trim().split('\n')[0] as string
+      } catch (err) {
+        return { ok: false, reason: `root commit not found for --last ${opts.last}: ${errMsg(err)}` }
+      }
+    }
+    source = 'last'
+  } else {
+    if (trunkBranch === null) return { ok: false, reason: 'trunk branch not configured (req.config.json trunkBranch)' }
+    try {
+      baseSha = git.exec(['merge-base', trunkBranch, headSha]).trim()
+    } catch {
+      return { ok: false, reason: `merge-base not found between ${trunkBranch} and ${headRef}` }
+    }
+    source = 'merge-base'
+  }
+
+  try {
     const report = verifyRangeDeep(collectDeepInput(git, (ref, paths) => readBlobsAtRef(rootAbs, ref, paths), baseSha, headSha, ticketRoot))
     return {
+      ok: true,
       report,
       range: { base: baseSha, head: headSha, source, empty: baseSha === headSha, generatedAt: new Date().toISOString() },
     }
-  } catch {
-    return null
+  } catch (err) {
+    return { ok: false, reason: `evidence collection failed: ${errMsg(err)}` }
   }
+}
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 export function collectReport(dir: string, opts?: Pick<Opts, 'base' | 'head' | 'last'>): Report {
@@ -154,7 +189,11 @@ export function renderHuman(r: Report): string {
     lines.push(`  프롬프트 바이트 p50/p95: ${v.promptBytesP50 ?? '-'} / ${v.promptBytesP95 ?? '-'} · 소요 ms p50/p95: ${v.durationMsP50 ?? '-'} / ${v.durationMsP95 ?? '-'}`)
   }
   lines.push('', '## evidence')
-  if (!r.evidence) lines.push('(판정 불가 — trunk 없음·git 실패, 또는 미계산. --base <ref>로 범위를 지정할 수 있습니다)')
+  if (!r.evidence)
+    // 🔴 0.22.0 RC 보완: "판정 불가"로 끝내지 않고 **왜**인지 보여준다(사유는 JSON과 같은 문자열).
+    lines.push(
+      `(계산 불가 — ${r.verification_unavailable_reason ?? '사유 미기록'}. --base <ref> / --last <N> 으로 범위를 지정할 수 있습니다)`,
+    )
   else {
     const e = r.evidence
     lines.push(`검증 범위: ${e.range.base.slice(0, 8)}..${e.range.head.slice(0, 8)} (${e.range.source}) · 계산 시각 ${e.range.generatedAt}`)

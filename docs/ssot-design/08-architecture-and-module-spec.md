@@ -119,6 +119,72 @@ flowchart TB
 - **migrate**: `package.json`의 `req:*` 중 **현재 값이 정확히 Stage A 주입값인 키만** `commitgate <verb>`로 전환(`decideScripts` → `convert`/`stage-b`/`custom`/`absent`). 불변식: **기본 dry-run**(`--apply`에서만 쓰기) · 쓰기 범위 **`package.json` 한 파일**(그래서 다중 파일 rollback 프레임워크가 없다) · **비파괴**(`scripts/req/**`·스키마·persona·config·진입점·`workflow/REQ-*` 증거를 삭제하지 않고 안내만) · 사용자 정의 값 **미덮어씀**(보존 + 수동 조치 안내 — 한 글자만 달라도 사용자 값) · **커밋하지 않음** · **동기 구현**(런처가 await하지 않는다). `--apply` 전 `commitgateDeclared` 확인. 대상 root는 **`--dir`(기본 cwd)로만** 해소한다 — `resolveRoot` fallback을 타면 CommitGate 패키지 자신의 `package.json`을 재작성한다.
 - **uninstall**: init의 SSOT 상수 import, 파일 분류(identical/differs/ambiguous/evidence/unknown), 도입 커밋 탐색, 계획 출력. **read-only 안내 전용** — `node:fs` 조회 API만 import하고(**쓰기 API 미import = 구조적 계약**) 삭제 플래그(`--run`/`--force`)가 **없다**. git은 read-only 서브커맨드 allowlist(`rev-parse`·`status`·`ls-files`·`log`)만, 해시는 `node:crypto`로 계산(`git hash-object`는 objects/에 쓸 수 있다). **npm을 spawn하지 않는다** — 런타임 제거(`npm uninstall -D commitgate`)는 **문자열로 출력만** 하고 사용자가 package manager로 실행한다.
 
+### 2.11 통합·검증 축 (0.22 — verify-range / attest / integrate)
+
+커밋 **단위** 게이트(doctor·commit)와 층이 다른 **범위(range) 축**이다. "이 커밋이 승인됐는가"가 아니라
+"이 **범위의 모든 커밋**이 승인 증거로 설명되는가"를 묻는다.
+
+| 모듈 | 책임 | 비고 |
+|---|---|---|
+| `lib/verify-range.ts` | **순수 분류 코어**. `verifyRangeDeep(input)` → 심층 **6범주** `merge` / `bookkeeping` / `approved` / `attested` / `invalid-evidence` / `unproven` + `manifestProblems` | git·fs를 모른다 |
+| `bin/verify-range.ts` `collectDeepInput` | **수집**(프로세스 수 상한 계약): `log`×2 + `ls-tree`×1 + merge당 `diff-tree` + blob 배치 ≤2. manifest 수 N에 비례하는 프로세스를 만들지 않는다 | `integrate`·`report`가 **이 함수를 공유**한다(수집 분기 금지) |
+| `lib/git-batch.ts` | `git cat-file --batch` 1프로세스로 다수 blob 읽기 | 0.21의 manifest당 `git show` N+1(실측 ~29.5초)을 대체 |
+| `lib/attestations.ts` + `bin/attest.ts` | `commitgate attest` — **정당한 예외의 명시 승인 기록**. 커밋 identity(tree 포함)에 결속 | 🔴 `invalid-evidence`(손상 증거)는 **attest로 면제되지 않는다** — 수정이 유일한 해법 |
+| `lib/merge-gate.ts` | 통합 전제·strict 증거 판정의 **순수 코어**(`planIntegration`) + CI 실행 결정(`decideCiRun`) | 실행 순서를 bin이 하드코딩하지 않게 계획을 반환한다 |
+| `lib/integration-coordinator.ts` | **준비 토큰(`PreparedIntegration`) + 재검증 + CAS 병합**. 검증한 feature/trunk SHA가 병합 직전까지 그대로일 때만, 그 SHA를 정확히 병합한다 | 아래 §2.11.1 |
+| `lib/github-ci-run.ts` (`GithubCiRunPort`) | GitHub CI **실행**(workflow_dispatch) 포트 | 아래 §2.11.2 |
+| `bin/integrate.ts` | 인자 파싱·질문·출력·감사 로그(`workflow/.integrate-runs.jsonl`)만 | 판정·실행은 위 두 모듈이 소유 |
+
+#### 2.11.1 병합 결속 불변식 (compare-and-swap)
+
+> 검증한 feature SHA와 trunk SHA가 병합 직전까지 그대로일 때만, 검증한 feature SHA를 정확히 병합한다.
+
+CI 대기(최대 `timeoutMinutes`분)와 사람의 [y/N] 확인 사이에 ref가 움직일 수 있으므로, 병합 직전
+`rev-parse` 한 번으로 끝내지 않는다. 실행 순서:
+
+1. 재검증 — 현재 브랜치 · `refs/heads/<feature>` · `refs/heads/<trunk>` · worktree clean · merge/rebase 진행 여부
+2. `git checkout --detach <trunkHeadSha>` (브랜치 이름이 아니라 **SHA**)
+3. `git merge --no-ff <featureHeadSha>` (여기도 **SHA**)
+4. 생성된 merge commit의 부모가 `[trunkHeadSha, featureHeadSha]` 인지 대조
+5. `git update-ref refs/heads/<trunk> <mergeSha> <trunkHeadSha>` — **compare-and-swap**
+6. `git checkout <trunk>`
+
+2~5 사이에 trunk가 움직이면 5가 실패하고 **trunk ref는 변하지 않는다**. 어떤 실패에서도 `merge --abort`를
+시도하고 원래 feature 브랜치로 복귀한다. 자동 reset·stash·브랜치 삭제·push는 하지 않는다.
+
+#### 2.11.2 GitHub CI 실행 포트 — 확정 정책
+
+🔴 **기본 실행하지 않는다.** `.github/workflows/ci.yml`은 `workflow_dispatch` 전용이고, push·tag·PR로
+Actions가 자동으로 도는 경로는 **없다**. 실행 조건은 (a) `--run-github-ci` 명시, 또는 (b) `req.config.json`에
+사용자 소유 `githubCi` 설정이 있고 대화형 [y/N]에서 `y`인 경우뿐이다. **질문의 기본값은 No**이며
+Enter·빈 문자열·`n`은 모두 미실행이다. 설정이 없으면 질문하지 않고 생략한다(생략은 정상 상태).
+
+- **run 식별은 추정하지 않는다.** dispatch 요청에 `return_run_details=true`(boolean)를 실어 응답의
+  `workflow_run_id`만 쓴다. 목록 조회로 이번 run을 추측하는 경로는 **삭제**됐다(포트에 `listRuns`가 없다).
+  ID를 얻지 못하면 조용히 다른 방법으로 넘어가지 않고 실패한다.
+- **정체 대조**: `head_sha` == 결속한 feature SHA · `event` == `workflow_dispatch` · `head_branch` == 요청 브랜치 ·
+  (응답에 있으면) workflow path 일치. 폴링마다 확인한다.
+- **성공은 `success`뿐**이다. `skipped`(요청했는데 실행되지 않음)·`neutral`(판정 없음)은 통과가 아니다.
+  이 축은 조회 축(`judgeCheckRunsPayload`)보다 **의도적으로 엄격하다**.
+- 실패·timeout·식별 불가면 **병합하지 않는다**.
+
+### 2.12 관측 축 (0.22 — report / doctor 스키마 v2)
+
+| 모듈 | 책임 |
+|---|---|
+| `lib/report.ts` + `bin/report.ts` | `.doctor-runs` · `.review-calls` · `.verify-runs` 세 로그 + verify-range 심층 요약의 **읽기 전용 집계**. 범위 옵션 `--base` / `--head` / `--last N`. verify-range 수집 실패는 null로 삼키지 않고 `verification_available` / `verification_unavailable_reason`(additive 필드)로 사유를 드러낸다 |
+| doctor 관측 스키마 **v2** | 행마다 `evaluations[]`(`applicable` · `outcome` · `blocked` · `reason_code`)를 남겨 **검사별 적용 가능 분모**를 연다. v1 행과 **하위호환**이며, report는 v2 행만 분모로 집계하고 v1 행 수를 함께 표기한다(추정 금지) |
+
+### 2.13 테스트 외부 호출 kill switch (0.22)
+
+테스트 setup이 `COMMITGATE_TEST=1`을 설정하고(자식 프로세스로 상속), production 어댑터의 **현재 알려진**
+외부 호출 경로 — codex · `gh` · `git ls-remote` · `fetch` — 가 spawn 이전에 즉시 실패한다(`assertNotTestEnv`).
+
+🔴 이것은 **보편적 샌드박스가 아니다.** 새 모듈이 새 방식으로 밖에 나가면 kill switch는 그것을 모른다.
+그래서 `tests/unit/external-call-boundary.test.ts`가 **경계 자체를 고정**한다: 프로세스를 스폰하거나
+원격·과금 대상을 다루는 production 파일의 allowlist를 유지하고, 목록 밖에서 그런 코드가 생기면 red다.
+**로컬 git은 막지 않는다** — 정상 동작이고 원격 효과가 없다.
+
 ## 3. end-to-end 시퀀스
 
 ### 3.1 설계 리뷰(`req:review-codex --kind design --run`)
@@ -188,8 +254,10 @@ sequenceDiagram
 
 - **`review-codex.ts`가 공유 도메인 허브이자 CLI 오케스트레이터**다. new/next/doctor/commit이 state type·바인딩·검증 헬퍼를 command 파일에서 import한다. 현재 순환은 없지만 CI verifier·state rebuild·provider 확장을 추가하면 결합도가 빠르게 커진다.
 - **state 계약이 선언적 schema가 아니라 분산된 사용 지점 검증**에 있다. 필드 조합의 유효성을 한 곳에서 설명·버전 관리하기 어렵다.
-- **증거 읽기 로직이 doctor/commit에 분산**되어 향후 CI verifier가 새 해석을 복제할 위험이 있다.
-- **자산↔런타임 skew는 감지 수단이 없다.** Stage B(REQ-2026-014)가 실행 코드를 `node_modules/commitgate`로 옮기면서 vendored 사본(Stage A)의 문제 — 대상 repo마다 흩어진 실행 코드의 계약 버전·보안 패치를 일관되게 유지하기 어려움 — 은 줄었다. 런타임 갱신 지점이 package manager 하나로 모이기 때문이다. 그러나 대상에 남는 **관리 자산**(스키마·persona·config·계약·진입점)은 여전히 **설치 시점의 사본**이고, 패키지를 올려도 자동으로 따라오지 않는다. **그 skew를 감지하는 수단은 아직 없다** — doctor D19는 `req:*` 값의 형태만 보고 manifest·lockfile·`node_modules`·버전을 검증하지 않으며([07 §3.1](07-business-rules-and-state-machines.md)), 자산 업그레이드·3-way merge도 미구현이다.
+- **증거 읽기 로직이 doctor/commit에 분산**돼 있었다. 0.22에서 범위 검증 축은 `lib/verify-range.ts`(순수 분류)와
+  `bin/verify-range.ts`의 `collectDeepInput`(수집)으로 모였고, `integrate`·`report`가 **그 같은 수집·분류를
+  공유한다**(수집 분기 금지). doctor/commit의 커밋 단위 판정은 여전히 별도 축이다.
+- **자산↔런타임 skew는 부분적으로 감지된다.** Stage B(REQ-2026-014)가 실행 코드를 `node_modules/commitgate`로 옮기면서 vendored 사본(Stage A)의 문제 — 대상 repo마다 흩어진 실행 코드의 계약 버전·보안 패치를 일관되게 유지하기 어려움 — 은 줄었다. 런타임 갱신 지점이 package manager 하나로 모이기 때문이다. 그러나 대상에 남는 **관리 자산**(스키마·persona·config·계약·진입점)은 여전히 **설치 시점의 사본**이고, 패키지를 올려도 자동으로 따라오지 않는다. 현재 방어는 doctor **D20**(배포 자산 content-hash 대조 → WARN)과 `commitgate sync --apply`(스키마 축 재동기화·persona 부재 복원)이다. **여전히 없는 것**: 설치 원장, 3-way merge, rollback([07 §3.1](07-business-rules-and-state-machines.md)).
 - **Codex adapter와 외부 전송 정책이 같은 호출 경로에 결합**되어 payload manifest·scanner·격리 컨텍스트를 넣을 명시적 policy port가 없다.
 
 ### 5.3 목표 seam

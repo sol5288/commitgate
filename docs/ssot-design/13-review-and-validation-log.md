@@ -225,6 +225,11 @@ ef59904 phase 4 doctor D19         f6d4000 phase 4 evidence
 
 ### 9.4 🔴 post-push CI의 한계 (완료로 오인 금지)
 
+> 📜 **아래는 2026-07 당시의 기록이다.** 그때 `ci.yml`은 push·PR에서 자동 실행됐다.
+> 0.22.0부터는 `workflow_dispatch` 전용이라 **push가 CI를 시작시키지 않는다** — 즉 아래에서 지적한
+> "사후 검증" 상황 자체가 자동으로는 발생하지 않는다(사람이 반영 후 직접 실행하면 여전히 사후다).
+> 기록을 고쳐 쓰지 않고 현재 정책만 병기한다: [10](10-operations-deployment-and-observability.md) §2.
+
 **Stage B는 `main`에 branch protection bypass direct push된 뒤 CI가 실행됐다.** CI 9/9 success는 사실이지만, **이 사례에서 CI는 병합을 사전에 막는 게이트가 아니었다** — 코드가 이미 `main`에 있는 상태에서 사후(post-hoc)로 돈 검증이다. 따라서:
 
 - 이 9/9는 "게이트를 통과했다"가 아니라 "머지 이후 회귀가 관측되지 않았다"로만 읽는다.

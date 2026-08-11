@@ -37,12 +37,13 @@ describe('COMMITGATE_TEST kill switch', () => {
     expect(() => createGhCiAdapter('.').check('a'.repeat(40))).toThrow('COMMITGATE_TEST')
   })
 
-  it('실제 gh 실행 어댑터는 dispatch/listRuns/getRun/remoteBranchSha 전부 즉시 실패한다', async () => {
+  it('실제 gh 실행 어댑터는 dispatch/getRun/remoteBranchSha 전부 즉시 실패한다', async () => {
     const port = createGhCiRunAdapter('.')
     await expect(port.dispatch('ci.yml', 'main')).rejects.toThrow('COMMITGATE_TEST')
-    await expect(port.listRuns('ci.yml', 'main', 't')).rejects.toThrow('COMMITGATE_TEST')
     await expect(port.getRun(1)).rejects.toThrow('COMMITGATE_TEST')
     await expect(port.remoteBranchSha('main')).rejects.toThrow('COMMITGATE_TEST')
+    // listRuns는 0.22.0 RC 보완에서 **삭제**됐다(목록 추정 금지) — 되살아나면 이 단언이 red다.
+    expect((port as unknown as Record<string, unknown>).listRuns).toBeUndefined()
   })
 
   it('네트워크(fetch)는 테스트에서 즉시 실패한다', () => {

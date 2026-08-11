@@ -73,6 +73,47 @@ npx commitgate report                     # 로컬 관측 요약(읽기 전용) 
 verify-range가 기록을 건너뛰고 경고만 냅니다(동작은 정상 — 관측 로그만 안 쌓입니다).
 `--apply` 없는 `sync`는 계획만 출력하는 dry-run이라 파일을 바꾸지 않습니다.
 
+**②-b 🔴 `sync`는 `AGENTS.md`의 계약 본문을 갱신하지 않습니다.** 이것이 업그레이드에서 가장 놓치기 쉬운 지점입니다.
+
+- `sync --apply --gitignore`가 다루는 것은 **스키마 축과 `workflow/.gitignore`뿐**입니다.
+- `quickstart --apply`도 **관리 Quick Start 블록만** 다루며, `I2`/CI 계약 전체를 교체하지 않습니다.
+- `AGENTS.md`는 **사용자 소유 파일**이고 프로젝트 고유 규칙이 섞여 있습니다. 도구가 자동으로 덮어쓰면
+  그 내용이 지워지므로, CommitGate는 **고치지 않고 알리기만** 합니다.
+
+그래서 0.21 이하에서 올라오면 `AGENTS.md`에 옛 계약이 그대로 남습니다(예: CI green을 merge·publish의
+전제로 적은 문장, 옛 `I2` 승인 문장, push 이후 CI가 돈다는 서술).
+
+**②-c `commitgate check`의 C5 WARN을 확인하세요.** 업그레이드 직후 실행하면 이 상황을 짚어 줍니다.
+
+```sh
+npx commitgate check          # C5 가 WARN 이면 아래 병합이 필요합니다
+npx commitgate check --json   # 기계 소비도 같은 진단을 담습니다
+```
+
+- C5는 `AGENTS.md`와 `AGENTS.commitgate.md`를 읽어 **폐기된 CommitGate 서술**이 있으면 WARN합니다.
+- **WARN이지 FAIL이 아닙니다** — 문서가 낡았다는 이유로 커밋·리뷰를 막지 않습니다(`check` exit도 0).
+- `check`는 **어떤 파일도 쓰지 않습니다**.
+
+**②-d C5 WARN이면 어떻게 고치나.** 파일을 통째로 교체하지 **마세요**. 프로젝트 고유 내용이 사라집니다.
+설치된 템플릿(`node_modules/commitgate/AGENTS.template.md`)과 비교해 **CommitGate 계약 부분만** 손으로 병합합니다.
+
+현행 계약의 핵심 문장은 다음과 같습니다.
+
+- **CommitGate는 GitHub CI를 자동으로 dispatch하지 않습니다.** 워크플로 실행은 사용자가
+  `--run-github-ci`를 명시했거나 대화형 질문에 `y`로 답했을 때뿐입니다(질문 기본값은 No).
+- **CI 생략은 정상 상태**이며 merge·publish의 실패 조건이 아닙니다.
+- `I2` 정본 승인 문장: **`검증 결과 확인 후 PR merge 승인`**
+- **CI green은 merge·publish의 필수 조건이 아닙니다.** 실행했으면 결과를, 생략했으면 생략 사실을 보고합니다.
+
+🔴 **"CommitGate가 실행하지 않는다"와 "이 저장소의 CI가 자동 실행되지 않는다"는 다른 말입니다.**
+프로젝트가 자체 워크플로를 가지고 있다면 `push`·`tag`·`pull_request` 트리거로 **CommitGate와 무관하게**
+Actions가 돌 수 있습니다. 비용을 완전히 통제하려면 그 저장소의 `.github/workflows/*.yml`의 `on:` 블록을
+**따로 확인**하십시오. CommitGate는 프로젝트 소유 워크플로를 만들거나 고치지 않습니다.
+계약 문서에 "CI는 자동으로 돌지 않는다"처럼 **저장소 전체를 단정하는 문장을 쓰지 마십시오** —
+실제 트리거를 확인하지 않은 단정입니다.
+
+병합을 마치고 `npx commitgate check`를 다시 돌리면 C5가 OK로 바뀝니다.
+
 **③ 0.21에서 온 동작 변화(0.20에서 올라올 때 해당).**
 
 - **secretScan 기본 `block`** — 리뷰 전송 전에 고신뢰 비밀 패턴이 staged에 있으면 전송을 막습니다.
@@ -81,6 +122,9 @@ verify-range가 기록을 건너뛰고 경고만 냅니다(동작은 정상 — 
 - **GitHub CI는 선택 사항** — CommitGate는 CI를 요구하지도 자동 실행하지도 않습니다. verify-range의
   CI 조회는 opt-in([y/N] 기본 No)이며, 기존 결과를 읽을 뿐 워크플로를 실행하지 않습니다.
   GitHub 인증·네트워크 없이 로컬 검증 경로가 전부 동작합니다.
+  프로젝트의 `.github/workflows/*.yml`을 `workflow_dispatch` 전용으로 두면 push·tag·PR로 Actions가
+  자동으로 도는 일이 없어집니다(CommitGate 저장소 자신이 그렇게 운영합니다). CommitGate는 여러분의
+  워크플로 파일을 만들거나 고치지 않습니다.
 - **0.22 신설: doctor 관측 스키마 v2** — `.doctor-runs.jsonl` 새 행에 검사별 적용 가능 여부·
   outcome·차단·reason code가 실립니다(additive — 기존 행·구버전 소비자는 그대로 유효).
   `commitgate report`가 검사별 분모·발화율을 v2 행 기준으로 보여주고, 구버전 행은 "분모 계산
@@ -95,6 +139,11 @@ verify-range가 기록을 건너뛰고 경고만 냅니다(동작은 정상 — 
   `"githubCi": { "workflow": "ci.yml" }` 설정 + 명시 요청(`integrate --run --run-github-ci`)에서만 일어납니다 — 설정이 없으면 제안조차
   하지 않습니다. 새 로컬 로그 `workflow/.integrate-runs.jsonl`(gitignored)이 생기며, 위의
   `sync --apply --gitignore` 백필이 이 규칙도 함께 넣습니다.
+  - **검증한 것만 병합합니다**: 증거 검증을 통과하면 feature/trunk 두 SHA를 결속하고, CI 대기·사람
+    확인 뒤 병합 직전에 다시 확인합니다. 하나라도 움직였으면 병합하지 않고 재실행을 안내합니다.
+    병합은 브랜치 이름이 아니라 그 SHA로 하며, trunk ref는 `update-ref` 비교·교환으로만 갱신합니다.
+  - **CI 실행 시 `success`만 통과입니다** — `skipped`(요청한 검사가 실행되지 않음)와 `neutral`(판정 없음)도
+    통과로 보지 않습니다. run은 dispatch 응답이 준 id로만 식별하므로 `gh` v2.87.0 이상이 필요합니다.
 
 **④ 로그 하위호환.** 기존 로컬 로그(`.doctor-runs.jsonl`·`.review-calls.jsonl`)와 커밋된
 원장(`review-ledger.jsonl`·`approvals.jsonl`)은 그대로 읽힙니다 — 스키마 변경은 additive이고,

@@ -11,8 +11,12 @@
  *    `check`는 어디서도 spawn되지 않으므로 exit code가 무엇이든 기존 워크플로를 막지 않는다.
  *    그래서 D19~D23을 WARN 상한으로 묶은 제약이 여기엔 적용되지 않고, FAIL이 exit 1을 낼 수 있다.
  */
-import { resolve } from 'node:path'
+import { resolve, join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 import { loadConfig, type ResolvedConfig } from '../scripts/req/lib/config'
+// 🔴 폐기 주장 목록·매칭 로직의 **정본**을 그대로 쓴다. 사본을 만들면 한쪽만 갱신돼 조용히 거짓이 된다.
+import { retiredClaimsIn, type RetiredClaim } from '../scripts/req/lib/retired-claims'
+import { I2_APPROVAL } from '../scripts/req/lib/control-points'
 import {
   createReviewerProbes,
   codexMissingCheckMessage,
@@ -25,10 +29,25 @@ import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 export type CheckLevel = 'OK' | 'WARN' | 'FAIL'
 
 export interface CheckItem {
-  id: 'C1' | 'C2' | 'C3' | 'C4'
+  id: 'C1' | 'C2' | 'C3' | 'C4' | 'C5'
   level: CheckLevel
   msg: string
 }
+
+/** C5 입력 — 계약 파일 본문(부재는 null). 호출부가 읽어 넘긴다(순수 판정 유지). */
+export interface ContractFile {
+  rel: string
+  content: string | null
+}
+
+/**
+ * C5가 검사하는 계약 파일. `AGENTS.md`는 사용자 소유이고 `sync`가 **덮어쓰지 않는다** —
+ * 그래서 업그레이드해도 옛 계약이 그대로 남는다. 그 사실을 조기에 **알리기만** 한다.
+ */
+export const CONTRACT_FILES = ['AGENTS.md', 'AGENTS.commitgate.md'] as const
+
+/** 사용자가 실제로 열어볼 수 있는 **정확한** 비교 대상 경로(Stage B 설치 위치). */
+export const TEMPLATE_COMPARE_PATH = 'node_modules/commitgate/AGENTS.template.md'
 
 export interface CheckReport {
   /** FAIL 0건인가. exit code의 근거(DEC-4). */
@@ -44,6 +63,8 @@ export interface CheckInputs {
   config: ConfigResult
   version: VersionProbeResult
   auth: AuthProbeResult
+  /** 계약 파일 본문(C5). 읽기는 호출부가 한다 — `runChecks`는 순수하게 유지한다. */
+  contracts: ContractFile[]
 }
 
 /**
@@ -104,6 +125,41 @@ export function runChecks(inp: CheckInputs): CheckReport {
         level: 'WARN',
         msg: `${unpinned.join(', ')} 이(가) 비어 있어 codex 전역 설정을 상속합니다 — 리뷰 비용과 재현성이 고정되지 않습니다. \`npx commitgate setup\` 으로 지정할 수 있습니다.`,
       })
+  }
+
+  // C5 — 업그레이드 소비자의 **오래된 계약 문서**(0.22.0 최종 보완).
+  //
+  // 🔴 WARN이지 FAIL이 아니다. 문서가 낡았다는 이유로 기존 소비자의 작업·커밋을 막으면 안 된다 —
+  //    이 진단의 목적은 차단이 아니라 **업그레이드 직후 눈에 띄게 하는 것**이다.
+  // 🔴 check는 어떤 파일도 쓰지 않는다. AGENTS.md는 사용자 소유이고 프로젝트 고유 내용이 섞여 있어
+  //    자동 교체는 그 내용을 지운다. 그래서 **수동 병합을 안내**한다.
+  const contractHits: { rel: string; claims: RetiredClaim[] }[] = []
+  for (const f of inp.contracts) {
+    if (f.content === null) continue // 파일 부재는 점검 불요다(설치 형태에 따라 정상)
+    const claims = retiredClaimsIn(f.content)
+    if (claims.length > 0) contractHits.push({ rel: f.rel, claims })
+  }
+  if (contractHits.length === 0) {
+    checks.push({ id: 'C5', level: 'OK', msg: '계약 문서에 폐기된 CommitGate 서술 없음(AGENTS.md · AGENTS.commitgate.md)' })
+  } else {
+    // 🔴 **찾은 문장을 그대로 보여준다.** 사유(why)만 내면 사용자는 자기 파일 어디를 고쳐야 하는지
+    //    모른다 — 검색 가능한 원문(text)이 있어야 실행 가능한 안내다.
+    // 🔴 CLI 출력이므로 Markdown 강조(`**`)를 쓰지 않는다. 터미널에는 기호가 그대로 보인다.
+    const found = contractHits
+      .flatMap((h) => h.claims.map((c) => `  - ${h.rel}: "${c.text}"\n      → ${c.why}`))
+      .join('\n')
+    checks.push({
+      id: 'C5',
+      level: 'WARN',
+      msg:
+        '기존 계약 문서에 폐기된 CommitGate 서술이 있습니다(도구는 파일을 고치지 않습니다):\n' +
+        `${found}\n` +
+        '  현재 정책: CommitGate는 GitHub CI를 자동으로 실행하지 않고, CI green을 통합·릴리즈의 전제로 강제하지 않습니다\n' +
+        `             (명시 요청 시에만 workflow_dispatch). I2 정본 승인 문장: "${I2_APPROVAL}"\n` +
+        '             주의: 저장소 자체 워크플로는 push·tag·PR로 자동 실행될 수 있습니다 — 실제 트리거는 .github/workflows/*.yml 에서 확인하십시오.\n' +
+        `  조치: ${TEMPLATE_COMPARE_PATH} 와 비교해 CommitGate 계약 부분만 수동으로 병합하십시오\n` +
+        '        (프로젝트 고유 내용이 지워질 수 있어 자동 교체하지 않습니다).',
+    })
   }
 
   const summary = {
@@ -182,8 +238,16 @@ export function loadConfigResult(dir: string): ConfigResult {
   }
 }
 
+/** 계약 파일 **읽기 전용** 수집(C5). 없으면 content=null — 쓰기·생성은 하지 않는다. */
+export function collectContracts(dir: string): ContractFile[] {
+  return CONTRACT_FILES.map((rel) => {
+    const abs = join(dir, rel)
+    return { rel, content: existsSync(abs) ? readFileSync(abs, 'utf8') : null }
+  })
+}
+
 export function collectInputs(dir: string, probes = createReviewerProbes()): CheckInputs {
-  return { config: loadConfigResult(dir), version: probes.version(), auth: probes.auth() }
+  return { config: loadConfigResult(dir), version: probes.version(), auth: probes.auth(), contracts: collectContracts(dir) }
 }
 
 export function printHelp(): void {
@@ -202,8 +266,10 @@ export function printHelp(): void {
   C2  리뷰어 CLI(codex) 설치
   C3  리뷰어 로그인 (판정 불가 = WARN — 리뷰를 막지 않습니다)
   C4  리뷰 모델·추론강도 고정 여부
+  C5  계약 문서(AGENTS.md · AGENTS.commitgate.md)의 폐기된 CommitGate 서술
+      (업그레이드 후 남은 옛 계약 = WARN — 커밋을 막지 않습니다. 수동 병합 안내만 합니다)
 
-exit: FAIL이 하나라도 있으면 1, 아니면 0.
+exit: FAIL이 하나라도 있으면 1, 아니면 0. (C5 WARN 은 exit 0 입니다)
 
 하지 않는 일:
   질문 · 파일 쓰기 · 자동 수정 · 로그인 실행(대화형이라 \`commitgate setup\` 소관) ·

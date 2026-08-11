@@ -7,7 +7,7 @@ import { STOP_GATE_HIGH_NOTICE } from '../../bin/setup'
 import { userConfirmGate } from '../../scripts/req/req-commit'
 import type { WorkflowState } from '../../scripts/req/review-codex'
 // 🔴 등재 목록의 **정본**. 이 파일에 사본을 두지 않는다 — D29가 같은 목록을 쓴다(REQ-2026-112).
-import { RETIRED_CLAIMS } from '../../scripts/req/lib/retired-claims'
+import { RETIRED_CLAIMS, retiredClaimsIn, normalizeForClaimScan } from '../../scripts/req/lib/retired-claims'
 
 /**
  * REQ-2026-073 phase-1 — **알려진 거짓 보장이 문서로 되돌아오지 않는다**.
@@ -47,7 +47,33 @@ const SCAN_FILES = ['README.md', 'README.en.md', 'AGENTS.template.md', join('wor
  * 🔴 `**\/*.ts` 글로브가 아닌 이유: 그러면 폐기 문구를 설명하는 정정문·주석까지 걸려 **정정 자체가
  *    불가능**해진다(REQ-2026-104가 겪은 함정). 목록은 "실제로 폐기 주장이 있던 곳"으로 한정한다.
  */
-const CODE_SURFACES = [join('bin', 'setup.ts'), join('scripts', 'req', 'lib', 'config.ts')] as const
+const CODE_SURFACES = [
+  join('bin', 'setup.ts'),
+  join('scripts', 'req', 'lib', 'config.ts'),
+  // 0.22.0 최종 보완: 통합 안내를 **만드는** 자리. 여기서 갈라진 변형이 delivery 경로로 새어 나갔다.
+  join('scripts', 'req', 'lib', 'control-points.ts'),
+  join('scripts', 'req', 'req-next.ts'),
+  join('bin', 'check.ts'),
+] as const
+
+/**
+ * **역사 문서** — 과거 시점의 사실·제안을 기록하는 자리다(0.22.0 2차 보완).
+ *
+ * 🔴 여기까지 폐기 주장 검사를 걸면 **역사를 지워야만 가드가 통과**하게 된다. 그건 이 저장소가
+ *    지키려는 것과 정반대다 — 당시 CI가 push에서 돌았다는 사실은 **그때는 참**이었고 기록으로 남아야 한다.
+ * 🔴 대신 "역사 문서인 척하며 현재 계약이 되는 것"을 막는다: 각 파일이 **현재 정책이 아님을 명시하는
+ *    표지**를 실제로 담고 있는지 아래 테스트가 확인한다. 표지가 사라지면 red다.
+ */
+const HISTORY_DOCS = [
+  join('docs', 'ssot-design', '13-review-and-validation-log.md'), // 시점이 있는 검수 이력
+  join('docs', 'follow-ups-design.md'), // 구현 전 제안 스냅샷(자동 CI 설계는 현재 정책으로 대체됨)
+] as const
+
+/** 역사 문서가 반드시 담아야 하는 "현재 정책 아님" 표지. */
+const HISTORY_MARKERS: Record<string, string[]> = {
+  [join('docs', 'ssot-design', '13-review-and-validation-log.md')]: ['당시의 기록', 'workflow_dispatch 전용'],
+  [join('docs', 'follow-ups-design.md')]: ['현재 정책으로 폐기·대체', 'workflow_dispatch 전용'],
+}
 
 /**
  * 폐기 문구를 **담는 것이 정상인** 자리. 검사 대상에 들어오면 안 된다.
@@ -57,7 +83,10 @@ const SCAN_EXCLUDED = [
   join('scripts', 'req', 'lib', 'retired-claims.ts'), // 등재 **정본** — 문구를 담는 것이 그 역할이다
   join('tests', 'unit', 'docs-stale-claims.test.ts'), // 가드 자신
   'CHANGELOG.md', // 역사 기록. 그 시점의 사실을 적은 것은 거짓이 아니다
+  ...HISTORY_DOCS,
 ] as const
+
+
 /** 티켓 문서는 정정을 설명하려면 옛 문구를 인용해야 한다. */
 const EXCLUDED_PREFIX = join('workflow', 'REQ-')
 
@@ -70,7 +99,9 @@ function docFiles(root: string): string[] {
     }
   }
   out.push(...CODE_SURFACES)
-  return out
+  // 🔴 역사 문서는 **실제로** 스캔 집합에서 뺀다(선언만 하고 안 빼면 아무 효과가 없다).
+  const excluded = new Set<string>(SCAN_EXCLUDED as readonly string[])
+  return out.filter((f) => !excluded.has(f))
 }
 
 const ROOT = join(__dirname, '..', '..')
@@ -136,10 +167,51 @@ describe('[REQ-2026-073] 알려진 거짓 보장이 문서에 없다', () => {
 
   for (const claim of STALE_CLAIMS) {
     it(`"${claim.text.slice(0, 40)}…" 가 없다 — ${claim.why}`, () => {
-      const hits = files.filter((f) => readFileSync(join(ROOT, f), 'utf8').includes(claim.text))
+      // 🔴 정본 매처(`retiredClaimsIn`)를 쓴다 — 강조 표시·줄바꿈 정규화를 가드와 진단(D29)이 공유한다.
+      const hits = files.filter((f) => retiredClaimsIn(readFileSync(join(ROOT, f), 'utf8')).some((c) => c.text === claim.text))
       expect(hits).toEqual([])
     })
   }
+
+  it('🔴 역사 문서는 검사 대상에서 빠지되, "현재 정책 아님" 표지를 반드시 담는다', () => {
+    for (const [rel, markers] of Object.entries(HISTORY_MARKERS)) {
+      const body = normalizeForClaimScan(readFileSync(join(ROOT, rel), 'utf8'))
+      for (const m of markers)
+        expect(body, `${rel} 에 역사 표지가 없습니다: ${m}`).toContain(normalizeForClaimScan(m))
+    }
+  })
+})
+
+/**
+ * 🔴 **가드가 실제로 문다는 증명**(변이 검사). 정규화가 죽으면 이 테스트가 red다.
+ *    등재 문자열 자체를 여기 적지 않으려고 `RETIRED_CLAIMS[0]`을 프로그램으로 변형해 쓴다.
+ */
+describe('[0.22.0] 폐기 주장 매칭 — 강조·줄바꿈으로 우회되지 않는다', () => {
+  const sample = RETIRED_CLAIMS[0]!
+
+  it('원문 그대로는 잡힌다', () => {
+    expect(retiredClaimsIn(`앞말 ${sample.text} 뒷말`).map((c) => c.text)).toContain(sample.text)
+  })
+
+  it('강조 표시(**)를 끼워 넣어도 잡힌다', () => {
+    const bolded = `**${sample.text.slice(0, 4)}**${sample.text.slice(4)}`
+    expect(retiredClaimsIn(bolded).map((c) => c.text)).toContain(sample.text)
+  })
+
+  it('백틱·밑줄을 끼워 넣어도 잡힌다', () => {
+    const ticked = `\`${sample.text.slice(0, 3)}\`_${sample.text.slice(3)}_`
+    expect(retiredClaimsIn(ticked).map((c) => c.text)).toContain(sample.text)
+  })
+
+  it('줄바꿈으로 접어도 잡힌다', () => {
+    const mid = Math.floor(sample.text.length / 2)
+    expect(retiredClaimsIn(`${sample.text.slice(0, mid)}
+${sample.text.slice(mid)}`).map((c) => c.text)).toContain(sample.text)
+  })
+
+  it('무관한 본문에는 발화하지 않는다(거짓 양성 방지)', () => {
+    expect(retiredClaimsIn('평범한 문서 본문입니다. CommitGate는 로컬 게이트입니다.')).toEqual([])
+  })
 })
 
 /**

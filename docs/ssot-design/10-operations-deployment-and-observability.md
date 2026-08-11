@@ -9,7 +9,7 @@ CommitGate는 배포되는 서비스가 아니라 **npm 패키지**다. "환경"
 | 항목 | 값 |
 |---|---|
 | 워크플로명 | `CI` |
-| 트리거 | `push`(branches: `main`, tags: `v*`), `pull_request`(전체) |
+| 트리거 | **`workflow_dispatch` 전용**(수동 실행). push·tag·pull_request·schedule 자동 트리거 **없음** |
 | Job | `build` (`${{matrix.os}} · node ${{matrix.node}}`) |
 | 매트릭스 | `os: [ubuntu-latest, macos-latest, windows-latest]` × `node: [20,22,24]` = **9-leg** (`fail-fast: false`) |
 | 스텝 | `checkout@v4` → `setup-node@v4(cache:npm)` → `npm ci` → `npm run typecheck` → `npm test` → `npm run smoke` |
@@ -17,7 +17,9 @@ CommitGate는 배포되는 서비스가 아니라 **npm 패키지**다. "환경"
 - Windows 러너가 `.cmd` 경로도 검증(smoke 주석).
 - **CI에서 실행하지 않는 것**: `req:review-codex`/`req:commit`(라이브 codex + 인증 필요). 리뷰 **로직**은 `createFakeReviewerAdapter` 단위 테스트가 전 OS에서 커버.
 - 릴리즈 자동화는 워크플로에 없음 — publish/tag/release는 수동 통제점(§4).
-- 🔴 **트리거가 곧 게이트 한계다.** `on:`은 `push`(`main`·`v*` 태그)·`pull_request`뿐이다. PR을 경유하지 않고 `main`에 direct push하면 CI는 **push 이후에** 돈다 — 반영을 사전에 막지 못한다. 실측 사례: **Stage B(REQ-2026-014)는 branch protection bypass direct push로 `main`에 들어간 뒤 CI가 실행됐다.** 보고된 **9/9 success(3 OS × Node 18/20/22)는 사실이지만, 이 사례에서 병합을 사전에 막는 게이트가 아니었다.** [04](04-user-roles-and-permissions.md) §4 `B1`의 "경로 B에서 CI는 사후 검증"과 같은 축이며, 그 서술을 약화하지 않는다.
+- 🔴 **트리거가 곧 게이트 한계다.** `on:`에 `workflow_dispatch` 하나뿐이므로 **CI는 어떤 커밋도 자동으로 검사하지 않는다.** 사람이 `gh workflow run ci.yml --ref <branch>` 또는 `commitgate integrate --run --run-github-ci`로 지시할 때만 돈다. 즉 CI는 **사전 게이트가 아니며, 그렇게 쓰도록 설계되지도 않았다** — 사전 게이트는 로컬(`req:commit`·`verify-range --strict`·`integrate`)이 맡는다.
+  - 이유는 비용이다: Actions 사용량·한도가 실제 지출이라 실행 시점을 사람이 통제한다(0.22.0에서 확정 정책과 파일을 일치시켰다).
+  - **과거 이력**(현재 정책 아님): 0.22.0 이전에는 `on: push`(`main`·`v*`)·`pull_request`였고, 그 시절 **Stage B(REQ-2026-014)는 bypass direct push로 `main`에 들어간 뒤 CI가 실행됐다**. 보고된 9/9 success는 그 시점의 사실이지만 병합을 사전에 막은 게이트는 아니었다. 그 사례의 교훈(사후 green ≠ 사전 게이트)은 지금도 유효하다.
 
 ## 3. 스모크·검증 스크립트
 
@@ -48,21 +50,21 @@ CommitGate는 배포되는 서비스가 아니라 **npm 패키지**다. "환경"
 
 각 통제점은 고유 승인 문장을 가지며 이월되지 않는다(전체 표는 [04-user-roles-and-permissions.md](04-user-roles-and-permissions.md) §4).
 
-- **배포 게이트**: 전 플랫폼 CI green이 `npm publish`·PR merge(`I2`)의 선행조건. CI = 9-leg(`npm ci → typecheck → test → smoke`).
-- **통합 경로**: A(PR 경유, 1인 개발이면 선택) / B(direct push). 경로 B는 (1) bypass가 일어났다는 사실, (2) CI가 **사후**(`on: push`)라는 점, (3) 승인 문장 정확성을 반드시 공개.
+- **배포 게이트**: **로컬 게이트**(typecheck · docs:lint · test:fast · test:integration · test · smoke · `npm pack --dry-run` · `verify-range --strict`)가 필수다. **GitHub CI green은 `npm publish`·PR merge(`I2`)의 필수 조건이 아니다** — 기본 미실행 opt-in이며, 실행했다면 `success`만 통과로 본다(`skipped`·`neutral` 불인정). 실행/생략 사실은 보고에 남긴다. 상세: [docs/RELEASING.md](../../docs/RELEASING.md).
+- **통합 경로**: A(PR 경유, 1인 개발이면 선택) / B(direct push). 경로 B는 (1) bypass가 일어났다는 사실, (2) CI를 실행했는지 여부(자동 실행은 없다), (3) 승인 문장 정확성을 반드시 공개.
 - **버전 범프 필수**: `npm version <patch|minor|major> --no-git-tag-version`. `package.json` + `package-lock.json`의 두 위치가 일치해야 함.
-- **릴리즈 대상 커밋 확정**: `HEAD == origin/main` + CI green 확인 후에만 R1/R2/R3.
-- 로컬 자체검사(`typecheck && test && smoke`)는 9-leg 매트릭스를 **대체하지 않는다**.
+- **릴리즈 대상 커밋 확정**: `HEAD == origin/main` + `verify-range --strict` 통과 후에만 R1/R2/R3. CI는 전제가 아니다(원하면 사람이 따로 실행).
+- 로컬 자체검사는 9-leg 매트릭스를 **대체하지 않는다** — 다만 그 매트릭스는 이제 **선택**이고 사람이 직접 실행한다.
 - **R2(npm publish)**: 2FA·사람 최종 확인, 완전 자동화 없음.
 
 ```mermaid
 flowchart LR
     Dev[변경 승인·커밋] --> Int{통합 경로}
-    Int -->|A| I1[I1 PR 생성] --> Green1[required checks green] --> I2[I2 merge]
-    Int -->|B| B1[B1 direct push] --> PostCI[CI 사후 실행]
-    I2 --> Green2[CI green 확인]
-    PostCI --> Green2
-    Green2 --> R1[R1 tag] --> R2[R2 npm publish] --> R3[R3 GitHub release]
+    Int -->|A| I1[I1 PR 생성] --> Local1[로컬 게이트 + 선택 CI] --> I2[I2 merge]
+    Int -->|B| B1[B1 direct push] --> Local2[로컬 게이트 + 선택 CI]
+    I2 --> Strict[verify-range --strict]
+    Local2 --> Strict
+    Strict --> R1[R1 tag] --> R2[R2 npm publish] --> R3[R3 GitHub release]
 ```
 
 ## 5. 관측성
@@ -103,10 +105,10 @@ flowchart LR
 | 축 | 현재 수준 | 다음 종료 조건 |
 |---|---|---|
 | 로컬 정확성 | 높음 — tree/증거/anti-replay 검사 | 유지 |
-| 원격 강제 | 낮음 — CI가 evidence 미검증 | `commitgate verify` required check |
+| 원격 강제 | 낮음 — 원격에서 evidence를 강제하지 않는다. **로컬**은 `verify-range --strict`·`integrate`(항상 strict)가 덮는다. GitHub CI는 확정 정책상 **기본 미실행 opt-in**(`workflow_dispatch` 전용)이라 required check로 쓰지 않는다 | opt-in 원격 예제(요구 아님) |
 | 장애 복구 | 중간 — evidence-finalize 복구, 전체 state rebuild 없음 | fresh clone rebuild 100% |
 | 진단 | 낮음 — 텍스트/스택 중심, timeout 없음 | 안정적 오류 코드 + 전 명령 JSON |
-| 업그레이드 | 낮음 — Stage B에서 **런타임**은 `npm i -D commitgate`로 갱신되지만, 대상에 남는 **관리 자산**(스키마·persona·진입점)의 원장이 없어 **자산↔런타임 skew를 감지할 수단이 없다**. `commitgate migrate`는 Stage A→B의 `req:*` 값 전환 전용이지 업그레이드 도구가 아니다 | 자산 원장 + skew 감지 + 안전 upgrade — **후속 과제(미구현)** |
-| 제품 분석 | 낮음 — 집계 없음 | privacy-preserving `req:report` |
+| 업그레이드 | 중간 — **런타임**은 `npm i -D commitgate`로 갱신되고, 대상에 남는 **관리 자산**(스키마·persona·진입점)의 skew는 doctor **D20**(content-hash 대조 → WARN)이 감지하며 `commitgate sync --apply`가 재동기화한다. **여전히 없는 것**: 설치 원장·3-way merge·rollback. `commitgate migrate`는 Stage A→B의 `req:*` 값 전환 전용이지 업그레이드 도구가 아니다 | 자산 원장 + 3-way merge + rollback — **후속 과제** |
+| 제품 분석 | 중간 — `commitgate report`가 doctor 발화(스키마 **v2**의 검사별 적용 가능 분모 포함)·리뷰 수렴·승인 증거 범위·CI 선택 분포를 **로컬 로그만으로** 집계한다(외부 전송 없음). 수집 실패는 `verification_unavailable_reason`으로 드러난다 | 지표 정의 확장 |
 
 운영 우선순위는 [14](14-product-strategy-and-roadmap.md)의 P0(원격 신뢰·상태 복구·전송 안전·수렴) 이후 P1(진단·업그레이드·리포트) 순서를 따른다.

@@ -125,3 +125,41 @@ describe('[REQ-2026-128] evidence 범위 옵션·심층 반영', () => {
     expect(parsed.evidence.range.generatedAt).toMatch(/^\d{4}-/)
   })
 })
+
+/**
+ * 0.22.0 RC 보완 — verify-range 수집 실패를 **null로 삼키지 않는다**.
+ * 기존 JSON 필드는 그대로 두고 두 필드만 추가한다(additive).
+ */
+describe('[0.22.0] verification unavailable reason', () => {
+  it('성공 경로: verification_available=true · reason=null · evidence 섹션 유지', () => {
+    const repo = emptyRepo()
+    const r = collectReport(repo, { base: null, head: null, last: 1 })
+    expect(r.verification_available).toBe(true)
+    expect(r.verification_unavailable_reason).toBeNull()
+    expect(r.evidence).toBeDefined()
+  })
+
+  it('존재하지 않는 base ref → 구조화된 사유(사람 렌더에도 같은 문자열)', () => {
+    const repo = emptyRepo()
+    const r = collectReport(repo, { base: 'v9.9.9-nope', head: null, last: null })
+    expect(r.verification_available).toBe(false)
+    expect(r.verification_unavailable_reason).toBe('base ref not found: v9.9.9-nope')
+    expect(r.evidence).toBeUndefined() // 기존 동작(섹션 부재)은 바뀌지 않았다
+    expect(renderHuman(r)).toContain('base ref not found: v9.9.9-nope')
+    expect(renderHuman(r)).not.toContain('사유 미기록')
+  })
+
+  it('존재하지 않는 head ref → head 사유', () => {
+    const r = collectReport(emptyRepo(), { base: null, head: 'nope-head', last: null })
+    expect(r.verification_available).toBe(false)
+    expect(r.verification_unavailable_reason).toBe('head ref not found: nope-head')
+  })
+
+  it('JSON에 두 필드가 실린다 — 기존 필드는 그대로', () => {
+    const repo = emptyRepo()
+    const parsed = JSON.parse(renderJson(collectReport(repo, { base: 'v9.9.9-nope', head: null, last: null }))) as Record<string, unknown>
+    expect(parsed.verification_available).toBe(false)
+    expect(parsed.verification_unavailable_reason).toBe('base ref not found: v9.9.9-nope')
+    expect(parsed.problems).toBeDefined() // 기존 필드 유지
+  })
+})

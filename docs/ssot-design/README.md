@@ -18,7 +18,7 @@
 
 **CommitGate는 AI 코딩 에이전트(Builder)가 만든 변경을 독립 Reviewer의 승인·정확한 git tree·감사 증거에 묶어, 협조적 워크플로에서 검증되지 않은 커밋을 fail-closed로 차단하는 로컬 거버넌스 kit다.** 대상 프로젝트에는 **devDependency로 설치**된다 — `npm install -D commitgate` → `npx commitgate init`의 2단계다(**Stage B 런타임 패키지 모델**). init은 스키마·persona·설정·계약(`AGENTS.md` 등)·진입점 같은 **관리 자산만 배치**하고 `scripts/req/**` 런타임을 복사하지 않으며, `tsx`·`ajv`·`cross-spawn`도 대상 `package.json`에 주입하지 않는다(이들은 `commitgate` 패키지의 runtime `dependencies`) — `planInstall`([bin/init.ts](../../bin/init.ts)). 실행 코드는 `node_modules/commitgate`에만 있고, 대상의 `req:*` 스크립트는 `commitgate <verb>` 형태로 패키지 런타임에 dispatch된다(`VERB_MODULES`([bin/dispatch.mjs](../../bin/dispatch.mjs))). 파일 복사로 설치하던 **Stage A(vendored scaffold)는 legacy**이며 `commitgate migrate`([bin/migrate.ts](../../bin/migrate.ts))의 전환 대상이다.
 
-핵심 가치는 “AI가 더 많은 코드를 쓰게 하는 것”이 아니라 **AI 변경을 사람이 통제·검증·감사할 수 있는 증거 단위로 바꾸는 것**이다. 현재는 로컬·협조적 작업자 범위이며, CI 강제·외부 전송 안전·상태 재구축은 목표 상태([14](14-product-strategy-and-roadmap.md))다.
+핵심 가치는 “AI가 더 많은 코드를 쓰게 하는 것”이 아니라 **AI 변경을 사람이 통제·검증·감사할 수 있는 증거 단위로 바꾸는 것**이다. 현재는 로컬·협조적 작업자 범위이며, **원격** 강제·외부 전송 안전·상태 재구축은 목표 상태([14](14-product-strategy-and-roadmap.md))다. GitHub CI는 확정 정책상 **기본 실행하지 않는 opt-in**이라 요구가 아니라 선택 확장으로 남는다.
 
 ## 3. 독자와 범위
 

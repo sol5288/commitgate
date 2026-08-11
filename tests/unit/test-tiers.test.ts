@@ -1,11 +1,20 @@
 /**
- * 테스트 계층 가드(REQ-2026-122 R3) — 목록·정의·전체 스위트의 정합.
+ * 테스트 계층 가드(REQ-2026-122 R3 · 0.22.0 2차 보완) — 목록·정의·**실제 파일 선택**의 정합.
+ *
+ * 🔴 **왜 실행 기반 가드가 생겼는가**: 예전 가드는 `vitest.workspace.ts`의 **정의 모양**만 검사했다.
+ *    정의는 옳아 보였는데 vitest가 `extends` 상속 시 `include` 배열을 **이어붙여** 해석하는 바람에
+ *    integration 프로젝트가 목록 16개가 아니라 전체 77개를 돌고 있었다 —
+ *    `npm test`가 고유 77파일을 **138번** 실행했고 구조 가드는 통과했다.
+ *    같은 종류의 거짓을 다시 허용하지 않으려면 **선택 결과를 실행해서** 봐야 한다.
  */
 import { describe, it, expect } from 'vitest'
 import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+// 🔴 Windows에서 `npx`는 `.cmd`라 execFileSync가 해소하지 못한다(ENOENT). 저장소의 안전 spawn 경계를 쓴다.
+import { safeSpawnSync } from '../../scripts/req/lib/adapters'
 import { INTEGRATION_TIER } from '../tiers'
 import workspace from '../../vitest.workspace'
+import { SHARED_TEST_CONFIG, ALL_TESTS_GLOB } from '../../vitest.shared'
 
 const ROOT = join(__dirname, '..', '..')
 
@@ -22,6 +31,17 @@ function allTestFiles(): string[] {
   }
   walk('tests')
   return out.sort()
+}
+
+/** `vitest list --filesOnly`가 **실제로** 고른 파일 목록. 프로젝트 접두(`[name] `)를 떼고 정규화한다. */
+function listedFiles(project: string): string[] {
+  const out = safeSpawnSync('npx', ['vitest', 'list', '--project', project, '--filesOnly'], { cwd: ROOT })
+  return out
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.endsWith('.test.ts'))
+    .map((l) => l.replace(/^\[[^\]]+\]\s*/, '').split('\\').join('/'))
+    .sort()
 }
 
 describe('[REQ-2026-122] 테스트 계층 가드', () => {
@@ -45,31 +65,62 @@ describe('[REQ-2026-122] 테스트 계층 가드', () => {
     for (const t of INTEGRATION_TIER) expect(all).toContain(t)
   })
 
-  /**
-   * 🔴 phase r01 P1: 위 산식 검증만으로는 **실제 workspace 정의의 드리프트**를 못 잡는다 — fast의
-   * exclude에 목록 밖 파일을 추가하면 어느 계층도 그 테스트를 안 돌리는데 산식 가드는 통과한다.
-   * 그래서 실제 `vitest.workspace.ts`의 프로젝트 정의를 import해 **정확 일치**로 고정한다:
-   * fast.exclude = node_modules + INTEGRATION_TIER **뿐**(임의 제외 금지·include 미정의 = 전체 상속),
-   * integration.include = INTEGRATION_TIER **뿐**. 이 두 사실 + 위 산식이면 유실이 구조적으로 불가능하다.
-   */
-  it('🔴 workspace 실정의 검증 — fast는 목록 외 아무것도 제외하지 않고, integration은 목록만 포함한다(완료 기준 1·2·5)', () => {
-    const entries = workspace as unknown as { extends?: string; test?: { name?: string; include?: string[]; exclude?: string[] } }[]
+  it('🔴 workspace 실정의 — fast는 목록만 제외하고, integration은 목록만 포함한다', () => {
+    const entries = workspace as unknown as {
+      extends?: string
+      test?: { name?: string; include?: string[]; exclude?: string[]; maxWorkers?: number; setupFiles?: readonly string[] }
+    }[]
     const byName = new Map(entries.map((e) => [e.test?.name, e]))
     const fast = byName.get('fast')
     const integ = byName.get('integration')
     expect(fast, 'fast 프로젝트 부재').toBeTruthy()
     expect(integ, 'integration 프로젝트 부재').toBeTruthy()
-    // fast: exclude = node_modules + 목록 정확 일치 — 목록 밖 제외가 하나라도 생기면 그 파일은 어느 계층도 안 돈다.
+
+    // fast: 전체 글롭 − (node_modules + 목록). 목록 밖 제외가 하나라도 생기면 그 파일은 어느 계층도 안 돈다.
+    expect(fast!.test!.include).toEqual([ALL_TESTS_GLOB])
     expect(fast!.test!.exclude).toEqual(['**/node_modules/**', ...INTEGRATION_TIER])
-    // fast: include 미정의(전체 상속) — include를 좁히는 것도 같은 유실 경로다.
-    expect(fast!.test!.include).toBeUndefined()
     // integration: include = 목록 정확 일치, exclude 미정의.
     expect(integ!.test!.include).toEqual([...INTEGRATION_TIER])
     expect(integ!.test!.exclude).toBeUndefined()
-    // 두 프로젝트 다 base config를 상속한다(인프라 값 이원화 금지).
-    expect(fast!.extends).toBe('./vitest.config.ts')
-    expect(integ!.extends).toBe('./vitest.config.ts')
+
+    // 🔴 `extends` 금지 — 이것이 include 배열을 이어붙여 계층을 무너뜨렸던 원인이다.
+    expect(fast!.extends, 'extends가 되살아나면 include가 병합돼 계층이 무너진다').toBeUndefined()
+    expect(integ!.extends).toBeUndefined()
+
+    // 인프라 값은 SSOT에서 온 같은 값이어야 한다(이원화 금지).
+    for (const p of [fast!, integ!]) {
+      expect(p.test!.maxWorkers).toBe(SHARED_TEST_CONFIG.maxWorkers)
+      expect(p.test!.setupFiles).toEqual(SHARED_TEST_CONFIG.setupFiles)
+    }
+
     // 프로젝트가 이 둘뿐이다 — 제3 프로젝트가 기본 실행 의미를 바꾸는 것을 막는다.
     expect(entries).toHaveLength(2)
+  })
+})
+
+/**
+ * 🔴 **실행 기반 가드**. 정의가 아니라 vitest가 **실제로 고른 파일**을 본다.
+ *    이 describe가 이 파일을 통합 계층으로 만든다(프로세스 스폰) — `tests/tiers.ts`에 등재돼 있다.
+ */
+describe('[0.22.0] 계층 선택 — 실제 실행 결과로 확인한다', () => {
+  it('integration은 INTEGRATION_TIER만 고른다(전체를 다시 돌지 않는다)', () => {
+    expect(listedFiles('integration')).toEqual([...INTEGRATION_TIER].sort())
+  })
+
+  it('fast는 전체 − INTEGRATION_TIER를 고른다', () => {
+    const tier = new Set(INTEGRATION_TIER)
+    expect(listedFiles('fast')).toEqual(allTestFiles().filter((f) => !tier.has(f)))
+  })
+
+  it('🔴 fast ∩ integration = 0 · fast ∪ integration = 전체 · 실행 파일 수 = 고유 파일 수', () => {
+    const fast = listedFiles('fast')
+    const integ = listedFiles('integration')
+    const all = allTestFiles()
+
+    const inter = fast.filter((f) => integ.includes(f))
+    expect(inter, `두 계층이 겹칩니다(중복 실행): ${inter.join(', ')}`).toEqual([])
+    expect([...fast, ...integ].sort()).toEqual(all)
+    // 실행 총량 = 고유 파일 수. 예전에는 61 + 77 = 138 이었다.
+    expect(fast.length + integ.length).toBe(all.length)
   })
 })

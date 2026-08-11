@@ -101,7 +101,146 @@ export const RETIRED_CLAIMS: readonly RetiredClaim[] = [
     text: '정책과 무관하게 유지',
     why: 'REQ-071이 제거한 HIGH 백스톱의 표현 변형 (ssot-design 04 · REQ-2026-112)',
   },
+  /**
+   * 🔴 0.22.0 RC 보완 — **문서가 코드보다 늦어 있던 6건**이다. 전부 "아직 없다/필수다"라고 적혀
+   *    있었지만 실제로는 이미 구현됐거나(앞 4건) 정책과 정반대였다(뒤 2건).
+   *
+   *    등재 규칙대로 **정정문에도 이 문자열을 남기지 않았다** — 정정을 설명할 때는 풀어 썼다.
+   */
+  {
+    text: '리뷰 전 secret-scan 훅 없음',
+    why: 'secretScanGate가 구현·배선돼 있고 config secretScan(기본 block)으로 제어된다 (ssot-design 09)',
+  },
+  {
+    text: '`trunkBranch` 하드코딩',
+    why: 'req.config.json 의 trunkBranch 로 설정화됐다 (ssot-design 09·12·14)',
+  },
+  {
+    text: '그 skew를 감지하는 수단은 아직 없다',
+    why: 'doctor D20 content-hash 검사 + commitgate sync 로 부분 감지·복구된다 (ssot-design 08·10)',
+  },
+  {
+    text: '자산↔런타임 skew를 감지할 수단이 없다',
+    why: 'doctor D20 content-hash 검사 + commitgate sync 로 부분 감지·복구된다 (ssot-design 10)',
+  },
+  {
+    text: '심층 검증·정책 프로필·opt-in 원격 예제 미구현',
+    why: '심층 6범주 검증·attest·integrate는 구현됐다 — 남은 것은 정책 프로필과 원격 예제뿐 (ssot-design 12)',
+  },
+  /**
+   * 🔴 정책 위반이었던 서술 2건. `ci.yml`이 실제로 `workflow_dispatch` 전용이 된 지금,
+   *    "CI green이 publish/merge의 필수 전제" 또는 "push/tag가 CI를 돌린다"는 서술은 거짓이다.
+   */
+  {
+    text: '전 플랫폼 CI가 green이어야 한다',
+    why: 'GitHub CI는 기본 미실행 opt-in이며 publish의 필수 조건이 아니다 (docs/RELEASING.md)',
+  },
+  {
+    text: 'CI는 push 이후에 돈다',
+    why: 'CommitGate 는 워크플로를 자동 dispatch 하지 않는다 — 저장소 자체 워크플로의 트리거는 .github/workflows/*.yml 에서 따로 확인할 것',
+  },
+  /**
+   * 🔴 0.22.0 2차 보완 — 승인 문장과 SSOT 트리거 서술.
+   *
+   *    `I2`의 옛 문장은 CI를 실행하지 않은 **정상 경로에서 사실대로 쓸 수 없었다**
+   *    (green을 확인한 적이 없는데 "green 확인 후"라고 말해야 했다). 문장을 바꾸는 것으로 끝내지 않고
+   *    옛 문장을 등재해, 다른 문서가 그것을 다시 정본이라 부르지 못하게 한다.
+   */
+  {
+    text: 'required checks green 확인 후 PR merge 승인',
+    why: 'I2 정본 문장이 아니다 — CI 미실행이 정상이므로 "검증 결과 확인 후 PR merge 승인"을 쓴다',
+  },
+  {
+    text: '전 플랫폼 CI green이 `npm publish`·PR merge(`I2`)의 선행조건',
+    why: 'GitHub CI는 기본 미실행 opt-in이며 publish·merge의 필수 조건이 아니다 (ssot-design 10)',
+  },
+  {
+    text: '`push`(branches: `main`, tags: `v*`), `pull_request`(전체)',
+    why: 'CommitGate 저장소의 ci.yml 은 수동 실행 전용이다 — 소비자 저장소의 트리거는 각자 다르므로 워크플로 파일로 확인할 것 (ssot-design 10 §2)',
+  },
+  {
+    text: '반영 이후 CI green 확인 뒤 각각 따로 요청한다',
+    why: 'R1/R2/R3의 전제는 verify-range --strict 통과이지 CI green이 아니다 (ssot-design 04)',
+  },
+  {
+    text: '경로 B에서 CI는 사후 검증',
+    why: 'CommitGate 는 어느 경로에서도 CI 를 자동 실행하지 않으며 사전 게이트는 로컬이다 — 저장소 자체 워크플로는 별개로 자동 실행될 수 있다 (ssot-design 04)',
+  },
+  /**
+   * 🔴 0.22.0 최종 보완 — `req:next`의 **delivery 경로**에 남아 있던 축약 변형이다.
+   *
+   *    같은 정책을 말하는데 문자열이 달라(`required checks green 확인 후…` vs 아래) 등재 검사를
+   *    그대로 통과했다. 그래서 이 변형을 등재하는 것과 **함께**, 안내를 한 상수에서 파생하도록
+   *    코드를 고쳤다(`lib/control-points.ts`) — 문자열 등재만으로는 다음 변형을 못 막는다.
+   */
+  {
+    text: 'checks green 후 merge 승인',
+    why: 'I2 정본은 "검증 결과 확인 후 PR merge 승인"이다 — CI 미실행이 정상이라 green을 전제할 수 없다',
+  },
+  /**
+   * 🔴 0.22.0 최종 — 소비자(lean_lms) `AGENTS.md`에서 발견한 **완료 조건**의 CI 전제다.
+   *
+   *    `I1/I2/B1` 통제점표가 아니라 "완료 정의" 절에 있어서 앞의 항목들에 걸리지 않았다.
+   *    CI 실행이 선택인데 완료 조건에 green을 넣으면 **CI를 돌리지 않는 정상 경로에서 티켓을 끝낼 수
+   *    없다**는 말이 된다.
+   *
+   * 🔴 문자열 선택: 일반적인 `CI green` 부정문("CI green은 필수가 아니다" 같은 **정정문**)까지
+   *    오탐하지 않도록, 완료 조건 문맥이 붙은 **핵심 구절**만 등재한다. `CI green` 단독은 쓰지 않는다.
+   */
+  {
+    text: '검증 증적(+ 해당 O·CI green) 충족으로 판단',
+    why: '완료 조건에 CI green 을 두면 CI 를 실행하지 않는 정상 경로에서 티켓을 끝낼 수 없다 — 완료는 DoD + 필수 로컬 검증 증적으로 판단한다',
+  },
+  /**
+   * 🔴 0.22.0 릴리스 직전 — **전제가 통째로 빠진 R1/R2/R3 문장**이다.
+   *
+   *    CI green 전제를 걷어내면서 그 자리에 들어갔어야 할 `verify-range --strict` 전제를
+   *    배포 템플릿에만 넣지 않아, "반영 이후 각각 따로 요청한다"만 남았다.
+   *    CI가 선택인 것과 **로컬 strict 검증이 필수인 것은 다른 축**인데 둘 다 사라진 셈이었다.
+   *
+   * 🔴 **경계 선택**: 정본 문장은 `… 이후 \`npx commitgate verify-range --strict\` 통과를 확인한 뒤
+   *    각각 …` 이므로 `이후`와 `각각` 사이에 전제가 들어간다. 아래 문자열은 그 사이가 **비어 있는**
+   *    경우에만 일치한다 — 올바른 새 문장은 이 부분 문자열을 포함하지 않으므로 오탐하지 않는다.
+   *    (`tests/unit/check.test.ts`가 정본 문장에서 C5 OK 임을 함께 고정한다.)
+   */
+  {
+    text: '`B1`) 이후 각각 **따로** 요청한다',
+    why: 'R1/R2/R3 전제가 빠졌다 — 반영 이후 `npx commitgate verify-range --strict` 통과를 확인한 뒤 각각 따로 요청한다(GitHub CI green 은 전제가 아니다)',
+  },
+  /**
+   * 🔴 옛 승인 명칭 2종. 현재 정본은 I2=`검증 결과 확인 후 PR merge 승인`,
+   *    B1=`branch protection bypass를 사용한 direct push 승인` 이다.
+   *    `required status checks bypass 승인` 은 통제점표에 존재하지 않는 이름이라,
+   *    남아 있으면 사용자가 받아야 할 승인 문장을 잘못 말하게 된다.
+   */
+  {
+    text: '`merge/push 승인`은',
+    why: '통제점표에 없는 옛 승인 명칭이다 — I2 는 `검증 결과 확인 후 PR merge 승인`, B1 은 `branch protection bypass를 사용한 direct push 승인`',
+  },
+  {
+    text: 'required status checks bypass 승인',
+    why: '통제점표에 없는 옛 승인 명칭이다 — protected branch 우회의 정본은 `branch protection bypass를 사용한 direct push 승인`',
+  },
 ]
+
+/**
+ * 검사 전 정규화(0.22.0 2차 보완).
+ *
+ * 🔴 예전에는 축자 부분 문자열만 봤다. 그래서 **강조 표시나 줄바꿈만 넣어도 통과**했다:
+ *      `CI는 push 이후에 돈다`  →  `**CI는 push 이후에** 돈다`  (통과해버림)
+ *      한 문장을 두 줄로 접어도 마찬가지였다.
+ *    가드를 우회하려는 의도가 없어도, 문서를 다듬다 보면 자연히 그렇게 된다.
+ *
+ * 그래서 검사 대상과 등재 문자열 **양쪽에** 같은 정규화를 적용한다:
+ *   - 마크다운 강조·코드 표시 문자(`*` `_` `` ` `` `~`) 제거
+ *   - 연속 공백/줄바꿈을 한 칸으로 압축
+ *
+ * 🔴 **어미 변형까지 잡지는 못한다**(`돈다` ↔ `돕니다`). 그건 형태소 분석 영역이라 오라클을 명세할 수
+ *    없다 — 대신 필요한 변형은 **별도 항목으로 등재**한다(REQ-2026-112가 같은 결론에 도달했다).
+ */
+export function normalizeForClaimScan(text: string): string {
+  return text.replace(/[*_`~]/g, '').replace(/\s+/g, ' ')
+}
 
 /**
  * 본문에서 폐기된 주장을 찾는다. **매칭의 정본**이다.
@@ -110,5 +249,6 @@ export const RETIRED_CLAIMS: readonly RetiredClaim[] = [
  *    배열을 손에 쥐지 않으면 사본을 둘 자리가 없다(설계 DEC-4의 ① 구조 방어).
  */
 export function retiredClaimsIn(text: string): RetiredClaim[] {
-  return RETIRED_CLAIMS.filter((c) => text.includes(c.text))
+  const haystack = normalizeForClaimScan(text)
+  return RETIRED_CLAIMS.filter((c) => haystack.includes(normalizeForClaimScan(c.text)))
 }

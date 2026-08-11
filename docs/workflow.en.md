@@ -47,7 +47,7 @@ Once a design is approved, CommitGate remembers that snapshot of the design docs
 
 If a change is too fundamental to judge as a delta, the reviewer requests a full re-review with `full_review_requested: "yes"` (which must come with `commit_approved: "no"`). The baseline is then cleared so the next design review returns to full mode; once that design is approved again, a new baseline is captured and delta review resumes.
 
-Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses the required status checks**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. In that case CI runs **after** the push, so its green is post-hoc verification, and the agent must not omit that from its report. tag, npm publish, and GitHub release are control points of their own, requested after CI is green and never bundled with the integration approval. See [AGENTS.template.md](../AGENTS.template.md) and [docs/RELEASING.md](../docs/RELEASING.md) for the full contract.
+Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses branch protection**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. tag, npm publish, and GitHub release are **control points of their own**, each approved separately and never bundled with the integration approval. **GitHub CI is not a precondition for any of them** — this repository's `ci.yml` is `workflow_dispatch`-only, so push, tag, and PR events never start it; if you want the check, a human runs it explicitly. Report the run result if you ran it, and report **that you skipped it** if you did not. See [AGENTS.template.md](../AGENTS.template.md) and [docs/RELEASING.md](../docs/RELEASING.md) for the full contract.
 
 ## Observability summary — commitgate report
 
@@ -100,9 +100,19 @@ npx commitgate integrate --run    # actual integration (interactive runs end wit
 ```
 
 Order: ① preconditions (feature branch, clean worktree, no merge/rebase in progress) → ② approval-evidence
-verification (**always strict** — unproven commits or manifest corruption block the merge, with the list shown) →
-③ GitHub CI **run** opt-in (below) → ④ final human confirmation → ⑤ local `merge --no-ff` (automatic
-restore on conflict) → ⑥ one audit-log row (`workflow/.integrate-runs.jsonl`, gitignored). **It never pushes.**
+verification (**always strict** — unproven commits or manifest corruption block the merge, with the list shown;
+on success the feature and trunk SHAs are **bound**) → ③ GitHub CI **run** opt-in (below) →
+④ final human confirmation → ⑤ **re-verify, then merge** → ⑥ one audit-log row
+(`workflow/.integrate-runs.jsonl`, gitignored). **It never pushes.**
+
+Why ⑤ re-verifies: time passes between the CI wait in ③ and the confirmation in ④. If another window lands a
+commit in that window, **an unverified commit could reach trunk.** So just before merging it re-checks the current
+branch, both ref SHAs, worktree cleanliness, and merge/rebase state; if anything moved it refuses to merge and
+tells you to run `integrate` again. The merge uses the bound **SHAs**, not branch **names**, and trunk is only
+updated — via `git update-ref`'s compare-and-swap — after the new merge commit's parents are confirmed to be
+exactly those two SHAs. If trunk moved in the meantime the swap is rejected and trunk is left untouched.
+On conflict or failure it runs `merge --abort` and returns to the original feature branch (no automatic
+reset or stash).
 
 Running CI (as opposed to querying it) requires user-owned config in `req.config.json`:
 
@@ -111,7 +121,23 @@ Running CI (as opposed to querying it) requires user-owned config in `req.config
 ```
 
 A run happens only via explicit `--run --run-github-ci` (CI runs are a step inside the actual integration, so `--run` is required — a dry-run never touches CI), or (when configured, under `--run`) answering `y` to the interactive
-**"GitHub CI workflow를 실행하시겠습니까? GitHub Actions 사용량 또는 비용이 발생할 수 있습니다. [y/N]"** (run the GitHub CI workflow? may incur Actions usage/cost). Without config the question is skipped entirely (skipping is normal, not a failure). Before dispatching, the remote branch SHA must equal the local HEAD (otherwise it fails clearly without auto-pushing), and only the dispatched run — identified by time, branch, and head SHA — is awaited; timeout, red, cancelled, or unidentifiable runs all fail, in which case nothing is merged. The choice applies to that run only and is never stored.
+**"GitHub CI workflow를 실행하시겠습니까? GitHub Actions 사용량 또는 비용이 발생할 수 있습니다. [y/N]"** (run the GitHub CI workflow? may incur Actions usage/cost). **The default is No** — Enter, an empty string, and `n` all mean "do not run". Without config the question is skipped entirely (skipping is normal, not a failure).
+
+Once you do opt in:
+
+- Before dispatching, the remote branch SHA must equal the **bound feature SHA** (otherwise it fails clearly
+  without auto-pushing).
+- **The run is never guessed.** Only the run id returned by the dispatch request is polled, and every poll
+  re-checks that its head SHA, event (`workflow_dispatch`), branch, and workflow match what was requested.
+  If no id comes back (older GitHub API or older `gh`), it fails instead of searching a run list — upgrade
+  `gh` to v2.87.0 or newer.
+- **Only `success` passes.** `failure`, `cancelled`, and `timed_out` obviously fail, and so do `skipped`
+  (the check you asked for did not run) and `neutral` (no verdict).
+- Failure, timeout, or an unidentifiable run all mean **nothing is merged**. The choice applies to that run
+  only and is never stored.
+
+> Tip: keeping `.github/workflows/ci.yml` on **`workflow_dispatch` only** — as this repository does — means
+> push, tag, and PR events never start Actions, so you retain full control over when CI costs are incurred.
 
 > `delivery integrate` (feature→delivery branch, inside a delivery set) is a different layer — this command merges feature→trunk.
 

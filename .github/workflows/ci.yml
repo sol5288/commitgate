@@ -1,20 +1,27 @@
 name: CI
 
-on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
-
-# 같은 ref에 연달아 push하면 앞 실행을 취소한다 — 마지막 것만 검사하면 되기 때문이다.
+# 🔴 **수동 실행 전용이다.** push·tag·pull_request·schedule 자동 트리거를 두지 않는다.
 #
-# 🔴 단, `main`과 태그(`v*`)는 **취소하지 않는다.** 이 저장소는 direct push(B1) 후 CI를
-#    **사후 검증**으로 쓰므로, 앞 실행이 취소되면 "그 커밋이 검증됐다"는 기록 자체가 사라진다.
-#    태그도 마찬가지다 — `refs/tags/*`는 `refs/heads/main`과 **다른 ref**라
-#    "main이 아니면 취소"로만 쓰면 릴리스 검증이 취소 대상이 된다(두 조건을 모두 적는 이유).
+#    이유는 정책이다: 이 저장소의 CI는 "평소 0회, 사람이 지시할 때만 1회"다. Actions 사용량과
+#    한도가 실제 비용이고, 자동 트리거는 그 결정을 사람 손에서 빼앗는다. 3 OS × 3 Node = 9잡이
+#    push마다 도는 구조는 그 정책과 정반대였다(0.22.0 RC 점검에서 발견).
+#
+#    실행 경로는 둘뿐이다:
+#      - GitHub UI / `gh workflow run ci.yml --ref <branch>`
+#      - `commitgate integrate --run --run-github-ci` (req.config.json 의 `githubCi` 설정 필요)
+#    integrate의 대화형 질문은 **기본 No**다 — Enter·빈 문자열·n 은 모두 미실행이다.
+#
+# 🔴 이 트리거 계약은 테스트로 잠겨 있다: `tests/unit/ci-workflow-policy.test.ts`.
+#    자동 트리거를 다시 넣으면 그 테스트가 red다. 되돌리려면 정책부터 바꿀 것.
+on:
+  workflow_dispatch:
+
+# 명시 요청한 실행은 **취소하지 않는다.** 사람이 한 번 지시한 검사가 뒤이은 지시로 사라지면
+# "그 커밋이 검증됐다"는 기록 자체가 없어진다(자동 트리거 시절 main·태그를 예외로 뒀던 것과 같은 이유이며,
+# 이제는 모든 실행이 명시 요청이므로 예외가 아니라 규칙이다).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: false
 
 jobs:
   build:

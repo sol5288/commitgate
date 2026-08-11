@@ -45,7 +45,7 @@ npm run req:next -- 2026-002
 
 변경이 너무 근본적이라 delta로 판단할 수 없으면 리뷰어가 `full_review_requested: "yes"`(그때 `commit_approved: "no"`)로 전체 재리뷰를 요청합니다. 그러면 baseline이 비워져 다음 설계 리뷰가 full 모드로 돌아가고, 그 설계가 다시 승인되면 새 baseline이 잡혀 delta가 재개됩니다.
 
-main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 required checks를 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. 그리고 이때 CI는 push **이후에** 도는 **사후 검증**이라, 그 사실을 보고에서 생략하지 않습니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 별도 통제점이고 CI green 이후에 요청합니다. 자세한 계약은 [AGENTS.template.md](../AGENTS.template.md)와 [docs/RELEASING.md](../docs/RELEASING.md)를 참고하세요.
+main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 branch protection을 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 **별도 통제점**이고 각각 따로 승인받습니다. **GitHub CI는 이 어느 단계의 전제도 아닙니다** — 이 저장소의 `ci.yml`은 `workflow_dispatch` 전용이라 push·tag·PR로 자동 실행되지 않고, 검사를 원하면 사람이 직접 실행합니다. 실행했으면 run 결과를, 생략했으면 **생략했다는 사실**을 보고에 남깁니다. 자세한 계약은 [AGENTS.template.md](../AGENTS.template.md)와 [docs/RELEASING.md](../docs/RELEASING.md)를 참고하세요.
 
 ## 관측 요약 — commitgate report
 
@@ -94,9 +94,18 @@ npx commitgate integrate --run    # 실제 통합(대화형이면 마지막에 [
 ```
 
 순서: ① 전제 확인(feature 브랜치·clean worktree·진행 중 merge/rebase 없음) → ② 승인 증거 검증
-(**항상 strict** — 미입증 커밋·manifest 손상이 있으면 병합하지 않고 목록을 보여줍니다) →
-③ GitHub CI **실행** opt-in(아래) → ④ 사람의 최종 확인 → ⑤ 로컬 `merge --no-ff`(충돌 시 자동
-원상 복구) → ⑥ 감사 로그 1행(`workflow/.integrate-runs.jsonl` — gitignored). **push는 하지 않습니다.**
+(**항상 strict** — 미입증 커밋·manifest 손상이 있으면 병합하지 않고 목록을 보여줍니다. 통과하면
+feature/trunk 두 SHA를 **결속**합니다) → ③ GitHub CI **실행** opt-in(아래) → ④ 사람의 최종 확인 →
+⑤ **재검증 후 병합** → ⑥ 감사 로그 1행(`workflow/.integrate-runs.jsonl` — gitignored).
+**push는 하지 않습니다.**
+
+⑤가 "재검증 후"인 이유: ③의 CI 대기와 ④의 확인 사이에 시간이 흐릅니다. 그동안 다른 창에서 커밋
+하나가 얹히면 **검사하지 않은 커밋이 trunk로 들어갈 수 있습니다.** 그래서 병합 직전에 현재 브랜치·
+양쪽 ref SHA·워킹트리 clean·merge/rebase 진행 여부를 다시 확인하고, 하나라도 바뀌었으면 병합하지
+않고 재실행을 안내합니다. 병합은 브랜치 **이름**이 아니라 결속한 **SHA**로 하며, 만들어진 merge
+commit의 부모가 그 두 SHA인지 확인한 뒤에야 `git update-ref`의 비교·교환으로 trunk를 갱신합니다 —
+그 사이 trunk가 움직였으면 교환이 거부되고 trunk는 그대로 남습니다. 충돌이나 실패에서는
+`merge --abort` 후 원래 feature 브랜치로 돌아갑니다(자동 reset·stash 없음).
 
 CI **실행**(조회와 다릅니다)은 `req.config.json`에 사용자 소유 설정이 있을 때만 가능합니다:
 
@@ -104,7 +113,20 @@ CI **실행**(조회와 다릅니다)은 `req.config.json`에 사용자 소유 �
 { "githubCi": { "workflow": "ci.yml", "timeoutMinutes": 30 } }
 ```
 
-실행은 `--run --run-github-ci` 명시(CI 실행은 실제 통합 실행 중의 한 단계라 `--run`이 함께 필요합니다 — dry-run은 CI에 닿지 않습니다) 또는(설정이 있을 때) `--run` 대화형 **"GitHub CI workflow를 실행하시겠습니까? GitHub Actions 사용량 또는 비용이 발생할 수 있습니다. [y/N]"** 의 `y` 뿐입니다. 설정이 없으면 질문하지 않고 생략합니다(생략은 정상 — 실패가 아닙니다). 실행 전 원격 브랜치 SHA가 로컬 HEAD와 같아야 하며(다르면 자동 push 없이 명확히 실패), dispatch한 run만 시각·브랜치·head SHA로 식별해 완료를 확인합니다 — timeout·red·cancelled·식별 불가는 전부 실패이고 그 경우 병합하지 않습니다. 선택은 실행 단위이며 저장되지 않습니다.
+실행은 `--run --run-github-ci` 명시(CI 실행은 실제 통합 실행 중의 한 단계라 `--run`이 함께 필요합니다 — dry-run은 CI에 닿지 않습니다) 또는(설정이 있을 때) `--run` 대화형 **"GitHub CI workflow를 실행하시겠습니까? GitHub Actions 사용량 또는 비용이 발생할 수 있습니다. [y/N]"** 의 `y` 뿐입니다. **기본값은 No**이며 Enter·빈 문자열·`n`은 모두 미실행입니다. 설정이 없으면 질문하지 않고 생략합니다(생략은 정상 — 실패가 아닙니다).
+
+실행하기로 했을 때의 규칙:
+
+- 실행 전 원격 브랜치 SHA가 **결속한 feature SHA**와 같아야 합니다(다르면 자동 push 없이 명확히 실패).
+- **run은 추정하지 않습니다.** dispatch 요청이 돌려준 run id로만 그 실행을 조회하며,
+  head SHA·이벤트(`workflow_dispatch`)·브랜치·워크플로가 요청한 것과 일치하는지 매번 대조합니다.
+  id를 받지 못하면(구형 GitHub API·구형 `gh`) 목록에서 추측하지 않고 실패합니다 — `gh`를 v2.87.0 이상으로 올리세요.
+- **`success`만 통과입니다.** `failure`·`cancelled`·`timed_out`은 물론 `skipped`(요청한 검사가 실행되지 않음)와
+  `neutral`(판정 없음)도 통과로 보지 않습니다.
+- 실패·timeout·식별 불가는 전부 **병합하지 않습니다**. 선택은 실행 단위이며 저장되지 않습니다.
+
+> 참고: `.github/workflows/ci.yml`을 이 저장소처럼 **`workflow_dispatch` 전용**으로 두면
+> push·tag·PR로 Actions가 자동으로 도는 일이 없어, 실행 시점을 사람이 온전히 통제할 수 있습니다.
 
 > `delivery integrate`(feature→delivery 브랜치, delivery set 내부)와는 층이 다릅니다 — 이 명령은 feature→trunk 통합입니다.
 

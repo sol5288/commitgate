@@ -77,6 +77,51 @@ npx commitgate report                     # local observation summary (read-only
 (behavior is otherwise normal — you just lose the observation log). A `sync` without `--apply` is a
 dry-run that only prints the plan and changes nothing.
 
+**②-b 🔴 `sync` does not update the contract text in `AGENTS.md`.** This is the easiest thing to miss when upgrading.
+
+- `sync --apply --gitignore` touches **only the schema axis and `workflow/.gitignore`**.
+- `quickstart --apply` likewise handles **only the managed Quick Start block**; it does not replace the
+  whole `I2`/CI contract.
+- `AGENTS.md` is a **user-owned file** that mixes in project-specific rules. Overwriting it automatically
+  would delete that content, so CommitGate **tells you instead of fixing it**.
+
+So when you come from 0.21 or earlier, the old contract stays in `AGENTS.md` — for example sentences that
+make CI green a precondition for merge/publish, the old `I2` approval sentence, or the claim that CI runs
+after a push.
+
+**②-c Check for the C5 WARN from `commitgate check`.** Run it right after upgrading and it points this out.
+
+```sh
+npx commitgate check          # a C5 WARN means the merge below is needed
+npx commitgate check --json   # machine consumers get the same diagnosis
+```
+
+- C5 reads `AGENTS.md` and `AGENTS.commitgate.md` and WARNs when they contain **retired CommitGate claims**.
+- It is a **WARN, not a FAIL** — stale docs never block your commits or reviews (`check` still exits 0).
+- `check` **never writes any file**.
+
+**②-d What to do about a C5 WARN.** Do **not** replace the file wholesale; you would lose project-specific
+content. Compare against the installed template (`node_modules/commitgate/AGENTS.template.md`) and merge
+**only the CommitGate contract sections** by hand.
+
+The current contract says:
+
+- **CommitGate never dispatches GitHub CI on its own.** A workflow runs only when you pass
+  `--run-github-ci` or answer `y` to the interactive prompt (whose default is No).
+- **Skipping CI is a normal state**, not a failure condition for merge or publish.
+- The canonical `I2` approval sentence is **`검증 결과 확인 후 PR merge 승인`**.
+- **CI green is not a precondition for merge or publish.** Report the result if you ran it, and report
+  the fact that you skipped it if you did not.
+
+🔴 **"CommitGate does not run it" and "no CI in this repository runs automatically" are different claims.**
+If your project has its own workflows, `push`, `tag`, and `pull_request` triggers can start Actions
+**independently of CommitGate**. To control cost fully, inspect the `on:` block of that repository's
+`.github/workflows/*.yml` **separately**. CommitGate neither creates nor edits your project's workflows.
+Do **not** write blanket sentences like "CI never runs automatically" into your contract file — that is
+an assertion you have not verified against the actual triggers.
+
+Re-run `npx commitgate check` after merging and C5 turns OK.
+
 **③ Behavior changes coming from 0.21 (relevant when upgrading from 0.20).**
 
 - **secretScan defaults to `block`** — if a high-confidence secret pattern is staged, the review
@@ -85,6 +130,9 @@ dry-run that only prints the plan and changes nothing.
 - **GitHub CI is optional** — CommitGate neither requires nor auto-runs CI. The verify-range CI check
   is opt-in ([y/N], default No) and only *queries* existing results; it never dispatches workflows.
   The entire local verification path works without GitHub auth or network.
+  Keeping your own `.github/workflows/*.yml` on `workflow_dispatch` only stops push, tag, and PR events
+  from starting Actions at all (this is how the CommitGate repository itself runs). CommitGate never
+  creates or edits your workflow files.
 - **New in 0.22: doctor observation schema v2** — new `.doctor-runs.jsonl` rows carry per-check
   applicability, outcome, blocked, and reason codes (additive — old rows and old consumers stay
   valid). `commitgate report` computes per-check denominators/firing rates from v2 rows only and
@@ -101,6 +149,13 @@ dry-run that only prints the plan and changes nothing.
   explicit request (`integrate --run --run-github-ci`) — without config it is never even offered. A new local log,
   `workflow/.integrate-runs.jsonl` (gitignored), appears; the `sync --apply --gitignore` backfill above
   adds this rule too.
+  - **Only what was verified gets merged**: once evidence verification passes, the feature and trunk SHAs
+    are bound and re-checked just before the merge (after the CI wait and the human confirmation). If either
+    moved, nothing is merged and you are told to re-run. The merge uses those SHAs, not branch names, and
+    trunk is updated only through an `update-ref` compare-and-swap.
+  - **When CI runs, only `success` passes** — `skipped` (the requested check did not run) and `neutral`
+    (no verdict) do not. The run is identified solely by the id returned from the dispatch, which requires
+    `gh` v2.87.0 or newer.
 
 **④ Log backward compatibility.** Existing local logs (`.doctor-runs.jsonl`, `.review-calls.jsonl`)
 and committed ledgers (`review-ledger.jsonl`, `approvals.jsonl`) remain readable — schema changes are

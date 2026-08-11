@@ -30,4 +30,12 @@ export const INTEGRATION_TIER: readonly string[] = [
   'tests/unit/rebind-reentry.test.ts', // ~39,000ms — 티켓 재결속 회복(테스트마다 새 repo·의도적 격리)
   'tests/unit/doctor-stranded-evidence.test.ts', // ~23,000ms — trunk 미도달 증거(D30) 실 git 재구성
   'tests/unit/doctor-terminal-wiring.test.ts', // ~24,000ms — 종결 상태 doctor 배선(rebind 포함)
+  // ── 0.22.0 RC 보완 추가 — CAS 병합·ref 표류는 **실 git 없이는 증명할 수 없다**(fake git으로는
+  //    update-ref의 compare-and-swap 거부·merge 부모 구조를 흉내 낼 뿐 검증이 되지 않는다).
+  //    테스트마다 새 임시 저장소를 만들고 git을 여러 번 스폰한다 → 정의상 통합 계층이다.
+  'tests/unit/integration-coordinator.test.ts',
+  // ── 0.22.0 2차 보완 — 계층 선택을 **실행해서** 확인하는 가드가 생겼다(`vitest list` 스폰 2회).
+  //    구조 검사만 하던 예전 가드는 `extends`의 include 병합을 놓쳐 integration이 전체를 돌게 했다.
+  //    자기 자신이 목록에 들어가는 것이 맞다 — 이 파일도 프로세스를 스폰하기 때문이다.
+  'tests/unit/test-tiers.test.ts',
 ]

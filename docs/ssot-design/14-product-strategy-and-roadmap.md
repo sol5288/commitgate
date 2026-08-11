@@ -99,11 +99,11 @@ VCCR만 높이기 위해 위험한 변경을 쉽게 승인하면 안 되므로, 
 
 | 순위 | ID | 개선 축 | 우선순위 | 핵심 결과 | 주요 선행 |
 |---:|---|---|---|---|---|
-| 1 | **STR-01** | 증거 검증과 정책 프로필(로컬 `verify-range` **실현** — §7.1) | P0 | 승인 증거 없는 커밋을 로컬에서 탐지 — 원격 강제는 opt-in 확장 | 증거 포맷 버전화 |
+| 1 | **STR-01** | 증거 검증과 정책 프로필(로컬 `verify-range` 심층 6범주·`attest`·`integrate` **실현** — §7.1) | P0 | 승인 증거 없는 커밋을 로컬에서 탐지·차단 — 원격 강제는 opt-in 확장 | 정책 프로필·증거 포맷 버전화 |
 | 2 | **STR-02** | 재구축 가능한 상태·원자적 복구 | P0 | fresh clone에서도 동일한 `req:next` 판정 | 이벤트 계약 |
 | 3 | **STR-03** | 외부 전송 안전 경계 | P0 | secret/크기/경로 정책 위반을 Codex 호출 전에 차단 | 오류 코드 |
 | 4 | **STR-04** | 리뷰 수렴·델타 재리뷰·escalation | P0 | 무한 리뷰 제거, P95 5라운드 이내 의사결정 | 내구 이벤트·지표 |
-| 5 | **STR-05** | 티켓 ID·trunk·동시성 기초 | P1 | 브랜치 간 번호 충돌과 `main` 하드코딩 제거 | 상태 재구축 |
+| 5 | **STR-05** | 티켓 ID·trunk·동시성 기초 (**부분 실현: `trunkBranch` 설정화**) | P1 | 브랜치 간 번호 충돌 해소 — `main` 하드코딩은 이미 제거됨 | 상태 재구축 |
 | 6 | **STR-06** | 설치 원장·업그레이드·마이그레이션 (**부분 실현: REQ-2026-038**) | P1 | 관리 자산↔런타임 version skew를 감지하고 자산을 안전하게 갱신 — `commitgate sync`+doctor D20으로 감지·복구·문서 실현, 커밋 install 원장·3-way·rollback은 미착수 | 포맷 버전 |
 | 7 | **STR-07** | 타임아웃·진단·구조화 오류 | P1 | 멈춤과 원인 유실 제거, 자동화 가능한 실패 | 오류 코드 |
 | 8 | **STR-08** | 로컬 품질 리포트 | P1 | 비용·수렴·차단 원인을 코드 유출 없이 측정 | 이벤트 계약 |
@@ -112,27 +112,37 @@ VCCR만 높이기 위해 위험한 변경을 쉽게 승인하면 안 되므로, 
 
 ## 7. 핵심 개선 설계
 
-### 7.1 STR-01 — 증거 검증과 정책 프로필 (일부 실현됨 — REQ-2026-116)
+### 7.1 STR-01 — 증거 검증과 정책 프로필 (핵심 실현됨 — REQ-2026-116·126·127 · 0.22)
 
-**문제**: 로컬 `req:commit`은 정확하지만 직접 `git commit`으로 우회할 수 있고, 현재 CI는 타입·테스트·스모크만 실행한다.
+**문제**: 로컬 `req:commit`은 정확하지만 직접 `git commit`으로 우회할 수 있다.
 
-**확정 정책(2026-08-09)** — GitHub CI는 사용량·비용이 발생하므로 **CommitGate의 필수 게이트가 아니다.**
-기본 검증 경로는 **로컬**이며, 원격(GitHub Actions) 검증은 사용자가 명시적으로 선택할 때만 실행·설치한다.
-CommitGate가 워크플로를 자동 트리거하거나 required workflow로 배포하는 일은 하지 않는다.
+**확정 정책(2026-08-09, 0.22에서 배선까지 정합)** — GitHub CI는 사용량·비용이 발생하므로
+**CommitGate의 필수 게이트가 아니다.** 기본 검증 경로는 **로컬**이며, 원격(GitHub Actions) 검증은
+사용자가 명시적으로 지시할 때만 실행된다. CommitGate가 워크플로를 자동 트리거하거나 required workflow로
+배포하는 일은 하지 않는다. 이 저장소 자신의 `ci.yml`도 **`workflow_dispatch` 전용**이다(0.22.0 RC 보완 —
+그전까지 push·tag·PR 자동 트리거가 남아 있어 정책과 파일이 어긋나 있었다).
 
-**실현된 부분(REQ-2026-116)**
+**실현된 부분**
 
-- `commitgate verify-range [--base <ref>] [--head <ref>] [--strict] [--json]` — 범위 내 커밋을
-  승인 소비(`consumed_by_commit_sha`)·도구 부기(trailer)·머지·**미입증**으로 로컬 분류한다.
-  기본은 보고(exit 0), `--strict`가 게이트 모드다. GitHub 인증·네트워크 무의존.
-- 머지 직전 GitHub CI **opt-in**(조회 전용): 대화형 [y/N] 기본 No · `--check-github-ci`/`--no-check-github-ci`
+- `commitgate verify-range [--base <ref>] [--head <ref>] [--last <N>] [--strict] [--json]` —
+  범위 내 커밋을 **심층 6범주**(merge / bookkeeping / approved / **attested** / **invalid-evidence** / unproven)로
+  로컬 분류하고, 승인 아카이브의 **sha256·approved tree까지 대조**한다. 기본은 보고(exit 0),
+  `--strict`가 게이트 모드다. GitHub 인증·네트워크 무의존.
+- `commitgate attest` — 정당한 예외의 명시 승인 기록(커밋 identity 결속).
+  🔴 **손상 증거(invalid-evidence)는 attest로 면제되지 않는다.**
+- `commitgate integrate` — 통합 seam. **항상 strict**이며, 검증한 feature/trunk SHA를 결속해
+  병합 직전 재검증 + `update-ref` compare-and-swap으로 **검증한 SHA만** 병합한다.
+- GitHub CI **실행** opt-in(조회와 별개): 기본 미실행 · 대화형 [y/N] 기본 No ·
+  `--run-github-ci`/`--no-github-ci` · config `githubCi` 없으면 질문조차 생략 ·
+  dispatch 응답의 run id에만 결속 · **`success`만 통과**.
+- 머지 직전 GitHub CI **조회** opt-in: 대화형 [y/N] 기본 No · `--check-github-ci`/`--no-check-github-ci`
   (구 `--github-ci`/`--no-github-ci`는 deprecated alias) · 비대화형 기본 생략 · 명시 요청 실패는 exit 1.
 
 **남은 설계(미구현)**
 
-- 승인 아카이브 sha·approved tree·schema version까지의 심층 검증(현재는 소비 SHA·trailer 분류까지).
 - `solo`, `team`, `regulated` 정책 프로필. 예: `solo`는 경고 허용, `team`은 증거 누락 FAIL, `regulated`는 전송 정책·HIGH 사람 승인까지 요구한다.
 - GitHub Actions용 공식 예제 — **명시적으로 선택한 사용자만 설치·실행**하는 opt-in 예제로 제공한다(기본 설치·자동 트리거 금지).
+- **원격** 강제(protected branch에서의 증거 검증). 확정 정책상 요구가 아니라 opt-in 확장으로 남는다.
 - 로컬 hook은 선택적 편의 기능으로만 제공한다. 사람의 우회까지 막아야 하는 조직의 최종 경계는 서버 측 검증이지만, 그 선택이 CommitGate 사용의 전제가 되어서는 안 된다.
 
 **수용 기준**
@@ -197,7 +207,7 @@ CommitGate가 워크플로를 자동 트리거하거나 required workflow로 배
 
 ### 7.5 STR-05 — 티켓 ID·trunk·동시성 기초
 
-- `trunkBranch`를 설정화하고 설치 시 `refs/remotes/origin/HEAD`→현재 기본 브랜치 순으로 감지한다.
+- ~~`trunkBranch`를 설정화한다~~ — **실현됨**(`req.config.json` `trunkBranch`, 기본 `'main'`·`null` 허용). 남은 것: 설치 시 `refs/remotes/origin/HEAD`→현재 기본 브랜치 순 **자동 감지**.
 - `nextReqId`는 현재 worktree뿐 아니라 로컬/원격 refs의 티켓을 스캔한다. 장기적으로 표시용 번호와 내부 UUID를 분리한다.
 - branch 생성 직전에 ID·branch 존재를 다시 확인해 TOCTOU 충돌을 fail-closed로 거부한다.
 - 다중 worktree 강한 일관성은 여전히 비목표로 두되, 충돌을 조용히 허용하지 않는다.

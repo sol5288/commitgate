@@ -85,7 +85,7 @@
 **승인은 승인받은 문장 그대로만 유효하다.** 한 통제점의 승인은 다음 통제점으로 **이월되지 않는다**.
 
 - `PR 생성 승인`은 `PR merge 승인`이 아니다.
-- `merge/push 승인`은 `required status checks bypass 승인`이 아니다.
+- `검증 결과 확인 후 PR merge 승인`(`I2`)은 `branch protection bypass를 사용한 direct push 승인`(`B1`)이 아니다.
 - 통합 승인은 릴리즈 승인이 아니고, `tag` 승인은 `publish` 승인이 아니다.
 - **권한이 있다는 사실은 승인이 아니다.** protected branch를 우회할 권한이 있어도, 우회하려면 그 우회 자체를 승인받아야 한다.
 - 승인 문장이 모호하면 확대 해석하지 말고 **다시 묻는다**.
@@ -119,23 +119,25 @@
 
 protected branch에 변경을 넣는 경로는 **두 가지**이고 **둘 다 유효**하다. PR은 **의무가 아니라 선택**이다.
 
-- **경로 A (PR 경유)**: `I1` → required status checks green → `I2`
-- **경로 B (direct push)**: `B1` → push → **CI 사후 실행**
+- **경로 A (PR 경유)**: `I1` → (검사가 있으면 그 결과 확인) → `I2`
+- **경로 B (direct push)**: `B1` → push
 
 | # | 통제점 | 경로 | 멈추는 시점 | 승인 문장 |
 |---|---|---|---|---|
 | `I1` | 통합 — PR 열기 | A | feature branch를 원격에 push하고 PR을 생성하기 직전 | `feature branch push + PR 생성 승인` |
-| `I2` | 통합 — PR 머지 | A | **required status checks가 전부 green으로 끝난 것을 확인한 뒤**, PR을 protected branch에 머지하기 직전 | `required checks green 확인 후 PR merge 승인` |
+| `I2` | 통합 — PR 머지 | A | 필수 로컬 검증 결과를 확인하고(GitHub CI를 실행했으면 그 결과도 함께, 실행하지 않았으면 생략 사실을 보고), PR을 protected branch에 머지하기 직전 | `검증 결과 확인 후 PR merge 승인` |
 | `B1` | 통합 — direct push | B | protected branch에 **direct push**하기 직전 | `branch protection bypass를 사용한 direct push 승인` |
 | `R1` | 릴리즈 — tag | — | 버전 tag 생성 및 tag push 직전 | `tag 생성·push 승인` |
 | `R2` | 릴리즈 — publish | — | 패키지 publish 직전 | `npm publish 승인` |
 | `R3` | 릴리즈 — release | — | GitHub release 생성 직전 | `GitHub release 생성 승인` |
 
-- 경로 A: `I2`는 checks 결과를 본 뒤에만 요청한다 — green 전 선승인은 받지 않는다(승인자가 볼 근거가 아직 없다).
-- 경로 B: **direct push는 required status checks를 우회한다.** 그래서 `B1` 승인이 따로 필요하다. 경로 B를 고르는 것 자체는 잘못이 아니다 — **우회 사실을 숨기는 것**이 잘못이다.
+- 경로 A: 이 저장소에 검사가 걸려 있다면 `I2`는 그 결과를 본 뒤에만 요청한다 — 결과 전 선승인은 받지 않는다(승인자가 볼 근거가 아직 없다).
+- 경로 B: **direct push는 branch protection과 그에 걸린 검사를 우회한다.** 그래서 `B1` 승인이 따로 필요하다. 경로 B를 고르는 것 자체는 잘못이 아니다 — **우회 사실을 숨기는 것**이 잘못이다.
 - **push 전에 멈춰라.** 대상이 protected branch로 알려져 있거나 확인이 안 되면 push하기 전에 보고한다. push 응답의 `remote: Bypassed rule violations`는 우회가 **이미 일어난 뒤**의 사후 신호이므로 사전 정지의 근거가 될 수 없다.
-- **경로 B에서 CI는 사후 검증이다.** push 이후에 돌기 때문에, 그 green은 반영을 *사전에* 막아 준 게 아니다. 보고할 때 이 사실을 생략하지 않는다.
-- `R1`·`R2`·`R3`는 반영(`I2` 또는 `B1`) 이후 **CI green을 확인한 뒤** 각각 따로 요청한다. 경로 B였다면 그 green이 push 뒤에 나왔다는 점을 함께 보고한다. 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.
+- **CI는 CommitGate가 요구하는 것이 아니다.** CommitGate는 어떤 워크플로도 자동으로 실행하지 않고, CI green을 통합·릴리즈의 전제로 강제하지도 않는다. 이 저장소의 CI가 어떤 이벤트에서 도는지(또는 수동 실행 전용인지)는 저장소마다 다르므로 **추측하지 말고 확인**한다.
+- **CI에 대해 보고할 것은 하나다: 무엇을 했는가.** 실행했으면 그 결과(run과 결론)를, 실행하지 않았으면 **실행하지 않았다는 사실**을, 반영 이후에 돌았으면 **그것이 사후 검증이라는 사실**을 그대로 적는다. 침묵하지 않는다.
+- `R1`·`R2`·`R3`는 반영(`I2` 또는 `B1`) 이후 `npx commitgate verify-range --strict` 통과를 확인한 뒤 각각 **따로** 요청한다. GitHub CI green은 전제가 아니다. 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.
+  - 🔴 `verify-range --strict` 는 **로컬 승인 증거 검증**이지 GitHub CI가 아니다. 둘을 같은 검사로 취급하지 않는다 — CI는 선택이지만 이 strict 통과는 릴리즈의 **필수 전제**다. 미입증 커밋·손상 증거가 있으면 여기서 멈춘다.
 
 그 밖에 보고해야 할 때:
 - HIGH commit 실행 직전

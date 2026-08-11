@@ -404,7 +404,7 @@ describe('[init] 에이전트 진입점 설치', () => {
       expect(body).toContain(AGENTS_CONTRACT_MARKER)
       // 계약 본문(통제점 표의 승인 문장)은 복제 금지 — drift 부채.
       expect(body).not.toContain('branch protection bypass를 사용한 direct push 승인')
-      expect(body).not.toContain('required checks green 확인 후 PR merge 승인')
+      expect(body).not.toContain('검증 결과 확인 후 PR merge 승인')
     }
   })
 

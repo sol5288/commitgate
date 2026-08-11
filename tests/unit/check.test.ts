@@ -8,10 +8,16 @@ import {
   renderJson,
   parseArgs,
   loadConfigResult,
+  collectContracts,
+  CONTRACT_FILES,
+  TEMPLATE_COMPARE_PATH,
   HelpRequested,
   type CheckInputs,
   type CheckReport,
 } from '../../bin/check'
+import { RETIRED_CLAIMS, retiredClaimsIn } from '../../scripts/req/lib/retired-claims'
+import { I2_APPROVAL } from '../../scripts/req/lib/control-points'
+import { readFileSync, existsSync, statSync } from 'node:fs'
 import type { AuthProbeResult, VersionProbeResult } from '../../scripts/req/lib/adapters'
 import { DEFAULTS } from '../../scripts/req/lib/config'
 
@@ -36,6 +42,11 @@ function inputs(over: Partial<CheckInputs> = {}): CheckInputs {
     config: { ok: true, cfg: { reviewModel: 'gpt-5.6-terra', reviewReasoningEffort: 'high' } as never },
     version: OK_VERSION,
     auth: LOGGED_IN,
+    // C5 기본값 = 계약 파일 없음(점검 불요). 각 테스트가 필요할 때만 덮어쓴다.
+    contracts: [
+      { rel: 'AGENTS.md', content: null },
+      { rel: 'AGENTS.commitgate.md', content: null },
+    ],
     ...over,
   }
 }
@@ -46,11 +57,13 @@ describe('[check] 전부 정상 → ok', () => {
   it('FAIL 0건이면 ok=true, 모든 항목 OK', () => {
     const r = runChecks(inputs())
     expect(r.ok).toBe(true)
-    expect(r.summary).toEqual({ ok: 4, warn: 0, fail: 0 })
+    // C5 추가(0.22.0)는 **additive** 다 — 기존 C1~C4 의 의미·등급은 그대로다.
+    expect(r.summary).toEqual({ ok: 5, warn: 0, fail: 0 })
   })
 
-  it('항목 id는 C1~C4 순서로 고정된다(에이전트 소비 안정성)', () => {
-    expect(runChecks(inputs()).checks.map((c) => c.id)).toEqual(['C1', 'C2', 'C3', 'C4'])
+  it('항목 id는 C1~C5 순서로 고정된다(에이전트 소비 안정성)', () => {
+    // 🔴 순서가 계약이다. 새 검사는 **뒤에만** 붙는다 — 기존 인덱스를 밀면 소비자가 깨진다.
+    expect(runChecks(inputs()).checks.map((c) => c.id)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5'])
   })
 })
 
@@ -238,5 +251,221 @@ describe('[check] loadConfigResult — throw를 진단으로 흡수(DEC-6)', () 
     } finally {
       rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
     }
+  })
+})
+
+
+/**
+ * **C5 — 업그레이드 소비자의 오래된 계약 문서**(0.22.0 최종 보완).
+ *
+ * 세 소비자 복제본에 0.22.0을 실제로 설치하고 `sync --apply --gitignore`를 돌려도
+ * `AGENTS.md`에는 0.21 계약이 그대로 남았다. `sync`가 사용자 소유 파일을 덮어쓰지 않기 때문이며
+ * **그 정책은 유지해야 한다**(프로젝트 고유 내용이 지워진다). 그래서 고치는 대신 **알린다**.
+ */
+describe('[check] C5 — 계약 문서의 폐기된 CommitGate 서술', () => {
+  /** 등재 목록에서 실제 문구를 가져온다 — 테스트에 사본 문자열을 두지 않는다. */
+  const staleText = RETIRED_CLAIMS[0]!.text
+  const contracts = (over: Record<string, string | null>): CheckInputs['contracts'] =>
+    CONTRACT_FILES.map((rel) => ({ rel, content: rel in over ? (over[rel] as string | null) : null }))
+
+  it('AGENTS.md 에 폐기 주장이 있으면 C5 WARN', () => {
+    const r = runChecks(inputs({ contracts: contracts({ 'AGENTS.md': `계약 본문
+${staleText}
+끝` }) }))
+    expect(byId(r, 'C5')?.level).toBe('WARN')
+    expect(byId(r, 'C5')?.msg).toContain('AGENTS.md')
+  })
+
+  it('AGENTS.commitgate.md 에 있으면 C5 WARN', () => {
+    const r = runChecks(inputs({ contracts: contracts({ 'AGENTS.commitgate.md': staleText }) }))
+    expect(byId(r, 'C5')?.level).toBe('WARN')
+    expect(byId(r, 'C5')?.msg).toContain('AGENTS.commitgate.md')
+  })
+
+  it('두 파일 모두 현행 정책이면 C5 OK', () => {
+    const good = `통합 통제점: [I2] ${I2_APPROVAL}. GitHub CI는 기본 미실행 opt-in이며 생략은 정상입니다.`
+    const r = runChecks(inputs({ contracts: contracts({ 'AGENTS.md': good, 'AGENTS.commitgate.md': good }) }))
+    expect(byId(r, 'C5')?.level).toBe('OK')
+  })
+
+  it('파일이 없으면 C5 OK(점검 불요 — 설치 형태에 따라 정상)', () => {
+    expect(byId(runChecks(inputs({ contracts: contracts({}) })), 'C5')?.level).toBe('OK')
+    expect(byId(runChecks(inputs({ contracts: [] })), 'C5')?.level).toBe('OK')
+  })
+
+  it('🔴 retiredClaimsIn 의 정규화가 그대로 적용된다(강조·줄바꿈 우회 불가)', () => {
+    const bolded = `**${staleText.slice(0, 4)}**${staleText.slice(4)}`
+    expect(byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': bolded }) })), 'C5')?.level).toBe('WARN')
+    const mid = Math.floor(staleText.length / 2)
+    const folded = `${staleText.slice(0, mid)}
+${staleText.slice(mid)}`
+    expect(byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': folded }) })), 'C5')?.level).toBe('WARN')
+  })
+
+  it('🔴 C5 WARN 이어도 전체 check 는 통과(exit 0) — 기존 소비자를 막지 않는다', () => {
+    const r = runChecks(inputs({ contracts: contracts({ 'AGENTS.md': staleText }) }))
+    expect(byId(r, 'C5')?.level).toBe('WARN')
+    expect(r.ok).toBe(true) // ok=true → exit 0
+    expect(r.summary.fail).toBe(0)
+  })
+
+  it('WARN 메시지가 발견 문장·사유·현행 정책·정확한 비교 경로·수동 병합을 모두 담는다', () => {
+    const msg = byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': staleText }) })), 'C5')?.msg ?? ''
+    expect(msg).toContain('AGENTS.md')
+    // 🔴 **발견한 실제 문장**을 보여준다 — 사유만으로는 자기 파일 어디를 고칠지 알 수 없다.
+    expect(msg).toContain(RETIRED_CLAIMS[0]!.text)
+    expect(msg).toContain(RETIRED_CLAIMS[0]!.why) // 사유는 등재 정본을 그대로 쓴다
+    expect(msg).toContain(I2_APPROVAL)
+    expect(msg).toContain('자동으로 실행하지 않고')
+    expect(msg).toContain('수동')
+    expect(msg).toContain('자동 교체하지 않습니다')
+    // 🔴 사용자가 실제로 열 수 있는 정확한 경로.
+    expect(msg).toContain(TEMPLATE_COMPARE_PATH)
+    expect(TEMPLATE_COMPARE_PATH).toBe('node_modules/commitgate/AGENTS.template.md')
+  })
+
+  it('🔴 CLI 출력에 Markdown 강조 기호를 넣지 않는다(터미널에 그대로 보인다)', () => {
+    const msg = byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': staleText }) })), 'C5')?.msg ?? ''
+    expect(msg).not.toContain('**')
+  })
+
+  it('🔴 저장소 자체 워크플로가 자동 실행될 수 있음을 함께 알린다(단정 금지)', () => {
+    const msg = byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': staleText }) })), 'C5')?.msg ?? ''
+    expect(msg).toContain('저장소 자체 워크플로')
+    expect(msg).toContain('.github/workflows/')
+  })
+
+  it('두 파일의 여러 claim 을 각각 구분해 표시한다', () => {
+    const a = RETIRED_CLAIMS[0]!
+    const b = RETIRED_CLAIMS[1]!
+    const msg =
+      byId(
+        runChecks(inputs({ contracts: contracts({ 'AGENTS.md': `${a.text} 그리고 ${b.text}`, 'AGENTS.commitgate.md': a.text }) })),
+        'C5',
+      )?.msg ?? ''
+    // 파일별로 줄이 나뉘고, 같은 파일의 서로 다른 claim 도 각각 나온다.
+    expect(msg).toContain(`AGENTS.md: "${a.text}"`)
+    expect(msg).toContain(`AGENTS.md: "${b.text}"`)
+    expect(msg).toContain(`AGENTS.commitgate.md: "${a.text}"`)
+    expect(msg.split('AGENTS.commitgate.md:').length - 1).toBe(1)
+  })
+
+  /**
+   * 🔴 소비자(lean_lms) `AGENTS.md`의 **완료 정의**에 CI green 전제가 있었다.
+   *    통제점표가 아니라 다른 절이라 기존 항목에 걸리지 않았다.
+   */
+  it('완료 정의에 CI green 을 둔 옛 문장도 C5 WARN 이다', () => {
+    const leanSentence =
+      '- **완료 정의**: Phase/티켓은 코드 작성 여부가 아니라 **DoD + 검증 증적(+ 해당 O·CI green)** 충족으로 판단.'
+    const r = runChecks(inputs({ contracts: contracts({ 'AGENTS.md': leanSentence }) }))
+    expect(byId(r, 'C5')?.level).toBe('WARN')
+    expect(byId(r, 'C5')?.msg).toContain('완료 조건에 CI green')
+    expect(r.ok).toBe(true)
+  })
+
+  it('🔴 CI green 을 부정하는 정정문에는 발화하지 않는다(오탐 경계)', () => {
+    const corrected =
+      '완료 정의는 DoD와 필수 로컬 검증 증적 충족으로 판단한다. GitHub CI green 은 완료의 필수 조건이 아니다.'
+    expect(byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': corrected }) })), 'C5')?.level).toBe('OK')
+  })
+
+  /**
+   * 🔴 **릴리즈 전제가 빠진 R1/R2/R3 문장**(0.22.0 릴리스 직전).
+   *    CI green 전제를 걷어내면서 `verify-range --strict` 전제를 넣지 않은 중간 상태가 배포될 뻔했다.
+   *    소비자 AGENTS.md 에 그 상태가 남으면 C5 가 잡아야 한다.
+   */
+  it('전제가 빠진 R1/R2/R3 문장은 C5 WARN', () => {
+    const incomplete = '- `R1`·`R2`·`R3`는 반영(`I2` 또는 `B1`) 이후 각각 **따로** 요청한다. 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.'
+    const r = runChecks(inputs({ contracts: contracts({ 'AGENTS.md': incomplete }) }))
+    expect(byId(r, 'C5')?.level).toBe('WARN')
+    expect(byId(r, 'C5')?.msg).toContain('verify-range --strict')
+    expect(r.ok).toBe(true)
+  })
+
+  it('🔴 정본 R1/R2/R3 문장에는 발화하지 않는다(줄 경계 — 오탐 금지)', () => {
+    const canonical =
+      '- `R1`·`R2`·`R3`는 반영(`I2` 또는 `B1`) 이후 `npx commitgate verify-range --strict` 통과를 확인한 뒤 각각 **따로** 요청한다. GitHub CI green은 전제가 아니다. 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.'
+    expect(byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': canonical }) })), 'C5')?.level).toBe('OK')
+  })
+
+  it('🔴 강조 표시 유무가 판정을 바꾸지 않는다(정규화 경계)', () => {
+    // 전제가 빠진 문장은 강조를 빼도 WARN, 정본은 강조를 붙여도 OK.
+    const incompletePlain = '- R1·R2·R3는 반영(I2 또는 B1) 이후 각각 따로 요청한다.'
+    expect(byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': incompletePlain }) })), 'C5')?.level).toBe('WARN')
+    const canonicalBold =
+      '- **`R1`·`R2`·`R3`**는 반영(`I2` 또는 `B1`) 이후 **`npx commitgate verify-range --strict` 통과**를 확인한 뒤 각각 **따로** 요청한다.'
+    expect(byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': canonicalBold }) })), 'C5')?.level).toBe('OK')
+  })
+
+  it('옛 승인 명칭 2종은 C5 WARN', () => {
+    const stale = '- `merge/push 승인`은 `required status checks bypass 승인`이 아니다.'
+    const r = runChecks(inputs({ contracts: contracts({ 'AGENTS.md': stale }) }))
+    expect(byId(r, 'C5')?.level).toBe('WARN')
+    const msg = byId(r, 'C5')?.msg ?? ''
+    expect(msg).toContain('옛 승인 명칭')
+    expect(msg).toContain(I2_APPROVAL)
+  })
+
+  it('🔴 현재 정본 승인 비동일성 문장에는 발화하지 않는다', () => {
+    const good = '- `검증 결과 확인 후 PR merge 승인`(`I2`)은 `branch protection bypass를 사용한 direct push 승인`(`B1`)이 아니다.'
+    expect(byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': good }) })), 'C5')?.level).toBe('OK')
+  })
+
+  it('--json 출력에도 같은 진단이 실린다(같은 report 파생)', () => {
+    const r = runChecks(inputs({ contracts: contracts({ 'AGENTS.md': staleText }) }))
+    const parsed = JSON.parse(renderJson(r)) as CheckReport
+    const c5 = parsed.checks.find((c) => c.id === 'C5')
+    expect(c5?.level).toBe('WARN')
+    expect(c5?.msg).toBe(byId(r, 'C5')?.msg)
+    expect(renderHuman(r)).toContain('[WARN] C5:')
+  })
+
+  it('🔴 check 는 계약 파일을 수정하지 않는다(내용·mtime 불변)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-check-c5-'))
+    try {
+      const abs = join(dir, 'AGENTS.md')
+      writeFileSync(abs, staleText, 'utf8')
+      const before = { body: readFileSync(abs, 'utf8'), mtime: statSync(abs).mtimeMs }
+      const collected = collectContracts(dir)
+      const r = runChecks(inputs({ contracts: collected }))
+      expect(byId(r, 'C5')?.level).toBe('WARN')
+      expect(readFileSync(abs, 'utf8')).toBe(before.body)
+      expect(statSync(abs).mtimeMs).toBe(before.mtime)
+      // 없던 파일을 만들지도 않는다.
+      expect(existsSync(join(dir, 'AGENTS.commitgate.md'))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+    }
+  })
+
+  it('collectContracts 는 두 계약 파일만 읽고 부재는 null 이다', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-check-c5b-'))
+    try {
+      writeFileSync(join(dir, 'AGENTS.md'), 'x', 'utf8')
+      const got = collectContracts(dir)
+      expect(got.map((c) => c.rel)).toEqual([...CONTRACT_FILES])
+      expect(got.find((c) => c.rel === 'AGENTS.md')?.content).toBe('x')
+      expect(got.find((c) => c.rel === 'AGENTS.commitgate.md')?.content).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+    }
+  })
+
+  /**
+   * 🔴 **매처 사본 금지**(구조 고정). C5가 자기만의 목록·매칭을 갖는 순간, 등재부가 갱신돼도
+   *    소비자 진단은 옛 목록을 보게 된다 — 이 저장소가 자산 skew로 여러 번 데인 형태다.
+   */
+  it('🔴 C5 가 retiredClaimsIn 정본을 그대로 쓴다(사본 없음)', () => {
+    const src = readFileSync(join(__dirname, '..', '..', 'bin', 'check.ts'), 'utf8')
+    expect(src).toContain("from '../scripts/req/lib/retired-claims'")
+    expect(src).toContain('retiredClaimsIn(')
+    // 목록·매칭 로직을 다시 만들지 않았다.
+    expect(src).not.toContain('RETIRED_CLAIMS')
+    expect(src).not.toContain('normalizeForClaimScan')
+    // 참조 동일성: C5가 발화한 사유가 정본 매처의 사유와 정확히 같다.
+    const claims = retiredClaimsIn(staleText)
+    expect(claims.length).toBeGreaterThan(0)
+    const msg = byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': staleText }) })), 'C5')?.msg ?? ''
+    for (const c of claims) expect(msg).toContain(c.why)
   })
 })

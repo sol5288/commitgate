@@ -41,16 +41,16 @@ CommitGate에는 로그인 세션·토큰·RBAC 같은 **애플리케이션 인�
 |---|---|---|---|
 | — | HIGH commit 실행 | `req:commit --run` 직전(HIGH 티켓) | `req:commit --run 승인`(+ `user_commit_confirmed` 기록) |
 | `I1` | 통합 — PR 열기(경로 A) | feature branch push + PR 생성 직전 | `feature branch push + PR 생성 승인` |
-| `I2` | 통합 — PR 머지(경로 A) | required checks green 확인 후 머지 직전 | `required checks green 확인 후 PR merge 승인` |
+| `I2` | 통합 — PR 머지(경로 A) | 필수 로컬 검증 결과를 확인하고(GitHub CI를 실행했으면 그 결과도 함께, 실행하지 않았으면 생략 사실을 보고), PR을 protected branch에 머지하기 직전 | `검증 결과 확인 후 PR merge 승인` |
 | `B1` | 통합 — direct push(경로 B) | protected branch에 direct push 직전 | `branch protection bypass를 사용한 direct push 승인` |
 | `R1` | 릴리즈 — tag | 버전 tag 생성·push 직전 | `tag 생성·push 승인` |
 | `R2` | 릴리즈 — publish | 패키지 publish 직전 | `npm publish 승인` |
 | `R3` | 릴리즈 — release | GitHub release 생성 직전 | `GitHub release 생성 승인` |
 
 - protected branch 반영 경로는 **A(PR 경유, 선택)**와 **B(direct push)** 둘 다 유효하다. PR은 의무가 아니라 선택이다.
-- **경로 B에서 CI는 사후 검증**이다(push 이후 실행). 그 green은 반영을 *사전에* 막아 준 것이 아니므로 보고에서 생략하지 않는다.
+- **CI는 자동으로 돌지 않는다**(`ci.yml`은 `workflow_dispatch` 전용). 어느 경로든 사전 게이트는 **로컬 검증**이다. 사람이 CI를 실행했다면 그 결과를, 실행하지 않았다면 **생략 사실**을 보고에서 생략하지 않는다. 반영 **이후**에 실행했다면 그것이 사후 확인이라는 점도 함께 적는다.
 - push 응답의 `remote: Bypassed rule violations`는 우회가 **이미 일어난 뒤**의 사후 신호이므로 사전 정지 근거가 될 수 없다 — push 전에 멈춘다.
-- `R1/R2/R3`는 반영 이후 CI green 확인 뒤 각각 따로 요청한다. 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.
+- `R1/R2/R3`는 반영 이후 `verify-range --strict` 통과를 확인한 뒤 각각 따로 요청한다(CI green은 전제가 아니다). 셋을 하나의 "릴리즈 승인"으로 뭉뚱그리지 않는다.
 - **LOW 커밋은 통제점이 아니다(REQ-2026-037).** `req.config.json`의 `phaseCommit.autoApprove="low-only"`면 LOW 위험 티켓의 Codex 승인 phase는 사람 정지 없이 자동 커밋되고, 사람 확인은 위 통합 통제점(I1/I2/B1)으로 모인다 — `req:next` 종단이 `DONE`이 아니라 `AWAIT_HUMAN`(통합)으로 멈춘다.
 - **HIGH 커밋 확인(아래 §5)이 발생하는 지점도 `stopGate`가 정한다(REQ-2026-071).** `phase`면 매 phase 커밋 전, `req`(기본값)면 REQ를 끝내는 커밋 전, `merge`면 커밋에서는 멈추지 않는다(`userConfirmGate`). 이 축이 없애는 것은 **커밋 지점의 정지**뿐이며, 통합 통제점(I1/I2/B1)은 어느 값에서도 남는다.
 

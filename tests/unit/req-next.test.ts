@@ -27,6 +27,7 @@ import {
   type NextInput,
   type NextTarget,
 } from '../../scripts/req/req-next'
+import { I2_APPROVAL } from '../../scripts/req/lib/control-points'
 import { captureDesignBinding } from '../../scripts/req/review-codex'
 import { recoveryGuidance } from '../../scripts/req/lib/close-proof'
 import type { WorkflowState, SeriesRecord } from '../../scripts/req/review-codex'
@@ -1287,6 +1288,39 @@ describe('[req:next] stopGate=merge 종단', () => {
     expect(a.kind).toBe('AWAIT_HUMAN')
     expect(a.controlPoint).toContain('delivery/pay')
     expect(a.approvalSentence).toContain('delivery approve')
+  })
+
+  /**
+   * 🔴 delivery 경로가 **일반 통합 경로와 같은 정책**을 출력해야 한다(0.22.0 최종 보완).
+   *    여기에 옛 CI 전제 문구가 남아 있었고, 등재된 폐기 주장과 문자열이 달라 문서 가드를 통과했다.
+   *    그래서 문자열을 고치는 데서 끝내지 않고 **실제 resolveNext 결과**를 검사한다.
+   */
+  it('🔴 delivery AWAIT_HUMAN 의 I2 안내가 정본 문장이다(옛 CI 전제 문구 없음)', () => {
+    const a = done({ deliveryGate: { slug: 'pay', kind: 'await-human', detail: '묶음이 닫혔습니다' } })
+    const sentence = a.approvalSentence ?? ''
+    expect(sentence).toContain(I2_APPROVAL)
+    expect(sentence).toContain('검증 결과 확인 후 PR merge 승인')
+    for (const stale of ['checks green', 'required checks', 'CI green'])
+      expect(sentence, `delivery 안내에 옛 CI 전제 문구: ${stale}`).not.toContain(stale)
+    // delivery 고유 안내는 그대로 남는다 — 정책 정정이 기능 안내를 지우면 안 된다.
+    expect(sentence).toContain('delivery approve')
+    expect(sentence).toContain('--slug pay')
+    expect(sentence).toContain('approve pay')
+  })
+
+  it('🔴 delivery 경로와 일반 통합 경로가 같은 정본 문장을 낸다', () => {
+    const delivery = done({ deliveryGate: { slug: 'pay', kind: 'await-human', detail: '닫힘' } }).approvalSentence ?? ''
+    const general =
+      resolveNext(
+        baseInput({
+          state: baseState({ phases: [{ id: 'p1', approved: true }], consumed_approvals: [{ phase_id: 'p1' }] } as never),
+          phaseCommitAutoApprove: 'low-only',
+        }),
+      ).approvalSentence ?? ''
+    for (const sentence of [delivery, general]) {
+      expect(sentence).toContain(I2_APPROVAL)
+      for (const stale of ['checks green', 'required checks', 'CI green']) expect(sentence).not.toContain(stale)
+    }
   })
 
   it('🔴 레코드가 손상됐으면 DONE 이 아니라 BLOCKED(게이트 우회 금지)', () => {

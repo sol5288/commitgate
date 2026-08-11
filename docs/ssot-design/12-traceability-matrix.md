@@ -55,9 +55,16 @@
 
 | 기능/모듈 | 흐름 | CLI | API/이벤트 | 데이터 | 규칙 | 권한 | 테스트 | 근거 파일 | 문서 |
 |---|---|---|---|---|---|---|---|---|---|
-| CI 매트릭스 | — | (Actions) | push/PR/tag | — | 9-leg green 게이트 | — | 전 테스트 | [.github/workflows/ci.yml](../../.github/workflows/ci.yml) | [10](10-operations-deployment-and-observability.md) §2 |
+| CI 매트릭스 | — | `gh workflow run ci.yml` 또는 `integrate --run --run-github-ci` | **`workflow_dispatch` 전용**(push·tag·PR·schedule 자동 트리거 **없음**) | — | 🔴 **기본 실행하지 않는다.** 명시 요청에서만 실행되며 publish·merge의 필수 조건이 아니다. 요청해 실행했으면 **`success`만** 통과(`skipped`·`neutral` 불인정) | 사람(실행 지시) | ci-workflow-policy.test.ts(트리거 계약 + 결정 행렬) | [.github/workflows/ci.yml](../../.github/workflows/ci.yml) | [10](10-operations-deployment-and-observability.md) §2·[docs/RELEASING.md](../../docs/RELEASING.md) |
 | Stage B 스모크 | — | `npm run smoke` | packed tarball 설치(`npm pack` → `npm i -D <tgz>`) | 임시 target repo | 무복사·무주입·`req:*`=`commitgate <verb>`·**dispatch 도달 증명**(rc≠0 + doctor 자신의 사용법 오류) · uninstall 읽기 전용 · migrate 비파괴. **한계: 트리 비교가 파일 크기 기준** | — | smoke.mjs 자체(vitest 밖) | [scripts/smoke.mjs](../../scripts/smoke.mjs) | [10](10-operations-deployment-and-observability.md) §3·[11](11-test-strategy-and-acceptance.md) §3 |
 | override 검증 | — | `npm run verify:overrides` | codex | — | 모델/effort 실효성 | — | (수동) | [scripts/verify-review-overrides.mjs](../../scripts/verify-review-overrides.mjs) | [10](10-operations-deployment-and-observability.md) §3 |
+| 범위 증거 검증 | — | `commitgate verify-range [--strict] [--base/--head/--last]` | 로컬 git + head tree의 커밋된 approvals.jsonl | 심층 **6범주**(merge/bookkeeping/approved/attested/invalid-evidence/unproven) + 승인 아카이브 sha256 대조 | 기본 보고(exit 0)·`--strict`만 게이트. 손상 증거는 attest로 면제 불가 | 읽기 전용 | verify-range.test.ts · verify-range-cli.test.ts | [scripts/req/lib/verify-range.ts](../../scripts/req/lib/verify-range.ts) | [08](08-architecture-and-module-spec.md) §2.11 |
+| 예외 승인 기록 | — | `commitgate attest` | attestations 로그(커밋됨) | 커밋 identity(tree 포함) 결속 | 정당한 예외만. **invalid-evidence는 구제 대상이 아니다** | 사람 승인 | attest-verb.test.ts | [scripts/req/lib/attestations.ts](../../scripts/req/lib/attestations.ts) | [08](08-architecture-and-module-spec.md) §2.11 |
+| 통합 seam | — | `commitgate integrate [--run] [--run-github-ci\|--no-github-ci]` | 로컬 git(push 없음) + 감사 로그 `workflow/.integrate-runs.jsonl` | `PreparedIntegration`(feature/trunk SHA 결속) | **항상 strict** · 재검증 + **update-ref CAS** 병합(검증한 SHA만) · CI 실행 opt-in(기본 미실행) · 사람 최종 확인 | 통제점 | integrate-verb.test.ts · integration-coordinator.test.ts(실 git) · merge-gate.test.ts | [scripts/req/lib/integration-coordinator.ts](../../scripts/req/lib/integration-coordinator.ts) | [08](08-architecture-and-module-spec.md) §2.11.1 |
+| GitHub CI 실행 포트 | — | (integrate 내부) | `gh api … /dispatches` (`return_run_details=true`) + run 조회 | run id·conclusion(감사 로그) | dispatch 응답의 **`workflow_run_id`만** 사용(목록 추정 경로 삭제) · head_sha/event/branch/workflow 대조 · **`success`만 통과** | 사람(명시 요청) | github-ci-run.test.ts(fake 포트) | [scripts/req/lib/github-ci-run.ts](../../scripts/req/lib/github-ci-run.ts) | [08](08-architecture-and-module-spec.md) §2.11.2 |
+| blob 배치 리더 | — | (내부) | `git cat-file --batch` 1프로세스 | 다수 blob | manifest 수 N에 비례한 프로세스 금지(0.21 N+1 실측 ~29.5초 → 배치) | — | git-batch 경유 verify-range 테스트 | [scripts/req/lib/git-batch.ts](../../scripts/req/lib/git-batch.ts) | [08](08-architecture-and-module-spec.md) §2.11 |
+| 로컬 관측 요약 | — | `commitgate report [--json] [--base/--head/--last]` | 로컬 로그 3종 + verify-range 심층 요약 | doctor **스키마 v2** 집계(적용 가능 분모·발화율·차단·reason) | 읽기 전용·외부 전송 없음. 수집 실패는 `verification_available`/`verification_unavailable_reason`으로 표출(추정 금지) | 읽기 전용 | report-lib.test.ts · report-verb.test.ts | [scripts/req/lib/report.ts](../../scripts/req/lib/report.ts) | [08](08-architecture-and-module-spec.md) §2.12 |
+| 테스트 외부 호출 kill switch | — | (테스트 setup) | `COMMITGATE_TEST=1` | — | production 어댑터의 **현재 알려진** 외부 호출(codex·gh·ls-remote·fetch)이 spawn 이전 실패. 보편적 샌드박스가 **아니다** — 경계 allowlist를 메타 테스트가 고정 | — | hermetic-kill-switch.test.ts · external-call-boundary.test.ts | [scripts/req/lib/adapters.ts](../../scripts/req/lib/adapters.ts) `assertNotTestEnv` | [08](08-architecture-and-module-spec.md) §2.13 |
 | 릴리즈 통제점 | — | (수동) | I1/I2/B1/R1/R2/R3 | 버전 범프 | 통제점 승인 문장 | 통제점 | — | [docs/RELEASING.md](../../docs/RELEASING.md) | [04](04-user-roles-and-permissions.md)·[10](10-operations-deployment-and-observability.md) |
 
 ## 연결 완결성 점검
@@ -71,12 +78,12 @@
 
 | 현재 gap | 사용자 영향 | 목표 설계 | 우선순위 | 완료 후 갱신할 현재 문서 |
 |---|---|---|---|---|
-| G-05 로컬 게이트 우회·증거 미검증 | 승인 없는 변경 원격 반영 | STR-01 — 로컬 `verify-range`는 **실현됨**(REQ-2026-116) · 심층 검증·정책 프로필·opt-in 원격 예제 미구현 | P0 | 04·06·09·10·11·12 |
+| G-05 로컬 게이트 우회·증거 미검증 | 승인 없는 변경 원격 반영 | STR-01 — 로컬 `verify-range`(REQ-2026-116)·**심층 6범주 + 승인 아카이브 sha256 검증**(REQ-2026-127)·**`attest`**·**`integrate`(항상 strict + 검증 SHA 결속 CAS 병합)** 전부 **실현됨**. 남은 것: 정책 프로필 · **원격** 강제(GitHub CI는 확정 정책상 기본 미실행 opt-in이라 요구가 아니다) | P0 | 04·06·09·10·11·12 |
 | G-09 scratch state 비내구/재구축 없음 | fresh clone 진행 판정 불가 | STR-02 event log·`req:repair` | P0 | 03·05·07·08·09·11·12 |
 | G-02 외부 전송 보호 없음 | 비밀·과대 payload 노출 | STR-03 전송 manifest·scanner·격리 컨텍스트 | P0 | 01·05·06·09·11·12 |
 | G-06a/b 비수렴·전면 재리뷰 | 비용 폭증·티켓 중단 | STR-04 상한·delta·escalation | P0 | 03·05·06·07·11·12 |
-| G-04/G-06c trunk·ID 충돌 | 팀/병렬 브랜치 오작동 | STR-05 ref scan·trunk 설정·UUID | P1 | 02·03·05·06·07·11·12 |
-| G-10 자산↔런타임 version skew·safe upgrade 부재 | repo별 정책 불일치 | STR-06 install manifest·upgrade plan | P1 | 02·05·06·08·10·11·12 |
+| G-04/G-06c trunk·ID 충돌 | 팀/병렬 브랜치 오작동 | STR-05 — **trunk 설정화는 실현됨**(`req.config.json` `trunkBranch`, 기본 `'main'`·`null` 허용). ref scan·UUID는 미구현 | P1 | 02·03·05·06·07·11·12 |
+| G-10 자산↔런타임 version skew·safe upgrade 부재 | repo별 정책 불일치 | STR-06 — **부분 실현**: doctor **D20** content-hash skew 감지(WARN) + `commitgate sync --apply` 재동기화. **원장·3-way merge·rollback 미구현** | P1 | 02·05·06·08·10·11·12 |
 | G-01/G-03 진단·timeout | 멈춤·원인 유실 | STR-07 구조화 오류·자식 종료 | P1 | 05·06·09·10·11·12 |
 | G-11 제품 지표 없음 | 효과·비용 판단 불가 | STR-08 privacy-preserving report | P1 | 01·03·05·10·11·12 |
 

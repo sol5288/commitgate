@@ -66,6 +66,7 @@ describe('[REQ-2026-083] codex 미설치 안내 — 실제 경로가 설치 명�
       config: { ok: true, cfg: { reviewModel: 'gpt-5.6-terra', reviewReasoningEffort: 'medium' } as never },
       version: MISSING,
       auth: AUTH_UNKNOWN,
+      contracts: [],
     }
     const report = runChecks(inp)
     const c2 = report.checks.find((c) => c.id === 'C2')

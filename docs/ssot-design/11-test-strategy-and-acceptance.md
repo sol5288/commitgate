@@ -49,7 +49,9 @@
 - **Given** 임의 설치본, **When** `commitgate uninstall`, **Then** **read-only 안내 전용** — `node:fs` 조회 API만 쓰고 `--apply`가 없다. 런타임 제거는 **사용자가 package manager로**(`npm uninstall -D commitgate`) 하며 안내는 **문자열 출력만 — npm을 spawn하지 않는다**. 근거 [bin/uninstall.ts](../../bin/uninstall.ts) · `uninstall.test.ts`.
 
 ### Stage B 실행 검증(packed tarball smoke · [scripts/smoke.mjs](../../scripts/smoke.mjs))
-로컬 소스가 아니라 **`npm pack` tarball을 임시 repo에 설치해 그 bin을 실행**한다 → 실제 배포 아티팩트(`bin` 해소·`files` whitelist·deps 설치)를 검증한다. **이 검증은 이미 실행 완료됐다**(2026-07-17 보고: typecheck 0 · 테스트 **925/925** · smoke **rc=0** · CI **9/9 success**(3 OS × Node 18/20/22)).
+로컬 소스가 아니라 **`npm pack` tarball을 임시 repo에 설치해 그 bin을 실행**한다 → 실제 배포 아티팩트(`bin` 해소·`files` whitelist·deps 설치)를 검증한다. **이 검증은 이미 실행 완료됐다**(2026-07-17 **당시** 보고: typecheck 0 · 테스트 **925/925** · smoke **rc=0** · CI **9/9 success**(3 OS × Node 18/20/22)).
+
+> 📜 **당시 이력이며 현재 정책이 아니다.** 그 시점의 `ci.yml`은 push·PR에서 자동 실행됐다. 0.22.0부터 `ci.yml`은 `workflow_dispatch` 전용이라 **매 변경에서 자동으로 도는 9-leg 검증은 없다** — 회귀 판정의 기본 권위는 로컬 `npm test`이고, 매트릭스는 사람이 선택해 실행하는 보강 검증이다([10](10-operations-deployment-and-observability.md) §2).
 - **Given** packed tarball을 `npm i -D`로 설치한 fresh 대상, **When** `npx commitgate`, **Then** `scripts/req/`가 대상에 생기지 않고(무복사) `tsx`·`ajv`·`cross-spawn`이 대상 deps/devDeps에 없다(무주입). 사용자의 `devDependencies.commitgate` 선언은 보존된다.
 - **Given** 같은 대상, **When** `package.json` 확인, **Then** `req:*` 다섯 값이 전부 `commitgate <verb>`다. 검증 목록은 하드코딩이 아니라 `VERB_MODULES`([bin/dispatch.mjs](../../bin/dispatch.mjs))에서 파생한다 — verb 누락 시 smoke가 잡는다.
 - **Given** fresh·티켓 없는 대상, **When** `npm run req:doctor`, **Then** **exit≠0 + req-doctor 자신의 사용법 오류**(`REQ id 또는 --ticket`). 이것으로 사슬 전체(npm script → `node_modules/.bin/commitgate` 해소 → launcher의 tsx 등록 → dispatch → **패키지 안의** `req-doctor.ts` 도달 → 그 모듈의 `parseArgs` 실행)가 증명된다.
@@ -100,9 +102,9 @@
 - **자산↔런타임 버전 skew를 자동 감지할 수단이 없다.** `node_modules` realpath 검증은 제거됐고, 애초에 그 검증도 package upgrade 뒤의 자산 skew를 해결하지 못했다. D19는 `req:*` **값의 형태만** 보며 lockfile·`node_modules`·버전 skew를 **검증하지 않는다**.
 - **smoke의 읽기 전용/무부작용 단언은 파일 크기만 비교한다**([scripts/smoke.mjs](../../scripts/smoke.mjs) `snapshot`) → 동일 크기 내용 변경을 놓칠 수 있다. (`migrate.test.ts`·`uninstall.test.ts`의 vitest 스냅샷은 sha256이다 — 이 한계는 smoke 한정.)
 - fresh clone에서 scratch `state.json`을 승인 아카이브·manifest·git으로 재구축하는 경로 — 기능 자체가 없음(G-09).
-- 직접 `git commit`으로 로컬 게이트를 우회한 커밋을 CI에서 증거 검증하는 경로 — 기능 자체가 없음(G-05/STR-01).
+- 직접 `git commit`으로 로컬 게이트를 우회한 커밋을 **원격에서** 증거 검증하는 경로 — 없음(G-05/STR-01). 로컬로는 `verify-range --strict`·`integrate`(항상 strict)가 그 범위를 잡는다.
 - 자산 3-way upgrade·rollback — 설치 manifest가 없어 기능 자체가 없음(G-10. 위 skew 항목과 같은 gap의 다른 축이다 — 하나는 *감지*, 이것은 *갱신*).
-- ⚠️ Stage B 변경 자체는 `main`에 bypass direct push된 뒤 CI가 실행됐다. §3의 **CI 9/9 success는 사실이지만 이 사례에서 병합을 사전에 막은 게이트가 아니라 post-check였다**([04](04-user-roles-and-permissions.md) B1).
+- ⚠️ **당시 이력**: Stage B 변경 자체는 `main`에 bypass direct push된 뒤 (그때는 자동 트리거가 있었으므로) CI가 실행됐다. §3의 **CI 9/9 success는 사실이지만 이 사례에서 병합을 사전에 막은 게이트가 아니라 post-check였다**([04](04-user-roles-and-permissions.md) B1). 현재는 자동 트리거 자체가 없어 CI는 어느 경우에도 사전 게이트가 아니다.
 - NEEDS_FIX 절대 라운드 상한·escalation·delta design review — 미구현(G-06a/b).
 - 사용자 가치 지표(VCCR, 리뷰 P50/P95, 온보딩 시간) — 집계 기능 없음(G-11).
 

@@ -20,10 +20,13 @@
 - **확인 방법**: 실제 usage limit 상황에서 codex를 직접 실행해 stdout/stderr 분배 관찰.
 - **재구현 원칙**: 실패 시 stdout도 함께 캡처·표출하도록 개선 여지(현재는 미구현).
 
-### G-04. `trunkBranch` 하드코딩 (영향: 소)
-- **사실**: trunk 브랜치가 `'main'`으로 하드코딩(설정화 안 됨).
-- **근거**: [scripts/req/req-next.ts](../../scripts/req/req-next.ts)·[scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) D11.
-- **재구현 원칙**: `master` 등 다른 trunk를 쓰는 repo는 현재 D11이 오작동할 수 있음. 설정 키 추가 시 `branchPrefix`와 별도로.
+### G-04. trunk 브랜치 이름 (**해소됨**)
+- **사실**: `req.config.json`의 `trunkBranch` 설정 키로 정해진다(기본 `'main'`, `null` 허용).
+  `req-next`·`req-doctor` D11·`verify-range`·`integrate`·`report`가 **같은 값**을 본다.
+  `master` 등 다른 이름을 쓰는 저장소도 설정 한 줄로 동작한다.
+- **근거**: [scripts/req/lib/config.ts](../../scripts/req/lib/config.ts) `DEFAULTS.trunkBranch`·스키마.
+- **남은 것**: 설치 시 `refs/remotes/origin/HEAD` → 현재 기본 브랜치 순 **자동 감지**는 아직 없다
+  (사용자가 기본값과 다르면 직접 적어야 한다). [14](14-product-strategy-and-roadmap.md) STR-05.
 
 ### G-05. 하드 강제 부재 (영향: 중, 설계 의도)
 - **사실**: git hook 미설치. `git commit` 직접 실행이 전체 게이트를 우회.

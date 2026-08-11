@@ -8,6 +8,16 @@
 > 매트릭스 `[18,20,22]`)은 **그때의 사실**이며 지금과 다르다 — REQ-2026-080에서 최소 런타임이
 > **Node 20**으로, 매트릭스가 **`[20,22,24]`**로 바뀌었다. 제안 문서를 사후에 고쳐 쓰지 않는
 > 대신 이 표기를 둔다(현재 사실은 [ssot-design](ssot-design/README.md)과 `package.json`이 정본).
+>
+> 🔴 **§2(#2)의 자동 CI 설계는 현재 정책으로 폐기·대체됐다.** 이 문서가 제안한
+> "main push·PR·태그에서 자동 실행"과 "전 매트릭스 green 후에만 `npm publish`"(D3)는
+> **더 이상 이 저장소의 정책이 아니다.** 0.22.0에서 `.github/workflows/ci.yml`은
+> **`workflow_dispatch` 전용**이 됐고, GitHub CI는 publish·merge의 필수 조건이 아니라
+> **사람이 지시할 때만 실행하는 opt-in**이다(Actions 사용량·한도가 실제 비용이기 때문).
+> 매트릭스 검증 내용(3 OS × 3 Node) 자체는 수동 실행 시 그대로 쓰인다.
+> 제안 당시의 판단을 지우지 않기 위해 본문은 그대로 두고 여기서 상태만 표시한다 —
+> 현재 정책의 정본은 [docs/RELEASING.md](RELEASING.md)와
+> [ssot-design/10](ssot-design/10-operations-deployment-and-observability.md) §2다.
 
 ---
 

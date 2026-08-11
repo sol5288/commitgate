@@ -16,6 +16,16 @@
  */
 import spawn from 'cross-spawn'
 
+/**
+ * 🔴 테스트 환경 kill switch(0.22.0 RC 보완). `adapters.ts`의 `assertNotTestEnv`와 **같은 계약**이지만
+ *    이 파일은 `.mjs`라 `.ts` 모듈을 import할 수 없어 같은 env 변수를 직접 본다.
+ *    이 도구는 실제 codex를 호출하고 **과금된다** — 어떤 테스트 러너에서도 실행돼선 안 된다.
+ */
+if (process.env.COMMITGATE_TEST) {
+  console.error('COMMITGATE_TEST 환경에서는 실행할 수 없습니다 — 이 도구는 실제 codex를 호출합니다(과금).')
+  process.exit(1)
+}
+
 const BOGUS_MODEL = '__bogus_model_xyz__'
 const BOGUS_EFFORT = '__bogus_effort_xyz__'
 const VALID_MODEL = 'gpt-5.6-terra'

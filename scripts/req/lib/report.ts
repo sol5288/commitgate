@@ -115,6 +115,19 @@ export interface Report {
   review?: ReviewSection
   ci?: CiSection
   evidence?: EvidenceSection
+  /**
+   * evidence 섹션을 계산했는가(0.22.0 RC 보완 — **additive**).
+   *
+   * 🔴 예전에는 수집 실패를 그냥 null로 삼켜 `evidence` 섹션이 사라졌고, 사람이 보는 화면에는
+   *    "분모 계산 불가"만 남았다 — **왜** 계산할 수 없었는지가 어디에도 없었다(trunk 미설정인지,
+   *    base ref가 없는지, 수집이 터졌는지 구별 불가).
+   * 🔴 기존 필드는 건드리지 않는다: 계산 실패 시 `evidence`가 부재하는 동작은 그대로다.
+   *    이 두 필드는 **추가**될 뿐이므로 기존 JSON 소비자는 영향받지 않는다.
+   * 🔴 필드명이 snake_case인 것은 의도적이다 — 소비자 계약으로 이름이 고정된 값이다.
+   */
+  verification_available: boolean
+  /** 계산 불가 사유(기계 소비용 안정 문자열). 계산됐으면 null. 예: `base ref not found: v9.9.9`. */
+  verification_unavailable_reason: string | null
   /** 파일별 건너뛴 손상 행 수(0이어도 원천이 있으면 기록 — "손상 없음"도 정보다). */
   problems: { file: string; skipped: number }[]
 }
@@ -268,28 +281,41 @@ function latestDoctorSubjects(content: string): Pick<EvidenceSection, 'latestDoc
   return { latestDoctorAt: typeof last.at === 'string' ? last.at : null, d25Subjects: of('D25'), d30Subjects: of('D30') }
 }
 
+/**
+ * verify-range 수집 결과. 실패는 **사유를 들고** 온다 — 호출부가 null로 삼키지 않게 하려는 것이
+ * 이 타입의 존재 이유다(0.22.0 RC 보완).
+ */
+export type VerifyRangeOutcome =
+  | { ok: true; report: DeepVerifyReport; range: EvidenceRange }
+  | { ok: false; reason: string }
+
 export interface BuildReportInput {
   doctorRuns: string | null
   reviewCalls: string | null
   verifyRuns: string | null
-  verifyRange: { report: DeepVerifyReport; range: EvidenceRange } | null
+  verifyRange: VerifyRangeOutcome
 }
 
 export function buildReport(input: BuildReportInput): Report {
   const problems: Report['problems'] = []
-  const report: Report = { problems }
+  const report: Report = {
+    verification_available: input.verifyRange.ok,
+    verification_unavailable_reason: input.verifyRange.ok ? null : input.verifyRange.reason,
+    problems,
+  }
   if (input.doctorRuns !== null) report.doctor = doctorSection(input.doctorRuns, problems)
   if (input.reviewCalls !== null) report.review = reviewSection(input.reviewCalls, problems)
   if (input.verifyRuns !== null) report.ci = ciSection(input.verifyRuns, problems)
-  if (input.verifyRange !== null) {
+  if (input.verifyRange.ok) {
     const latest = input.doctorRuns !== null ? latestDoctorSubjects(input.doctorRuns) : { latestDoctorAt: null, d25Subjects: [], d30Subjects: [] }
+    const { report: deep, range } = input.verifyRange
     report.evidence = {
-      range: input.verifyRange.range,
-      counts: input.verifyRange.report.counts,
-      unproven: input.verifyRange.report.unproven.slice(0, 8),
-      invalid: input.verifyRange.report.invalid.slice(0, 8),
-      verificationNotes: input.verifyRange.report.verificationNotes,
-      manifestProblems: input.verifyRange.report.manifestProblems,
+      range,
+      counts: deep.counts,
+      unproven: deep.unproven.slice(0, 8),
+      invalid: deep.invalid.slice(0, 8),
+      verificationNotes: deep.verificationNotes,
+      manifestProblems: deep.manifestProblems,
       ...latest,
     }
   }

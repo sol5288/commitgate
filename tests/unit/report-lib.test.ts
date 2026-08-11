@@ -31,6 +31,7 @@ const verifyLog = [
 ].map((r) => JSON.stringify(r)).join('\n') + '\n'
 
 const vr = {
+  ok: true as const,
   report: {
     entries: [],
     counts: { merge: 1, bookkeeping: 5, approved: 2, attested: 0, 'invalid-evidence': 0, unproven: 1 },
@@ -103,7 +104,7 @@ describe('[REQ-2026-124] buildReport — 섹션 산식(손계산 대조)', () =>
 
 describe('[REQ-2026-124] 부재·손상 — 추정 금지', () => {
   it('원천 null → 섹션 부재(0으로 단언하지 않는다)', () => {
-    const r = buildReport({ doctorRuns: null, reviewCalls: null, verifyRuns: null, verifyRange: null })
+    const r = buildReport({ doctorRuns: null, reviewCalls: null, verifyRuns: null, verifyRange: { ok: false, reason: 'trunk branch not configured (req.config.json trunkBranch)' } })
     expect(r.doctor).toBeUndefined()
     expect(r.review).toBeUndefined()
     expect(r.ci).toBeUndefined()
@@ -113,7 +114,7 @@ describe('[REQ-2026-124] 부재·손상 — 추정 금지', () => {
 
   it('손상 행은 건너뛰고 개수로 드러낸다 — 나머지 집계는 유효', () => {
     const dirty = 'not-json\n' + doctorLog + '[1,2]\n'
-    const r = buildReport({ doctorRuns: dirty, reviewCalls: null, verifyRuns: null, verifyRange: null })
+    const r = buildReport({ doctorRuns: dirty, reviewCalls: null, verifyRuns: null, verifyRange: { ok: false, reason: 'trunk branch not configured (req.config.json trunkBranch)' } })
     expect(r.problems).toEqual([{ file: '.doctor-runs.jsonl', skipped: 2 }])
     expect(r.doctor!.runs).toBe(3)
   })
@@ -138,7 +139,7 @@ describe('[REQ-2026-129] doctor v2 집계 — 분모·발화율·차단·reason 
         { id: 'D10', applicable: true, outcome: 'pass', blocked: false },
       ]),
     ].join('\n') + '\n'
-    const r = buildReport({ doctorRuns: log, reviewCalls: null, verifyRuns: null, verifyRange: null })
+    const r = buildReport({ doctorRuns: log, reviewCalls: null, verifyRuns: null, verifyRange: { ok: false, reason: 'trunk branch not configured (req.config.json trunkBranch)' } })
     const v2 = r.doctor!.v2!
     expect(v2.rows).toBe(2)
     expect(v2.v1Rows).toBe(1)
@@ -149,7 +150,7 @@ describe('[REQ-2026-129] doctor v2 집계 — 분모·발화율·차단·reason 
   })
 
   it('v2 행이 없으면 v2=null — 구버전 로그에서는 분모 계산 불가를 명시', () => {
-    const r = buildReport({ doctorRuns: `${v1Row}\n`, reviewCalls: null, verifyRuns: null, verifyRange: null })
+    const r = buildReport({ doctorRuns: `${v1Row}\n`, reviewCalls: null, verifyRuns: null, verifyRange: { ok: false, reason: 'trunk branch not configured (req.config.json trunkBranch)' } })
     expect(r.doctor!.v2).toBeNull()
   })
 })

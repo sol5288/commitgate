@@ -4,7 +4,10 @@
 
 현재 운영 중인 검증입니다.
 
-- GitHub Actions에서 `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 20/22/24 매트릭스를 실행합니다.
+- GitHub Actions의 `ubuntu-latest`, `macos-latest`, `windows-latest` × Node 20/22/24 매트릭스는 **수동 실행 전용**입니다.
+  `.github/workflows/ci.yml`은 `workflow_dispatch` 트리거 하나만 가지며 push·tag·PR·schedule로 자동 실행되지 않습니다 —
+  Actions 사용량이 실제 비용이라 **실행 시점을 사람이 정합니다**(`gh workflow run ci.yml --ref <branch>`).
+  따라서 **회귀 판정의 기본 권위는 로컬 `npm test`**이고, 매트릭스는 릴리스 전후로 사람이 선택해 돌리는 보강 검증입니다.
 - `npm run smoke`는 pack tarball을 임시 프로젝트에 실제로 설치해, 대상에 `scripts/req/`가 **없고** `tsx`·`ajv`·`cross-spawn`이 **주입되지 않으며** 다섯 `req:*`가 패키지 bin을 가리키는지, 그리고 `npm run req:doctor`가 실제로 패키지 안의 모듈까지 dispatch되는지 확인합니다. `migrate` 비파괴성도 같은 방식으로 검증합니다.
 - Windows `.cmd` 래퍼 주입 회귀 테스트가 패키지 매니저와 Codex wrapper 경로를 보호합니다.
 - `npm test`는 **전체 스위트**를 돌립니다. 이것이 회귀 판정의 권위입니다.

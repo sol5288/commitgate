@@ -57,14 +57,14 @@ flowchart LR
 | Builder가 통제점 자기승인 | 승인 문장 계약(사람만). 도구는 강제하지 못함(협조 전제). |
 | 리뷰어 응답 위조/주입 | AJV+도메인 재검증, findings⟺승인 불변식, 프롬프트 주입 중성화. |
 | 비차단 의견이 차단 채널을 점유(리뷰 비수렴) | 출력 스키마가 `findings[].severity`를 **P1만** 허용 + P1 정의 4요소를 description으로 주입([03 §4.2](03-domain-and-data-model.md)). 파생 경로 부재 시 throw=fail-closed. **완화이지 제거 아님** — 카테고리 판정은 리뷰어 재량이라 P1으로 올리는 것을 코드가 막지 못한다(`추론`). |
-| staged 비밀 외부 유출 | **미방어**. 마스킹/스크러빙/길이상한 없음. Builder 사전 확인이 유일한 방어. |
+| staged 비밀 외부 유출 | **부분 방어.** 리뷰 전송 직전 `secretScanGate`가 프롬프트(staged 본문 포함)를 고신뢰 패턴으로 검사하고 **기본값 `block`** 으로 전송을 막는다(`secretScan: block \| warn \| off`). 전송 크기도 `promptWarnBytes`(기본 256KiB) 경고·`promptMaxBytes`(opt-in) 상한으로 관측·제한한다. **마스킹·스크러빙은 여전히 없다** — 스캐너가 못 본 비밀은 그대로 전송되므로 Builder 사전 확인이 계속 필요하다. |
 | 증거 손편집 | sha256 바인딩 + live 대조로 탐지 → 게이트 FAIL. |
 | 명령/경로 주입 | shell-free spawn + confinement + 슬러그/enum 제한. |
 | scratch state 분실·fresh clone | 자동 재구축 없음. 커밋된 증거는 남지만 진행 상태 뷰가 복원되지 않을 수 있음. 추정 승인 금지, 사람이 증거 대조(G-09). |
 | 과거 설치본의 정책 드리프트 | 설치 manifest **없음**. `commitgate migrate`가 생겼지만 그것은 Stage A→B의 **`req:*` 스크립트 값 전환 전용**이고(정확히 Stage A 주입값인 키만·기본 dry-run·쓰기 범위는 `package.json` 한 파일), 관리 자산을 갱신하지 않는다 — 자산 업그레이드/3-way merge는 범위 밖. 여전히 `--force` 또는 수동 비교가 필요하고 자동 최신 정책 적용 보장 없음(G-10). |
 | Stage A/B 혼합 설치가 조용히 남음 | 두 겹으로 **가시화**한다. (1) init의 `detectStageA`(D19)가 Stage A 서명(`req:*` 값이 정확히 Stage A 주입값이거나 `scripts/req/` 존재)을 만나면 **무쓰기 실패**로 `commitgate migrate`에 보낸다 — 스크립트 주입이 기존 키를 덮지 않으므로, 막지 않으면 "런타임은 vendored인데 사용자는 Stage B라 믿는" 혼합 설치가 된다. (2) doctor D19가 `req:*` **값의 형태만**으로 설치 모드를 분류해 `mixed`를 **WARN**한다. ⚠️ **FAIL이 아니다** — `req:commit`이 doctor를 exit≠0에 throw하는 하드 게이트로 spawn하므로 FAIL이면 Stage A 형태인 이 저장소 자신을 포함해 정당한 Stage A 소비자 전원의 커밋이 **영구 차단**된다. Stage A는 결함이 아니라 legacy 설치 형태다. 근거 [bin/init.ts](../../bin/init.ts) `detectStageA` · [scripts/req/req-doctor.ts](../../scripts/req/req-doctor.ts) `classifyInstallMode`. |
-| 자산↔런타임 버전 skew | **자동 감지 수단 없음 — 수용된 위험.** init의 선행 설치 확인(D14, `commitgateDeclared`)은 `devDependencies.commitgate` **키 존재만** 보고 값의 형태를 검증하지 않는다(`file:…tgz`·`link:`·`workspace:`도 정당한 설치 형태라 range로 검증하면 packed-tarball smoke가 스스로 실패한다). 이전의 `node_modules` realpath 검증은 **제거됐고**, 애초에 그 검증도 package upgrade 뒤 대상에 남은 관리 자산의 skew를 **해결하지 못했다**(실행 패키지의 동일성만 봤을 뿐). doctor D19 역시 manifest·lockfile·`node_modules`·버전을 보지 않는다. |
-| 로컬 게이트 우회 후 원격 반영 | 현재 CI는 evidence를 검증하지 않아 탐지 불가. branch protection과 향후 verifier가 필요(STR-01). |
+| 자산↔런타임 버전 skew | **부분 감지 — doctor D20이 배포 자산의 content-hash를 대조해 WARN하고 `commitgate sync --apply`가 재동기화한다. 원장·3-way merge·rollback은 여전히 없다.** init의 선행 설치 확인(D14, `commitgateDeclared`)은 `devDependencies.commitgate` **키 존재만** 보고 값의 형태를 검증하지 않는다(`file:…tgz`·`link:`·`workspace:`도 정당한 설치 형태라 range로 검증하면 packed-tarball smoke가 스스로 실패한다). 이전의 `node_modules` realpath 검증은 **제거됐고**, 애초에 그 검증도 package upgrade 뒤 대상에 남은 관리 자산의 skew를 **해결하지 못했다**(실행 패키지의 동일성만 봤을 뿐). doctor D19 역시 manifest·lockfile·`node_modules`·버전을 보지 않는다. |
+| 로컬 게이트 우회 후 원격 반영 | **로컬 탐지는 가능, 원격 강제는 없음.** `commitgate verify-range --strict`가 범위 내 미입증·손상 증거 커밋을 심층 6범주로 잡아내고, `commitgate integrate`는 항상 strict라 그런 커밋을 trunk로 병합하지 않는다. 다만 이는 **로컬 협조 전제**의 게이트이며, push된 뒤 원격에서 강제하는 verifier는 없다. GitHub CI는 확정 정책상 **기본 미실행 opt-in**(`workflow_dispatch` 전용)이라 required check로 쓰지 않는다(STR-01의 남은 범위). |
 
 ## 3. 복원력(신뢰성) 통제
 
@@ -80,18 +80,31 @@ flowchart LR
 | **버퍼 한도** | git/codex maxBuffer 64 MiB(초과 시 실패). |
 
 ## 4. 미구현 보안·복원력 항목(명시적 분리)
-[docs/follow-ups-design.md](../../docs/follow-ups-design.md)·CHANGELOG 0.5.0/0.6.0 기준. 재구현 시 "구현됨"으로 오해하지 말 것.
+
+재구현 시 "구현됨"으로 오해하지 말 것. **반대로, 아래에 없는 것은 이미 있다** — 이 목록은 0.22.0
+기준으로 전수 재확인했다(예전 판본이 이미 구현된 항목을 계속 "미구현"으로 적고 있었다).
 
 - **codex 호출 타임아웃 없음** — 응답 지연/무한 대기 방어 미구현(Windows `cmd.exe` 프로세스 트리 kill 난이도로 deferred).
 - **secret-safe 실패 진단 없음** — 실패 시 stderr에 비밀이 섞일 가능성 완전 차단 미구현(deferred).
-- **리뷰 전 secret-scan 훅 없음**(`preReviewCommand` 미구현) — staged diff 자동 스캔 없음.
 - **git hook 미설치** — 하드 강제 아님. `git commit` 직접 실행이 게이트를 우회.
-- **`trunkBranch` 하드코딩** `'main'` — 설정화 미구현.
 - **상태 자동 재구축 없음** — `state.json` scratch 변경이 사라지면 커밋된 증거에서 실행 상태를 복원하는 명령이 없음.
-- **설치 정책 버전 원장 없음** — 대상 repo가 어느 CommitGate 계약을 쓰는지 기계적으로 증명·업그레이드하기 어려움. Stage B에서도 **자산↔런타임 skew 자동 감지 수단이 없다**: D14는 `devDependencies.commitgate` 키 존재만 확인하고, `node_modules` realpath 검증은 **제거됐다**(그 검증도 upgrade 후 자산 skew를 풀지 못했다). doctor D19는 `req:*` 값의 형태만 본다. 자산 업그레이드·3-way merge·lockfile/manifest 파서·Yarn PnP·nested workspace는 **범위 밖**이다.
-- **원격 evidence verifier 없음** — 로컬 게이트 우회를 원격 protected branch에서 검증하지 않음.
-  로컬로는 `commitgate verify-range`(REQ-2026-116)가 커밋 범위의 승인 증거를 분류·보고한다(기본 보고·`--strict` 게이트).
-  GitHub CI는 확정 정책상 **선택 사항**이라, 원격 강제는 요구가 아니라 opt-in 확장으로 남는다.
+  (부분: `commitgate reconstruct`·`req:rebind`가 일부 회복 경로를 덮는다.)
+- **자산 3-way merge 없음** — `commitgate sync`는 스키마 축 재동기화와 persona 부재 복원만 한다.
+  사용자 수정과 구버전 원본을 3-way로 구분하는 upgrade는 여전히 범위 밖이다.
+- **원격 evidence verifier 없음** — 로컬 게이트 우회를 원격 protected branch에서 강제 검증하지 않는다.
+  로컬로는 `commitgate verify-range`(심층 6범주)와 `commitgate integrate`(항상 strict)가 그 역할을 한다.
+  GitHub CI는 확정 정책상 **선택 사항이며 기본 실행되지 않으므로**, 원격 강제는 요구가 아니라 opt-in 확장으로 남는다.
+
+### 4.1 예전에 미구현으로 적혀 있었으나 **현재 구현된** 항목
+
+| 항목 | 현재 상태 |
+|---|---|
+| 리뷰 전 secret-scan | **구현됨** — `scripts/req/lib/secret-scan.ts`의 `secretScanGate`가 리뷰 프롬프트(staged 본문 포함)를 검사하고 `review-codex`에 배선돼 있다. `req.config.json`의 `secretScan: block \| warn \| off`(**기본 `block`** — 고신뢰 패턴만 보므로 오탐이 드물고 유출은 비가역이다)로 제어한다. |
+| trunk 브랜치 이름 | **설정 키로 정해진다** — `req.config.json`의 `trunkBranch`(기본 `'main'`, `null` 허용). verify-range·integrate·doctor가 같은 값을 본다. |
+| 자산↔런타임 skew 감지 | **부분 구현** — doctor **D20**이 배포 자산의 content-hash를 대조해 skew를 WARN으로 알리고, `commitgate sync --apply`가 재동기화한다. **원장·3-way merge·rollback은 여전히 미구현**이다. |
+| 승인 증거 범위 검증 | **구현됨** — `verify-range` 심층 6범주(merge / bookkeeping / approved / attested / invalid-evidence / unproven) + 승인 아카이브 sha256 대조. `--strict`가 게이트다. |
+| 통합 seam | **구현됨** — `commitgate integrate`(전제·항상-strict 증거 검증·CI 실행 opt-in·사람 확인·CAS 로컬 merge·감사 로그). |
+| 정당한 예외 기록 | **구현됨** — `commitgate attest`. 단 **손상 증거(invalid-evidence)는 attest로 면제되지 않는다**(수정이 유일한 해법). |
 
 ## 5. 감사 로그
 - 승인 증거는 `responses/approvals.jsonl`(append-only) + `responses/<...>.json` 아카이브에 영구 보존.
