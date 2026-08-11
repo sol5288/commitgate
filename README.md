@@ -2,7 +2,8 @@
 
 🌐 **한국어** · [English](./README.en.md)
 
-**AI 코딩 변경을 Codex 리뷰 승인 없이는 커밋하지 못하게 막는 커밋 게이트입니다.**
+**표준 REQ 경로에서 AI 코딩 변경을 Codex 리뷰 승인 없이 커밋하지 못하게 하고,
+정당한 예외는 승인으로 꾸미지 않고 기록하는 커밋 게이트입니다.**
 
 [![npm version](https://img.shields.io/npm/v/commitgate.svg)](https://www.npmjs.com/package/commitgate)
 [![node](https://img.shields.io/node/v/commitgate.svg)](https://nodejs.org)
@@ -64,13 +65,86 @@ CommitGate는 그 왕복을 자동으로 돌립니다. **검사에 통과하기 
 | 저장·공유·배포 전에 무엇을 확인할지 판단 | 다음에 할 일과 사람이 확인할 지점을 도구가 계산 |
 | 모든 단계에 사람이 개입 | 정해진 확인 지점에서만 승인을 요청 |
 
+## 0.22.0에서 달라진 점 — CI 비용은 줄이고, 합치기 전 증거는 더 꼼꼼하게
+
+0.22.0은 서로 목적이 다른 세 가지 검사를 분리했습니다. 가장 중요한 원칙은
+**GitHub CI는 선택이지만, 로컬 승인 증거 검증은 생략하지 않는다**는 것입니다.
+
+| 검사 | 무엇을 확인하나 | 언제 필요한가 | 비용·네트워크 |
+|---|---|---|---|
+| **Codex 리뷰** | 이번 코드에 결함이 없는지 | 표준 REQ의 `req:commit` 전 | Codex 외부 호출·사용량 발생 |
+| **`verify-range --strict`** | 범위 안의 각 커밋에 승인·부기·예외 증거가 있는지 | `integrate`와 릴리즈 전 | 로컬 Git만 사용·GitHub Actions 비용 없음 |
+| **GitHub CI** | 여러 OS·Node 버전 같은 원격 환경에서도 동작하는지 | 사용자가 원할 때만 | Actions 사용량·비용이 생길 수 있음 |
+
+자동차에 비유하면 Codex 리뷰는 **수리 상태 검사**, `verify-range --strict`는 **정비 기록 확인**,
+GitHub CI는 **여러 도로 환경에서의 시험 주행**입니다. 시험 주행을 매번 하지 않더라도 정비 기록은
+확인해야 합니다.
+
+### 머지할 때는 이렇게 동작합니다
+
+```sh
+npx commitgate integrate          # 먼저 계획과 strict 검증 결과만 확인(dry-run)
+npx commitgate integrate --run    # 실제 로컬 머지 — 마지막 확인의 기본값은 No
+```
+
+`integrate`는 clean worktree인지 확인하고, 승인 증거를 **항상 strict로 검증한 뒤**, 사람의 최종 확인을
+받아 로컬에서 머지합니다. 중간에 브랜치가 바뀌면 다시 검증하고, 충돌하면 가능한 경우 원래 상태로
+복구합니다. **push는 하지 않습니다.**
+
+GitHub CI 실행 설정이 있는 프로젝트에서는 머지 전에 다음처럼 묻습니다.
+
+```text
+GitHub CI workflow를 실행하시겠습니까?
+GitHub Actions 사용량 또는 비용이 발생할 수 있습니다. [y/N]
+```
+
+Enter·빈 입력·`n`은 모두 **실행하지 않음**입니다. 설정이 없으면 질문 자체가 나오지 않습니다.
+명시적으로 실행하려면 `integrate --run --run-github-ci`를 사용합니다.
+
+> ⚠️ **CommitGate가 CI를 실행하지 않는 것과 저장소 자체 CI가 자동 실행되지 않는 것은 다른 말입니다.**
+> 프로젝트의 `.github/workflows/*.yml`이 `push`·`pull_request`·tag에 반응하도록 작성돼 있으면,
+> CommitGate가 실행을 요청하지 않아도 push 뒤에 저장소의 워크플로가 자동으로 돌 수 있습니다.
+
+`verify-range --check-github-ci`는 이미 존재하는 GitHub check-run을 **조회만** 하고 워크플로를 실행하지
+않습니다. 반대로 `integrate --run --run-github-ci`는 설정된 워크플로를 실제로 실행합니다.
+
+### 정당한 예외는 승인으로 꾸미지 않고 기록합니다
+
+긴급 수정처럼 정식 Codex 리뷰를 받지 못한 커밋은 다음처럼 사유를 남길 수 있습니다.
+
+```sh
+npx commitgate attest <commit-sha> --reason "운영 장애 긴급 수정 — 사용자 승인" --run
+```
+
+`attest`는 **리뷰를 받은 것처럼 만드는 명령이 아닙니다.** 누가 어떤 커밋을 왜 예외로 인정했는지
+append-only 기록에 남겨 `verify-range`가 `attested`로 구분하게 합니다. 손상된 승인 증거를 고치거나
+덮어쓰지는 못합니다.
+
+그 밖에도 0.22.0은 커밋을 승인·부기·머지·attested·손상 증거·미입증의 6범주로 심층 분류하고,
+`check`의 C5가 업그레이드 후 남은 옛 `AGENTS.md` 정책을 알려 줍니다. `report`의 승인 증거 계산은
+이 저장소 실측 기준 약 29.5초에서 1.2초로 빨라졌습니다(환경과 이력 크기에 따라 다릅니다).
+
+### 0.21.x에서 업그레이드한다면
+
+```sh
+npm install -D commitgate@^0.22.0
+npx commitgate sync --apply --gitignore
+npx commitgate check
+```
+
+C5가 WARN이면 `AGENTS.md`를 통째로 교체하지 말고,
+`node_modules/commitgate/AGENTS.template.md`와 비교해 **CommitGate 계약 부분만** 수동으로 병합하세요.
+프로젝트 고유 지침을 보존하기 위해 `sync`는 `AGENTS.md`를 자동 수정하지 않습니다.
+자세한 절차는 [업그레이드](https://github.com/sol5288/commitgate/blob/main/docs/upgrade.md)에 있습니다.
+
 ## 무엇을 보장하고, 무엇은 보장하지 않나
 
 | 보장합니다 | 보장하지 않습니다 |
 |---|---|
-| 🔒 **Codex 리뷰 승인 없이는 커밋되지 않습니다** — 검사하는 AI가 통과시키기 전에는 저장이 막힙니다 | 저장한 **뒤**의 일 — 합치기·버전 태그·배포는 각각 따로 확인받습니다 |
+| 🔒 **표준 REQ 경로에서는 Codex 리뷰 승인 없이는 커밋되지 않습니다** — 검사하는 AI가 통과시키기 전에는 `req:commit`이 막힙니다 | 커밋 승인이 이후 작업까지 승인하는 것 — 합치기·버전 태그·배포는 각각 따로 확인받습니다 |
 | 🔁 승인 뒤에 변경이 달라지면 **다시 검사받아야** 합니다 | 보낸 코드의 **비밀** — 가리거나 걸러 주지 않습니다 |
-| 🧯 **애매하면 막습니다(fail-closed)** — 지적도 승인도 없는 애매한 답, 검사 도구가 없거나 실패한 경우 전부 막습니다 | **강제로 못 하게 막는 것** — 사람이 마음먹고 우회하는 것까지 막지는 않습니다 |
+| 🧾 직접 만든 커밋도 `verify-range`에서 **미입증으로 드러납니다** — 통합·릴리즈의 strict 검사에서 차단됩니다 | **강제로 못 하게 막는 것** — 사람이 마음먹고 직접 `git commit`으로 우회하는 것까지 막지는 않습니다 |
+| 🧯 **애매하면 막습니다(fail-closed)** — 지적도 승인도 없는 애매한 답, 검사 도구가 없거나 실패한 경우 전부 막습니다 | 정식 리뷰가 없었던 예외를 리뷰 승인으로 바꾸는 것 — `attest`는 예외 사유만 투명하게 기록합니다 |
 
 아래 두 가지는 표에 넣지 않았습니다. **시작하기 전에 읽어야 하는 내용**입니다.
 
@@ -206,7 +280,8 @@ npx commitgate check
 [OK] C2: 리뷰어 CLI 확인: codex-cli 0.144.1
 [OK] C3: 리뷰어 로그인 확인: Logged in using ChatGPT
 [OK] C4: 리뷰 모델·추론강도 고정: gpt-5.6-terra / medium
-PASS — OK 4 · WARN 0
+[OK] C5: 계약 문서에 폐기된 CommitGate 서술 없음(AGENTS.md · AGENTS.commitgate.md)
+PASS — OK 5 · WARN 0
 ```
 
 버전·모델 이름은 환경마다 다릅니다. 봐야 할 것은 숫자가 아니라 **`[OK]`인지 `FAIL`인지**입니다.
@@ -237,7 +312,12 @@ PASS — OK 4 · WARN 0
 |---|---|
 | `npx commitgate setup` | 리뷰 모델·멈춤 지점 선택 + codex 로그인 (대화형·필수) |
 | `npx commitgate check` | 준비 상태 진단 (읽기 전용) |
-| `npx commitgate sync` | 업그레이드 후 프로젝트에 깔린 자산을 런타임과 맞춤 (기본: 계획만 · 적용은 `--apply`) |
+| `npx commitgate report` | 로컬 리뷰·검증·CI 선택 이력 요약 (읽기 전용) |
+| `npx commitgate verify-range --strict` | 커밋 범위의 승인 증거 심층 검증 — 미입증·손상 증거가 있으면 실패 |
+| `npx commitgate integrate` | strict 검증과 로컬 머지 계획 확인 (기본: dry-run) |
+| `npx commitgate integrate --run` | 최종 확인 후 실제 로컬 머지 (push 안 함, GitHub CI 기본 미실행) |
+| `npx commitgate attest <sha> --reason "..." --run` | 정식 리뷰가 없었던 정당한 예외 사유 기록 |
+| `npx commitgate sync --apply --gitignore` | 업그레이드 자산 적용 + 로컬 로그의 `.gitignore` 규칙 백필 |
 | `npx commitgate uninstall` | 제거 **계획만** 출력 (아무것도 지우지 않음) |
 
 전체 명령과 `pnpm`/`yarn` 표기는 **[워크플로](https://github.com/sol5288/commitgate/blob/main/docs/workflow.md)**에 있습니다. 각 명령의 옵션은 `npx commitgate <명령> --help`로 볼 수 있습니다.
@@ -260,6 +340,9 @@ PASS — OK 4 · WARN 0
 | **fail-closed** | 애매하면 통과시키지 않고 **막는** 쪽을 고르는 설계 원칙 |
 | **AWAIT_HUMAN** | 도구가 사람 승인을 기다리며 멈춘 상태. 화면에 승인 문장이 함께 인쇄됩니다 |
 | **delivery set** | 여러 REQ를 하나로 묶은 상위 단위. `stopGate: merge`에서 쓰입니다 |
+| **strict 검증** | 증거가 애매하면 경고로 넘기지 않고 실패시키는 검사. GitHub CI가 아니라 로컬 Git 기록을 봅니다 |
+| **attestation** | 정식 리뷰가 없었던 커밋을 승인으로 위장하지 않고, 예외 사유와 대상을 남기는 기록 |
+| **GitHub CI** | GitHub Actions에서 실행되는 원격 검사. CommitGate에서는 선택 사항이며 기본 실행하지 않습니다 |
 | **devDependency** | 개발할 때만 필요하고 실제 서비스에는 안 들어가는 패키지. CommitGate가 여기 설치됩니다 |
 | **companion skill** | AI에게 일하는 방법을 안내하는 지침 파일. 강제가 아니라 권고입니다 |
 

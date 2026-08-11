@@ -109,6 +109,9 @@ The current contract says:
 - **CommitGate never dispatches GitHub CI on its own.** A workflow runs only when you pass
   `--run-github-ci` or answer `y` to the interactive prompt (whose default is No).
 - **Skipping CI is a normal state**, not a failure condition for merge or publish.
+- **Local `verify-range --strict` is a separate, required evidence check.** `integrate` always runs it, and
+  release approvals R1/R2/R3 are requested only on the final HEAD after protected-branch integration and a
+  successful strict check.
 - The canonical `I2` approval sentence is **`검증 결과 확인 후 PR merge 승인`**.
 - **CI green is not a precondition for merge or publish.** Report the result if you ran it, and report
   the fact that you skipped it if you did not.

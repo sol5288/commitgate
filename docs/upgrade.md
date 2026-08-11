@@ -102,6 +102,8 @@ npx commitgate check --json   # 기계 소비도 같은 진단을 담습니다
 - **CommitGate는 GitHub CI를 자동으로 dispatch하지 않습니다.** 워크플로 실행은 사용자가
   `--run-github-ci`를 명시했거나 대화형 질문에 `y`로 답했을 때뿐입니다(질문 기본값은 No).
 - **CI 생략은 정상 상태**이며 merge·publish의 실패 조건이 아닙니다.
+- **로컬 `verify-range --strict`는 CI와 다른 필수 증거 검사입니다.** `integrate`가 항상 실행하며,
+  릴리즈의 R1/R2/R3도 protected branch 반영 후 이 검사를 통과한 최종 HEAD에서만 요청합니다.
 - `I2` 정본 승인 문장: **`검증 결과 확인 후 PR merge 승인`**
 - **CI green은 merge·publish의 필수 조건이 아닙니다.** 실행했으면 결과를, 생략했으면 생략 사실을 보고합니다.
 
