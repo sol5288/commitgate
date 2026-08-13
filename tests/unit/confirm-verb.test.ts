@@ -28,6 +28,20 @@ describe('[req:confirm] parseArgs — fail-closed', () => {
     expect(() => parseArgs(['x', '--scope'])).toThrow('--scope')
   })
 
+  /**
+   * 🔴 REQ-2026-129 phase-2 r02 P1과 **같은 결함**: `--method --run` 이 플래그를 승인 문장으로 삼켜
+   *    사용자가 요청하지 않은 조합(DRY-RUN 의도 → 실제 기록)으로 명령이 성립했다.
+   */
+  it('🔴 --method/--note 값 자리의 알려진 옵션은 값이 아니라 누락이다', () => {
+    for (const flag of ['--method', '--note']) {
+      for (const opt of ['--run', '--scope', '--root']) {
+        expect(() => parseArgs(['x', flag, opt]), `${flag} ${opt}`).toThrow('옵션')
+      }
+    }
+    // 대조군: 알려지지 않은 대시 문자열은 그대로 값이다.
+    expect(parseArgs(['x', '--method', '-승인']).method).toBe('-승인')
+  })
+
   it('알 수 없는 옵션은 조용히 무시하지 않는다', () => {
     expect(() => parseArgs(['x', '--force'])).toThrow('알 수 없는 옵션')
   })

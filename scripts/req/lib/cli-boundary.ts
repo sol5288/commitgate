@@ -32,6 +32,24 @@ export function makeRunCli(
 }
 
 /**
+ * **자유 텍스트 옵션 값**을 읽는다(REQ-2026-129 phase-2 r02 P1, 순수).
+ *
+ * 문제: 승인 문장·사유는 `-`로 시작할 수 있어서 접두 검사를 못 한다. 그런데 그 자리를 무조건 값으로
+ * 받으면 `--reason --run`이 **`--run`을 사유로 삼키고** 플래그는 사라진다 — 사용자가 요청하지 않은
+ * 조합으로 명령이 성립한다(여기서는 DRY-RUN 의도가 실제 write로 바뀐다).
+ *
+ * 🔴 해법은 "모든 대시 거부"가 아니다(그러면 정당한 `-이유`를 못 쓴다). **알려진 옵션 이름**만 거부한다 —
+ *    오타는 값으로 들어가더라도, 이 CLI가 실제로 해석하는 플래그는 절대 값으로 소비되지 않는다.
+ */
+export function readFreeTextValue(argv: string[], i: number, flag: string, knownOptions: readonly string[]): string {
+  const v = argv[i]
+  if (v === undefined) throw new Error(`${flag} 값이 필요합니다`)
+  if (knownOptions.includes(v))
+    throw new Error(`${flag} 값 자리에 옵션 "${v}" 가 왔습니다 — 값이 누락된 것으로 봅니다(옵션을 값으로 삼키지 않습니다).`)
+  return v
+}
+
+/**
  * 이 모듈이 `node <file>`로 **직접** 실행됐는가(import된 것이 아니라).
  *
  * 🔴 **가드를 먼저 둔다**(REQ-2026-105 DEC-3). 이전에는 16곳이 `pathToFileURL(process.argv[1] ?? '')`,
