@@ -2,16 +2,54 @@
   "id": "REQ-2026-128",
   "branch": "feat/req-2026-128-stopgate-merge-terminal-parity",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019ff8fc-61db-7381-92bc-e58043826196",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "7e7ce50339a4621cbaac8468f7f11b9a602ce0906e3bbaa4c11e167065709dbd",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
-  "review_series_model_version": 1
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "9621d96b6831fc9098ab73ecea54a5c06c340a99",
+    "design": "f26c2fcbf1d141a40cfe3b7a069a07e392b5f2f1",
+    "plan": "ca6dab1d6c860a3e4555de86923d84967cf51699"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-128/responses/design-r01-approved.json",
+    "response_sha256": "9089f86bb21a3c4a95d100860fb295acb0d3a9f218c236d9b0d362ca5cf6277b",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "a491314e9937d3921642cc7e17f0d631d832c273",
+    "codex_thread_id": "019ff8fc-61db-7381-92bc-e58043826196",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T02:39:19.311Z",
+    "design_hash": "7e7ce50339a4621cbaac8468f7f11b9a602ce0906e3bbaa4c11e167065709dbd"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "ab96e7a6867fab19ca9c44da7869a3a2eb9baebfd168282913eeac0425132311",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T02:39:19.311Z",
+    "findings": [],
+    "elided_count": 0
+  }
 }
