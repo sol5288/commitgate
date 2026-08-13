@@ -2,15 +2,22 @@
   "id": "REQ-2026-138",
   "branch": "feat/req-2026-138-readme-intro-stop-promise",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffac3-c61c-7841-8fce-f2bb50ba001d",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ffac7-b7dd-7860-896d-b3d52d2ddd6a",
+  "review_base_sha": "7ef3c89f817512f8fc1c81134547afa9b97c81fa",
+  "review_diff_hash": "31580285a41e14e8a850495c87ab6bff11d1f228",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "2cbb27fd3fd36eaa1b8b152a76b145e641aa410b3ad69b1ed832dbe09079088e",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-intro-stop-promise",
+  "phases": [
+    {
+      "id": "phase-1-intro-stop-promise",
+      "title": "소개의 배타 표현 제거 + 폐기 문구 등재",
+      "status": "pending",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -22,6 +29,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-intro-stop-promise#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-intro-stop-promise",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -45,14 +59,23 @@
     "design_hash": "2cbb27fd3fd36eaa1b8b152a76b145e641aa410b3ad69b1ed832dbe09079088e"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-intro-stop-promise",
     "outcome": "approved",
-    "compare_hash": "ab5efd4577c6043657ca63695c9e9aa401b85db50f09be688c24c4213b9fd305",
+    "compare_hash": "f615f25c6bc82f31f6132bb296543d470c45ad4c00fb6b9e8a392182c26653e3",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T10:57:24.468Z",
+    "at": "2026-08-13T11:02:22.279Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "31580285a41e14e8a850495c87ab6bff11d1f228",
+      "phase_id": "phase-1-intro-stop-promise",
+      "consumed_by_commit_sha": "917f48506134f034eacc2d3ca96cf3818861d5e4",
+      "approval_consumed_at": "2026-08-13T11:02:47.064Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
