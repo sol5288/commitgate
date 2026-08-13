@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"55caa4bbc1049898353584bfe152004b5a6c6f24","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"승인된 설계를 기준으로 phase-2의 integrate 차단 배선을 구현하고, 기본 branchPrefix 및 \"delivery/\" branchPrefix 회귀를 실행하세요.","observations":[]}
