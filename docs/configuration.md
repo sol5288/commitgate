@@ -67,6 +67,10 @@
 `req:new`는 그 시점의 `stopGate` 해소값을 티켓의 `state.json`(`policy_snapshot.stop_gate`)에 **고정**하고,
 게이트(`req:next`·`req:commit`·`req:confirm`·`req:doctor`·`delivery integrate`)는 그 값을 봅니다.
 
+🔴 **파생 축도 함께 동결됩니다.** `phaseCommit.autoApprove`(phase 자동 커밋 여부)는 `stopGate`에서 파생되는
+값인데, 그것만 현재 config에서 읽으면 **한 티켓이 두 정책으로 판정**됩니다 — 커밋 게이트는 통과시키는데
+`req:next`는 멈추라고 하는 상태입니다. 두 축은 항상 같은 해소에서 나옵니다.
+
 왜냐하면 게이트가 매번 `req.config.json`을 다시 읽으면 **티켓 하나가 여러 정책으로 진행**되기 때문입니다.
 phase-1·2를 `phase`로 확인받고 중간에 설정을 `merge`로 바꾸면 나머지는 확인 없이 자동 커밋됩니다 —
 이미 받은 확인의 의미가 사후에 바뀝니다.

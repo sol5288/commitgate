@@ -70,6 +70,11 @@ approval, evidence, the integration control points, or `hardCap`. All it removes
 `req:new` pins the resolved `stopGate` into the ticket's `state.json` (`policy_snapshot.stop_gate`), and the
 gates (`req:next`, `req:commit`, `req:confirm`, `req:doctor`, `delivery integrate`) read that value.
 
+🔴 **The derived axis is frozen with it.** `phaseCommit.autoApprove` (whether phases auto-commit) is derived
+from `stopGate`; reading only that one from the current config makes **one ticket judged under two policies** —
+the commit gate lets you through while `req:next` tells you to stop. Both axes always come from the same
+resolution.
+
 If the gates re-read `req.config.json` on every command, **one ticket runs under several policies**: confirm
 phases 1–2 under `phase`, switch the setting to `merge` midway, and the rest auto-commit with no confirmation —
 the meaning of a confirmation you already gave changes after the fact.

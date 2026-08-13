@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+- **fix: 정책 스냅샷이 "반쪽 동결"이던 결함 — 이제 두 축이 함께 동결됩니다** — 스냅샷은 `stopGate`만
+  얼렸고 거기서 파생되는 `phaseCommit.autoApprove`는 `req:next`가 **현재 config에서 직접** 읽었습니다.
+  그래서 스냅샷이 `merge`인데 config가 `phase`인 티켓은 **커밋 게이트는 통과시키는데 `req:next`는 매 phase
+  멈추라고** 했습니다 — 한 티켓이 두 정책으로 판정됐고, "설정 변경과 무관하게 LOW phase를 순차 자동
+  진행"이 정상 경로에서 깨졌습니다. `effectiveExecutionPolicy(state, cfg)`가 두 값을 함께 내고 `req:next`는
+  config의 파생 축을 더 이상 읽지 않습니다(소스 검사로 고정).
+  - 파생 규칙은 새로 만들지 않았습니다 — `AUTO_APPROVE_OF`(기존 번역표)가 그대로 SSOT입니다. 스냅샷에는
+    계속 `stop_gate` **하나만** 저장합니다(두 값을 저장하면 저장 시점에 갈라질 자리를 새로 만듭니다).
+  - 스냅샷 없는 **legacy 티켓은 완전 무변경** — 두 축 모두 현재 config를 따릅니다.
+  - 회귀는 실 git에서 `req:next` **main을 태워** 4종(교차 2 + legacy 2)을 고정합니다. 순수 함수는 이미
+    옳게 동작했으므로 순수 테스트만으로는 이 결함을 잡을 수 없었습니다.
+
 - **feat: `commitgate setup`이 정지 지점을 정확히 말하고 예산 정책도 묻습니다** — 설정을 고르는 화면이
   `merge`를 "묶음이 끝날 때까지 미룸"이라고만 설명해, **묶음이 없으면 `req`처럼 통합 직전에 멈춘다**는
   사실이 빠져 있었습니다. 같은 화면의 고지 문구와 `docs/configuration*.md`의 설정 표도 함께 정정했습니다 —
