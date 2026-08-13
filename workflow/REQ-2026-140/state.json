@@ -2,14 +2,14 @@
   "id": "REQ-2026-140",
   "branch": "feat/req-2026-140-stopgate-auto-predelegation",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffbb4-7152-7411-906b-a54120bd89e9",
-  "review_base_sha": "117c585ef32df35bcae6b23f9ce6e4ed8fb1ff9c",
-  "review_diff_hash": "83d9cf8b9f8be829c09a9dc1e54eb33e56dea150",
+  "codex_thread_id": "019ffbcc-478a-7831-aecf-58f24a6bcc51",
+  "review_base_sha": "870e66d9febeed408bf8f2deea1a27297a4c5839",
+  "review_diff_hash": "2a76d7714d9d1afc625ead225def351e21ade603",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496",
-  "current_phase": "phase-4c-push-bypass-delivery",
+  "current_phase": "phase-5-expose-and-docs",
   "phases": [
     {
       "id": "phase-1-auto-type-and-predicate",
@@ -50,7 +50,9 @@
     {
       "id": "phase-5-expose-and-docs",
       "title": "노출 + 문서",
-      "status": "pending"
+      "status": "pending",
+      "max_files": 14,
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -108,16 +110,37 @@
       "phase_id": "phase-4c-push-bypass-delivery",
       "attempts": 6,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-expose-and-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-5-expose-and-docs",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-expose-and-docs#2",
+      "review_kind": "phase",
+      "phase_id": "phase-5-expose-and-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-expose-and-docs#3",
+      "review_kind": "phase",
+      "phase_id": "phase-5-expose-and-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-4c-push-bypass-delivery",
+    "phase_id": "phase-5-expose-and-docs",
     "outcome": "approved",
-    "compare_hash": "3b6c1b7d16e95bea799b2059f01f6ed29756a222ae19b35eacc8c08ec699b822",
+    "compare_hash": "cf5cbc57a0088483bfb2ed9bff41f9a8f3bae687a31b935421c796143bf140aa",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T15:21:11.355Z",
+    "at": "2026-08-13T15:47:11.149Z",
     "findings": [],
     "elided_count": 0
   },
@@ -175,6 +198,12 @@
       "phase_id": "phase-4c-push-bypass-delivery",
       "consumed_by_commit_sha": "ab7d2775fc9055b9f651fc6751f17a14cb56f459",
       "approval_consumed_at": "2026-08-13T15:21:42.701Z"
+    },
+    {
+      "approved_tree": "2a76d7714d9d1afc625ead225def351e21ade603",
+      "phase_id": "phase-5-expose-and-docs",
+      "consumed_by_commit_sha": "c11a2129cde5f83da883f5097e34330b0778fdc8",
+      "approval_consumed_at": "2026-08-13T15:47:44.597Z"
     }
   ],
   "user_commit_confirmed": null
