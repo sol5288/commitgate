@@ -108,7 +108,7 @@ describe('[policy-snapshot] 소비자 일관성 — 스냅샷 ≠ config', () =>
       worktreeReviewClean: true,
       currentIndexHash: 'a'.repeat(64),
       currentSemanticIdentity: 'a'.repeat(64),
-      reviewBudget: { autoBudget: 5, hardCap: 8 },
+      reviewBudget: { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const },
       phaseCommitAutoApprove: 'low-only',
       stopGate: effectiveStopGate(state, cfg('merge')),
       deliveryGate: null,

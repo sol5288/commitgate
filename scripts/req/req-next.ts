@@ -42,6 +42,7 @@ import {
   isLegacyTicket,
   budgetCounts,
   checkReviewBudget,
+  budgetAllowsDispatch,
   isSeriesKeyTerminal,
   type WorkflowState,
   type ReviewKind,
@@ -526,7 +527,12 @@ function gateRunCandidate(input: NextInput, cand: RunCandidate): NextAction {
   const counts = budgetCounts(input.state, cand.kind, cand.phaseId)
   const { autoBudget, hardCap } = input.reviewBudget
   const budgetDecision = checkReviewBudget(counts, input.reviewBudget)
-  if (budgetDecision.kind !== 'allow') {
+  /**
+   * 🔴 REQ-2026-132 DEC-4: **진행 가능 집합**으로 판정한다. 예전에는 `!== 'allow'` 였는데, 그렇게 두면
+   *    판정 종류가 늘 때마다 새 값이 조용히 "정지" 쪽에 붙는다 — `soft-auto`(정책으로 통과)가 정확히
+   *    그렇게 사람 대기로 잘못 흘렀을 것이다. 화면과 동작이 갈라지면 안내가 거짓이 된다.
+   */
+  if (!budgetAllowsDispatch(budgetDecision)) {
     const nextAttempt = budgetDecision.attempt
     const lrOutcome = (input.state.last_review as LastReviewMarker | undefined)?.outcome ?? '(없음)'
     const hardBlocked = budgetDecision.kind === 'hard-blocked'

@@ -27,10 +27,23 @@ export interface DesignDocs {
  */
 export type ReviewReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
+/**
+ * 소프트 예산(`autoBudget`) 초과 시의 처리(REQ-2026-132 DEC-1).
+ *
+ * - `ask`(기본): 6~8회차마다 `req:review-exception` 사람 승인이 필요하다(현행).
+ * - `auto`: 사람 승인 없이 `hardCap`까지 진행하되 원장에 **정책으로 통과했다는 사실**을 남긴다.
+ *
+ * 🔴 `hardCap`(절대 호출 상한)은 이 축과 **무관**하다 — `auto`는 무한 재시도가 아니다.
+ * 🔴 이 정지는 **비용 통제**이지 안전 게이트가 아니다. 리뷰 승인·증거·통합 통제점은 그대로다.
+ */
+export type SoftLimitPolicy = 'ask' | 'auto'
+
 /** review 예산(REQ-2026-028 A-2a). config↔review-codex 순환 방지를 위해 여기(config)에 정의. */
 export interface ReviewBudget {
   autoBudget: number
   hardCap: number
+  /** REQ-2026-132: 소프트 초과 처리. 미지정 = `ask`(현행 무회귀). */
+  onSoftLimit: SoftLimitPolicy
 }
 
 /**
@@ -280,7 +293,8 @@ export const DEFAULTS = {
   //    **핀하지 않은 소비자의 리뷰 깊이·비용이 함께 내려간다** — 높게 유지하려면 `reviewReasoningEffort`를 명시한다.
   reviewReasoningEffort: 'medium' as ReviewReasoningEffort | null,
   // REQ-2026-028 A-2a: review 예산. autoBudget=자동 허용 회차, hardCap=절대 상한(9번째 차단 → 8).
-  reviewBudget: { autoBudget: 5, hardCap: 8 } as ReviewBudget,
+  // REQ-2026-132: onSoftLimit 기본은 `ask` — 비용이 드는 축의 기본을 업그레이드로 조용히 바꾸지 않는다.
+  reviewBudget: { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' } as ReviewBudget,
   // REQ-2026-037: phase 자동 커밋은 opt-in. 코어 기본 never = 현행(매 phase 정지) — 업그레이드로 완화되지 않는다.
   // 🔴 `stopGate`와 **한 쌍**이다(AUTO_APPROVE_OF). 한쪽만 바꾸면 두 키가 다 없는 정상 설정이
   //    자기모순으로 해소된다 — 파생을 하드코딩하지 않고 표에서 가져온다(REQ-2026-067 DEC-18).
@@ -369,6 +383,9 @@ export const CONFIG_SCHEMA = {
       properties: {
         autoBudget: { type: 'integer', minimum: 1 },
         hardCap: { type: 'integer', minimum: 1, maximum: 8 },
+        // 🔴 REQ-2026-132: `required`에 넣지 **않는다** — 넣으면 기존 `{autoBudget,hardCap}` 설정이
+        //    업그레이드에서 거부된다. 미지정은 로더가 `ask`로 채운다(키별 병합).
+        onSoftLimit: { type: 'string', enum: ['ask', 'auto'] },
       },
     },
     // REQ-2026-037: phase 자동 커밋 정책. autoApprove enum이 정책을 고정 — `"all"`은 없다(HIGH livelock 방지).
@@ -533,7 +550,12 @@ export function loadConfig(opts: { root?: string | null; cwd?: string } = {}): R
     reviewModel: raw.reviewModel !== undefined ? raw.reviewModel : DEFAULTS.reviewModel,
     reviewReasoningEffort:
       raw.reviewReasoningEffort !== undefined ? raw.reviewReasoningEffort : DEFAULTS.reviewReasoningEffort,
-    reviewBudget: raw.reviewBudget ?? DEFAULTS.reviewBudget,
+    /**
+     * 🔴 REQ-2026-132 DEC-1b: **키별 병합**이다(객체 통째 교체가 아니다). 통째로 바꾸면 기존 정상 설정
+     *    `{autoBudget, hardCap}`에서 새 키가 `undefined`가 되어 "미지정 = ask"가 성립하지 않는다.
+     *    스키마가 `autoBudget`·`hardCap`을 여전히 required로 요구하므로 그 둘의 동작은 바뀌지 않는다.
+     */
+    reviewBudget: { ...DEFAULTS.reviewBudget, ...(raw.reviewBudget ?? {}) },
     // REQ-2026-063: 두 축 해소. 🔴 **raw key 명시 여부**로 판정한다 — 해소값을 비교하면 `phaseCommit`이
     //    부재해도 `never`로 채워지므로 `stopGate:"req"`만 쓴 **정상 설정**이 오탐되어 거부된다(새 축을 아무도 못 쓴다).
     ...resolveStopAxes(raw),

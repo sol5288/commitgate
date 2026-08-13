@@ -80,6 +80,15 @@ export interface LedgerRow {
   review_reasoning_effort?: string | null
   /** 리뷰어 provider id. 현재 구현은 `codex` 하나지만, 늘어난 뒤 옛 행이 무엇이었는지 알 수 있게 지금 기록한다. */
   review_provider?: string | null
+  /**
+   * REQ-2026-132: 소프트 예산 초과를 **무엇으로** 통과했는가. `null` = 초과가 아니었다.
+   * **키 부재** = 이 필드 도입 이전의 옛 행.
+   *
+   * 🔴 `exception_consumed`와 **다른 사실**이다. `'policy'`(설정 `onSoftLimit: "auto"`)일 때
+   *    `exception_consumed`는 `false`다 — 사람 승인이 없었기 때문이다. 두 값을 뭉치면 정책 통과가
+   *    사람 승인으로 위장한다.
+   */
+  soft_limit_resolution?: 'exception' | 'policy' | null
 }
 
 /**
@@ -119,7 +128,15 @@ export const LEDGER_KEYS = [
  *   2. **새 행은 항상 직렬화**한다 — 값이 `null`이어도 키는 존재한다(`serializeLedgerRow`가 정규화).
  *   3. **있으면 엄격 검증**한다 — 있는데 타입이 틀린 것은 손상이다.
  */
-export const OPTIONAL_LEDGER_KEYS = ['review_model', 'review_reasoning_effort', 'review_provider'] as const
+export const OPTIONAL_LEDGER_KEYS = [
+  'review_model',
+  'review_reasoning_effort',
+  'review_provider',
+  'soft_limit_resolution',
+] as const
+
+/** REQ-2026-132: 감사 필드의 허용 값. 🔴 일반 string으로 두면 손상 행이 정상으로 위장한다. */
+const SOFT_LIMIT_RESOLUTIONS: readonly string[] = ['exception', 'policy']
 
 const OUTCOMES: readonly string[] = ['approved', 'needs-fix', 'blocked', 'invalid']
 const EVENTS: readonly string[] = ['attempt-opened', 'attempt-closed']
@@ -176,6 +193,13 @@ export function ledgerRowProblems(raw: unknown): string[] {
   // 계약 3: **있으면** 엄격 검증(없으면 통과). 있는데 타입이 틀린 것은 손상이다.
   for (const k of OPTIONAL_LEDGER_KEYS)
     if (k in r && r[k] !== null && typeof r[k] !== 'string') p.push(`${k}는 null이거나 문자열`)
+  /**
+   * 🔴 REQ-2026-132: 이 필드는 **의미가 제한된 감사 값**이다. 위 일반 string 검사만으로는
+   *    임의 문자열이 통과해 손상 행이 정상으로 위장한다.
+   */
+  if ('soft_limit_resolution' in r && r.soft_limit_resolution !== null && typeof r.soft_limit_resolution === 'string')
+    if (!SOFT_LIMIT_RESOLUTIONS.includes(r.soft_limit_resolution))
+      p.push(`soft_limit_resolution 부적합: ${String(r.soft_limit_resolution)}`)
 
   if (typeof r.ticket_id !== 'string' || r.ticket_id === '') p.push('ticket_id가 비어 있음')
   if (typeof r.series_id !== 'string' || r.series_id === '') p.push('series_id가 비어 있음')

@@ -1334,7 +1334,20 @@ export function resolveSuccessorLineage(parentState: WorkflowState, parentReqId:
 export type BudgetDecision =
   | { kind: 'allow' }
   | { kind: 'needs-exception'; attempt: number }
+  /** REQ-2026-132: 소프트 초과지만 `onSoftLimit: 'auto'` 정책으로 진행한다(사람 승인 없음). */
+  | { kind: 'soft-auto'; attempt: number }
   | { kind: 'hard-blocked'; attempt: number }
+
+/**
+ * **진행 가능한 판정**(REQ-2026-132 DEC-4). 🔴 소비자는 이 술어를 쓰고 `!== 'allow'` 같은 **부정**으로
+ * 적지 않는다 — 부정으로 두면 판정 종류가 늘 때마다 새 값이 조용히 "정지" 쪽에 붙는다.
+ * (`soft-auto` 도입 때 `req:next`가 정확히 그렇게 깨질 뻔했다.)
+ */
+export function budgetAllowsDispatch(
+  d: BudgetDecision,
+): d is Extract<BudgetDecision, { kind: 'allow' | 'soft-auto' }> {
+  return d.kind === 'allow' || d.kind === 'soft-auto'
+}
 
 /**
  * 같은 `(kind, phase_id)`의 **열린** series에서 실제로 나간 호출 수(없으면 0). `hardCap`(절대 상한) 입력.
@@ -1561,6 +1574,13 @@ export function checkReviewBudget(counts: BudgetCounts, budget: ReviewBudget): B
   const attempt = counts.dispatched + 1 // 이 다음 호출의 회차(실제 호출 순번)
   if (counts.dispatched >= budget.hardCap) return { kind: 'hard-blocked', attempt }
   if (counts.productive < budget.autoBudget) return { kind: 'allow' }
+  /**
+   * 🔴 REQ-2026-132: 소프트 초과의 처리는 **설정**이 정한다. `hard-blocked`를 먼저 판정하는 순서는
+   *    그대로다 — `auto`는 절대 상한을 넘기지 않는다.
+   * 🔴 `allow`로 뭉치지 않는다. 뭉치면 호출부가 "예산 안이었다"와 "정책으로 통과했다"를 구별하지 못해
+   *    원장에 사실을 남길 수 없다 — 판정 종류가 곧 기록의 근거다.
+   */
+  if (budget.onSoftLimit === 'auto') return { kind: 'soft-auto', attempt }
   return { kind: 'needs-exception', attempt }
 }
 
@@ -1805,6 +1825,12 @@ export interface AttemptInfo {
   attempt: number
   /** autoBudget 초과라 사람 예외를 소비했는지 — scratch에서 지워지는 유일한 사실(REQ-2026-051). */
   exception_consumed: boolean
+  /**
+   * REQ-2026-132: 소프트 초과를 **무엇으로** 통과했는가. `null` = 초과가 아니었다.
+   * 🔴 `exception_consumed`의 의미를 넓히지 않는다 — `'policy'`일 때 그 값은 `false`다.
+   *    넓히면 정책 통과가 사람 승인으로 위장한다.
+   */
+  soft_limit_resolution: 'exception' | 'policy' | null
 }
 
 /**
@@ -1856,6 +1882,9 @@ export function gateAndRecordAttempt(ctx: {
     series_id: opened?.series_id ?? '',
     attempt: opened?.attempts ?? 0,
     exception_consumed: decision.kind === 'needs-exception',
+    // REQ-2026-132: 소프트 초과를 무엇으로 통과했는지. 사람 예외와 정책 통과는 **다른 사실**이다.
+    soft_limit_resolution:
+      decision.kind === 'needs-exception' ? 'exception' : decision.kind === 'soft-auto' ? 'policy' : null,
   }
   return { state, attempt: info }
 }
@@ -2866,6 +2895,9 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
     lifecycle: null,
     outcome: null,
     exception_consumed: attemptInfo.exception_consumed,
+    // 🔴 REQ-2026-132: 소프트 초과를 **무엇으로** 통과했는가. 값을 만들고 기록하지 않으면
+    //    "정책으로 통과했다"는 감사 사실이 사라진다(직렬화가 부재 키를 null로 채운다).
+    soft_limit_resolution: attemptInfo.soft_limit_resolution,
     prompt_sha256: null,
     at: new Date().toISOString(),
     reconstructed: false,
@@ -2963,6 +2995,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
         lifecycle, // pre_dispatch_failed | dispatched_unknown | dispatch_confirmed
         outcome: 'invalid', // 실패한 호출 — 유효 판정 없음.
         exception_consumed: attemptInfo.exception_consumed,
+        soft_limit_resolution: attemptInfo.soft_limit_resolution, // REQ-2026-132(실패 경로도 같은 사실을 남긴다)
         prompt_sha256: null, // 실패 경로는 프롬프트 해시를 담지 않는다(opened와 동일).
         at: new Date().toISOString(),
         reconstructed: false,
@@ -3054,6 +3087,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
     lifecycle: 'completed', // 이 REQ는 completed만 쓴다. 실패 분류는 후속 REQ 소관(D3).
     outcome, // ReviewOutcome === LedgerOutcome. 캐스트하지 않는다 — 갈라지면 빌드가 깨져야 한다.
     exception_consumed: attemptInfo.exception_consumed,
+    soft_limit_resolution: attemptInfo.soft_limit_resolution, // REQ-2026-132
     // 🔴 prompt_sha256은 opened가 아니라 closed에만 담는다(REQ-2026-052: opened는 프롬프트 확정 전에 커밋되므로).
     prompt_sha256: promptSha256,
     // 🔴 archive path·sha는 담지 않는다 — approvals.jsonl의 archive_inventory가 단일 출처다(phase-2 리뷰 P1).

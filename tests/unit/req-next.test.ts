@@ -78,7 +78,7 @@ function baseInput(over: Partial<NextInput> = {}): NextInput {
     // REQ-2026-052: G2 compare_hash 재계산 정본은 semantic identity. 기존 G2 테스트가 compare_hash: HASH_A를
     // 쓰므로 기본값도 HASH_A로 맞춘다(무회귀). 특정 G2 시나리오는 이 값을 override한다.
     currentSemanticIdentity: HASH_A,
-    reviewBudget: { autoBudget: 5, hardCap: 8 },
+    reviewBudget: { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const },
     // REQ-2026-037: 기본은 never(현행 매 phase 정지) — 대부분의 기존 테스트가 이 무회귀 경로를 검증한다.
     phaseCommitAutoApprove: 'never',
     ...over,
@@ -902,7 +902,7 @@ describe('REQ-2026-028 — G3 예산 소진 안내(resolveNext)', () => {
   })
 
   it('O2-6 config 예산이 G3 경계를 움직인다 — autoBudget=3이면 attempts=3에서 escalated', () => {
-    const a = resolveNext(baseInput({ state: withOpenSeries(3), hasStagedChanges: true, reviewBudget: { autoBudget: 3, hardCap: 6 } }))
+    const a = resolveNext(baseInput({ state: withOpenSeries(3), hasStagedChanges: true, reviewBudget: { autoBudget: 3, hardCap: 6, onSoftLimit: 'ask' as const } }))
     expect(a.kind).toBe('AWAIT_HUMAN')
   })
 })
