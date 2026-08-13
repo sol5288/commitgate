@@ -2,13 +2,13 @@
   "id": "REQ-2026-131",
   "branch": "feat/req-2026-131-agent-autonomy-contract",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019ff96a-99aa-74f1-aff4-6db2b76dee84",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "cac2dc7ba8dbc13635158cc89200f25ae6e147f661121c24d0166501547ec6c7",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,43 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "e664fbd83dd284cd9e41b01e6f4dd229e0692276",
+    "design": "a10546db201ac21b3d3d957eeffd7dda20f7d2c5",
+    "plan": "26f5e8cdb9c3520b6978c7723629c1ea8854520c"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-131/responses/design-r01-approved.json",
+    "response_sha256": "e6079dd61d27f4d006696ce760502e2b0597ff472a1d47ac7b5d39f94e71e23d",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "817084ae54095789f701755cb84dfc441feedacf",
+    "codex_thread_id": "019ff96a-99aa-74f1-aff4-6db2b76dee84",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T04:40:07.685Z",
+    "design_hash": "cac2dc7ba8dbc13635158cc89200f25ae6e147f661121c24d0166501547ec6c7"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "b945d4b5bdf71a4cc67a13ec8e82711671cbe806e6052053851a5edd4ced54d4",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T04:40:07.685Z",
+    "findings": [],
+    "elided_count": 0
   }
 }
