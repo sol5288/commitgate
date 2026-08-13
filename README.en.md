@@ -54,7 +54,7 @@ CommitGate runs that back-and-forth for you. **Until the check passes, saving is
 
 **What matters is not the loop but the promise at the end.** Only the **exact change** that passed the check is saved — if a single line moves after approval, that approval is treated as stale and **a fresh check is required**.
 
-By default **you are not stopped in the middle.** You confirm when a piece of work finishes and when results get merged. If you would rather look at every step yourself, you can set it that way — see [Where a human stops](#where-a-human-stops) below.
+By default **you are not called at every phase commit** — you confirm when a piece of work finishes and when results get merged. If a re-check runs past its automatic limit, though, the default policy asks you to approve each further round. You can also switch to looking at every step yourself — where the stops actually are is defined in [Where a human stops](#where-a-human-stops) below.
 
 > 💳 **Those loop-back arrows are not unbounded.** Re-checks for one phase run **automatically up to 5 times**. Rounds 6–8 each require a human exception record, and **from round 9 even an exception will not get you through.** Reviews are paid calls, so there is a ceiling — the values are configurable in [Configuration](https://github.com/sol5288/commitgate/blob/main/docs/configuration.en.md).
 
