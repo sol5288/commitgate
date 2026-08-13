@@ -2,15 +2,24 @@
   "id": "REQ-2026-135",
   "branch": "feat/req-2026-135-auto-scope-and-setup-upgrade",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffa0a-fdbd-73c3-8da0-f8f6276c23c6",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ffa0e-18c4-7491-bc41-5f5aeae3f67a",
+  "review_base_sha": "e849e074d05f5b0990e6b8aeeb64bfb8e6b13fd9",
+  "review_diff_hash": "d8dcec940ab526ca262e8fca7bef99ed78b6872e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "709845a338b85cba5132537f67addcb70fe8ef494b2a34b6a7ac08ab47db7160",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-upgrade-hint",
+  "phases": [
+    {
+      "id": "phase-1-upgrade-hint",
+      "approved": true
+    },
+    {
+      "id": "phase-2-scope-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +33,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-upgrade-hint#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-upgrade-hint",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-upgrade-hint",
     "outcome": "approved",
-    "compare_hash": "512dad61cfa625d253c69035a4333b124664e8a56423520d45683c04a15359c0",
+    "compare_hash": "3f0095895f348c708b08696698d9d2b8cba0a7d01dc520f957c17ea3cf714401",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T07:35:36.562Z",
+    "at": "2026-08-13T07:38:43.432Z",
     "findings": [],
     "elided_count": 0
   },
@@ -54,5 +70,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-13T07:35:36.562Z",
     "design_hash": "709845a338b85cba5132537f67addcb70fe8ef494b2a34b6a7ac08ab47db7160"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "d8dcec940ab526ca262e8fca7bef99ed78b6872e",
+      "phase_id": "phase-1-upgrade-hint",
+      "consumed_by_commit_sha": "2ac05cc50874a221ae4e8cbbdbaf3988315f8863",
+      "approval_consumed_at": "2026-08-13T07:39:16.383Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
