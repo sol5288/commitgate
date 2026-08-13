@@ -12,7 +12,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"medium"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically. Rounds 6–8 are governed by `onSoftLimit`: `"ask"` (default) requires a human exception record bound to that series and round; `"auto"` runs them without human approval and records the policy grounds in the ledger. Once `hardCap` is spent the next attempt (round 9 onward) is blocked **under both values**. `hardCap ≤ 8`, `autoBudget ≤ hardCap`. See [Review budget](#review-budget--reviewbudget) |
-| `stopGate` | `"req"` | **Decides on its own where a human stops** (preferred axis). `phase` = confirm before every phase commit; `req` = auto-commit phases inside a REQ and gather the confirmation at **the commit that completes the REQ**; `merge` = group several REQs into a delivery set and defer until **the whole set** is done. The per-value confirmation points, including how `HIGH` risk is treated, are defined in [Workflow — Human confirmation for HIGH-risk tickets](workflow.en.md#human-confirmation-for-high-risk-tickets). Integration (main merge) approval is required under every value |
+| `stopGate` | `"req"` | **Decides where a human stops at commits and integration** (preferred axis). 🔴 The review budget (`reviewBudget.onSoftLimit`) is a **separate axis**: regardless of this value, exceeding it during re-reviews can stop you on its own. `phase` = confirm before every phase commit; `req` = auto-commit phases inside a REQ and gather the confirmation at **the commit that completes the REQ**; `merge` = group several REQs into a delivery set and defer until **the whole set** is done (🔴 **with no delivery set it behaves like `req`**, stopping just before this REQ's integration — choosing this value does not remove the stop). The per-value confirmation points, including how `HIGH` risk is treated, are defined in [Workflow — Human confirmation for HIGH-risk tickets](workflow.en.md#human-confirmation-for-high-risk-tickets). Integration (main merge) approval is required under every value |
 | `githubCi` | not configured (`null`) | GitHub Actions workflow that `integrate` may run only after an explicit user request. When absent, CommitGate neither asks about a CI run nor guesses a workflow |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | Per-phase auto-commit policy. **`low-only` is the default**: it auto-commits Codex-approved phases without a human stop and defers the human confirmation. Set `never` **explicitly** to stop for a human before every phase commit. There is no `"all"` value — `stopGate` is the semantic axis, and adding values to the alias would split the two axes again |
 
@@ -120,12 +120,25 @@ for the full execution order.
 
 ## Interactive setup — `commitgate setup`
 
-Instead of editing the file by hand, you can set the review model and reasoning effort with a wizard.
-It **also handles codex login**.
+Instead of editing the file by hand, you can set the review model, reasoning effort, and **where you stop**
+with a wizard. It **also handles codex login**.
 
 ```sh
 npx commitgate setup
 ```
+
+It asks four questions.
+
+| Question | Config key |
+|---|---|
+| Review model | `reviewModel` |
+| Review reasoning effort | `reviewReasoningEffort` |
+| Where a human stops | `stopGate` |
+| What to do past the review budget | `reviewBudget.onSoftLimit` |
+
+🔴 **Two axes create stops.** Even with `stopGate` set for autonomous runs, exceeding the review budget stops
+you separately — opening only one of the two still leaves the workflow interrupted, so both are asked on the
+same screen. `autoBudget` and `hardCap` are **not asked and are preserved** as they are (edit them in the file).
 
 - Questions with a fixed set of values (reasoning effort, stop gate) are **arrow-key menus**: ↑/↓ to move,
   Enter to confirm, Ctrl+C to cancel. The first entry is **keep the current value** and the cursor starts

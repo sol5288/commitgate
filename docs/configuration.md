@@ -12,7 +12,7 @@
 | `reviewModel` | `"gpt-5.6-terra"` | codex 리뷰 모델(`-c model=`로 고정). `null`이면 codex 전역 설정을 상속 |
 | `reviewReasoningEffort` | `"medium"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }` | 열린 `(review_kind, phase_id)` review series의 재리뷰 시도 예산. 기본값 기준 1~5회차는 자동. 6~8회차는 `onSoftLimit`이 정한다 — `"ask"`(기본)면 회차마다 그 series·회차에 바인딩된 사람 예외 기록이 있어야 진행하고, `"auto"`면 사람 승인 없이 진행하며 원장에 정책 근거를 남긴다. `hardCap` 회를 이미 소진하면 그 다음 시도(9회차부터)는 **두 값 모두에서** 차단. `hardCap ≤ 8`·`autoBudget ≤ hardCap`. 자세히는 [리뷰 예산](#리뷰-예산--reviewbudget) |
-| `stopGate` | `"req"` | **사람이 멈추는 지점을 단독으로 정합니다**(권장 축). `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 phase는 자율 커밋하고 확인을 **REQ를 완성시키는 커밋**으로 모음 · `merge`=여러 REQ를 delivery set으로 묶어 **묶음 전체가 끝날 때까지** 미룸. 위험도(`HIGH`)를 포함한 확인 지점 상세는 [워크플로 — HIGH 위험 티켓의 사람 확인](workflow.md#high-위험-티켓의-사람-확인)이 정본입니다. 통합(main 병합) 승인은 어느 값에서나 필요합니다 |
+| `stopGate` | `"req"` | **커밋·통합에서 사람이 멈추는 지점을 정합니다**(권장 축). 🔴 리뷰 예산(`reviewBudget.onSoftLimit`)은 **별개의 축**이라, 이 값과 무관하게 재리뷰가 예산을 넘기면 따로 멈출 수 있습니다. `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 phase는 자율 커밋하고 확인을 **REQ를 완성시키는 커밋**으로 모음 · `merge`=여러 REQ를 delivery set으로 묶어 **묶음 전체가 끝날 때까지** 미룸(🔴 **묶음이 없으면 `req`처럼** 이 REQ의 통합 직전에 멈춥니다 — 이 값을 골랐다고 정지가 없어지지 않습니다). 위험도(`HIGH`)를 포함한 확인 지점 상세는 [워크플로 — HIGH 위험 티켓의 사람 확인](workflow.md#high-위험-티켓의-사람-확인)이 정본입니다. 통합(main 병합) 승인은 어느 값에서나 필요합니다 |
 | `githubCi` | 미설정 (`null`) | `integrate`에서 사용자가 명시적으로 요청할 때 실행할 GitHub Actions 워크플로. 미설정이면 CI 실행을 묻지도, 추측해서 실행하지도 않습니다 |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | phase 자동 커밋 정책. **`low-only`가 기본**이며 Codex 승인 phase를 사람 정지 없이 자동 커밋하고 사람 확인을 뒤로 모은다. `never`를 **명시하면** 매 phase 커밋 전에 사람이 확인한다. `"all"` 같은 값은 없다 — 의미 축은 `stopGate`이고, alias에 값을 늘리면 두 축이 또 갈라진다 |
 
@@ -116,11 +116,25 @@ GitHub Actions 사용량·비용을 사용자가 통제할 수 있도록 **기�
 
 ## 대화형 설정 — `commitgate setup`
 
-리뷰 모델·추론강도는 파일을 직접 고치는 대신 마법사로 설정할 수 있습니다. **codex 로그인까지 함께 처리**합니다.
+리뷰 모델·추론강도·**정지 지점**은 파일을 직접 고치는 대신 마법사로 설정할 수 있습니다.
+**codex 로그인까지 함께 처리**합니다.
 
 ```sh
 npx commitgate setup
 ```
+
+묻는 것은 넷입니다.
+
+| 질문 | 설정 키 |
+|---|---|
+| 리뷰 모델 | `reviewModel` |
+| 리뷰 추론강도 | `reviewReasoningEffort` |
+| 사람이 멈추는 지점 | `stopGate` |
+| 리뷰 예산을 넘겼을 때 | `reviewBudget.onSoftLimit` |
+
+🔴 **정지를 만드는 축은 둘입니다.** `stopGate`로 자율 진행을 골라도 리뷰가 예산을 넘기면 따로 멈추므로,
+한쪽만 열어 두면 워크플로가 여전히 끊깁니다. 그래서 두 축을 같은 화면에서 함께 묻습니다.
+`reviewBudget`의 `autoBudget`·`hardCap`은 **묻지 않고 기존 값을 보존**합니다(파일에서 직접 조정하세요).
 
 - **추론강도·멈춤 지점처럼 값이 정해진 항목은 ↑/↓로 고르고 Enter로 확정**합니다. Ctrl+C로 취소합니다.
   목록의 첫 줄이 **현재 값 유지**이고 커서가 거기서 시작하므로, Enter만 누르면 아무것도 바뀌지 않습니다.
