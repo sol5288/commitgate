@@ -2,14 +2,14 @@
   "id": "REQ-2026-130",
   "branch": "feat/req-2026-130-delivery-approval-binding",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff959-0952-7cf2-a099-7514376ba0ca",
-  "review_base_sha": "506fbf16e13c4423f118afec71aeb34369464b45",
-  "review_diff_hash": "b3a7473692b0beefa4a312b16536488f4b3c07bd",
+  "codex_thread_id": "019ff962-5172-74a0-b782-8d679da8e900",
+  "review_base_sha": "137e69510959f5c241dbbeb0854a5604f826ee89",
+  "review_diff_hash": "baccf15a91b5758e8b21e16ff14286aaf96b1e02",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "fd07bc771f95c421972f60b63978d0afbdbc1d646b27bc414b216de6a305b2c6",
-  "current_phase": "phase-1-approval-binding",
+  "current_phase": "phase-2-integrate-block",
   "phases": [
     {
       "id": "phase-1-approval-binding",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-integrate-block",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-docs",
@@ -51,16 +51,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-integrate-block#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-integrate-block",
+      "attempts": 3,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-2-integrate-block",
     "outcome": "approved",
-    "compare_hash": "b468da181b9d8ab0a95c1e83932c8b29255c1a5b85b0c52deb4558f5fbaa001a",
+    "compare_hash": "f44b926a88d087ffa37fa73678afd28906db8a3a0c83e563975aba92c8fd289a",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T04:21:25.277Z",
+    "at": "2026-08-13T04:31:38.639Z",
     "findings": [],
     "elided_count": 0
   },
@@ -75,6 +82,12 @@
       "phase_id": "phase-1-approval-binding",
       "consumed_by_commit_sha": "bdfe74f90224bb9e862d87a7d7b359241bb7f86d",
       "approval_consumed_at": "2026-08-13T04:09:06.571Z"
+    },
+    {
+      "approved_tree": "baccf15a91b5758e8b21e16ff14286aaf96b1e02",
+      "phase_id": "phase-2-integrate-block",
+      "consumed_by_commit_sha": "f1b4c4dad69a01e2811e59886e10a7716c20affb",
+      "approval_consumed_at": "2026-08-13T04:32:07.222Z"
     }
   ],
   "user_commit_confirmed": null,
