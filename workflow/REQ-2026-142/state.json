@@ -2,15 +2,32 @@
   "id": "REQ-2026-142",
   "branch": "feat/req-2026-142-evidence-finalization-recovery",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffd7c-ca8c-7f82-9b56-119657972b40",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ffd88-8be9-79f2-837b-740122b0bbfc",
+  "review_base_sha": "7fe8a773d82d701c50ad034ac504bf69c8b282b5",
+  "review_diff_hash": "5c5c2d0fb076b3816639c3899157a70a0dfac07a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "bd13b368803b51f2c510fe9b8646c0a372d327c73426cb20b44db697d07aae14",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-pin-archive-inventory",
+  "phases": [
+    {
+      "id": "phase-1-pin-archive-inventory",
+      "title": "승인 시점 archive inventory 핀",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-recovery-plan",
+      "title": "복구 판정(순수)",
+      "status": "pending"
+    },
+    {
+      "id": "phase-3-d10-allowlist-and-execute",
+      "title": "D10 allowlist 배선 + 멱등 실행",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +41,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-pin-archive-inventory#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-pin-archive-inventory",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-pin-archive-inventory",
     "outcome": "approved",
-    "compare_hash": "ab725abdd5c27e7cec48af082f6d399b04f8fc83ccf582cd4671215bb3b8a125",
+    "compare_hash": "7443568d6657c408517a9d6680bb7ea8533203e1f236967b7272940786240f4d",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T23:39:13.959Z",
+    "at": "2026-08-13T23:52:32.432Z",
     "findings": [],
     "elided_count": 0
   },
@@ -54,5 +78,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-13T23:39:13.959Z",
     "design_hash": "bd13b368803b51f2c510fe9b8646c0a372d327c73426cb20b44db697d07aae14"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "5c5c2d0fb076b3816639c3899157a70a0dfac07a",
+      "phase_id": "phase-1-pin-archive-inventory",
+      "consumed_by_commit_sha": "d97c376dfb45a27e14b31d9b6fb9f8a0e1cb7dbf",
+      "approval_consumed_at": "2026-08-13T23:53:04.514Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
