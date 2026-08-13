@@ -2,13 +2,13 @@
   "id": "REQ-2026-137",
   "branch": "feat/req-2026-137-readme-stop-point-truth",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019ffaa9-1748-7271-b102-7f1c12ab8881",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "66447bbcafa1f461b0931512bef63a78c97c10c1e79b4f718c6ee596dce3dd73",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,43 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "be1c429e3dcb041502bfc9697a0b63cabd3c323e6a09be66543b10cc24f429e3",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T10:27:52.978Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "1bb42beab83d350b83b981dd3711accbeb6fc9f3",
+    "design": "74e6503aa0c1726d0a90b05d2b2b8141b75037ec",
+    "plan": "68792b57268909163679434fc86ebf7bd56fdcda"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-137/responses/design-r02-approved.json",
+    "response_sha256": "770b4ffb31ce2eb60ffeb8685123d10f2ae64497a2688e0f8cd671b304a7b962",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "e6e95d1098aaebcf4d73b4190651d604648c061b",
+    "codex_thread_id": "019ffaa9-1748-7271-b102-7f1c12ab8881",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T10:27:52.978Z",
+    "design_hash": "66447bbcafa1f461b0931512bef63a78c97c10c1e79b4f718c6ee596dce3dd73"
   }
 }
