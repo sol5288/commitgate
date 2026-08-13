@@ -2,14 +2,14 @@
   "id": "REQ-2026-134",
   "branch": "feat/req-2026-134-execution-policy-resolver",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff9fd-bae0-7fd3-8ee1-0e4a62565058",
-  "review_base_sha": "ab68c10e15612d12279b17e4953ff91ec324e869",
-  "review_diff_hash": "0c5368762688bc4112388d2f033c9eae51a4d6ee",
+  "codex_thread_id": "019ffa01-964a-7b53-a79a-c16d5a5d0421",
+  "review_base_sha": "4f0510a6e15c19c11fb3ef30d5da1138fbaa733f",
+  "review_diff_hash": "5d995433e820630b65df9473ff8b970e3b12dc73",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "9375f3519a64a6ff102348c7b693e0d38b8fb8c8bf29799ac428c6061aa531e2",
-  "current_phase": "phase-1-resolver",
+  "current_phase": "phase-2-crossconfig",
   "phases": [
     {
       "id": "phase-1-resolver",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-crossconfig",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-docs",
@@ -44,6 +44,13 @@
       "phase_id": "phase-1-resolver",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-crossconfig#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-crossconfig",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -66,12 +73,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-resolver",
+    "phase_id": "phase-2-crossconfig",
     "outcome": "approved",
-    "compare_hash": "16550e00cd8270e3f6681fbb07a5d946d7b0ed4e60261eea371ada0c34093b9f",
+    "compare_hash": "c77d5f654c7207076b5e6078815026079cbfcac37634ace7cb35a5a58cccc8b7",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T07:20:46.473Z",
+    "at": "2026-08-13T07:24:47.900Z",
     "findings": [],
     "elided_count": 0
   },
@@ -81,6 +88,12 @@
       "phase_id": "phase-1-resolver",
       "consumed_by_commit_sha": "4d7b193e3bc7b56eaa438ba73d6334f8e49d94a9",
       "approval_consumed_at": "2026-08-13T07:21:20.609Z"
+    },
+    {
+      "approved_tree": "5d995433e820630b65df9473ff8b970e3b12dc73",
+      "phase_id": "phase-2-crossconfig",
+      "consumed_by_commit_sha": "5708b8014ccdb8d9b99d793742b3e9afd38cbc4d",
+      "approval_consumed_at": "2026-08-13T07:25:16.571Z"
     }
   ],
   "user_commit_confirmed": null
