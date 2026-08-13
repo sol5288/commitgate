@@ -35,7 +35,7 @@ import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { LEDGER_BASENAME } from './lib/review-ledger'
 import { CLOSE_PROOF_BASENAME, parseCloseProof, deriveBaseState } from './lib/close-proof'
 import { requiredConfirmScope, effectiveConfirmScope } from './lib/evidence'
-import type { StopGate } from './lib/config'
+import { defersToIntegration, type StopGate } from './lib/config'
 import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
 // REQ-2026-048 phase-1: 매니페스트 모델·검증과 그 보조 술어는 leaf `lib/evidence.ts`가 정본.
 // 여기서 **재수출**해 기존 import 경로(`from './req-commit'`)를 쓰던 호출부·테스트를 그대로 둔다.
@@ -126,10 +126,11 @@ export function userConfirmGate(
    * | `phase`  | 매 커밋(현행 그대로) |
    * | `req`    | **이 커밋이 REQ를 완성시킬 때만** — 그 커밋이 `dev-complete`를 발행하므로 도구가 막을 수 있다 |
    * | `merge`  | 커밋에서는 안 막는다 — `delivery integrate` 자격이 요구한다 |
+   * | `auto`   | `merge`와 동일(REQ-2026-140 DEC-2) — 다른 것은 통합 지점 하나뿐이다 |
    *
    * 🔴 `req`에서 중간 phase를 막으면 **REQ 종료에 도달할 수 없다**(설계 r01 P1).
    */
-  if (stopGate === 'merge') return { blocked: false }
+  if (defersToIntegration(stopGate)) return { blocked: false }
   if (stopGate === 'req' && !completesReq) return { blocked: false }
 
   /**

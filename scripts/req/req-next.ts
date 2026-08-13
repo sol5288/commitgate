@@ -19,7 +19,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
-import { loadConfig, buildScriptInvocation, effectiveExecutionPolicy, type PackageManager } from './lib/config'
+import { loadConfig, buildScriptInvocation, effectiveExecutionPolicy, defersToIntegration, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
@@ -865,7 +865,7 @@ function resolveNextCore(input: NextInput): NextAction {
     // 🔴 REQ-2026-066 DEC-10: `merge`는 REQ 단위가 아니라 **묶음 단위**로 멈춘다.
     //    묶음이 없거나 아직 열려 있으면 다음 REQ 를 열 수 있으므로 DONE 이다 — 여기서 멈추면
     //    "묶음이 끝날 때까지 미룬다"가 REQ 단위 정지로 되돌아간다.
-    if (input.stopGate === 'merge') {
+    if (defersToIntegration(input.stopGate ?? 'phase')) {
       const g = input.deliveryGate
       // 🔴 손상은 조용히 DONE 이 되면 안 된다 — 게이트가 사라지느니 멈춘다.
       if (g && g.kind === 'corrupt')
@@ -1008,7 +1008,7 @@ export function parseArgs(argv: string[]): Opts {
 export function softLimitUpgradeHint(input: NextInput, hardBlocked: boolean): string[] {
   if (hardBlocked) return []
   const sg = input.stopGate ?? 'phase'
-  if (sg !== 'req' && sg !== 'merge') return []
+  if (sg !== 'req' && !defersToIntegration(sg)) return []
   if (input.reviewBudget.onSoftLimit !== 'ask') return []
   return [
     '이 정지는 설정으로 끌 수 있다 — req.config.json 의 reviewBudget.onSoftLimit 을 "auto" 로 두면 ' +
@@ -1152,7 +1152,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // 🔴 REQ-2026-129: 정지 정책은 **티켓에 고정된 스냅샷**이 정본이다(없으면 config — legacy 무회귀).
     //    이 지역 변수 하나에서 세 입력이 모두 파생돼야 한 티켓이 두 정책으로 판정되지 않는다.
     stopGate: stopGateNow,
-    deliveryGate: stopGateNow === 'merge' ? readDeliveryGate(cfg.ticketRoot, state.id, roGit) : null,
+    deliveryGate: defersToIntegration(stopGateNow) ? readDeliveryGate(cfg.ticketRoot, state.id, roGit) : null,
     // REQ-2026-071: HIGH + stopGate:'req' 일 때만 필요한 계산 — 그 외에는 안내가 이 값을 보지 않는다.
     completesReq:
       stopGateNow === 'req' && state.risk_level === 'HIGH'

@@ -218,8 +218,16 @@ describe('[req:confirm] main() — 불일치 scope 실행 경로', () => {
       inDeliverySet: () => inDeliverySet,
     })
 
-  /** `[stopGate, 묶음 소속, 거부되어야 할 scope]` */
-  const cases: Array<[StopGate, boolean, string]> = [
+  /**
+   * `[stopGate, 묶음 소속, 거부되어야 할 scope]`
+   *
+   * 🔴 `'auto'` 가 없는 것은 누락이 아니다(REQ-2026-140 DEC-9). 이 헬퍼는 `req.config.json` 에
+   *    값을 **써서** 로드시키는데, `auto` 는 아직 스키마 enum 에 없어 로드 자체가 실패한다 —
+   *    즉 사용자가 고를 수 없는 값이다. 노출되는 phase 에서 여기에 `auto` 행을 더한다.
+   *    (그 전까지 `auto` 의 확인 scope 는 `requiredConfirmScope` 단위 테스트가 `merge` 와의
+   *    등가로 고정한다.)
+   */
+  const cases: Array<['phase' | 'req' | 'merge', boolean, string]> = [
     ['phase', false, 'req'],
     ['phase', false, 'delivery'],
     ['req', false, 'phase'],
