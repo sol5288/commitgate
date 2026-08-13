@@ -2,15 +2,27 @@
   "id": "REQ-2026-141",
   "branch": "feat/req-2026-141-finalize-recovery-escape",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffc0d-5793-74f2-ac5c-3c6a114cec84",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ffc0f-e7da-7ff1-9ec1-57c3dbac129d",
+  "review_base_sha": "1b177b82192116e9ec09cdce3368f4e3363dbd5f",
+  "review_diff_hash": "f57443b0cc605fb92992617c91908d7e739b0b14",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "81439c47e7afdc2dcf72a5b7ea7627bde65e645679f1a36af955de5af80fc470",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-runcli-and-push-tests",
+  "phases": [
+    {
+      "id": "phase-1-runcli-and-push-tests",
+      "title": "dispatch 경계 수정 + push 배선 테스트",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-close-stale-attempt",
+      "title": "열린 attempt 해소 경로",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -31,16 +43,23 @@
       "phase_id": null,
       "attempts": 6,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-runcli-and-push-tests#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-runcli-and-push-tests",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-runcli-and-push-tests",
     "outcome": "approved",
-    "compare_hash": "be6d99345700442746cc196160d2c1bcc9172b0a104ef4b68f32b72afe3b941a",
+    "compare_hash": "f2cff879db78367975c669d06f1918292fca991be871d7c085ed1d8cbca31e7f",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T16:58:05.145Z",
+    "at": "2026-08-13T17:00:16.305Z",
     "findings": [],
     "elided_count": 0
   },
@@ -61,5 +80,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-13T16:58:05.145Z",
     "design_hash": "81439c47e7afdc2dcf72a5b7ea7627bde65e645679f1a36af955de5af80fc470"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "f57443b0cc605fb92992617c91908d7e739b0b14",
+      "phase_id": "phase-1-runcli-and-push-tests",
+      "consumed_by_commit_sha": "dc388dba0305a700d12403d18a8bbc235dfcf4f5",
+      "approval_consumed_at": "2026-08-13T17:00:43.492Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
