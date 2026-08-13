@@ -73,7 +73,8 @@
 - 커밋 메시지 컨벤션: `test/feat/fix/refactor/docs/chore` 접두사. `[Codex]`/`[Claude]` 같은 메타 정보 금지(Reviewer 편향 방지).
 - HIGH 영향 phase가 커밋에서 멈추는 **지점은 `stopGate`가 정한다**(`state.user_commit_confirmed`로 기록).
 - **정지 지점은 `req.config.json`의 `stopGate` 하나가 정한다**(`userConfirmGate`):
-  `phase`=매 phase 커밋 전 · `req`(기본값)=REQ를 끝내는 커밋 전 · `merge`=커밋에서는 멈추지 않음.
+  `phase`=매 phase 커밋 전 · `req`(기본값)=REQ를 끝내는 커밋 전 · `merge`=커밋에서는 멈추지 않음
+  (확인은 묶음에 속하면 `delivery integrate`, 속하지 않으면 `req:next` **종단**에서 요구된다).
   LOW phase는 파생된 `phaseCommit.autoApprove`가 `low-only`일 때 사람 정지 없이 자동 커밋된다
   (`req:next`가 `req:commit --run`을 RUN으로 지시).
 - **통합(main 병합) 승인은 어느 값에서도 필요하다.** 커밋에서 멈추지 않게 설정해도 사람 확인은

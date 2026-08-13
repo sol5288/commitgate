@@ -34,8 +34,12 @@
   (두 축이 모순인 파일이 남으면 이후 모든 명령이 막히기 때문입니다).
 - 🔴 `merge`와 `req`는 **`phaseCommit.autoApprove`가 같습니다**(둘 다 phase는 자율 커밋). 그래서 legacy
   `phaseCommit`만 있는 설정은 보수적으로 `req`로 해소됩니다 — `merge`를 쓰려면 `stopGate`를 명시하세요.
-- `merge`는 [delivery set](workflow.md#delivery-set--여러-req를-한-묶음으로)이 있어야 의미가 있습니다.
-  묶음이 없으면 `req:next` 종단은 그냥 `DONE`이고 다음 REQ를 열 수 있습니다.
+- `merge`는 [delivery set](workflow.md#delivery-set--여러-req를-한-묶음으로)과 함께 쓸 때 **여러 REQ의 정지를
+  묶음 하나로 미룹니다**. 묶음이 없으면 이 값은 `req`처럼 동작합니다 — `req:next` 종단이
+  `AWAIT_HUMAN`(통합 feature→main)입니다.
+- 어느 값이든 **phase 커밋에서는 멈추지 않고**(`phase` 제외) 정지는 종단에 모입니다. 다만 종단의 통제점 수는
+  위험도에 따라 다릅니다: `LOW`는 통합 승인 **한 번**, `HIGH`는 `req:confirm` 기록 **뒤에** 통합 승인이라
+  **두 번**입니다(`req`도 같습니다 — 확인 지점만 커밋에서 종단으로 옮겨진 것입니다).
 
 ### 선택적 GitHub CI 실행 — `githubCi`
 

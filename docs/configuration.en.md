@@ -35,8 +35,13 @@ Empty `branchPrefix` values and paths that escape the project root are rejected.
   (a file where the two axes contradict would block every command afterwards).
 - 🔴 `merge` and `req` map to the **same** `phaseCommit.autoApprove` (both auto-commit phases). A config that
   only sets the legacy `phaseCommit` therefore resolves conservatively to `req` — set `stopGate` explicitly to use `merge`.
-- `merge` only means something with a [delivery set](workflow.en.md#delivery-set--several-reqs-as-one-group).
-  With no set, the `req:next` terminal is simply `DONE` and you can open the next REQ.
+- With a [delivery set](workflow.en.md#delivery-set--several-reqs-as-one-group), `merge` defers **the stops of
+  several REQs into that one group**. With no set it behaves like `req`: the `req:next` terminal is
+  `AWAIT_HUMAN` (integration feature→main).
+- Under any value the phase commits do not stop (except `phase`) and the stops collect at the terminal. How many
+  control points the terminal has depends on risk: `LOW` is **one** (the integration approval), `HIGH` is **two** —
+  `req:confirm` first, then the integration approval. (`req` behaves the same; only the confirmation point moves
+  from the commit to the terminal.)
 
 ### Optional GitHub CI runs — `githubCi`
 

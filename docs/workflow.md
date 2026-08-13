@@ -202,6 +202,10 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 열 수 있다), 닫혔고 모든 member가 종결됐으면 `AWAIT_HUMAN`. 같은 판정을 `integrate`와 `seal`도
 전이 직후에 냅니다 — 마지막 `integrate` 뒤에 `seal` 한 사용자는 `req:next`를 다시 부를 이유가 없기 때문입니다.
 
+🔴 **묶음에 속하지 않은 REQ 는 `req` 와 똑같이 멈춥니다**: 종단이 `AWAIT_HUMAN`(통합 feature→main)이고,
+`HIGH` 티켓이면 그 직전에 `req:confirm --scope req` 를 요구합니다. `merge` 를 골랐다고 해서 정지가
+사라지지는 않습니다 — 묶음이 없으면 이 REQ 다음에 올 것이 다음 REQ 가 아니라 **통합**이기 때문입니다.
+
 ## phase 분해는 사람이 채웁니다
 
 `req:new`는 티켓을 만들 때 `state.json`의 `phases[]`를 **빈 배열로** 둡니다. `02-plan.md`에 phase를
@@ -300,7 +304,8 @@ npx commitgate req:rebind 2026-069 --phase phase-1-x --confirm "rebind REQ-2026-
 |---|---|---|
 | `phase` | 매 phase 커밋 전 | `phase` |
 | `req` | **REQ를 완성시키는 커밋** | `req` |
-| `merge` | `delivery integrate` | `delivery` |
+| `merge` (묶음에 속함) | `delivery integrate` | `delivery` |
+| `merge` (묶음 없음) | **`req:next` 종단**(통합 직전) | `req` |
 
 ```sh
 npx commitgate req:confirm 2026-071 --scope req --method "<무엇을 근거로 승인했는지>" --run

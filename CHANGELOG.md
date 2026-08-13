@@ -2,6 +2,27 @@
 
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## Unreleased
+
+- **fix: `stopGate: "merge"`가 delivery 묶음 없이도 통합 직전에 멈춥니다** — 묶음에 속하지 않은 REQ의
+  `req:next` 종단이 `DONE`이라, **가장 늦게 멈추겠다고 고른 값이 오히려 아무 데서도 멈추지 않았습니다**
+  (같은 자리에서 `req`는 `AWAIT_HUMAN`을 냅니다). 이제 묶음이 없으면 `req` 종단과 **같은**
+  `AWAIT_HUMAN`(통합 feature→main)입니다. 묶음이 **살아 있으면**(열려 있거나 다른 member가 남음) 종단은
+  그대로 `DONE`입니다 — 그건 이 값의 존재 이유이므로 바꾸지 않았습니다.
+- **fix: `merge` + 묶음 없음에서 HIGH 사람 확인이 아무 게이트에도 걸리지 않던 공백을 닫았습니다** —
+  `merge`는 커밋을 막지 않고(`userConfirmGate`) 묶음 확인은 `delivery integrate`에서만 요구되므로,
+  묶음이 없는 HIGH 티켓은 확인 기록 **0건**으로 통합 지점에 도달할 수 있었습니다. 이제 종단이
+  `req:confirm --scope req`를 먼저 요구합니다. `req`에서는 이 요구를 켜지 않습니다 — 그 값은 REQ를
+  완성시키는 커밋에서 이미 확인을 받고 **소비**하므로 종단에서 다시 물으면 같은 확인을 두 번 받는 셈입니다.
+- **refactor: 확인 `scope` 판정을 상수표에서 함수로 승격했습니다**(`requiredConfirmScope`) — `merge`가
+  요구하는 scope는 **delivery 묶음 소속에 따라 갈리는데**(속함=`delivery`·없음=`req`) 표는 그 조건을 담지
+  못했습니다. `req:next`(안내)·`req:commit`(게이트)·`req:confirm`(입력 검증)·`delivery integrate`(자격검사)
+  네 곳이 이 함수 하나를 공유합니다. 오버로드로 `merge`를 포함한 호출부는 묶음 맥락을 **반드시** 주게 해,
+  조기 반환이 사라지면 조용한 오답 대신 타입 에러가 나도록 했습니다.
+  - 부수 효과로 안내와 도구의 불일치가 사라집니다 — 이전에는 종단이 `--scope req`를 안내해도
+    `req:confirm`이 `delivery`만 받아 **실행할 수 없는 명령**을 안내할 수 있었습니다.
+  - `readDeliveryGate`·`mentionsMember`가 `lib/delivery.ts`로 이동했습니다(`req-next` re-export 유지).
+
 ## 0.22.0 (2026-08-11)
 
 > **통합 seam이 생겼습니다 — 검사가 실제 merge와 결속됩니다.** `commitgate integrate`가 통합 직전

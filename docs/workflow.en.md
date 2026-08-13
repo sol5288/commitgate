@@ -215,6 +215,11 @@ the next REQ); sealed with every member terminal → `AWAIT_HUMAN`. `integrate` 
 right after the transition they cause — someone who seals after the last `integrate` has no reason to call
 `req:next` again.
 
+🔴 **A REQ that belongs to no group stops exactly like `req` does**: the terminal is `AWAIT_HUMAN`
+(integrate feature→main), and a `HIGH` ticket must record `req:confirm --scope req` just before it.
+Choosing `merge` does not remove the stop — with no group, what comes after this REQ is not the next REQ
+but the **integration**.
+
 ## You fill in the phase breakdown yourself
 
 `req:new` leaves `phases[]` in `state.json` as an **empty array**. Break the work into phases in
@@ -317,7 +322,8 @@ A ticket with `risk_level: HIGH` **cannot pass the point `stopGate` designates w
 |---|---|---|
 | `phase` | before every phase commit | `phase` |
 | `req` | **the commit that completes the REQ** | `req` |
-| `merge` | `delivery integrate` | `delivery` |
+| `merge` (in a delivery set) | `delivery integrate` | `delivery` |
+| `merge` (no delivery set) | **the `req:next` terminal** (just before integration) | `req` |
 
 ```sh
 npx commitgate req:confirm 2026-071 --scope req --method "<what you based the approval on>" --run
