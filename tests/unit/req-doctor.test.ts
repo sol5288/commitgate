@@ -143,6 +143,47 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     expect(autonomyOnly).not.toContain('Quick Start')
   })
 
+  /**
+   * 🔴 REQ-2026-136 DEC-5: 도구가 **고칠 수 없는** 사유는 따로 말해야 한다 — `--apply` 로 해소되지
+   *    않는데 같은 문장에 뭉치면 사용자는 명령을 반복 실행하며 왜 안 되는지 모른다.
+   */
+  it('[REQ-2026-136] D21이 네 사유를 구별한다(고칠 수 있는 것과 없는 것)', () => {
+    const check = (inp: Parameters<typeof mk>[0]) => runChecks(mk(inp)).find((c) => c.id === 'D21')
+    const unsafe = check({
+      packageRootDiffers: true,
+      quickstartBackfill: [{ rel: 'AGENTS.md', blockId: null, action: 'unsafe', reason: '마커가 교차함' }],
+    })
+    expect(unsafe?.level).toBe('WARN')
+    expect(unsafe?.msg).toContain('자동으로 고치지 않습니다')
+    // 🔴 해소되지 않는 사유에 해소 명령을 붙이지 않는다.
+    expect(unsafe?.msg).not.toContain('quickstart --apply')
+
+    const unmanaged = check({
+      packageRootDiffers: true,
+      quickstartBackfill: [{ rel: 'AGENTS.md', blockId: null, action: 'unmanaged', reason: 'AGENTS.commitgate.md 에서 옮기세요' }],
+    })
+    expect(unmanaged?.msg).toContain('계약으로 인식되지 않아')
+    expect(unmanaged?.msg).toContain('AGENTS.commitgate.md')
+
+    // 고칠 수 있는 사유가 함께 있으면 해소 명령이 한 번 붙는다.
+    const mixed = check({
+      packageRootDiffers: true,
+      quickstartBackfill: [
+        { rel: 'CLAUDE.md', blockId: 'quickstart', action: 'insert' },
+        { rel: 'AGENTS.md', blockId: null, action: 'unsafe', reason: '반쪽 마커' },
+      ],
+    })
+    expect(mixed?.msg.match(/quickstart --apply/g)?.length).toBe(1)
+    expect(mixed?.msg).toContain('자동으로 고치지 않습니다')
+  })
+
+  it('[REQ-2026-136] 고칠 수 없는 사유에서도 WARN 상한이다', () => {
+    for (const action of ['unsafe', 'unmanaged'] as const) {
+      const checks = runChecks(mk({ packageRootDiffers: true, quickstartBackfill: [{ rel: 'AGENTS.md', blockId: null, action, reason: 'x' }] }))
+      expect(checks.find((c) => c.id === 'D21')?.level, action).toBe('WARN')
+    }
+  })
+
   it('[REQ-2026-101] D21은 어떤 입력에서도 WARN 상한이다(커밋 게이트를 벽돌로 만들지 않는다)', () => {
     for (const backfill of [
       [{ rel: 'CLAUDE.md', blockId: 'quickstart', action: 'insert' as const }],

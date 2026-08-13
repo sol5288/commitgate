@@ -67,7 +67,7 @@ CommitGate의 "업무 규칙"은 커밋을 통과/차단하는 fail-closed 게�
 | **D18** | granularity | (WARN 전용, FAIL 아님) 변경 파일 > `granularityMaxFiles`(기본 8) |
 | **D19** | 설치 모드(`req:*` 값의 형태) | **(WARN 상한, FAIL 아님) 없음.** `mixed`(Stage A·Stage B 형태 혼재)만 WARN + `commitgate migrate` 안내. `stage-a`/`stage-b`/`none`/`custom`은 OK |
 | **D20** | vendored 자산 skew(content-hash) | **(WARN 상한, FAIL 아님) 없음.** 패키지본과 소비 repo 사본의 sha 불일치만 WARN + `commitgate sync` 안내. dev/dogfood(`packageRoot === config root`)면 점검 불요 (REQ-2026-038) |
-| **D21** | Quick Start 백필 | **(WARN 상한, FAIL 아님) 없음.** 기존 always-loaded 파일에 Quick Start 블록이 없으면 WARN. dev/dogfood면 점검 불요 (REQ-2026-040) |
+| **D21** | 관리 블록 백필 | **(WARN 상한, FAIL 아님) 없음.** 기존 always-loaded 파일의 **commitgate 관리 블록**(`quickstart`·`autonomy`) 상태를 **네 사유로 구별해** WARN: 부재(`insert`)·드리프트(`replace`)·**마커 손상**(`unsafe` — 도구가 고치지 않음)·**계약 아님**(`unmanaged` — 계약 마커 없는 `AGENTS.md`). 앞 둘에만 `quickstart --apply` 해소 명령을 붙인다(뒤 둘은 그 명령으로 해소되지 않는다). dev/dogfood면 점검 불요 (REQ-2026-040·101·136) |
 | **D22** | repo-root 스크래치 보호 | **(WARN 상한, FAIL 아님) 없음.** 런타임이 repo 루트에 만드는 스크래치가 ignore도 tracked도 아니면 WARN(다음 리뷰 뒤 D10이 커밋을 막는다). dev/dogfood면 점검 불요 (REQ-2026-047) |
 | **D23** | lockfile 위생 | **(WARN 상한, FAIL 아님) 없음.** lockfile 부재·미tracked면 WARN(`--frozen-lockfile` 재현 불가) (REQ-2026-056) |
 | **D24** | setup 완료 게이트 | **(WARN 상한, FAIL 아님) 없음.** 차단은 doctor가 아니라 워크플로 verb의 preflight가 한다. 기존 설치본은 grandfathered WARN (REQ-2026-062) |

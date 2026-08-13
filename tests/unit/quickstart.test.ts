@@ -283,11 +283,18 @@ describe('[REQ-2026-040] quickstartBackfillTargets — 부재 탐지(무회귀)'
     }
   })
 
-  it('AGENTS.md는 계약 마커가 있을 때만 대상', () => {
+  it('AGENTS.md는 계약 마커가 있을 때만 **주입** 대상(마커 없으면 미접촉이되 진단에는 남는다)', () => {
     const dir = tmpRepo()
     try {
       writeFileSync(join(dir, 'AGENTS.md'), '# 일반 지침\n계약 아님\n') // 마커 없음 → 미접촉
-      expect(rels(dir)).not.toContain('AGENTS.md')
+      /**
+       * 🔴 REQ-2026-136 DEC-4c: 진단에서 **빼지 않는다**. 예전에는 목록에서 아예 빠져 `--apply` 후
+       *    "아무 일도 없었다"만 보이고 doctor 도 OK였다 — 사용자는 무엇을 해야 하는지 영영 몰랐다.
+       *    파일은 그대로 두되(자동 수정 금지) 사유는 말한다.
+       */
+      const t = (quickstartBackfillTargets(dir) ?? []).find((x) => x.rel === 'AGENTS.md')
+      expect(t?.action).toBe('unmanaged')
+      expect(t?.reason ?? '').toContain('계약 마커 없음')
       writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 계약\n`) // 마커 有·블록 無
       expect(rels(dir)).toContain('AGENTS.md')
     } finally {
@@ -551,11 +558,14 @@ describe('[REQ-2026-101] quickstartBackfillTargets — 드리프트 탐지', () 
     } finally { cleanup(dir) }
   })
 
-  it('skip 사유는 계획기가 처리한다 — 계약 마커 없는 AGENTS.md는 드리프트여도 미접촉', () => {
+  it('계약 마커 없는 AGENTS.md는 드리프트여도 미접촉 — 다만 사유는 진단에 남는다(REQ-2026-136)', () => {
     const dir = tmpRepo()
     try {
       writeFileSync(join(dir, 'AGENTS.md'), `# 일반 지침\n\n${STALE}\n`) // 계약 마커 없음
-      expect(quickstartBackfillTargets(dir)).toEqual([])
+      const targets = quickstartBackfillTargets(dir) ?? []
+      // 🔴 `replace`(도구가 고침)로 잡히면 안 된다 — 이 파일은 건드리지 않는다.
+      expect(targets.filter((t) => t.action === 'insert' || t.action === 'replace')).toEqual([])
+      expect(targets.find((t) => t.rel === 'AGENTS.md')?.action).toBe('unmanaged')
     } finally { cleanup(dir) }
   })
 

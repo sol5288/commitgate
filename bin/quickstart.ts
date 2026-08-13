@@ -326,8 +326,16 @@ function readSafeTarget(root: string, rel: string): TargetState {
  */
 export interface QuickstartBackfillTarget {
   rel: string
-  blockId: string
-  action: 'insert' | 'replace'
+  /** `unsafe`·`unmanaged`는 파일 단위 사유라 블록이 없다. */
+  blockId: string | null
+  /**
+   * `insert`/`replace` = 도구가 해소할 수 있다.
+   * `unsafe` = 마커 손상(반쪽·중복·중첩·교차) · `unmanaged` = 계약 마커 없음 —
+   * 🔴 둘 다 **도구가 고치지 않는다**. 그래도 진단에서 빠지면 사용자는 아무 신호도 못 받는다(DEC-4c).
+   */
+  action: 'insert' | 'replace' | 'unsafe' | 'unmanaged'
+  /** `unsafe`·`unmanaged`의 사람이 읽는 사유(계획기가 만든 그대로). */
+  reason?: string
 }
 
 /**
@@ -354,11 +362,22 @@ export function quickstartBackfillTargets(root: string): QuickstartBackfillTarge
   }
   try {
     // 🔴 블록 단위로 편다 — 파일 단위 action 은 "무엇을 해야 하는지"를 말하지 못한다.
-    return planQuickstart(root, block).files.flatMap((f) =>
-      (f.blocks ?? [])
+    return planQuickstart(root, block).files.flatMap((f): QuickstartBackfillTarget[] => {
+      /**
+       * 🔴 REQ-2026-136 DEC-4c: 도구가 **고칠 수 없는** 두 사유도 진단에 싣는다. 여기서 빼면
+       *    `--apply` 후 "아무 일도 없었다"만 보이고 doctor 도 OK를 내 — 사용자는 영영 모른다.
+       *    다른 skip(부재·symlink)은 이 도구의 대상이 아니므로 그대로 뺀다.
+       */
+      if (f.action === 'skip') {
+        const why = f.reason ?? ''
+        if (why.includes('손상')) return [{ rel: f.rel, blockId: null, action: 'unsafe', reason: why }]
+        if (why.includes('계약 마커 없음')) return [{ rel: f.rel, blockId: null, action: 'unmanaged', reason: why }]
+        return []
+      }
+      return (f.blocks ?? [])
         .filter((b): b is typeof b & { action: 'insert' | 'replace' } => b.action !== 'noop')
-        .map((b) => ({ rel: f.rel, blockId: b.id, action: b.action })),
-    )
+        .map((b) => ({ rel: f.rel, blockId: b.id, action: b.action }))
+    })
   } catch {
     return undefined
   }

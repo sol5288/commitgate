@@ -10,7 +10,7 @@
 | `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
 | `CLAUDE.md` | Claude Code (항상 로드) — 부재 시에만 생성 |
 
-> **신규 설치에서 `CLAUDE.md`와 `AGENTS.md`는 맨 앞에 자립형 Quick Start**(요구 4칸 확인 → `req:new` → `req:next` 루프)를 담습니다. 항상 읽히는 채널이라, 에이전트가 계약 본문을 더 읽지 않아도 첫 요청에서 올바른 첫 행동을 고릅니다. 기존 `CLAUDE.md`/`AGENTS.md`가 있으면 보존되므로 새로 주입되지 않습니다 — **기존 파일에도 넣으려면 `npx commitgate quickstart --apply`**(관리 블록만 삽입·나머지 보존·멱등).
+> **신규 설치에서 `CLAUDE.md`와 `AGENTS.md`는 맨 앞에 자립형 Quick Start**(요구 4칸 확인 → `req:new` → `req:next` 루프)를 담습니다. 항상 읽히는 채널이라, 에이전트가 계약 본문을 더 읽지 않아도 첫 요청에서 올바른 첫 행동을 고릅니다. 기존 `CLAUDE.md`/`AGENTS.md`가 있으면 보존되므로 새로 주입되지 않습니다 — **기존 파일에도 넣으려면 `npx commitgate quickstart --apply`**(관리 블록 `quickstart`·`autonomy`만 삽입/교체·나머지 바이트 보존·멱등). `AGENTS.md`에는 **자율 진행 계약**(§4-1)도 같은 명령으로 들어갑니다.
 
 ## 에이전트가 실행하지 않는 명령
 

@@ -831,9 +831,15 @@ export function runChecks(inp: DoctorInputs): Check[] {
     //    무엇을 해야 하는지도, 무엇을 잃는지도 알 수 없다. 드리프트에는 덮어쓰기 경고가 붙는다.
     // 🔴 REQ-2026-136: **블록 단위**로 말한다. 파일만 나열하면 "Quick Start 가 없습니다"라고 단정하는데,
     //    실제로는 Quick Start 가 최신이고 계약 블록만 없을 수 있다 — 사용자가 틀린 작업을 안내받는다.
-    const label = (t: { rel: string; blockId: string }): string => `${t.rel}(${t.blockId})`
+    const label = (t: { rel: string; blockId: string | null }): string => (t.blockId ? `${t.rel}(${t.blockId})` : t.rel)
     const missing = inp.quickstartBackfill.filter((t) => t.action === 'insert').map(label)
     const stale = inp.quickstartBackfill.filter((t) => t.action === 'replace').map(label)
+    /**
+     * 🔴 REQ-2026-136 DEC-5: 도구가 **고칠 수 없는** 두 사유를 따로 말한다. `--apply`로 해소되지 않는데
+     *    같은 문장에 뭉치면 사용자는 명령을 반복 실행하며 왜 안 되는지 모른다.
+     */
+    const unsafe = inp.quickstartBackfill.filter((t) => t.action === 'unsafe')
+    const unmanaged = inp.quickstartBackfill.filter((t) => t.action === 'unmanaged')
     const parts: string[] = []
     if (missing.length) parts.push(`${missing.join(', ')} 에 commitgate 관리 블록이 없습니다(seed-once라 신규 블록이 기존 파일엔 자동으로 닿지 않습니다 — REQ-2026-040·136).`)
     if (stale.length)
@@ -841,11 +847,13 @@ export function runChecks(inp: DoctorInputs): Check[] {
         `${stale.join(', ')} 의 관리 블록이 설치된 commitgate와 다릅니다(드리프트) — 갱신하면 최신 워크플로·계약 규칙이 반영됩니다. ` +
           `⚠️ 마커(\`<!-- commitgate:<id> -->\`) **안쪽을 직접 수정했다면 그 수정은 덮어써집니다** — 마커 안은 도구 관리 영역입니다.`,
       )
-    c.push({
-      id: 'D21',
-      level: 'WARN',
-      msg: `${parts.join(' ')} \`commitgate quickstart --apply\` 로 해소하세요.`,
-    })
+    // 🔴 해소 명령은 "고칠 수 있는" 사유가 있을 때만 붙인다 — 없으면 실행해도 아무 일이 없다.
+    if (parts.length) parts.push('`commitgate quickstart --apply` 로 해소하세요.')
+    for (const t of unsafe)
+      parts.push(`🔴 ${t.rel} 의 관리 마커가 손상돼 도구가 **자동으로 고치지 않습니다**: ${t.reason ?? ''}`)
+    for (const t of unmanaged)
+      parts.push(`🔴 ${t.rel} 는 CommitGate 계약으로 인식되지 않아 **미접촉**입니다: ${t.reason ?? ''}`)
+    c.push({ id: 'D21', level: 'WARN', msg: parts.join(' ') })
   }
 
   // D22(REQ-2026-047): repo-root 런타임 스크래치가 ignore도 tracked도 아님 → 다음 review 뒤 D10이 커밋을 막는다.

@@ -10,7 +10,7 @@
 | `.cursor/rules/commitgate.mdc` | Cursor (`alwaysApply`) |
 | `CLAUDE.md` | Claude Code (always loaded) — created only if absent |
 
-> **On a fresh install, `CLAUDE.md` and `AGENTS.md` open with a self-sufficient Quick Start** (clarify the four-box requirement → `req:new` → the `req:next` loop). Because these are always-loaded channels, the agent picks the correct first action on the first request without reading the full contract. An existing `CLAUDE.md`/`AGENTS.md` is preserved, so the block is not injected there — **to backfill an existing file, run `npx commitgate quickstart --apply`** (inserts only the managed block, preserves the rest, idempotent).
+> **On a fresh install, `CLAUDE.md` and `AGENTS.md` open with a self-sufficient Quick Start** (clarify the four-box requirement → `req:new` → the `req:next` loop). Because these are always-loaded channels, the agent picks the correct first action on the first request without reading the full contract. An existing `CLAUDE.md`/`AGENTS.md` is preserved, so the block is not injected there — **to backfill an existing file, run `npx commitgate quickstart --apply`** (inserts/replaces only the managed blocks `quickstart` and `autonomy`, preserves the rest byte for byte, idempotent). The same command also brings the **autonomy contract** (§4-1) into `AGENTS.md`.
 
 ## Commands an agent does not run
 
