@@ -13,6 +13,8 @@ import {
   deliveryGateVerdict,
   postApprovalRevListArgs,
   parseRevList,
+  deliverySlugOfBranch,
+  deliveryApprovalBlock,
   integrateTopologyProblems,
   newDeliveryRecord,
   nextOrder,
@@ -318,6 +320,101 @@ describe('[delivery] postApprovalRevListArgs — 판정 명령의 SSOT(REQ-2026-
 
   it('parseRevList 는 공백·빈 줄을 버린다', () => {
     expect(parseRevList('aaa\n\n  bbb  \n')).toEqual(['aaa', 'bbb'])
+  })
+})
+
+describe('[delivery] deliverySlugOfBranch', () => {
+  it('delivery 브랜치에서만 slug 를 낸다', () => {
+    expect(deliverySlugOfBranch('delivery/payment')).toBe('payment')
+    expect(deliverySlugOfBranch('feat/req-2026-130-x')).toBeNull()
+    expect(deliverySlugOfBranch('delivery/')).toBeNull()
+  })
+})
+
+/**
+ * REQ-2026-130 DEC-4 — `commitgate integrate` 차단 사유. 안내 층과 **같은 함수**로 판정하되 막는다.
+ */
+describe('[delivery] deliveryApprovalBlock — 병합 차단', () => {
+  const approvedRec = () => ({
+    ...record({ state: 'approved', members: [member({ req_id: 'R1', order: 1, status: 'integrated' })] }),
+    approval: { base_sha: 'b'.repeat(40), at: 'T' },
+  })
+  const fakeGit = (recordJson: string | null, postCommits: string[]) => (args: string[]): string => {
+    if (args[0] === 'show') {
+      if (recordJson === null) throw new Error('no such path')
+      return recordJson
+    }
+    if (args[0] === 'rev-list') return postCommits.join('\n')
+    throw new Error(`unexpected git ${args.join(' ')}`)
+  }
+
+  it('delivery 브랜치가 아니거나 레코드가 없으면 막지 않는다', () => {
+    expect(deliveryApprovalBlock('feat/x', 'workflow', fakeGit(null, []))).toBeNull()
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit(null, []))).toBeNull()
+  })
+
+  it('🔴 승인 이후 레코드 밖 커밋이 있으면 막고, 실행 가능한 재승인 순서를 안내한다', () => {
+    const blocked = deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit(JSON.stringify(approvedRec()), ['c'.repeat(40)]))
+    expect(blocked).toContain('delivery reopen')
+    expect(blocked).toContain('delivery approve')
+  })
+
+  it('승인 이후 변경이 없으면 통과한다', () => {
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit(JSON.stringify(approvedRec()), []))).toBeNull()
+  })
+
+  it('🔴 레코드가 손상됐으면 막는다(fail-closed)', () => {
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit(JSON.stringify({ slug: 'payment' }), []))).toContain('손상')
+  })
+
+  /**
+   * 🔴 r01 P1-b: 읽기 실패(=파일 없음)와 파싱 실패는 다르다. 한 `try` 로 묶으면 깨진 JSON 이
+   *    "관리되는 묶음이 아님"으로 흡수돼 그대로 병합된다.
+   */
+  it('🔴 JSON 이 깨졌으면 "레코드 없음"이 아니라 차단이다', () => {
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit('{not json', []))).toContain('파싱 실패')
+  })
+
+  /**
+   * 🔴 r01 P1-a: `deliveryGateVerdict` 의 `continue` 에는 `open` 과 "sealed인데 member 남음"도 있다.
+   *    그것을 통과로 읽으면 **한 번도 승인되지 않은 묶음**이 병합된다. 질문은 "게이트가 조용한가"가
+   *    아니라 "이 병합이 인가됐는가"다.
+   */
+  it('🔴 승인되지 않은 묶음은 막는다(open · sealed-미종결)', () => {
+    const open = record({ state: 'open', members: [member({ req_id: 'R1', order: 1 })] })
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit(JSON.stringify(open), []))).toContain('승인되지 않았습니다')
+    const sealedPending = record({ state: 'sealed', members: [member({ req_id: 'R1', order: 1 })] })
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit(JSON.stringify(sealedPending), []))).toContain(
+      '승인되지 않았습니다',
+    )
+  })
+
+  /** 결속이 없는 옛 approved 레코드는 통과한다(무회귀 — 소급 요구 금지). */
+  it('legacy approved(결속 없음)는 통과한다', () => {
+    const legacy = record({ state: 'approved', members: [member({ req_id: 'R1', order: 1, status: 'integrated' })] })
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit(JSON.stringify(legacy), []))).toBeNull()
+  })
+
+  /**
+   * 🔴 r02 P1-a: **차단 지점에서는 "확인 불가"가 "통과"가 아니다.** `base_sha` 를 없는 SHA 로 손상시키면
+   *    `rev-list` 가 실패하는데, 그것을 통과로 읽으면 손상이 곧 우회 수단이 된다.
+   *    (안내 지점은 반대로 무판정이 옳다 — 위 `deliveryGateVerdict` 테스트가 그것을 고정한다.)
+   */
+  it('🔴 승인 결속을 확인할 수 없으면 막는다', () => {
+    const g = (args: string[]): string => {
+      if (args[0] === 'show') return JSON.stringify(approvedRec())
+      throw new Error('fatal: bad revision')
+    }
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', g)).toContain('확인할 수 없습니다')
+  })
+
+  /**
+   * 🔴 r02 P1-b: 레코드가 자기 브랜치를 다르게 선언하면 staleness 조회가 **엉뚱한 범위**를 본다.
+   *    payment 레코드의 branch 를 other 로 바꾸면 빈 범위가 나와 미승인 tip 이 통과한다.
+   */
+  it('🔴 레코드 branch 가 병합 소스와 다르면 막는다', () => {
+    const wrong = { ...approvedRec(), branch: 'delivery/other' }
+    expect(deliveryApprovalBlock('delivery/payment', 'workflow', fakeGit(JSON.stringify(wrong), []))).toContain('다릅니다')
   })
 })
 

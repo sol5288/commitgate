@@ -32,6 +32,7 @@ import {
   type VerifySummary,
 } from '../scripts/req/lib/integration-coordinator'
 import { awaitCiRun, createGhCiRunAdapter, type GithubCiRunPort, type CiRunResult } from '../scripts/req/lib/github-ci-run'
+import { deliveryApprovalBlock } from '../scripts/req/lib/delivery'
 import { collectDeepInput, type RunDeps as VerifyRunDeps } from './verify-range'
 
 // ───────────────────────────────── 인자 파싱(fail-closed) ──
@@ -209,6 +210,22 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
     deps.log('commitgate integrate — 차단:')
     for (const p of plan.problems) deps.log(`  - ${p}`)
     if (plan.ok && prepared === null) deps.log('  - 통합 계획을 결속할 SHA를 확정하지 못했습니다(내부 상태 불일치) — 다시 실행하세요')
+    safeAppend(row({ exit: 1 }))
+    return { exit: 1, plan, merged: false }
+  }
+
+  /**
+   * 🔴 REQ-2026-130 DEC-4: 병합 소스가 delivery 묶음이면 **그 묶음의 승인이 병합 인가**다.
+   *    승인 이후 레코드 밖 커밋이 들어왔다면 승인한 것과 병합될 것이 다르므로 여기서 멈춘다 —
+   *    `req:next`·`delivery status`가 같은 사실을 안내만 하는 것과 달리, 이 지점은 실제로 trunk를 바꾼다.
+   *
+   * 🔴 기본 `branchPrefix`에서는 delivery 브랜치가 전제에서 걸러지지만, `branchPrefix: "delivery/"`는
+   *    **지원되는 설정**이고 그때는 여기까지 온다(설계 r04 P1). 소스 이름으로 판정한다.
+   */
+  const approvalBlock = deliveryApprovalBlock(prepared.featureBranch, deps.ticketRoot, (args) => deps.git.exec(args))
+  if (approvalBlock !== null) {
+    deps.log('commitgate integrate — 차단:')
+    deps.log(`  - ${approvalBlock}`)
     safeAppend(row({ exit: 1 }))
     return { exit: 1, plan, merged: false }
   }

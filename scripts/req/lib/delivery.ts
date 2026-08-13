@@ -398,6 +398,79 @@ export function readPostApprovalCommits(
   }
 }
 
+/** 브랜치 이름이 delivery 묶음이면 slug, 아니면 `null`(순수). */
+export function deliverySlugOfBranch(branch: string): string | null {
+  if (!branch.startsWith('delivery/')) return null
+  return branch.slice('delivery/'.length) || null
+}
+
+/**
+ * **병합 차단 사유**(REQ-2026-130 DEC-4). 병합 소스가 delivery 묶음일 때 그 묶음의 승인이 아직
+ * 유효한지 본다. `null` = 막지 않는다.
+ *
+ * 🔴 판정은 **소스 브랜치 이름**으로 한다 — `branchPrefix` 전제를 통과했는지와 별개다.
+ *    `branchPrefix`는 임의 문자열을 허용하는 지원 설정이라 `"delivery/"` 로 두면 delivery 브랜치가
+ *    `commitgate integrate` 의 전제를 통과한다(설계 r04 P1). 기본 설정에서 실행되지 않는다는 사실이
+ *    이 검사를 불필요하게 만들지 않는다 — 그 구성에서 없으면 stale 승인이 정상 CAS 경로로 병합된다.
+ * 🔴 안내 층(`req:next`·`delivery status`)과 **같은 함수**(`deliveryGateVerdict`)로 판정한다.
+ *    여기만 다른 규칙을 쓰면 "안내는 재승인하라는데 병합은 통과"가 된다.
+ *
+ * 🔴 **`approved` 가 아니면 막는다**(phase-2 r01 P1-a). `deliveryGateVerdict` 의 `continue` 에는
+ *    `open` 과 "sealed인데 member가 남음"도 들어 있다 — 그것을 통과로 읽으면 **한 번도 승인되지 않은
+ *    묶음**이 trunk로 병합된다. 이 함수의 질문은 "게이트가 조용한가"가 아니라 **"이 병합이 인가됐는가"**다.
+ *
+ * ⚠️ 한계: 레코드 **파일이 없으면** 막지 않는다(`delivery/` 이름만 쓰는 브랜치일 수 있다).
+ * 🔴 그러나 **파싱 실패는 부재가 아니다**(phase-2 r01 P1-b). 둘을 한 `try`로 묶으면 깨진 JSON이
+ *    "관리되는 묶음이 아님"으로 흡수돼 그대로 병합된다 — fail-closed 요구의 정반대다. 읽기와 파싱을 분리한다.
+ */
+export function deliveryApprovalBlock(branch: string, ticketRoot: string, roGit: (args: string[]) => string): string | null {
+  const slug = deliverySlugOfBranch(branch)
+  if (!slug) return null
+  let text: string
+  try {
+    text = roGit(['show', `${branch}:${ticketRoot}/delivery/${slug}.json`])
+  } catch {
+    return null // 레코드 **파일 없음** = 관리되는 묶음이 아니다. (여기만 통과시킨다)
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch (e) {
+    return `delivery 레코드 파싱 실패(${branch}): ${e instanceof Error ? e.message : String(e)}`
+  }
+  const problems = deliveryRecordProblems(raw)
+  if (problems.length) return `delivery 레코드 손상(${branch}): ${problems.slice(0, 3).join('; ')}`
+  const record = raw as DeliveryRecord
+  /**
+   * 🔴 레코드가 **자기 브랜치를 다르게 선언**하면 손상이다(phase-2 r02 P1-b). staleness 조회는
+   *    `record.branch`를 쓰므로, payment 레코드의 `branch`를 `delivery/other`로 바꿔 두면 조회가
+   *    엉뚱한(빈) 범위를 보고 통과한다 — 승인되지 않은 payment tip이 병합된다.
+   */
+  if (record.branch !== branch)
+    return `delivery 레코드의 branch(${record.branch})가 병합 소스(${branch})와 다릅니다 — 레코드가 손상됐거나 다른 묶음의 것입니다.`
+  if (record.state !== 'approved')
+    return (
+      `묶음 '${slug}' 은 아직 통합 승인되지 않았습니다(state=${record.state}) — ` +
+      `\`delivery seal\` 후 \`delivery approve --slug ${slug} --confirm "approve ${slug}" --run\` 으로 승인하세요.`
+    )
+  const post = readPostApprovalCommits(record, ticketRoot, roGit)
+  /**
+   * 🔴 **차단 지점에서는 "확인 불가"가 "통과"가 아니다**(phase-2 r02 P1-a). 안내 지점에서는 `null`을
+   *    무판정으로 두는 것이 옳다(git이 잠깐 실패했다고 멀쩡한 승인을 무효화하면 안 된다). 그러나 여기서는
+   *    실제로 trunk가 바뀌므로, 결속이 **있는데** 검증할 수 없으면 막는다 — 예: `base_sha`가 존재하지 않는
+   *    SHA로 손상되면 `rev-list`가 실패하고, 그것을 통과로 읽으면 손상이 곧 우회 수단이 된다.
+   *
+   * 🔴 `approval`이 **없는** legacy approved 레코드는 그대로 통과한다(소급 요구 금지 — DEC-3).
+   */
+  if (record.approval && post === null)
+    return (
+      `승인 결속(base_sha=${record.approval.base_sha.slice(0, 8)})을 확인할 수 없습니다 — ` +
+      `그 커밋이 이 브랜치 이력에 없거나 레코드가 손상됐습니다. 확인 없이 병합하지 않습니다.`
+    )
+  const v = deliveryGateVerdict(record, { postApprovalCommits: post })
+  return v.kind === 'await-human' ? v.detail : null
+}
+
 export function readDeliveryGate(ticketRoot: string, reqId: string, roGit: (args: string[]) => string): DeliveryGateLookup {
   let branches: string[]
   try {

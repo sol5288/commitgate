@@ -27,9 +27,14 @@ Exit: typecheck0 · staleness 진리표(approval 없음 / 커밋 없음 / 레코
 범위(DEC-4 후반): 병합 소스가 `delivery/*` 이면 그 묶음 레코드를 읽어 승인 staleness를 판정하고,
 stale이면 **병합하지 않는다**(재승인 안내). 안내 층과 같은 함수(`deliveryGateVerdict`)를 쓴다.
 
+🔴 판정은 **소스 브랜치 이름**으로 한다 — `branchPrefix` 전제를 통과했는지와 별개다.
+`branchPrefix`는 임의 문자열을 허용하는 지원 설정이라 `"delivery/"` 로 두면 delivery 브랜치가 전제를
+통과한다(설계 r04 P1). 기본 설정에서 실행되지 않는다는 사실이 이 코드를 죽게 만들지 않는다.
+
 🔴 `commitgate delivery integrate`(member→delivery)는 **건드리지 않는다** — 층이 다르다.
 
-Exit: typecheck0 · stale 승인에서 병합 거부·정상 승인에서 통과 테스트 그린 · Codex 승인.
+Exit: typecheck0 · **두 구성 회귀**(기본 `branchPrefix` = 전제에서 거부 · `"delivery/"` = 전제 통과 후
+승인 staleness로 차단) · 정상 승인에서 통과 · 실제 진입점(`runIntegrate`)으로 검증 · Codex 승인.
 
 ## Phase 3 — 문서 (`phase-3-docs`)
 

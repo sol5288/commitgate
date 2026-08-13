@@ -90,23 +90,38 @@ export function deliveryGateVerdict(r: DeliveryRecord, ctx?: { postApprovalCommi
 | `commitgate delivery integrate` | member feature → **delivery 브랜치** | **아니오** — 승인 **이전** 단계다. 여기서 보면 순서가 뒤집힌다 |
 | `commitgate integrate` | 현재 브랜치 → **trunk** | **예** — 소스가 `delivery/*` 면 그 묶음의 승인이 병합 인가다 |
 
-staleness를 넘기는 소비자:
+🔴 **기본 설정에서는 이 verb가 `delivery/*`를 거부한다**(`merge-gate.ts` — 현재 브랜치가 `branchPrefix`로
+시작하지 않으면 전제 실패). 그래서 초안 정정 과정에서 "경로가 아예 없으니 차단 코드는 죽은 코드"라고
+판단했는데, **그것이 틀렸다**(설계 r04 P1): `branchPrefix`는 임의 문자열을 허용하는 **지원 설정**이라
+`"branchPrefix": "delivery/"` 를 둔 저장소에서는 `delivery/payment` 가 전제를 통과한다.
+그 구성에서 차단이 없으면 stale 승인이 정상 CAS 경로로 trunk에 병합된다.
 
-| 소비자 | 계산 |
-|---|---|
-| `delivery status` | `ctx.git rev-list <base>..<branch> -- ':(exclude)…'` |
-| `seal`/`approve` 직후 게이트 출력 | 같은 계산 |
-| `req:next`(`readDeliveryGate`) | 주입된 `roGit`으로 같은 계산(새 의존 없음) |
-| `commitgate integrate`(소스가 `delivery/*`) | 같은 계산 — **여기서는 안내가 아니라 차단**이다 |
+따라서 차단은 **설정과 무관하게** 소스 브랜치 이름으로 판정한다 — `branchPrefix` 전제를 통과했는지와
+별개다. 기본 설정에서 실행되지 않는다는 사실은 이 코드를 죽게 만들지 않는다.
 
-🔴 `commitgate integrate`에서만 차단인 이유: 다른 셋은 "다음에 무엇을 하라"는 **안내**이고, 여기는
-**실제로 trunk를 바꾸는 지점**이다. 안내를 무시하고 병합하는 경로가 남으면 이 REQ는 아무것도 막지 못한다.
+staleness 소비자:
+
+| 소비자 | 계산 | 성격 |
+|---|---|---|
+| `delivery status` | `ctx.git rev-list <base>..<branch> -- ':(exclude)…'` | 안내 |
+| `seal`/`approve` 직후 게이트 출력 | 같은 계산 | 안내 |
+| `req:next`(`readDeliveryGate`) | 주입된 `roGit`으로 같은 계산(새 의존 없음) | 안내 |
+| `commitgate integrate`(소스가 `delivery/*`) | 같은 계산 | **차단** |
+
+🔴 `integrate`에서만 차단인 이유: 다른 셋은 "다음에 무엇을 하라"는 안내이고, 여기는 **실제로 trunk를
+바꾸는 지점**이다.
+
+🔴 **보증 범위**: 사람이 `git merge`/PR로 직접 병합하는 경로(I1/I2/B1)는 도구 밖이므로 막지 못한다.
+이 REQ가 주는 것은 "도구가 소유한 병합 지점에서는 막고, 그 밖에서는 **알린다**"이다 —
+"stale 승인으로는 어떤 방법으로도 병합할 수 없다"고 주장하지 않는다.
 
 ## Phase별 구현
 
 - **phase-1**: 레코드 선택 키 `approval` + 형식 검증 · `cmdApprove`가 승인 직전 HEAD를 `base_sha`로 기록 ·
   `deliveryGateVerdict(r, ctx?)` staleness 분기 · 안내 소비자 셋 배선(`status`·전이 직후·`req:next`) · 테스트.
-- **phase-2**: `commitgate integrate`에서 소스가 `delivery/*`일 때 **차단** 배선 + 테스트.
+- **phase-2**: `commitgate integrate`에서 소스가 `delivery/*`면 승인 staleness로 **차단** + 회귀.
+  🔴 회귀는 기본 `branchPrefix`(거부됨)와 `"delivery/"`(전제 통과) **두 구성**을 모두 태운다 —
+  기본 구성만 보면 지원 설정의 우회를 놓친다.
 - **phase-3**: 문서(`docs/workflow*.md` delivery 절) + `CHANGELOG.md`.
 
 ## 변경 파일
@@ -114,7 +129,7 @@ staleness를 넘기는 소비자:
 | phase | 파일 |
 |---|---|
 | 1 | `scripts/req/lib/delivery.ts` · `bin/delivery.ts` · `scripts/req/req-next.ts` · `tests/unit/delivery.test.ts` · `tests/unit/delivery-verbs.test.ts` |
-| 2 | `bin/integrate.ts`(또는 `lib/merge-gate.ts`) · `tests/unit/*` |
+| 2 | `scripts/req/lib/delivery.ts` · `bin/integrate.ts` · `tests/unit/delivery.test.ts` · `tests/unit/integrate-verb.test.ts` |
 | 3 | `docs/workflow.md` · `docs/workflow.en.md` · `CHANGELOG.md` |
 
 ## 하위호환·안전
