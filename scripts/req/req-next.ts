@@ -19,7 +19,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
-import { loadConfig, buildScriptInvocation, effectiveStopGate, type PackageManager } from './lib/config'
+import { loadConfig, buildScriptInvocation, effectiveExecutionPolicy, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
@@ -172,7 +172,8 @@ export interface NextInput {
    */
   committedManifestText?: string | null
   /**
-   * REQ-2026-037: phase 자동 커밋 정책. main이 `cfg.phaseCommit.autoApprove`로 채운다(항상 존재 — DEFAULTS=never).
+   * REQ-2026-037: phase 자동 커밋 정책. main이 **실행 정책 해소 결과**로 채운다(REQ-2026-134 —
+   * 티켓 스냅샷이 있으면 거기서 파생되고, 없으면 config를 따른다. 항상 존재 — DEFAULTS=never).
    * 필수 필드다(선택 아님): 해소는 config 계층에서 끝나므로 resolveNext는 내부 기본값을 두지 않는다.
    */
   phaseCommitAutoApprove: PhaseCommitPolicy
@@ -1074,8 +1075,16 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   const state = loadState(ticketDir)
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
-  // REQ-2026-129 DEC-2: 이 명령이 쓰는 정지 정책 — 티켓 스냅샷 우선, 없으면 config.
-  const stopGateNow = effectiveStopGate(state, cfg)
+  /**
+   * REQ-2026-134: 이 명령이 쓰는 **실행 정책 전체**를 한 번에 해소한다 — 티켓 스냅샷 우선, 없으면 config.
+   *
+   * 🔴 config의 **파생 축(phase 자동승인)을 직접 읽지 않는다.** 예전에는 `stopGate`만 스냅샷에서 오고
+   *    파생 축은 config에서 와서, 스냅샷과 config가 다른 티켓이 **두 정책으로 판정**됐다
+   *    (게이트는 통과시키는데 안내는 멈추라고 했다). 두 값은 반드시 같은 해소에서 나와야 한다.
+   *    이 파일에 그 config 접근이 **0건**임을 회귀 테스트가 고정한다 — 그래서 여기에도 축자로 적지 않는다.
+   */
+  const policy = effectiveExecutionPolicy(state, cfg)
+  const stopGateNow = policy.stopGate
 
   // 설계문서 인덱스 존재 + 현재 해시. 인덱스에 없으면 captureDesignBinding이 throw → null로 흡수(2번 분기가 처리).
   let currentDesignHash: string | null = null
@@ -1108,7 +1117,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
       }
     })(),
     reviewBudget: cfg.reviewBudget,
-    phaseCommitAutoApprove: cfg.phaseCommit.autoApprove,
+    // 🔴 REQ-2026-134: **정책 객체에서** 온다(config 직접 읽기 금지 — 두 축이 갈라지는 자리였다).
+    phaseCommitAutoApprove: policy.phaseCommitAutoApprove,
     // 🔴 REQ-2026-088 DEC-3: 사전 안내 입력 — intake와 **같은 원천**(HEAD blob)이다. 읽을 수 없으면 null → 무동작.
     committedManifestText: createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(`${ticketRel}/responses/approvals.jsonl`),
     // REQ-2026-066 DEC-10: 묶음 판정은 **delivery ref**에서 읽는다(DEC-3). 실패는 조용히 null —
