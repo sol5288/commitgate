@@ -226,6 +226,29 @@ right after the transition they cause — someone who seals after the last `inte
 Choosing `merge` does not remove the stop — with no group, what comes after this REQ is not the next REQ
 but the **integration**.
 
+## When an agent does not ask
+
+The `kind` from `req:next` decides whether to stop. On `RUN`, `AGENT`, and `DONE` the agent proceeds
+**without asking for confirmation**. Asking and waiting stops progress just as surely as stopping does, so the
+stop points you configured would otherwise multiply from session to session.
+
+Judgements that are not tool control points (design options, implementation approach) are resolved by the agent
+picking the recommended option and recording the grounds in `01-design.md`, when `stopGate` is `req` or `merge`.
+If you chose `phase`, this autonomy rule does not apply.
+
+The places it does stop are fixed: the control-point table (I1/I2/B1, R1/R2/R3), HIGH confirmation, destructive
+operations, a change of design **scope**, a `BLOCKED` review, unmet prerequisites, `AWAIT_HUMAN`/`BLOCKED`,
+`commitgate setup`, and **any command that demands a confirmation sentence** (`--confirm`) —
+`req:rebind`, `delivery seal`/`approve`/`reopen`. That last one matters because such a command can appear as a
+**diagnostic line** while `kind` is `AGENT`: judging by `kind` alone would have the agent write your confirmation
+sentence for you.
+
+When the design has to change, separate a **correction** from a **scope change**. Fixing the method while the goal
+stands is a correction: the agent proceeds and takes the design re-approval. If `00-requirement.md` has to change,
+it is a scope change and the agent stops and reports.
+
+The authority is `AGENTS.md` — the contract created at install time.
+
 ## You fill in the phase breakdown yourself
 
 `req:new` leaves `phases[]` in `state.json` as an **empty array**. Break the work into phases in

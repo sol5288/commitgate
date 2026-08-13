@@ -212,6 +212,27 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 `HIGH` 티켓이면 그 직전에 `req:confirm --scope req` 를 요구합니다. `merge` 를 골랐다고 해서 정지가
 사라지지는 않습니다 — 묶음이 없으면 이 REQ 다음에 올 것이 다음 REQ 가 아니라 **통합**이기 때문입니다.
 
+## 에이전트는 언제 묻지 않습니까
+
+`req:next`의 `kind`가 정지 여부를 정합니다. `RUN`·`AGENT`·`DONE`이면 에이전트는 **확인을 구하지 않고**
+그대로 진행합니다. 묻고 기다리는 것은 멈추는 것과 같은 효과라, 설정으로 정한 정지 지점이 세션마다
+늘어나기 때문입니다.
+
+도구 통제점이 아닌 판단(설계 선택지·구현 방식)은 `stopGate`가 `req`·`merge`일 때 에이전트가 권장안을
+택하고 그 근거를 `01-design.md`에 남긴 뒤 계속합니다. `phase`를 고르셨다면 이 자율 규칙은 적용되지 않습니다.
+
+멈추는 자리는 정해져 있습니다: 통제점표(I1/I2/B1·R1/R2/R3), HIGH 확인, destructive 작업, 설계 **범위**
+변경, 리뷰 `BLOCKED`, 전제 미충족, `AWAIT_HUMAN`/`BLOCKED`, `commitgate setup`,
+그리고 **확인 문장(`--confirm`)을 요구하는 명령**(`req:rebind`·`delivery seal`/`approve`/`reopen`).
+마지막 항목이 중요한 이유는 그런 명령이 `AGENT` 상태의 **진단 줄**로 나올 수 있기 때문입니다 —
+`kind`만 보고 판단하면 에이전트가 사람의 확인 문장을 대신 써 넣게 됩니다.
+
+설계를 손대야 할 때는 **정정**과 **범위 변경**을 가릅니다. 같은 목표를 유지한 채 방법을 고치는 것은
+정정이고 자율로 진행한 뒤 설계 재승인을 받습니다. `00-requirement.md`를 고쳐야 한다면 범위 변경이고,
+그때는 멈추고 보고합니다.
+
+정본은 `AGENTS.md`(설치 시 생성되는 계약)입니다.
+
 ## phase 분해는 사람이 채웁니다
 
 `req:new`는 티켓을 만들 때 `state.json`의 `phases[]`를 **빈 배열로** 둡니다. `02-plan.md`에 phase를
