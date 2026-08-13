@@ -258,15 +258,30 @@ For example, it **suggests** reading existing code and docs before starting, spl
 
 ## Where a human stops
 
-Setup's third question (`stopGate`) decides **where you confirm**. That single value decides the stop point on its own.
+**Two** axes create a stop. `stopGate`, which setup asks about, decides **where a human confirms at commits and integration**; the review budget (`reviewBudget.onSoftLimit`) decides **whether a long re-review run stops on its own**.
+
+### At commits and integration — `stopGate`
 
 | Value | Stops at | Choose it when |
 |---|---|---|
 | `phase` | **before every phase commit** | you want to look at each change yourself |
 | `req` *(default)* | **the commit that completes the REQ** | you want to confirm per ticket and delegate the middle |
-| `merge` | **when a delivery set of several REQs is done** | you want to review large work as one batch |
+| `merge` | if you grouped several REQs into a delivery set, **when that set finishes**; if you did not group them, **just before that REQ's integration** | you want to review large work as one batch |
+
+🔴 Choosing `merge` **does not remove the stop.** With no delivery set it stops in the same place `req` does — right before that REQ is integrated into main.
 
 Under every value the **Codex review gate and the integration (main merge) approval are unchanged** — `stopGate` only moves where the *human stop* happens. How `HIGH` risk is treated and which confirmation `scope` each point requires are defined in **[Workflow](https://github.com/sol5288/commitgate/blob/main/docs/workflow.en.md#human-confirmation-for-high-risk-tickets)**.
+
+### When a re-review runs long — `reviewBudget.onSoftLimit`
+
+Once a review passes the soft limit (`autoBudget`) and keeps going, this axis decides what happens next, **regardless of `stopGate`**.
+
+| Value | On a round past the soft limit |
+|---|---|
+| `ask` *(default)* | every such round needs **a human exception approval** — you stop here even with `stopGate: merge` |
+| `auto` | the round proceeds without human approval, and the grounds are recorded in the review ledger |
+
+Reaching `hardCap` blocks **under both values** — choosing automatic progress never buys an unbounded loop. The defaults and how to set them are defined in **[Configuration — Review budget](https://github.com/sol5288/commitgate/blob/main/docs/configuration.en.md#review-budget--reviewbudget)**.
 
 ## When you get stuck
 
@@ -340,7 +355,7 @@ The full command list and `pnpm`/`yarn` forms are in the **[Workflow](https://gi
 | **merging into main** | Folding a branch's work back into the trunk (`main`). This point needs human approval |
 | **fail-closed** | The design rule of blocking rather than passing when the answer is ambiguous |
 | **AWAIT_HUMAN** | The tool has stopped and is waiting for your approval. The approval sentence is printed with it |
-| **delivery set** | Several REQs grouped into one larger unit. Used by `stopGate: merge` |
+| **delivery set** | Several REQs grouped into one larger unit. Used by `stopGate: merge`, and **optional** — without one, each REQ stops just before its own integration |
 | **strict verification** | A check that fails instead of warning when evidence is ambiguous. It reads local Git history, not GitHub CI |
 | **attestation** | A record naming the commit and reason for a no-review exception, without disguising it as an approval |
 | **GitHub CI** | A remote check run by GitHub Actions. It is optional in CommitGate and is skipped by default |

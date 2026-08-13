@@ -221,6 +221,37 @@ export const RETIRED_CLAIMS: readonly RetiredClaim[] = [
     text: 'required status checks bypass 승인',
     why: '통제점표에 없는 옛 승인 명칭이다 — protected branch 우회의 정본은 `branch protection bypass를 사용한 direct push 승인`',
   },
+  /**
+   * 🔴 REQ-2026-137 — 랜딩 README가 **정지 축을 하나로** 서술하던 문장이다.
+   *
+   *    `reviewBudget.onSoftLimit`(기본 `ask`)은 소프트 한도를 넘긴 재리뷰 회차마다 사람 예외를
+   *    요구하는 **두 번째 정지 축**이다. `stopGate`를 `merge`로 두어도 그 자리에서 멈춘다 —
+   *    "값 하나가 단독으로 정한다"고 적으면 사용자는 왜 멈췄는지 설명을 어디서도 찾지 못한다.
+   *    `docs/configuration.md`는 이미 두 축으로 서술하고 있었고 랜딩만 뒤처져 있었다.
+   */
+  {
+    text: '이 값 하나가 정지 지점을 단독으로 결정합니다',
+    why: '정지 축은 둘이다 — reviewBudget.onSoftLimit 이 소프트 한도 초과 회차에서 따로 멈춘다 (README.md)',
+  },
+  {
+    text: 'decides the stop point on its own',
+    why: 'there are two stop axes — reviewBudget.onSoftLimit stops separately past the soft limit (README.en.md)',
+  },
+  /**
+   * 🔴 REQ-2026-137 — `merge`의 **묶음 없는 경우**를 지우던 표 셀이다.
+   *
+   *    REQ-2026-128 이후 delivery set 이 없으면 `req:next` 가 그 REQ 의 통합 직전에 멈춘다
+   *    (`deliveryGate === null` → `terminalIntegrationAction`). 묶음 종료만 적으면 사용자는
+   *    `merge` 를 고른 뒤 묶음을 만들기 전까지 정지가 아예 없다고 읽는다 — 실제로는 멈춘다.
+   */
+  {
+    text: '여러 REQ를 묶은 delivery set이 끝날 때',
+    why: 'delivery set 이 없으면 그 REQ 의 통합 직전에 멈춘다 — 묶음 종료만 적으면 정지가 없다고 읽힌다 (README.md)',
+  },
+  {
+    text: 'when a delivery set of several REQs is done',
+    why: 'with no delivery set the stop happens just before that REQ is integrated — listing only the set case reads as "no stop" (README.en.md)',
+  },
 ]
 
 /**
