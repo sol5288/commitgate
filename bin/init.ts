@@ -1496,7 +1496,7 @@ export const HELP_TEXT = `commitgate — AI REQ workflow(커밋 게이트) 설�
   npx commitgate attest <sha> --reason "..." [--run]   # 승인 증거 없는 정당한 커밋의 예외 승인 기록(append-only)
   npx commitgate report [--dir <대상repo>] [--json]     # 로컬 관측 요약(doctor·리뷰·증거·CI 선택 — 읽기 전용)
   npx commitgate sync [--apply] [--dir <대상repo>]      # vendored 자산(스키마·persona·gitignore) 재동기화(기본: 계획만)
-  npx commitgate quickstart [--apply] [--dir <대상repo>] # 기존 CLAUDE.md/AGENTS.md에 Quick Start 블록 백필(기본: 계획만)
+  npx commitgate quickstart [--apply] [--dir <대상repo>] # 기존 CLAUDE.md/AGENTS.md의 commitgate 관리 블록 동기화(Quick Start·자율 진행 계약 — 기본: 계획만)
   npx commitgate delivery <sub> ...                     # 여러 REQ를 한 묶음(delivery set)으로 관리
   npx commitgate migrate [--apply] [--dir <대상repo>]   # 예전 vendored 설치본 → 런타임 패키지(기본: 계획만)
   npx commitgate uninstall [--dir <대상repo>]           # 제거 계획만 출력(아무것도 지우지 않음)

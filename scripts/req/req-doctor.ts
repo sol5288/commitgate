@@ -825,18 +825,21 @@ export function runChecks(inp: DoctorInputs): Check[] {
     // D19 `undefined→OK`·D20 "조회 불가→OK"·D24 "미계산→OK"와 같은 선례다.
     c.push({ id: 'D21', level: 'OK', applicable: false, msg: 'Quick Start 백필 점검 불요(2-arg/미계산·shipped 블록 조회 불가)' })
   } else if (inp.quickstartBackfill.length === 0) {
-    c.push({ id: 'D21', level: 'OK', applicable: false, msg: '기존 always-loaded 파일의 Quick Start 블록이 설치된 버전과 일치(또는 대상 없음)' })
+    c.push({ id: 'D21', level: 'OK', applicable: false, msg: '기존 always-loaded 파일의 commitgate 관리 블록이 설치된 버전과 일치(또는 대상 없음)' })
   } else {
     // 🔴 REQ-2026-101 DEC-2: 부재와 드리프트는 사용자에게 **다른 사건**이다. 한 줄에 뭉치면
     //    무엇을 해야 하는지도, 무엇을 잃는지도 알 수 없다. 드리프트에는 덮어쓰기 경고가 붙는다.
-    const missing = inp.quickstartBackfill.filter((t) => t.action === 'insert').map((t) => t.rel)
-    const stale = inp.quickstartBackfill.filter((t) => t.action === 'replace').map((t) => t.rel)
+    // 🔴 REQ-2026-136: **블록 단위**로 말한다. 파일만 나열하면 "Quick Start 가 없습니다"라고 단정하는데,
+    //    실제로는 Quick Start 가 최신이고 계약 블록만 없을 수 있다 — 사용자가 틀린 작업을 안내받는다.
+    const label = (t: { rel: string; blockId: string }): string => `${t.rel}(${t.blockId})`
+    const missing = inp.quickstartBackfill.filter((t) => t.action === 'insert').map(label)
+    const stale = inp.quickstartBackfill.filter((t) => t.action === 'replace').map(label)
     const parts: string[] = []
-    if (missing.length) parts.push(`${missing.join(', ')} 에 Quick Start 블록이 없습니다(seed-once라 신규 블록이 기존 파일엔 자동으로 닿지 않습니다 — REQ-2026-040).`)
+    if (missing.length) parts.push(`${missing.join(', ')} 에 commitgate 관리 블록이 없습니다(seed-once라 신규 블록이 기존 파일엔 자동으로 닿지 않습니다 — REQ-2026-040·136).`)
     if (stale.length)
       parts.push(
-        `${stale.join(', ')} 의 Quick Start 블록이 설치된 commitgate와 다릅니다(드리프트) — 갱신하면 최신 워크플로 규칙이 반영됩니다. ` +
-          `⚠️ 마커(\`<!-- commitgate:quickstart -->\`) **안쪽을 직접 수정했다면 그 수정은 덮어써집니다** — 마커 안은 도구 관리 영역입니다.`,
+        `${stale.join(', ')} 의 관리 블록이 설치된 commitgate와 다릅니다(드리프트) — 갱신하면 최신 워크플로·계약 규칙이 반영됩니다. ` +
+          `⚠️ 마커(\`<!-- commitgate:<id> -->\`) **안쪽을 직접 수정했다면 그 수정은 덮어써집니다** — 마커 안은 도구 관리 영역입니다.`,
       )
     c.push({
       id: 'D21',

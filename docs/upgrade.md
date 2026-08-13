@@ -36,17 +36,28 @@ npx commitgate sync --apply --persona --persona-apply  # 위 diff 확인 후 페
 
 **③ 예전(vendored) 설치본이면** 이어서 아래 `migrate`로 Stage B 전환까지 하세요.
 
-**④ Quick Start 블록도 기존 파일엔 자동으로 안 닿습니다(0.9.2+).** 신규 설치는 `CLAUDE.md`/`AGENTS.md` 앞에
-온보딩 Quick Start를 넣지만, init은 seed-once라 **이미 있던 파일**엔 반영되지 않습니다. 업그레이드 후 기존
-파일에 넣으려면 `commitgate quickstart`로 백필하세요:
+**④ 관리 블록도 기존 파일엔 자동으로 안 닿습니다(0.9.2+).** 신규 설치는 `CLAUDE.md`/`AGENTS.md`에
+CommitGate가 관리하는 블록을 넣지만, init은 seed-once라 **이미 있던 파일**엔 반영되지 않습니다.
+업그레이드 후 기존 파일에 넣으려면 `commitgate quickstart`로 동기화하세요:
 
 ```sh
 npx commitgate quickstart              # 계획만 출력(dry-run — 무엇이 바뀔지 확인)
-npx commitgate quickstart --apply      # 관리 블록만 주입(블록 밖 내용 보존·멱등)
+npx commitgate quickstart --apply      # 관리 블록만 주입/교체(블록 밖 내용 보존·멱등)
 ```
 
+🔴 **이름은 Quick Start에서 왔지만 지금은 관리 블록 전체를 다룹니다**:
+
+| 블록 | 대상 | 내용 |
+|---|---|---|
+| `quickstart` | `CLAUDE.md` · `AGENTS.md` | 항상 로드되는 온보딩 빠른 시작 |
+| `autonomy` | `AGENTS.md` | **자율 진행 계약**(§4-1 — `RUN`이면 묻지 않는다 + 예외 목록) |
+
 - `AGENTS.md`는 CommitGate 계약 마커가 있을 때만 대상입니다. 부재 파일은 건드리지 않습니다.
-- `req:doctor`의 **D21**이 기존 파일에 Quick Start 블록이 없으면 **WARN**으로 알려 줍니다(커밋은 막지 않습니다).
+- 계약 마커가 없으면 **고치지 않고**, `AGENTS.commitgate.md`(설치 시 놓이는 계약 사본)에서 무엇을 손으로
+  옮기면 되는지 알려 줍니다.
+- 마커가 **손상된 파일**(반쪽·중복·중첩·교차)에는 **아무것도 쓰지 않고** 무엇이 깨졌는지 말합니다.
+- `req:doctor`의 **D21**이 어느 파일의 **어느 블록**이 없는지/드리프트인지 **WARN**으로 알려 줍니다
+  (커밋은 막지 않습니다).
 
 > 정리: `commitgate@latest` 설치 → `commitgate sync --apply` → `commitgate quickstart --apply` → (필요 시) `commitgate migrate`.
 
@@ -76,7 +87,7 @@ verify-range가 기록을 건너뛰고 경고만 냅니다(동작은 정상 — 
 **②-b 🔴 `sync`는 `AGENTS.md`의 계약 본문을 갱신하지 않습니다.** 이것이 업그레이드에서 가장 놓치기 쉬운 지점입니다.
 
 - `sync --apply --gitignore`가 다루는 것은 **스키마 축과 `workflow/.gitignore`뿐**입니다.
-- `quickstart --apply`도 **관리 Quick Start 블록만** 다루며, `I2`/CI 계약 전체를 교체하지 않습니다.
+- `quickstart --apply`도 **관리 블록(`quickstart`·`autonomy`)만** 다루며, `I2`/CI 계약 전체를 교체하지 않습니다.
 - `AGENTS.md`는 **사용자 소유 파일**이고 프로젝트 고유 규칙이 섞여 있습니다. 도구가 자동으로 덮어쓰면
   그 내용이 지워지므로, CommitGate는 **고치지 않고 알리기만** 합니다.
 

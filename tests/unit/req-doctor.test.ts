@@ -89,7 +89,7 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
   })
 
   it('D21(REQ-2026-040): Quick Start 백필 필요는 WARN — dev/dogfood·미계산·최신은 OK, 절대 FAIL 아님', () => {
-    const ins = [{ rel: 'CLAUDE.md', action: 'insert' as const }]
+    const ins = [{ rel: 'CLAUDE.md', blockId: 'quickstart', action: 'insert' as const }]
     // dev/dogfood(packageRootDiffers=false) → OK skip
     expect(lvl(runChecks(mk({ packageRootDiffers: false, quickstartBackfill: ins })), 'D21')).toBe('OK')
     // 🔴 미계산·판정 불가(undefined) → OK (REQ-2026-101 DEC-7: 판정할 근거가 없으면 알리지 않는다)
@@ -97,7 +97,7 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     // 전부 최신([]) → OK
     expect(lvl(runChecks(mk({ packageRootDiffers: true, quickstartBackfill: [] })), 'D21')).toBe('OK')
     // 소비 repo + 백필 필요 → WARN
-    const warned = runChecks(mk({ packageRootDiffers: true, quickstartBackfill: [...ins, { rel: 'AGENTS.md', action: 'insert' as const }] }))
+    const warned = runChecks(mk({ packageRootDiffers: true, quickstartBackfill: [...ins, { rel: 'AGENTS.md', blockId: 'quickstart', action: 'insert' as const }] }))
     expect(lvl(warned, 'D21')).toBe('WARN')
     expect(warned.filter((c) => c.level === 'FAIL')).toEqual([]) // 게이트를 벽돌로 만들지 않는다
   })
@@ -109,11 +109,11 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
   it('[REQ-2026-101] D21이 부재와 드리프트를 구분하고, 드리프트엔 덮어쓰기 경고가 붙는다', () => {
     const msg = (inp: Parameters<typeof mk>[0]): string => runChecks(mk(inp)).find((c) => c.id === 'D21')?.msg ?? ''
 
-    const onlyMissing = msg({ packageRootDiffers: true, quickstartBackfill: [{ rel: 'CLAUDE.md', action: 'insert' }] })
-    expect(onlyMissing).toContain('Quick Start 블록이 없습니다')
+    const onlyMissing = msg({ packageRootDiffers: true, quickstartBackfill: [{ rel: 'CLAUDE.md', blockId: 'quickstart', action: 'insert' }] })
+    expect(onlyMissing).toContain('관리 블록이 없습니다')
     expect(onlyMissing).not.toContain('덮어써집니다')       // 부재엔 덮어쓸 것이 없다
 
-    const onlyStale = msg({ packageRootDiffers: true, quickstartBackfill: [{ rel: 'AGENTS.md', action: 'replace' }] })
+    const onlyStale = msg({ packageRootDiffers: true, quickstartBackfill: [{ rel: 'AGENTS.md', blockId: 'quickstart', action: 'replace' }] })
     expect(onlyStale).toContain('드리프트')
     expect(onlyStale).toContain('덮어써집니다')             // 무엇을 잃는지 말한다
     expect(onlyStale).not.toContain('블록이 없습니다')       // 사유를 섞지 않는다
@@ -121,18 +121,33 @@ describe('req:doctor — runChecks(1차 최소셋)', () => {
     // 둘 다면 둘 다 말하고, 해소 명령은 한 번만 붙는다.
     const both = msg({
       packageRootDiffers: true,
-      quickstartBackfill: [{ rel: 'CLAUDE.md', action: 'insert' }, { rel: 'AGENTS.md', action: 'replace' }],
+      quickstartBackfill: [{ rel: 'CLAUDE.md', blockId: 'quickstart', action: 'insert' }, { rel: 'AGENTS.md', blockId: 'quickstart', action: 'replace' }],
     })
-    expect(both).toContain('CLAUDE.md 에 Quick Start 블록이 없습니다')
-    expect(both).toContain('AGENTS.md 의 Quick Start 블록이 설치된 commitgate와 다릅니다')
+    expect(both).toContain('CLAUDE.md(quickstart) 에 commitgate 관리 블록이 없습니다')
+    expect(both).toContain('AGENTS.md(quickstart) 의 관리 블록이 설치된 commitgate와 다릅니다')
     expect(both.match(/quickstart --apply/g)?.length).toBe(1)
+  })
+
+  /**
+   * 🔴 REQ-2026-136 phase-2 r02 P1: 파일 단위로만 말하면 **틀린 작업을 안내한다** —
+   *    Quick Start 는 최신인데 계약 블록만 없는 정상 상태에서 "Quick Start 가 없습니다"라고 말했다.
+   */
+  it('[REQ-2026-136] D21이 어느 블록인지 말한다(파일만 말하지 않는다)', () => {
+    const msg = (inp: Parameters<typeof mk>[0]): string => runChecks(mk(inp)).find((c) => c.id === 'D21')?.msg ?? ''
+    const autonomyOnly = msg({
+      packageRootDiffers: true,
+      quickstartBackfill: [{ rel: 'AGENTS.md', blockId: 'autonomy', action: 'insert' }],
+    })
+    expect(autonomyOnly).toContain('AGENTS.md(autonomy)')
+    // 🔴 Quick Start 가 필요하다고 오도하지 않는다.
+    expect(autonomyOnly).not.toContain('Quick Start')
   })
 
   it('[REQ-2026-101] D21은 어떤 입력에서도 WARN 상한이다(커밋 게이트를 벽돌로 만들지 않는다)', () => {
     for (const backfill of [
-      [{ rel: 'CLAUDE.md', action: 'insert' as const }],
-      [{ rel: 'AGENTS.md', action: 'replace' as const }],
-      [{ rel: 'CLAUDE.md', action: 'replace' as const }, { rel: 'AGENTS.md', action: 'insert' as const }],
+      [{ rel: 'CLAUDE.md', blockId: 'quickstart', action: 'insert' as const }],
+      [{ rel: 'AGENTS.md', blockId: 'quickstart', action: 'replace' as const }],
+      [{ rel: 'CLAUDE.md', blockId: 'quickstart', action: 'replace' as const }, { rel: 'AGENTS.md', blockId: 'quickstart', action: 'insert' as const }],
     ]) {
       const checks = runChecks(mk({ packageRootDiffers: true, quickstartBackfill: backfill }))
       expect(checks.find((c) => c.id === 'D21')?.level).not.toBe('FAIL')

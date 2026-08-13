@@ -39,17 +39,28 @@ npx commitgate sync --apply --persona --persona-apply  # after reviewing that di
 
 **③ If you are on an older (vendored) install**, follow up with the `migrate` step below to move to the Stage B runtime.
 
-**④ The Quick Start block also does not reach existing files automatically (0.9.2+).** A fresh install puts the
-onboarding Quick Start at the top of `CLAUDE.md`/`AGENTS.md`, but `init` is seed-once, so it is **not applied to
-files that already existed**. After upgrading, backfill existing files with `commitgate quickstart`:
+**④ Managed blocks also do not reach existing files automatically (0.9.2+).** A fresh install puts the blocks
+CommitGate manages into `CLAUDE.md`/`AGENTS.md`, but `init` is seed-once, so they are **not applied to files that
+already existed**. After upgrading, sync existing files with `commitgate quickstart`:
 
 ```sh
 npx commitgate quickstart              # plan only (dry-run — see what would change)
-npx commitgate quickstart --apply      # inject only the managed block (preserves the rest, idempotent)
+npx commitgate quickstart --apply      # inject/replace managed blocks only (preserves the rest, idempotent)
 ```
 
+🔴 **The name comes from Quick Start, but it now handles every managed block**:
+
+| Block | Targets | Contents |
+|---|---|---|
+| `quickstart` | `CLAUDE.md`, `AGENTS.md` | The always-loaded onboarding quick start |
+| `autonomy` | `AGENTS.md` | The **autonomy contract** (§4-1 — don't ask on `RUN`, plus the exception list) |
+
 - `AGENTS.md` is targeted only when it carries the CommitGate contract marker. Absent files are left untouched.
-- `req:doctor`'s **D21** WARNs when an existing file is missing the Quick Start block (it never blocks the commit).
+- Without that marker the file is **not modified**; you are told what to copy over from `AGENTS.commitgate.md`
+  (the contract copy that `init` places).
+- Files whose markers are **damaged** (half, duplicated, nested, crossed) are **not written at all**, and the
+  breakage is named.
+- `req:doctor`'s **D21** WARNs about **which block** is missing or drifted in **which file** (it never blocks the commit).
 
 > In short: install `commitgate@latest` → `commitgate sync --apply` → `commitgate quickstart --apply` → (if needed) `commitgate migrate`.
 
@@ -80,8 +91,8 @@ dry-run that only prints the plan and changes nothing.
 **②-b 🔴 `sync` does not update the contract text in `AGENTS.md`.** This is the easiest thing to miss when upgrading.
 
 - `sync --apply --gitignore` touches **only the schema axis and `workflow/.gitignore`**.
-- `quickstart --apply` likewise handles **only the managed Quick Start block**; it does not replace the
-  whole `I2`/CI contract.
+- `quickstart --apply` likewise handles **only the managed blocks (`quickstart`, `autonomy`)**; it does not
+  replace the whole `I2`/CI contract.
 - `AGENTS.md` is a **user-owned file** that mixes in project-specific rules. Overwriting it automatically
   would delete that content, so CommitGate **tells you instead of fixing it**.
 

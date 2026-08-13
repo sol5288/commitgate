@@ -13,6 +13,7 @@ import {
   blockRe,
   markerStreamProblems,
   injectManagedBlock,
+  renderQuickstartPlan,
 } from '../../bin/quickstart'
 import { AGENTS_CONTRACT_MARKER, PACKAGE_ROOT } from '../../bin/init'
 
@@ -365,6 +366,89 @@ describe('[REQ-2026-040] runQuickstart (verb)', () => {
       })
     }
 
+    /**
+     * 🔴 DEC-4a 핵심 경로: 두 블록이 **모두 없는** 파일에 적용하면 **둘 다** 들어가야 한다.
+     *    각 블록을 원본 기준으로 계획해 따로 쓰면 마지막 쓰기만 남아 한 블록을 잃는다.
+     */
+    it('🔴 두 블록이 모두 없던 AGENTS.md — 둘 다 들어가고 사용자 문장이 보존되며 재실행은 noop', () => {
+      const dir = tmpRepo()
+      try {
+        const userLine = '## 우리 팀 규칙\n\n소중한 내용 — 한 글자도 바뀌면 안 된다\n'
+        writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# AGENTS.md\n\n${userLine}`)
+        runQuickstart({ dir, apply: true })
+        const after = readFileSync(join(dir, 'AGENTS.md'), 'utf8')
+
+        // ① 두 블록이 모두 있다.
+        for (const id of ['quickstart', 'autonomy']) {
+          expect(after, id).toContain(`<!-- commitgate:${id} -->`)
+          expect(after, id).toContain(`<!-- /commitgate:${id} -->`)
+        }
+        // ② 블록 밖 사용자 문장이 그대로다.
+        expect(after).toContain('소중한 내용 — 한 글자도 바뀌면 안 된다')
+        // ③ 결과 파일의 마커 스트림이 정상이다(우리가 만든 파일이 스스로 unsafe면 안 된다).
+        expect(markerStreamProblems(after)).toEqual([])
+
+        // ④ 재실행 멱등 — 쓰기 0건이고 내용 불변.
+        const plan2 = runQuickstart({ dir, apply: true })
+        expect(plan2.writes).toEqual([])
+        expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toBe(after)
+      } finally {
+        cleanup(dir)
+      }
+    })
+
+    /** 🔴 계약 마커가 없으면 쓰지 않되 **조용하지도 않다** — 사용자는 무엇을 해야 하는지 들어야 한다. */
+    it('🔴 계약 마커 없는 AGENTS.md — 쓰기 0건 + 실재하는 사본을 가리키는 안내', () => {
+      const dir = tmpRepo()
+      try {
+        const before = '# 우리 AGENTS\n\n우리 규칙\n'
+        writeFileSync(join(dir, 'AGENTS.md'), before)
+        writeFileSync(join(dir, 'AGENTS.commitgate.md'), '계약 사본\n')
+        const plan = runQuickstart({ dir, apply: true })
+        const f = plan.files.find((x) => x.rel === 'AGENTS.md')
+        expect(f?.action).toBe('skip')
+        expect(f?.reason ?? '').toContain('AGENTS.commitgate.md')
+        expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toBe(before)
+      } finally {
+        cleanup(dir)
+      }
+    })
+
+    /** 사본이 없으면 그것을 얻는 복구 경로를 말한다(열 수 없는 파일을 가리키지 않는다). */
+    it('사본이 없으면 init 재실행 복구 경로를 안내한다', () => {
+      const dir = tmpRepo()
+      try {
+        writeFileSync(join(dir, 'AGENTS.md'), '# 우리 AGENTS\n')
+        const plan = runQuickstart({ dir, apply: true })
+        expect(plan.files.find((x) => x.rel === 'AGENTS.md')?.reason ?? '').toContain('commitgate init')
+      } finally {
+        cleanup(dir)
+      }
+    })
+
+    /**
+     * 🔴 phase-2 r01 P1: 판정을 블록 단위로 만들어 두고 **출력에 쓰지 않으면** 그 정보는 없는 것과 같다.
+     *    "quickstart는 최신인데 autonomy만 없다"는 정상 상태에서 사용자가 무엇이 삽입되는지 알아야 한다.
+     */
+    it('🔴 계획 출력이 어느 블록이 바뀌는지 말한다', () => {
+      const dir = tmpRepo()
+      try {
+        // quickstart 는 이미 최신(shipped 그대로)이고 autonomy 만 없는 상태를 만든다.
+        const qs = shippedQuickstartBlock()
+        writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# AGENTS.md\n\n${qs}\n\n우리 규칙\n`)
+        const plan = runQuickstart({ dir, apply: false })
+        const f = plan.files.find((x) => x.rel === 'AGENTS.md')
+        expect(f?.blocks?.find((b) => b.id === 'quickstart')?.action).toBe('noop')
+        expect(f?.blocks?.find((b) => b.id === 'autonomy')?.action).toBe('insert')
+        const out = renderQuickstartPlan(plan, false).join('\n')
+        expect(out).toContain('autonomy: 없음 → 삽입')
+        // 최신 블록은 소음으로 나열하지 않는다.
+        expect(out).not.toContain('quickstart: 없음')
+      } finally {
+        cleanup(dir)
+      }
+    })
+
     /** 대조군: 마커가 정상이면 같은 경로가 실제로 쓴다(위 단언이 공허하지 않음을 증명). */
     it('대조군 — 정상 파일은 쓴다', () => {
       const dir = tmpRepo()
@@ -447,7 +531,7 @@ describe('[REQ-2026-101] quickstartBackfillTargets — 드리프트 탐지', () 
     const dir = tmpRepo()
     try {
       writeFileSync(join(dir, 'CLAUDE.md'), `# 지침\n\n${STALE}\n\n내용\n`)
-      expect(quickstartBackfillTargets(dir)).toEqual([{ rel: 'CLAUDE.md', action: 'replace' }])
+      expect(quickstartBackfillTargets(dir)).toEqual([{ rel: 'CLAUDE.md', blockId: 'quickstart', action: 'replace' }])
     } finally { cleanup(dir) }
   })
 
@@ -463,7 +547,7 @@ describe('[REQ-2026-101] quickstartBackfillTargets — 드리프트 탐지', () 
     const dir = tmpRepo()
     try {
       writeFileSync(join(dir, 'CLAUDE.md'), '# 지침\n내용\n')
-      expect(quickstartBackfillTargets(dir)).toEqual([{ rel: 'CLAUDE.md', action: 'insert' }])
+      expect(quickstartBackfillTargets(dir)).toEqual([{ rel: 'CLAUDE.md', blockId: 'quickstart', action: 'insert' }])
     } finally { cleanup(dir) }
   })
 
@@ -485,7 +569,12 @@ describe('[REQ-2026-101] quickstartBackfillTargets — 드리프트 탐지', () 
       writeFileSync(join(dir, 'CLAUDE.md'), `# 지침\n\n${STALE}\n\n내용\n`)
       writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# 계약\n`) // 계약 有·블록 無
       const before = quickstartBackfillTargets(dir) ?? []
-      expect(before.map((t) => `${t.rel}:${t.action}`).sort()).toEqual(['AGENTS.md:insert', 'CLAUDE.md:replace'])
+      // 🔴 REQ-2026-136: 진단은 **블록 단위**다 — AGENTS.md 는 두 관리 블록을 모두 받는다.
+      expect(before.map((t) => `${t.rel}:${t.blockId}:${t.action}`).sort()).toEqual([
+        'AGENTS.md:autonomy:insert',
+        'AGENTS.md:quickstart:insert',
+        'CLAUDE.md:quickstart:replace',
+      ])
 
       runQuickstart({ dir, apply: true })
 
