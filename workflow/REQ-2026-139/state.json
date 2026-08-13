@@ -1,0 +1,81 @@
+{
+  "id": "REQ-2026-139",
+  "branch": "feat/req-2026-139-adopt-auto-review-budget",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ffb1b-06a5-7d71-ab46-d443316a9bea",
+  "review_base_sha": "e60ffaefb1ada0e5d9bb79b00f9e85bfd9dfe2bc",
+  "review_diff_hash": "42cbd47ee1649e815b823fd8ca72ed201e48440e",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "4d7ddcb0dbc4d54838e78ba3f28f17a35e885cde4462245490b62bfe68bd1c76",
+  "current_phase": "phase-1-adopt-auto-budget",
+  "phases": [
+    {
+      "id": "phase-1-adopt-auto-budget",
+      "title": "리뷰 예산 정책 채택",
+      "status": "pending",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-adopt-auto-budget#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-adopt-auto-budget",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "30cf37f433809c2bab939741920ae380908bd6d5",
+    "design": "3c864331f2be236948bb0d4ea80ad0ad82474dda",
+    "plan": "d62e9ddb514c482d2f799dc7a381fb51a71f936e"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-139/responses/design-r01-approved.json",
+    "response_sha256": "cca2aff7eb268e26c427a933f9bdd0f1b28ce34ead3993750331994ddccb8749",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "d684837ec17a86dbe5140ac8efa380eb508950c8",
+    "codex_thread_id": "019ffb18-9ab6-7ea0-b107-24a838252c87",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T12:29:51.230Z",
+    "design_hash": "4d7ddcb0dbc4d54838e78ba3f28f17a35e885cde4462245490b62bfe68bd1c76"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-adopt-auto-budget",
+    "outcome": "approved",
+    "compare_hash": "35021c65cd103639e3bcd416783514268786e7739e253ad27d3cbdcce4fcf091",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T12:31:37.787Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "42cbd47ee1649e815b823fd8ca72ed201e48440e",
+      "phase_id": "phase-1-adopt-auto-budget",
+      "consumed_by_commit_sha": "1a5664250c9b8768c7aede0cc2892418a22ef1dc",
+      "approval_consumed_at": "2026-08-13T12:32:01.129Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

@@ -1,0 +1,81 @@
+{
+  "id": "REQ-2026-137",
+  "branch": "feat/req-2026-137-readme-stop-point-truth",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ffaad-1748-7572-8ba0-ac6a45847285",
+  "review_base_sha": "f117a453f1289da32db9d9744f669e4a5b6b4a95",
+  "review_diff_hash": "4cef5682839ea88796a742b891006ea0c27880f6",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "66447bbcafa1f461b0931512bef63a78c97c10c1e79b4f718c6ee596dce3dd73",
+  "current_phase": "phase-1-readme-stop-points",
+  "phases": [
+    {
+      "id": "phase-1-readme-stop-points",
+      "title": "랜딩 정지 지점 절 정정 + 폐기 문구 등재",
+      "status": "pending",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-readme-stop-points#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-readme-stop-points",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-readme-stop-points",
+    "outcome": "approved",
+    "compare_hash": "ccdc4889ae1f29cb00d936b349fd4e9fcc7f2ad753350ece9ec238fa6e7e3d72",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T10:33:08.483Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "1bb42beab83d350b83b981dd3711accbeb6fc9f3",
+    "design": "74e6503aa0c1726d0a90b05d2b2b8141b75037ec",
+    "plan": "68792b57268909163679434fc86ebf7bd56fdcda"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-137/responses/design-r02-approved.json",
+    "response_sha256": "770b4ffb31ce2eb60ffeb8685123d10f2ae64497a2688e0f8cd671b304a7b962",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "e6e95d1098aaebcf4d73b4190651d604648c061b",
+    "codex_thread_id": "019ffaa9-1748-7271-b102-7f1c12ab8881",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T10:27:52.978Z",
+    "design_hash": "66447bbcafa1f461b0931512bef63a78c97c10c1e79b4f718c6ee596dce3dd73"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "4cef5682839ea88796a742b891006ea0c27880f6",
+      "phase_id": "phase-1-readme-stop-points",
+      "consumed_by_commit_sha": "9ba56dec5ac54440b7105169a51b6afe90b3e126",
+      "approval_consumed_at": "2026-08-13T10:33:38.292Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

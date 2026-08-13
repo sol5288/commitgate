@@ -63,6 +63,10 @@ main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 
 그대로이고, `hardCap`도 그대로입니다. `"auto"`에서는 `req:review-exception`이 예외를 부여하지 않습니다 —
 소비될 일이 없는 승인 기록을 만들지 않기 위해서입니다.
 
+`auto`가 **정확히 무엇을 없애고 무엇을 남기는지**, `hardCap`이 왜 열리지 않는지, `stopGate: "auto"`가 왜
+없는지는 [설정 — 리뷰 예산](configuration.md#리뷰-예산--reviewbudget)이 정본입니다. 기존 프로젝트가 이
+정책으로 올라가는 방법도 거기에 있습니다.
+
 `stopGate`를 `req`·`merge`로 두어 자율 진행을 설정했다면 이 축도 함께 보십시오. 예산 정지는
 `stopGate`가 정한 지점과 **무관하게** 끼어들기 때문에, 한쪽만 열어 두면 워크플로가 여전히 끊깁니다.
 
@@ -467,7 +471,7 @@ git log --oneline --invert-grep --grep=^CommitGate-Bookkeeping:\ true
 | `npx commitgate init --strict` | 정합성 경고를 설치 실패로 처리 (gitignore된 계약 포인터, 설치 커밋을 안전하게 만들 수 없는 워킹트리 등) — 파일을 하나도 쓰기 전에 중단 |
 | `npx commitgate init --no-agent-entrypoints` | `.claude/`·`.cursor/`·`CLAUDE.md` 설치 건너뛰기 |
 | `npx commitgate sync [--apply] [--persona]` | 업그레이드 후 vendored **스키마 축**(machine·req.config schema)을 설치 패키지 사본으로 재동기화 (기본: 계획만). `--persona`는 페르소나 **부재 복원만**(사용자 수정본 미훼손). 자세히는 [업그레이드 (0.x)](./upgrade.md) |
-| `npx commitgate quickstart [--apply]` | 기존 `CLAUDE.md`/`AGENTS.md`에 Quick Start 블록을 멱등 주입(기본: 계획만). 관리 블록만 삽입·나머지 보존. `AGENTS.md`는 계약 마커 있을 때만. seed-once로 기존 파일에 안 닿는 [REQ-2026-039]를 백필 |
+| `npx commitgate quickstart [--apply]` | 기존 `CLAUDE.md`/`AGENTS.md`의 **commitgate 관리 블록**(`quickstart`·`autonomy`)을 멱등 동기화(기본: 계획만). 블록만 삽입/교체·나머지 바이트 보존·파일당 1회 쓰기. `AGENTS.md`는 계약 마커 있을 때만. 마커가 손상됐으면 **쓰지 않고** 알림. seed-once라 기존 파일에 안 닿는 블록을 백필 |
 | `npx commitgate migrate [--apply]` | 예전 vendored 설치본 → 런타임 패키지 전환 (기본: 계획만, 비파괴) |
 | `npx commitgate uninstall` | 제거 계획 확인 (읽기 전용 — 아무것도 지우지 않음) |
 | `npm uninstall -D commitgate` | 런타임 제거 |

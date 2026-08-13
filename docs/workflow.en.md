@@ -65,6 +65,10 @@ Re-reviews of the same `(review kind, phase)` are budgeted
 integration control points, and `hardCap` are all unchanged. `"auto"` also makes `req:review-exception`
 refuse to grant an exception — it would only create an approval record that can never be consumed.
 
+Exactly **what `auto` removes and what it keeps**, why `hardCap` does not open, and why there is no
+`stopGate: "auto"` are defined in [Configuration — Review budget](configuration.en.md#review-budget--reviewbudget),
+which is the authority. The upgrade path for an existing project is there too.
+
 If you set `stopGate` to `req` or `merge` for autonomous runs, look at this axis too: a budget stop cuts in
 **regardless** of where `stopGate` says you stop, so opening only one of the two still leaves the workflow
 interrupted.
@@ -491,7 +495,7 @@ order or revert just one**. That is why seeing it early matters.
 | `npx commitgate init --strict` | Treat integrity warnings as install failures (gitignored contract pointers, a working tree that makes a safe install commit impossible, etc.) — stops before writing any file |
 | `npx commitgate init --no-agent-entrypoints` | Skip `.claude/`, `.cursor/`, and `CLAUDE.md` |
 | `npx commitgate sync [--apply] [--persona]` | Re-sync vendored **schema-axis** assets (machine/req.config schema) to the installed package copy after an upgrade (plan-only by default). `--persona` **restores a missing persona only** (never overwrites your edits). See [Upgrading (0.x)](./upgrade.en.md) |
-| `npx commitgate quickstart [--apply]` | Idempotently inject the Quick Start block into an existing `CLAUDE.md`/`AGENTS.md` (plan-only by default). Inserts only the managed block, preserves the rest. `AGENTS.md` only when it carries the contract marker. Backfills [REQ-2026-039], whose seed-once install does not touch existing files |
+| `npx commitgate quickstart [--apply]` | Idempotently sync the **commitgate-managed blocks** (`quickstart`, `autonomy`) in an existing `CLAUDE.md`/`AGENTS.md` (plan-only by default). Inserts/replaces blocks only, preserves the rest byte for byte, writes each file once. `AGENTS.md` only when it carries the contract marker. Damaged markers are reported and **never written**. Backfills blocks that the seed-once install does not touch |
 | `npx commitgate migrate [--apply]` | Move an older vendored install to the runtime package (plan-only by default, non-destructive) |
 | `npx commitgate uninstall` | Preview the removal plan (read-only — deletes nothing) |
 | `npm uninstall -D commitgate` | Remove the runtime |

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { effectiveStopGate, type StopGate } from '../../scripts/req/lib/config'
+import { effectiveStopGate, effectiveExecutionPolicy, AUTO_APPROVE_OF, type StopGate } from '../../scripts/req/lib/config'
 import { classifyPolicyDrift, ticketIdOf, runChecks, type DoctorInputs } from '../../scripts/req/req-doctor'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { buildInitialState } from '../../scripts/req/req-new'
 import { userConfirmGate } from '../../scripts/req/req-commit'
 import { resolveNext } from '../../scripts/req/req-next'
@@ -39,6 +41,84 @@ describe('[policy-snapshot] effectiveStopGate — 해소 진리표', () => {
 
   it('policy_snapshot 자체가 형태가 아니면 config 로 폴백한다', () => {
     expect(effectiveStopGate({ policy_snapshot: 'merge' } as unknown as WorkflowState, cfg('phase'))).toBe('phase')
+  })
+})
+
+/**
+ * REQ-2026-134 — **두 축을 한 해소에서** 낸다.
+ *
+ * 🔴 REQ-2026-129는 `stopGate`만 동결했고 파생 축(phase 자동승인)은 config에서 왔다. 그래서
+ *    스냅샷=`merge` · config=`phase` 인 티켓은 게이트(`req:commit`)는 통과시키는데
+ *    안내(`req:next`)는 멈추라고 하는 **모순**이 났다 — 한 티켓이 두 정책으로 판정됐다.
+ */
+describe('[REQ-2026-134] effectiveExecutionPolicy — 두 축 동시 해소', () => {
+  const cfgBoth = (stopGate: StopGate, autoApprove: 'never' | 'low-only') => ({
+    stopGate,
+    phaseCommit: { autoApprove },
+  })
+
+  it('🔴 스냅샷이 있으면 파생 축도 스냅샷에서 계산된다(config 무시)', () => {
+    const state = { policy_snapshot: { stop_gate: 'merge' } } as unknown as WorkflowState
+    // config 는 phase(=never) 인데 스냅샷이 merge 이므로 파생은 low-only 여야 한다.
+    expect(effectiveExecutionPolicy(state, cfgBoth('phase', 'never'))).toEqual({
+      stopGate: 'merge',
+      phaseCommitAutoApprove: 'low-only',
+    })
+  })
+
+  it('🔴 반대 방향도 같다 — 스냅샷 phase 는 config 가 merge 여도 never', () => {
+    const state = { policy_snapshot: { stop_gate: 'phase' } } as unknown as WorkflowState
+    expect(effectiveExecutionPolicy(state, cfgBoth('merge', 'low-only'))).toEqual({
+      stopGate: 'phase',
+      phaseCommitAutoApprove: 'never',
+    })
+  })
+
+  /** 파생 규칙은 새로 만들지 않는다 — REQ-2026-063이 정한 번역표가 그대로 SSOT다. */
+  it('파생은 AUTO_APPROVE_OF 를 따른다(세 값 전부)', () => {
+    for (const sg of ['phase', 'req', 'merge'] as const) {
+      const state = { policy_snapshot: { stop_gate: sg } } as unknown as WorkflowState
+      expect(effectiveExecutionPolicy(state, cfgBoth('phase', 'never')).phaseCommitAutoApprove, sg).toBe(AUTO_APPROVE_OF[sg])
+    }
+  })
+
+  it('legacy(스냅샷 없음)는 config 두 축을 그대로 쓴다 — 무회귀', () => {
+    expect(effectiveExecutionPolicy({} as WorkflowState, cfgBoth('merge', 'low-only'))).toEqual({
+      stopGate: 'merge',
+      phaseCommitAutoApprove: 'low-only',
+    })
+    expect(effectiveExecutionPolicy(null, cfgBoth('phase', 'never'))).toEqual({
+      stopGate: 'phase',
+      phaseCommitAutoApprove: 'never',
+    })
+  })
+
+  it('손상 스냅샷도 legacy 와 같이 config 로 폴백한다', () => {
+    const state = { policy_snapshot: { stop_gate: 'all' } } as unknown as WorkflowState
+    expect(effectiveExecutionPolicy(state, cfgBoth('req', 'low-only'))).toEqual({
+      stopGate: 'req',
+      phaseCommitAutoApprove: 'low-only',
+    })
+  })
+
+  /** 두 함수가 갈라지면 소비자가 보는 값이 달라진다. */
+  it('effectiveStopGate 와 항상 같은 stopGate 를 낸다', () => {
+    for (const snap of ['phase', 'req', 'merge', 'all', undefined] as const) {
+      const state = (snap === undefined ? {} : { policy_snapshot: { stop_gate: snap } }) as unknown as WorkflowState
+      const cfg = cfgBoth('req', 'low-only')
+      expect(effectiveExecutionPolicy(state, cfg).stopGate, String(snap)).toBe(effectiveStopGate(state, cfg))
+    }
+  })
+
+  /**
+   * 🔴 **값 비교만으로는 부족하다** — 두 축이 우연히 같은 설정에서는 config 를 직접 읽어도 통과한다.
+   *    그래서 "읽지 않는다"를 소스에서 고정한다(이 저장소가 배선 끊김에 쓴 것과 같은 수단).
+   */
+  it('🔴 req:next 가 config 의 파생 축을 직접 읽지 않는다(소스 0건)', () => {
+    const src = readFileSync(join(import.meta.dirname, '..', '..', 'scripts', 'req', 'req-next.ts'), 'utf8')
+    expect(src.match(/cfg\.phaseCommit/g) ?? [], 'req-next.ts 가 config 파생 축을 직접 읽는다').toEqual([])
+    // 오라클 자기검증: 이 파일이 실제로 정책 해소를 쓰고 있어야 위 단언이 의미를 가진다.
+    expect(src).toContain('effectiveExecutionPolicy(state, cfg)')
   })
 })
 

@@ -1,0 +1,96 @@
+{
+  "id": "REQ-2026-135",
+  "branch": "feat/req-2026-135-auto-scope-and-setup-upgrade",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ffa11-625d-7231-880f-9dd8f2557538",
+  "review_base_sha": "c7a8d48a8f32d286b50406ea5382947947fe5160",
+  "review_diff_hash": "9ad2f36bc814920866c6e131670087adb60d9938",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "709845a338b85cba5132537f67addcb70fe8ef494b2a34b6a7ac08ab47db7160",
+  "current_phase": "phase-2-scope-docs",
+  "phases": [
+    {
+      "id": "phase-1-upgrade-hint",
+      "approved": true
+    },
+    {
+      "id": "phase-2-scope-docs",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-upgrade-hint#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-upgrade-hint",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-scope-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-scope-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-scope-docs",
+    "outcome": "approved",
+    "compare_hash": "4df01081654594fddbe7d22cc47ae504d6a2a62f7dfc03a52865784571394ec6",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T07:42:20.313Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "550ae2487d2121dfaa9fc275e82fbaebb584decc",
+    "design": "0be6ac4f3c380d98d3efd8b52f23f4d1674c628e",
+    "plan": "fd178817850e997f524a955b87c3530ccd556f25"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-135/responses/design-r02-approved.json",
+    "response_sha256": "3a7d6fb583a9e49f78e52132a8a51b89472360f136c0b608cb7c3ff58702fedd",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "6ba6dc5ff0b4e47ec095840239e244681df8d439",
+    "codex_thread_id": "019ffa0a-fdbd-73c3-8da0-f8f6276c23c6",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T07:35:36.562Z",
+    "design_hash": "709845a338b85cba5132537f67addcb70fe8ef494b2a34b6a7ac08ab47db7160"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "d8dcec940ab526ca262e8fca7bef99ed78b6872e",
+      "phase_id": "phase-1-upgrade-hint",
+      "consumed_by_commit_sha": "2ac05cc50874a221ae4e8cbbdbaf3988315f8863",
+      "approval_consumed_at": "2026-08-13T07:39:16.383Z"
+    },
+    {
+      "approved_tree": "9ad2f36bc814920866c6e131670087adb60d9938",
+      "phase_id": "phase-2-scope-docs",
+      "consumed_by_commit_sha": "3ed698fa305699c46a1ef7ed26ba007efcda3b9c",
+      "approval_consumed_at": "2026-08-13T07:42:56.149Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

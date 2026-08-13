@@ -127,6 +127,37 @@ export function effectiveStopGate(
   return isStopGate(v) ? v : cfg.stopGate
 }
 
+/** 이 티켓에 실제로 적용되는 **실행 정책 전체**(REQ-2026-134). 두 축이 갈라질 자리를 없앤다. */
+export interface ExecutionPolicy {
+  stopGate: StopGate
+  phaseCommitAutoApprove: PhaseCommitPolicy
+}
+
+/**
+ * 정지 정책을 **한 번에** 해소한다(REQ-2026-134 DEC-1).
+ *
+ * 🔴 **왜 필요한가**: REQ-2026-129가 `stopGate`를 티켓에 동결했지만 **파생 축은 동결하지 않았다.**
+ *    `req:next`가 `cfg.phaseCommit.autoApprove`를 config에서 직접 읽어, 스냅샷이 `merge`인데 config가
+ *    `phase`인 티켓은 게이트(`req:commit`)는 통과시키고 안내(`req:next`)는 멈추라고 하는 **모순**이 났다.
+ *    한 티켓이 두 정책으로 판정되지 않게 하려면 두 축이 **같은 해소**에서 나와야 한다.
+ *
+ * - 스냅샷이 유효하면: `stopGate`는 스냅샷 값, 파생 축은 `AUTO_APPROVE_OF`로 **계산**한다.
+ *   🔴 스냅샷은 `stop_gate` 하나만 담는다(REQ-2026-129 DEC-1) — 두 값을 저장하면 **저장 시점에 갈라질
+ *   자리**를 새로 만드는 셈이라 계산이 옳다. 계산 규칙은 `AUTO_APPROVE_OF` 하나뿐이다.
+ * - 스냅샷이 없거나 손상이면(legacy): **config의 두 축을 그대로** 쓴다. `loadConfig`가 이미 두 축의 정합을
+ *   보장하므로(`resolveStopAxes` — 모순이면 로드 실패) 여기서 파생으로 덮어써도 같은 값이고,
+ *   그대로 쓰는 쪽이 "이 함수는 legacy 동작을 바꾸지 않는다"를 코드로 보인다.
+ */
+export function effectiveExecutionPolicy(
+  state: { policy_snapshot?: unknown } | null | undefined,
+  cfg: { stopGate: StopGate; phaseCommit: PhaseCommit },
+): ExecutionPolicy {
+  const snap = state?.policy_snapshot
+  const pinned = snap && typeof snap === 'object' ? (snap as { stop_gate?: unknown }).stop_gate : undefined
+  if (isStopGate(pinned)) return { stopGate: pinned, phaseCommitAutoApprove: AUTO_APPROVE_OF[pinned] }
+  return { stopGate: cfg.stopGate, phaseCommitAutoApprove: cfg.phaseCommit.autoApprove }
+}
+
 /** `stopGate` → 파생 `phaseCommit.autoApprove`. 두 축의 유일한 번역표(SSOT). */
 export const AUTO_APPROVE_OF: Record<StopGate, PhaseCommitPolicy> = { phase: 'never', req: 'low-only', merge: 'low-only' }
 /**

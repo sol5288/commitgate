@@ -221,6 +221,72 @@ export const RETIRED_CLAIMS: readonly RetiredClaim[] = [
     text: 'required status checks bypass 승인',
     why: '통제점표에 없는 옛 승인 명칭이다 — protected branch 우회의 정본은 `branch protection bypass를 사용한 direct push 승인`',
   },
+  /**
+   * 🔴 REQ-2026-137 — 랜딩 README가 **정지 축을 하나로** 서술하던 문장이다.
+   *
+   *    `reviewBudget.onSoftLimit`(기본 `ask`)은 소프트 한도를 넘긴 재리뷰 회차마다 사람 예외를
+   *    요구하는 **두 번째 정지 축**이다. `stopGate`를 `merge`로 두어도 그 자리에서 멈춘다 —
+   *    "값 하나가 단독으로 정한다"고 적으면 사용자는 왜 멈췄는지 설명을 어디서도 찾지 못한다.
+   *    `docs/configuration.md`는 이미 두 축으로 서술하고 있었고 랜딩만 뒤처져 있었다.
+   */
+  {
+    text: '이 값 하나가 정지 지점을 단독으로 결정합니다',
+    why: '정지 축은 둘이다 — reviewBudget.onSoftLimit 이 소프트 한도 초과 회차에서 따로 멈춘다 (README.md)',
+  },
+  {
+    text: 'decides the stop point on its own',
+    why: 'there are two stop axes — reviewBudget.onSoftLimit stops separately past the soft limit (README.en.md)',
+  },
+  /**
+   * 🔴 REQ-2026-137 — `merge`의 **묶음 없는 경우**를 지우던 표 셀이다.
+   *
+   *    REQ-2026-128 이후 delivery set 이 없으면 `req:next` 가 그 REQ 의 통합 직전에 멈춘다
+   *    (`deliveryGate === null` → `terminalIntegrationAction`). 묶음 종료만 적으면 사용자는
+   *    `merge` 를 고른 뒤 묶음을 만들기 전까지 정지가 아예 없다고 읽는다 — 실제로는 멈춘다.
+   */
+  {
+    text: '여러 REQ를 묶은 delivery set이 끝날 때',
+    why: 'delivery set 이 없으면 그 REQ 의 통합 직전에 멈춘다 — 묶음 종료만 적으면 정지가 없다고 읽힌다 (README.md)',
+  },
+  {
+    text: 'when a delivery set of several REQs is done',
+    why: 'with no delivery set the stop happens just before that REQ is integrated — listing only the set case reads as "no stop" (README.en.md)',
+  },
+  /**
+   * 🔴 REQ-2026-138 — 위 항목들이 고친 절보다 **200줄 앞**, 랜딩 첫 소개에 남아 있던 같은 주장이다.
+   *
+   *    정지 축이 `stopGate` 하나뿐이던 시절엔 참이었다. 축이 둘이 되면서(`reviewBudget.onSoftLimit`)
+   *    거짓이 됐는데 소개만 그대로였다 — **바로 아래 줄이 "6~8회는 사람이 예외를 기록해야 한다"고
+   *    적고 있어 같은 화면 안에서 앞뒤가 맞지 않았다.**
+   *
+   * 🔴 지운 것은 "기본값에서 phase 커밋마다 부르지 않는다"는 **사실이 아니라**, 예외를 함께 지우는
+   *    배타 표현("중간에는 안 멈춘다"·"그 두 지점에서만")이다. 참인 범위까지만 말하게 한 것이다.
+   */
+  {
+    text: '사람은 중간마다 멈추지 않습니다',
+    why: '소프트 한도를 넘긴 재리뷰 회차에서는 기본값(ask)이 사람 예외를 요구한다 (README.md)',
+  },
+  {
+    text: '결과를 합치는 지점에서만 확인합니다',
+    why: '그 두 지점이 전부가 아니다 — 리뷰 예산 초과 회차가 별도 정지를 만든다 (README.md)',
+  },
+  /**
+   * 🔴 흐름도 칸의 **표현 변형**이다. `:57` 산문과 같은 배타 주장인데 문장이 달라, 산문만 고치면
+   *    그대로 살아남는다 — REQ-2026-112가 `정책과 무관하게 유지`로 실증한 실패 양상이다.
+   */
+  {
+    text: '사람은 여기서만 확인한다',
+    why: '흐름도의 배타 표현 — 리뷰 예산 초과 회차에서도 사람이 필요하다 (README.md 흐름도)',
+  },
+  /**
+   * 🔴 **en 은 1건뿐인 것이 정상이다.** 위 뒤 두 ko 문자열에 대응하는 영문 문장은 애초에 없었다
+   *    (흐름도는 `this is where you step in`, 산문에 `only` 가 없었다). 없던 문장을 번역해 등재하면
+   *    영원히 발화하지 않는 항목이 늘고, 목록을 읽는 사람이 그런 문장이 있었다고 오해한다.
+   */
+  {
+    text: 'you are not stopped in the middle',
+    why: 'past the soft limit the default policy (ask) requires a human exception (README.en.md)',
+  },
 ]
 
 /**

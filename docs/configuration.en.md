@@ -56,19 +56,77 @@ Empty `branchPrefix` values and paths that escape the project root are rejected.
   - `auto`: they proceed without human approval up to `hardCap`, and the ledger records that they passed
     **by policy**.
 
-🔴 **This stop is cost control, not a safety gate.** Switching to `auto` changes nothing about review
-approval, evidence, the integration control points, or `hardCap`. All it removes is the budget question,
-"may we spend one more round?"
+#### What `auto` removes — and what it keeps
+
+**It removes exactly one thing**: the human exception approval for rounds past `autoBudget`.
+
+| Stop that remains | Why |
+|---|---|
+| Reaching `hardCap` | **Repetition backstop** — see below |
+| A `BLOCKED` review (exit 2) | The reviewer could not reach a verdict at all; retrying is not the answer |
+| Requiring an approval (zero `findings`) | A gate unrelated to the budget axis |
+| HIGH human confirmation (`req:confirm`) | The axis `stopGate` governs |
+| Integration and release control points (I1/I2/B1, R1/R2/R3) | Present under every setting |
+
+🔴 **"Running automatically" does not mean skipping review.** Under `auto` an unapproved phase still does not
+get committed — the only thing that changes is the budget question, "may we spend one more round?"
 
 - Under `auto`, `req:review-exception` **refuses to grant** an exception — it would only create an approval
   record that can never be consumed. Keep `ask` if you want the human approval.
 - A config that sets only the two original keys (`{"autoBudget":3,"hardCap":6}`) stays valid and gets
   `onSoftLimit: "ask"`.
 
+#### `hardCap` is a repetition backstop, not a spending cap
+
+`autoBudget` is the **cost** axis ("no questions up to here"); `hardCap` is the **repetition** axis ("beyond
+this, no route runs at all"). They are not the same kind of limit.
+
+- They count different things: `autoBudget` counts rounds that produced a verdict (productive), `hardCap`
+  counts **calls dispatched**. Rounds that produced no verdict (a reviewer contract violation, say) still
+  consume `hardCap`, so you can reach it without having received `hardCap` useful reviews — the point is to
+  stop unbounded retrying.
+- If `hardCap` calls (8 by default) were spent and it still is not done, what is needed is not one more round
+  but a **rethink of the design or the phase breakdown**.
+- So `auto` not opening this stop is **by design, not an omission**.
+
+#### There is no `stopGate: "auto"` (no stop even at the final merge)
+
+Deliberately absent. Integration approval is an invariant **shared by all three `stopGate` values**; letting
+one value remove it would make the contract depend on configuration. Having the tool fabricate the
+confirmation record instead would revive the timestamp-forgery surface, so that is not an option either
+(`user_commit_confirmed` is written only by `req:confirm`).
+
+The one honest shape would be a **delegation recorded up front** — a human writes a delegation sentence
+against the real clock and the tool merges automatically only within that scope. That is a change to a safety
+property and needs its own discussion; it can be taken up if and when it is needed.
+
+#### Upgrading an existing project to `auto`
+
+If `stopGate` is `req` or `merge` and you still stop at the sixth review, this axis is still `ask`. Change it
+either way:
+
+```sh
+npx commitgate setup      # the fourth question (a human runs this in a terminal)
+```
+
+Or edit `req.config.json` directly:
+
+```jsonc
+"reviewBudget": { "autoBudget": 5, "hardCap": 8, "onSoftLimit": "auto" }
+```
+
+When you actually hit the budget stop, `req:next` points this out on the spot (it does **not** do so at
+`hardCap`, because that stop cannot be opened by configuration).
+
 ### Policy snapshot — a ticket keeps the `stopGate` it was created with
 
 `req:new` pins the resolved `stopGate` into the ticket's `state.json` (`policy_snapshot.stop_gate`), and the
 gates (`req:next`, `req:commit`, `req:confirm`, `req:doctor`, `delivery integrate`) read that value.
+
+🔴 **The derived axis is frozen with it.** `phaseCommit.autoApprove` (whether phases auto-commit) is derived
+from `stopGate`; reading only that one from the current config makes **one ticket judged under two policies** —
+the commit gate lets you through while `req:next` tells you to stop. Both axes always come from the same
+resolution.
 
 If the gates re-read `req.config.json` on every command, **one ticket runs under several policies**: confirm
 phases 1–2 under `phase`, switch the setting to `merge` midway, and the rest auto-commit with no confirmation —

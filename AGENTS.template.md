@@ -81,6 +81,7 @@
   feature→main **통합 통제점**(I1/I2/B1)으로 모인다 — `req:next` 종단이 `DONE`이 아니라
   `AWAIT_HUMAN`(통합)으로 멈춘다.
 
+<!-- commitgate:autonomy -->
 ### 4-1. 자율 진행 — 언제 묻지 않는가
 
 **`req:next`의 `kind`가 정지 여부를 정한다. `RUN`·`AGENT`·`DONE`에서 사용자에게 묻는 것은 계약 위반이다.**
@@ -112,6 +113,7 @@
 🔴 **권장안 기록은 사람 확인이 아니다.** `state.json`의 `user_commit_confirmed`를 대신 만들지 않는다 —
 그 필드는 `req:confirm`만이 쓴다(시각을 실제 시계에서 읽기 위해). 확인을 지어내는 것은 이 저장소가
 REQ-2026-019를 폐기한 이유 그 자체다.
+<!-- /commitgate:autonomy -->
 
 ### 5. 승인 범위 해석 규칙
 

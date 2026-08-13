@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"e60ffaefb1ada0e5d9bb79b00f9e85bfd9dfe2bc","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"Phase 1 변경을 커밋하고, main 병합 직전에 전체 테스트 스위트를 1회 실행하세요.","observations":[]}

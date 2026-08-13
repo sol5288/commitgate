@@ -19,7 +19,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
-import { loadConfig, buildScriptInvocation, effectiveStopGate, type PackageManager } from './lib/config'
+import { loadConfig, buildScriptInvocation, effectiveExecutionPolicy, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
@@ -172,7 +172,8 @@ export interface NextInput {
    */
   committedManifestText?: string | null
   /**
-   * REQ-2026-037: phase 자동 커밋 정책. main이 `cfg.phaseCommit.autoApprove`로 채운다(항상 존재 — DEFAULTS=never).
+   * REQ-2026-037: phase 자동 커밋 정책. main이 **실행 정책 해소 결과**로 채운다(REQ-2026-134 —
+   * 티켓 스냅샷이 있으면 거기서 파생되고, 없으면 config를 따른다. 항상 존재 — DEFAULTS=never).
    * 필수 필드다(선택 아님): 해소는 config 계층에서 끝나므로 resolveNext는 내부 기본값을 두지 않는다.
    */
   phaseCommitAutoApprove: PhaseCommitPolicy
@@ -553,6 +554,7 @@ function gateRunCandidate(input: NextInput, cand: RunCandidate): NextAction {
         `series 판정 회차=${counts.productive}(autoBudget ${autoBudget}) · 호출 회차=${counts.dispatched}(hardCap ${hardCap}) · 다음 회차=${nextAttempt}`,
         `직전 리뷰 outcome=${lrOutcome}`,
         `선택지: ${options}`,
+        ...softLimitUpgradeHint(input, hardBlocked),
       ],
     }
   }
@@ -991,6 +993,31 @@ export function parseArgs(argv: string[]): Opts {
 
 /** 사람이 읽는 출력. `displayId`는 표시 전용(argv가 아니다) — `state.id`를 그대로 쓴다. */
 /**
+ * 예산 정지를 **실제로 만난 자리**에서만 내는 업그레이드 안내(REQ-2026-135 DEC-4).
+ *
+ * 세 조건이 **모두** 참일 때만 낸다:
+ *  - `hardBlocked`가 아니다 — 🔴 `hardCap`은 어떤 설정으로도 열리지 않으므로, 거기서 "설정으로 끌 수
+ *    있다"고 말하면 **거짓 안내**다.
+ *  - `stopGate`가 `req`·`merge` — 자율 진행을 이미 고른 사용자다. `phase`를 고른 사용자는 자주 멈추기를
+ *    원했으므로 재촉하지 않는다.
+ *  - `onSoftLimit`이 아직 `ask` — 이미 `auto`면 이 정지 자체가 없다.
+ *
+ * 🔴 **상시 진단(doctor WARN)으로 만들지 않는다.** `ask`는 정당한 선택이고, 그것을 고른 사용자에게 매번
+ *    경고를 띄우면 진단이 아니라 잔소리다. 마찰을 겪는 순간에만 말하는 것이 정확하다.
+ */
+export function softLimitUpgradeHint(input: NextInput, hardBlocked: boolean): string[] {
+  if (hardBlocked) return []
+  const sg = input.stopGate ?? 'phase'
+  if (sg !== 'req' && sg !== 'merge') return []
+  if (input.reviewBudget.onSoftLimit !== 'ask') return []
+  return [
+    '이 정지는 설정으로 끌 수 있다 — req.config.json 의 reviewBudget.onSoftLimit 을 "auto" 로 두면 ' +
+      '소프트 초과 회차가 사람 승인 없이 진행된다(hardCap 은 그대로 남는다). ' +
+      '`npx commitgate setup`(사람이 실행) 으로도 고를 수 있다.',
+  ]
+}
+
+/**
  * 종단의 **통합 정지**(REQ-2026-037 R5 · REQ-2026-128 DEC-1). `req` 와 `merge`(묶음 없음)가 **같은** 판정을
  * 쓰도록 한 곳에 둔다 — 두 곳에서 각자 문장을 만들면 갈라진다(실제로 갈라졌던 이력이 있다).
  *
@@ -1074,8 +1101,16 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   const state = loadState(ticketDir)
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
-  // REQ-2026-129 DEC-2: 이 명령이 쓰는 정지 정책 — 티켓 스냅샷 우선, 없으면 config.
-  const stopGateNow = effectiveStopGate(state, cfg)
+  /**
+   * REQ-2026-134: 이 명령이 쓰는 **실행 정책 전체**를 한 번에 해소한다 — 티켓 스냅샷 우선, 없으면 config.
+   *
+   * 🔴 config의 **파생 축(phase 자동승인)을 직접 읽지 않는다.** 예전에는 `stopGate`만 스냅샷에서 오고
+   *    파생 축은 config에서 와서, 스냅샷과 config가 다른 티켓이 **두 정책으로 판정**됐다
+   *    (게이트는 통과시키는데 안내는 멈추라고 했다). 두 값은 반드시 같은 해소에서 나와야 한다.
+   *    이 파일에 그 config 접근이 **0건**임을 회귀 테스트가 고정한다 — 그래서 여기에도 축자로 적지 않는다.
+   */
+  const policy = effectiveExecutionPolicy(state, cfg)
+  const stopGateNow = policy.stopGate
 
   // 설계문서 인덱스 존재 + 현재 해시. 인덱스에 없으면 captureDesignBinding이 throw → null로 흡수(2번 분기가 처리).
   let currentDesignHash: string | null = null
@@ -1108,7 +1143,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
       }
     })(),
     reviewBudget: cfg.reviewBudget,
-    phaseCommitAutoApprove: cfg.phaseCommit.autoApprove,
+    // 🔴 REQ-2026-134: **정책 객체에서** 온다(config 직접 읽기 금지 — 두 축이 갈라지는 자리였다).
+    phaseCommitAutoApprove: policy.phaseCommitAutoApprove,
     // 🔴 REQ-2026-088 DEC-3: 사전 안내 입력 — intake와 **같은 원천**(HEAD blob)이다. 읽을 수 없으면 null → 무동작.
     committedManifestText: createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(`${ticketRel}/responses/approvals.jsonl`),
     // REQ-2026-066 DEC-10: 묶음 판정은 **delivery ref**에서 읽는다(DEC-3). 실패는 조용히 null —

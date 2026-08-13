@@ -3,6 +3,11 @@
   "handoffPath": null,
   "reviewReasoningEffort": "high",
   "stopGate": "merge",
+  "reviewBudget": {
+    "autoBudget": 5,
+    "hardCap": 8,
+    "onSoftLimit": "auto"
+  },
   "githubCi": {
     "workflow": "ci.yml",
     "timeoutMinutes": 30
