@@ -98,7 +98,7 @@ describe('[REQ-2026-140] 거부 사유 전수 — 각 사유가 실제로 발화
           id: 'D1',
           at: '2026-08-13T01:00:00.000Z',
           verified_sha: 'c'.repeat(40),
-          performed: PERMS(),
+          authorized: PERMS(),
           outcome: 'merged',
           detail: '',
         }),
@@ -213,6 +213,33 @@ describe('[REQ-2026-140] 원장 파싱 — 손상은 통과하지 않는다', ()
   it('🔴 permissions 가 boolean 이 아니면 거부한다(문자열 "false" 로 권한이 켜지지 않는다)', () => {
     const bad = { ...ISSUED(), permissions: { local_merge: 'true', origin_push: false, bypass_protection: false } }
     expect(parseDelegationLedger(JSON.stringify(bad)).problems.length).toBe(1)
+  })
+})
+
+/**
+ * 🔴 phase-4c 리뷰 r03 P1 — **이름을 바꾸면서 옛 행을 못 읽게 하면 원장이 통째로 손상 판정된다.**
+ *    그러면 새 위임과 무관하게 이후 모든 자율 통합이 막힌다.
+ */
+describe('[REQ-2026-140] 소비 행의 옛 키(performed)도 읽는다', () => {
+  const legacyConsumed = {
+    kind: 'consumed',
+    id: 'D1',
+    at: '2026-08-13T01:00:00.000Z',
+    verified_sha: 'c'.repeat(40),
+    performed: PERMS(),
+    outcome: 'merged',
+    detail: '',
+  }
+
+  it('옛 행이 손상으로 판정되지 않는다', () => {
+    expect(parseDelegationLedger(JSON.stringify(legacyConsumed)).problems).toEqual([])
+  })
+
+  it('🔴 옛 소비 행 뒤에 새 위임을 발급하면 정상 통과한다(원장이 막히지 않는다)', () => {
+    const fresh = ISSUED({ id: 'D2' })
+    const v = delegationVerdict(BASE({ ledgerText: ledger(ISSUED(), legacyConsumed as never, fresh) }))
+    expect(v.ok).toBe(true)
+    if (v.ok) expect(v.row.id).toBe('D2')
   })
 })
 

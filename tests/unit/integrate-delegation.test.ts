@@ -2,12 +2,20 @@ import { describe, it, expect } from 'vitest'
 import {
   claimCommitProblem,
   delegationGate,
+  planPushActions,
+  readDeliveryFacts,
   readTicketFacts,
   runIntegrate,
+  type AutoFacts,
   type RunDeps,
 } from '../../bin/integrate'
 import { makeDeps, integrateOpts, fakeGit, fakeReadBlobs, BASE, HEAD, SRC, TRUNK } from '../support/integrate-fakes'
-import { DELEGATION_LEDGER_REL, type DelegationIssued, type DelegationRow } from '../../scripts/req/lib/delegation'
+import {
+  DELEGATION_LEDGER_REL,
+  type DelegationIssued,
+  type DelegationPermissions,
+  type DelegationRow,
+} from '../../scripts/req/lib/delegation'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
 import type { PreparedIntegration } from '../../scripts/req/lib/integration-coordinator'
 
@@ -69,7 +77,13 @@ function gateDeps(over: Omit<Partial<RunDeps>, 'git'> = {}): Parameters<typeof d
   return d
 }
 
-const FACTS_OK = { riskLevel: 'LOW', budgetHardCapReached: false, reviewInconclusive: false }
+const FACTS_OK: AutoFacts = {
+  riskLevel: 'LOW',
+  budgetHardCapReached: false,
+  reviewInconclusive: false,
+  deliveryMembers: null,
+  compositionChanged: false,
+}
 
 describe('[REQ-2026-140] delegationGate — auto 가 아니면 아무것도 하지 않는다', () => {
   it('🔴 phase·req·merge 는 not-required 다(무회귀)', () => {
@@ -126,7 +140,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       id: 'D1',
       at: '2026-08-09T12:00:00.000Z',
       verified_sha: HEAD,
-      performed: { local_merge: true, origin_push: false, bypass_protection: false },
+      authorized: { local_merge: true, origin_push: false, bypass_protection: false },
       outcome: 'merged',
       detail: '',
     }
@@ -172,14 +186,42 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
     if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('판정할 수 없')
   })
 
-  /** delivery 배선은 4b-2 다 — 반쪽 판정으로 통합하느니 멈춘다. */
-  it('🔴 delivery 묶음은 아직 거부한다(반쪽 판정 금지)', () => {
+  /** 🔴 delivery 멤버를 읽지 못하면 거부한다(빈 목록으로 취급하지 않는다). */
+  it('🔴 delivery 멤버를 못 읽으면 거부한다', () => {
     const g = delegationGate(
-      gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED()) }),
+      gateDeps({
+        stopGate: 'auto',
+        readDelegationLedger: () => ledgerOf(ISSUED({ scope: { kind: 'delivery', slug: '0.23.0' }, source_branch: 'delivery/0.23.0' })),
+      }),
       prepared({ featureBranch: 'delivery/0.23.0' }),
-      FACTS_OK,
+      { ...FACTS_OK, deliveryMembers: null },
     )
     expect(g.kind).toBe('denied')
+  })
+
+  it('🔴 delivery 구성이 바뀌었으면 거부한다', () => {
+    const g = delegationGate(
+      gateDeps({
+        stopGate: 'auto',
+        readDelegationLedger: () => ledgerOf(ISSUED({ scope: { kind: 'delivery', slug: '0.23.0' }, source_branch: 'delivery/0.23.0' })),
+      }),
+      prepared({ featureBranch: 'delivery/0.23.0' }),
+      { ...FACTS_OK, deliveryMembers: [TICKET], compositionChanged: true },
+    )
+    expect(g.kind).toBe('denied')
+    if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('composition-changed')
+  })
+
+  it('delivery 묶음도 멤버·구성이 맞으면 통과한다', () => {
+    const g = delegationGate(
+      gateDeps({
+        stopGate: 'auto',
+        readDelegationLedger: () => ledgerOf(ISSUED({ scope: { kind: 'delivery', slug: '0.23.0' }, source_branch: 'delivery/0.23.0' })),
+      }),
+      prepared({ featureBranch: 'delivery/0.23.0' }),
+      { ...FACTS_OK, deliveryMembers: [TICKET], compositionChanged: false },
+    )
+    expect(g.kind).toBe('allowed')
   })
 })
 
@@ -245,6 +287,65 @@ describe('[REQ-2026-140] claimCommitProblem', () => {
   })
 })
 
+/**
+ * 🔴 push·bypass 는 **기본 불허**이고 서로 **독립**이다(요구 6).
+ *    보호 설정을 로컬에서 읽을 수 없으므로 "CI 를 확인하지 않은 push = 우회"로 **보수적으로** 본다 —
+ *    틀리는 방향이 더 강한 권한을 요구하는 쪽이라 안전하다.
+ */
+describe('[REQ-2026-140] planPushActions — push·bypass 분리', () => {
+  const P = (over: Partial<DelegationPermissions> = {}): DelegationPermissions => ({
+    local_merge: true,
+    origin_push: false,
+    bypass_protection: false,
+    ...over,
+  })
+
+  it('push 를 위임하지 않았으면 로컬 병합까지만 한다(오류가 아니다)', () => {
+    const r = planPushActions(P())
+    expect(r.problem).toBeNull()
+    expect(r.performed.origin_push).toBe(false)
+  })
+
+  it('🔴 push 위임인데 bypass 위임이 없으면 거부한다', () => {
+    const r = planPushActions(P({ origin_push: true }))
+    expect(r.problem).toContain('--allow-bypass')
+    expect(r.performed.origin_push).toBe(false)
+  })
+
+  /**
+   * 🔴 phase-4c 리뷰 r01 P1 — **CI 를 통과해도 우회는 우회다.**
+   *    CI 는 feature SHA 에 결속되는데 trunk 로 올라가는 것은 소비 커밋과 CAS 병합으로 새로 만들어진
+   *    **merge SHA** 다. 그 SHA 에 required check 가 돌아간 적은 없다.
+   */
+  it('🔴 CI 를 통과했어도 push 에는 bypass 위임이 필요하다(검사 대상이 다르다)', () => {
+    const r = planPushActions(P({ origin_push: true }))
+    expect(r.problem).not.toBeNull()
+    expect(r.problem).toContain('merge SHA')
+  })
+
+  /**
+   * 🔴 phase-4c 리뷰 r02 P1 — **`githubCi` 설정 유무로 판단하지 않는다.**
+   *    그것은 CommitGate 가 CI 를 실행할지의 opt-in 일 뿐이고, 원격에 외부 CI 가 required check 로
+   *    걸려 있을 수 있다. 원격 보호 상태는 로컬에서 알 수 없으므로 **push 자체를 우회로 본다.**
+   */
+  it('🔴 githubCi 설정이 없어도 push 에는 bypass 위임이 필요하다(원격 보호를 알 수 없다)', () => {
+    const r = planPushActions(P({ origin_push: true }))
+    expect(r.problem).not.toBeNull()
+    expect(r.performed.origin_push).toBe(false)
+  })
+
+  it('🔴 bypass 를 위임했으면 진행하고 **우회했다는 사실을 남긴다**', () => {
+    const r = planPushActions(P({ origin_push: true, bypass_protection: true }))
+    expect(r.problem).toBeNull()
+    expect(r.performed).toEqual({ local_merge: true, origin_push: true, bypass_protection: true })
+  })
+
+  it('🔴 bypass 만 위임하고 push 를 위임하지 않으면 push 하지 않는다(함의 없음)', () => {
+    const r = planPushActions(P({ bypass_protection: true }))
+    expect(r.performed.origin_push).toBe(false)
+  })
+})
+
 describe('[REQ-2026-140] runIntegrate 배선 — 순수 테스트가 못 잡는 자리', () => {
   it('🔴 auto + 위임 없음 → 병합하지 않고 exit 1', async () => {
     const deps = makeDeps({
@@ -273,5 +374,76 @@ describe('[REQ-2026-140] runIntegrate 배선 — 순수 테스트가 못 잡는 
     })
     await runIntegrate(integrateOpts({ run: false }), deps)
     expect(read).toBe(0)
+  })
+})
+
+/**
+ * 🔴 phase-4c 리뷰 r04 P1 — 구성 비교는 **`order` 필드까지** 본다.
+ *    배열 순서만 보면 같은 배열에서 `order` 값만 뒤바뀐 레코드를 동일하다고 읽는데,
+ *    `order` 는 successor 체인의 방향을 정하므로 그것이 바뀐 묶음은 다른 묶음이다.
+ */
+describe('[REQ-2026-140] readDeliveryFacts — 구성 비교', () => {
+  const REL = 'workflow/delivery/S.json'
+  const rec = (members: { req_id: string; order: number }[]): string =>
+    JSON.stringify({
+      schema_version: 1,
+      slug: 'S',
+      branch: 'delivery/S',
+      target_branch: TRUNK,
+      state: 'open',
+      events: [],
+      members: members.map((m) => ({
+        req_id: m.req_id,
+        order: m.order,
+        delivery_base_sha: BASE,
+        status: 'active',
+        successor_of: null,
+        feature_ref: null,
+        integrated_at: null,
+        superseded_evidence: null,
+      })),
+    })
+
+  /** ref 별로 다른 내용을 돌려주는 readBlobs. */
+  const blobsByRef = (byRef: Record<string, string>) => (ref: string, paths: readonly string[]) =>
+    new Map(paths.map((p) => [p, p === REL && byRef[ref] !== undefined ? Buffer.from(byRef[ref] as string, 'utf8') : null]))
+
+  const A1B2 = rec([
+    { req_id: 'REQ-2026-001', order: 1 },
+    { req_id: 'REQ-2026-002', order: 2 },
+  ])
+
+  it('같은 구성이면 변화 없음', () => {
+    const f = readDeliveryFacts(blobsByRef({ HEADREF: A1B2, BASEREF: A1B2 }), 'workflow', 'S', 'HEADREF', 'BASEREF')
+    expect(f.members).toEqual(['REQ-2026-001', 'REQ-2026-002'])
+    expect(f.compositionChanged).toBe(false)
+  })
+
+  it('🔴 배열은 그대로인데 order 값만 뒤바뀌면 구성 변화다', () => {
+    const swapped = rec([
+      { req_id: 'REQ-2026-001', order: 2 },
+      { req_id: 'REQ-2026-002', order: 1 },
+    ])
+    const f = readDeliveryFacts(blobsByRef({ HEADREF: swapped, BASEREF: A1B2 }), 'workflow', 'S', 'HEADREF', 'BASEREF')
+    expect(f.compositionChanged).toBe(true)
+  })
+
+  it('🔴 멤버가 늘면 구성 변화다', () => {
+    const more = rec([
+      { req_id: 'REQ-2026-001', order: 1 },
+      { req_id: 'REQ-2026-002', order: 2 },
+      { req_id: 'REQ-2026-003', order: 3 },
+    ])
+    const f = readDeliveryFacts(blobsByRef({ HEADREF: more, BASEREF: A1B2 }), 'workflow', 'S', 'HEADREF', 'BASEREF')
+    expect(f.compositionChanged).toBe(true)
+  })
+
+  it('🔴 못 읽거나 손상이면 fail-closed', () => {
+    expect(readDeliveryFacts(blobsByRef({}), 'workflow', 'S', 'HEADREF', 'BASEREF')).toEqual({
+      members: null,
+      compositionChanged: true,
+    })
+    const f = readDeliveryFacts(blobsByRef({ HEADREF: A1B2, BASEREF: '{oops' }), 'workflow', 'S', 'HEADREF', 'BASEREF')
+    expect(f.compositionChanged).toBe(true)
   })
 })

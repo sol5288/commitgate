@@ -55,9 +55,31 @@ export interface DelegationConsumed {
   id: string
   at: string
   verified_sha: string
-  /** **실제로 한 것**. 허용됐지만 하지 않은 것과 구별된다 — bypass 사용 사실이 여기 남는다. */
-  performed: DelegationPermissions
+  /**
+   * 이 소비가 **인가한** 작업. 🔴 `performed`(실제로 한 것)가 **아니다** — 소비 행은 CAS 선점이라
+   *    실행 **전에** 쓰이므로, 그 시점에 "했다"고 적으면 push 실패 시 원장이 거짓이 된다
+   *    (phase-4c 리뷰 r01 P1). 실제 실행 결과는 `workflow/.integrate-runs.jsonl` 과 최종 보고에 남는다.
+   */
+  authorized: DelegationPermissions
   outcome: 'merged' | 'aborted'
+  detail: string
+}
+
+/**
+ * **실제 수행 1건**(phase-4c 리뷰 r02 P1). 소비(`consumed`)는 실행 **전에** 쓰이는 인가 기록이라
+ * "무엇을 실제로 했는가"를 담을 수 없다. 그래서 결과가 확정된 뒤 이 행을 덧붙인다.
+ *
+ * 🔴 **종결 행이 아니다** — fold 는 `consumed`·`revoked` 만 종결로 본다. 이 행이 없는 `consumed` 는
+ *    "소비했는데 결과를 모른다"는 뜻이고, 그 상태가 보이는 것 자체가 정직한 감사다(중간 중단 흔적).
+ * 🔴 **bypass 를 실제로 썼다는 사실이 여기 남는다** — 콘솔과 gitignored 로그에만 두면 영속되지 않는다.
+ */
+export interface DelegationExecuted {
+  kind: 'executed'
+  id: string
+  at: string
+  /** 실제로 만들어진 merge 커밋(없으면 `null` — 병합 실패). */
+  merge_sha: string | null
+  performed: DelegationPermissions
   detail: string
 }
 
@@ -69,7 +91,7 @@ export interface DelegationRevoked {
   reason: string
 }
 
-export type DelegationRow = DelegationIssued | DelegationConsumed | DelegationRevoked
+export type DelegationRow = DelegationIssued | DelegationConsumed | DelegationExecuted | DelegationRevoked
 
 // ───────────────────────────────── 파싱(fail-closed) ──
 
@@ -188,9 +210,15 @@ function parseRow(o: Record<string, unknown>): DelegationRow | null {
     }
   }
   if (o.kind === 'consumed') {
-    const performed = parsePermissions(o.performed)
+    /**
+     * 🔴 **옛 키 `performed` 도 받는다**(phase-4c 리뷰 r03 P1). 이 필드는 같은 REQ 안에서
+     *    `performed` → `authorized` 로 이름이 바뀌었다. 이름만 바꾸고 옛 행을 못 읽게 두면,
+     *    그 사이 빌드로 쓰인 원장이 **손상으로 판정되어 이후 모든 자율 통합이 막힌다** —
+     *    스키마 변경이 영속 원장을 망가뜨리는 전형적인 함정이다(REQ-2026-064 가 겪은 것과 같은 계열).
+     */
+    const authorized = parsePermissions(o.authorized ?? o.performed)
     if (
-      performed === null ||
+      authorized === null ||
       !isStr(o.id) ||
       !isInstant(o.at) ||
       !isStr(o.verified_sha) ||
@@ -198,7 +226,19 @@ function parseRow(o: Record<string, unknown>): DelegationRow | null {
       typeof o.detail !== 'string'
     )
       return null
-    return { kind: 'consumed', id: o.id, at: o.at, verified_sha: o.verified_sha, performed, outcome: o.outcome, detail: o.detail }
+    return { kind: 'consumed', id: o.id, at: o.at, verified_sha: o.verified_sha, authorized, outcome: o.outcome, detail: o.detail }
+  }
+  if (o.kind === 'executed') {
+    const performed = parsePermissions(o.performed)
+    if (
+      performed === null ||
+      !isStr(o.id) ||
+      !isInstant(o.at) ||
+      !(o.merge_sha === null || isStr(o.merge_sha)) ||
+      typeof o.detail !== 'string'
+    )
+      return null
+    return { kind: 'executed', id: o.id, at: o.at, merge_sha: o.merge_sha as string | null, performed, detail: o.detail }
   }
   if (o.kind === 'revoked') {
     if (!isStr(o.id) || !isInstant(o.at) || typeof o.reason !== 'string') return null
