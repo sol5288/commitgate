@@ -2,15 +2,42 @@
   "id": "REQ-2026-140",
   "branch": "feat/req-2026-140-stopgate-auto-predelegation",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffb2b-e295-79f1-a707-a773c48cdfc6",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ffb33-2b72-7fb3-98d2-da45af340fab",
+  "review_base_sha": "b7ae7856d8fe15a5ec2d2fbd5d48660ecb453581",
+  "review_diff_hash": "93f9d30374b75039df36fcd978f74afdd0d15587",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-auto-type-and-predicate",
+  "phases": [
+    {
+      "id": "phase-1-auto-type-and-predicate",
+      "title": "auto 타입 + 통합-지연 술어",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-delegation-model",
+      "title": "위임 레코드 모델(순수)",
+      "status": "pending"
+    },
+    {
+      "id": "phase-3-delegate-verb",
+      "title": "req:delegate verb",
+      "status": "pending"
+    },
+    {
+      "id": "phase-4-integrate-auto",
+      "title": "integrate 배선",
+      "status": "pending"
+    },
+    {
+      "id": "phase-5-expose-and-docs",
+      "title": "노출 + 문서",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +51,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-auto-type-and-predicate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-auto-type-and-predicate",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-auto-type-and-predicate",
     "outcome": "approved",
-    "compare_hash": "5d71d1d1be386c8830b2cdf8d65ef12743ac527275cc7d23a65caf604fc087d2",
+    "compare_hash": "cb0c6b6db9692c4c095a07aa2a4f630dc63d7b0cb14cc2363ac0ea3007e0719c",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T12:50:38.108Z",
+    "at": "2026-08-13T13:00:39.604Z",
     "findings": [],
     "elided_count": 0
   },
@@ -54,5 +88,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-13T12:50:38.108Z",
     "design_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "93f9d30374b75039df36fcd978f74afdd0d15587",
+      "phase_id": "phase-1-auto-type-and-predicate",
+      "consumed_by_commit_sha": "3f6e33e5b439a0b51bfa273b8822d2e24071dbc3",
+      "approval_consumed_at": "2026-08-13T13:01:07.634Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
