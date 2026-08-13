@@ -1,0 +1,107 @@
+{
+  "id": "REQ-2026-141",
+  "branch": "feat/req-2026-141-finalize-recovery-escape",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ffc2d-cc1d-7bf2-aaed-ef1914dfaeea",
+  "review_base_sha": "a815bb600705d340e3d92b1c8dfcdfe872e5f57c",
+  "review_diff_hash": "1d48cfc47e6a1cb9fb039216c0546346f2a873f4",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "81439c47e7afdc2dcf72a5b7ea7627bde65e645679f1a36af955de5af80fc470",
+  "current_phase": "phase-2-close-stale-attempt",
+  "phases": [
+    {
+      "id": "phase-1-runcli-and-push-tests",
+      "title": "dispatch 경계 수정 + push 배선 테스트",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-close-stale-attempt",
+      "title": "열린 attempt 해소 경로",
+      "status": "pending",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 6,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-runcli-and-push-tests#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-runcli-and-push-tests",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-close-stale-attempt#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-close-stale-attempt",
+      "attempts": 6,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-close-stale-attempt",
+    "outcome": "approved",
+    "compare_hash": "f880e17d380f0f6ecb512425b68d1b0aae1a86e4439522e136970328199b0223",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T17:33:37.885Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "e29717872128b87d74f79ff3fef781d92ed2e60e",
+    "design": "2c9f310d87265dca03dadc69082bb9f6c6b006b9",
+    "plan": "7488a0bdcb895655a5abad5c058fd69eb8341a4a"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-141/responses/design-r10-approved.json",
+    "response_sha256": "b277f5e26f90e34e3a4af6691b6e53e9bb4d5e6d488ac9b1d8884a90a81fc947",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "903dee2a4f3382253d27fe1676211a5a4e37d063",
+    "codex_thread_id": "019ffc0d-5793-74f2-ac5c-3c6a114cec84",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T16:58:05.145Z",
+    "design_hash": "81439c47e7afdc2dcf72a5b7ea7627bde65e645679f1a36af955de5af80fc470"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "f57443b0cc605fb92992617c91908d7e739b0b14",
+      "phase_id": "phase-1-runcli-and-push-tests",
+      "consumed_by_commit_sha": "dc388dba0305a700d12403d18a8bbc235dfcf4f5",
+      "approval_consumed_at": "2026-08-13T17:00:43.492Z"
+    },
+    {
+      "approved_tree": "1d48cfc47e6a1cb9fb039216c0546346f2a873f4",
+      "phase_id": "phase-2-close-stale-attempt",
+      "consumed_by_commit_sha": "d2e211e8b9a18c2c1bc75ad43eec26b2e8230408",
+      "approval_consumed_at": "2026-08-13T17:34:12.917Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

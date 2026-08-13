@@ -1,0 +1,210 @@
+{
+  "id": "REQ-2026-140",
+  "branch": "feat/req-2026-140-stopgate-auto-predelegation",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ffbcc-478a-7831-aecf-58f24a6bcc51",
+  "review_base_sha": "870e66d9febeed408bf8f2deea1a27297a4c5839",
+  "review_diff_hash": "2a76d7714d9d1afc625ead225def351e21ade603",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496",
+  "current_phase": "phase-5-expose-and-docs",
+  "phases": [
+    {
+      "id": "phase-1-auto-type-and-predicate",
+      "title": "auto 타입 + 통합-지연 술어",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-delegation-model",
+      "title": "위임 레코드 모델(순수)",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-3-delegate-verb",
+      "title": "req:delegate verb",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-4a-range-attribution",
+      "title": "병합 범위 티켓 귀속 계산(순수)",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-4b-integrate-auto",
+      "title": "integrate 배선 — 위임 요구·CAS·push/bypass",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-4c-push-bypass-delivery",
+      "title": "push·bypass 분리 실행 + delivery scope 배선",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-5-expose-and-docs",
+      "title": "노출 + 문서",
+      "status": "pending",
+      "max_files": 14,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-auto-type-and-predicate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-auto-type-and-predicate",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-delegation-model#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-delegation-model",
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-delegate-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-delegate-verb",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4a-range-attribution#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4a-range-attribution",
+      "attempts": 4,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4b-integrate-auto#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4b-integrate-auto",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4c-push-bypass-delivery#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4c-push-bypass-delivery",
+      "attempts": 6,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-expose-and-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-5-expose-and-docs",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-expose-and-docs#2",
+      "review_kind": "phase",
+      "phase_id": "phase-5-expose-and-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-expose-and-docs#3",
+      "review_kind": "phase",
+      "phase_id": "phase-5-expose-and-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-5-expose-and-docs",
+    "outcome": "approved",
+    "compare_hash": "cf5cbc57a0088483bfb2ed9bff41f9a8f3bae687a31b935421c796143bf140aa",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T15:47:11.149Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "dc153b23eca511c184b7a45eaefbacfd5b20e31d",
+    "design": "c9122e0560fa756225fc3f25ab3e860e64c51c2c",
+    "plan": "94e924431f27afca25fac39b2b68af6395837662"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-140/responses/design-r03-approved.json",
+    "response_sha256": "76eeecc91fb81d5d57b5cf86effc7530924606cfa6edfe99625675c31baf6d78",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "5dd3b5bb1defebba620d31a7735e8d509d9cc659",
+    "codex_thread_id": "019ffb2b-e295-79f1-a707-a773c48cdfc6",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T12:50:38.108Z",
+    "design_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "93f9d30374b75039df36fcd978f74afdd0d15587",
+      "phase_id": "phase-1-auto-type-and-predicate",
+      "consumed_by_commit_sha": "3f6e33e5b439a0b51bfa273b8822d2e24071dbc3",
+      "approval_consumed_at": "2026-08-13T13:01:07.634Z"
+    },
+    {
+      "approved_tree": "62a34983cd42df88148a2d9459b0ed0e309c1c4e",
+      "phase_id": "phase-2-delegation-model",
+      "consumed_by_commit_sha": "f0080e5b12f0f4662f806ca502d3a712f8c8fe7f",
+      "approval_consumed_at": "2026-08-13T13:42:42.961Z"
+    },
+    {
+      "approved_tree": "1e0237d8540e9a0c85878c6d8113624bcb147a6f",
+      "phase_id": "phase-3-delegate-verb",
+      "consumed_by_commit_sha": "13a14cf1d1d86ed084d948afac450a4459791c93",
+      "approval_consumed_at": "2026-08-13T13:55:58.604Z"
+    },
+    {
+      "approved_tree": "4bfb242ce0c14f1760b4e5af16b19eaf6ab7ead4",
+      "phase_id": "phase-4a-range-attribution",
+      "consumed_by_commit_sha": "5a8dbfb1bc5cca5779dc28ce356cf5db53794a31",
+      "approval_consumed_at": "2026-08-13T14:25:12.899Z"
+    },
+    {
+      "approved_tree": "ce073051d0430c74baa129b76e684e5f3ee656c4",
+      "phase_id": "phase-4b-integrate-auto",
+      "consumed_by_commit_sha": "e47493a002be3c7304668921de108e89beced942",
+      "approval_consumed_at": "2026-08-13T14:43:56.771Z"
+    },
+    {
+      "approved_tree": "83d9cf8b9f8be829c09a9dc1e54eb33e56dea150",
+      "phase_id": "phase-4c-push-bypass-delivery",
+      "consumed_by_commit_sha": "ab7d2775fc9055b9f651fc6751f17a14cb56f459",
+      "approval_consumed_at": "2026-08-13T15:21:42.701Z"
+    },
+    {
+      "approved_tree": "2a76d7714d9d1afc625ead225def351e21ade603",
+      "phase_id": "phase-5-expose-and-docs",
+      "consumed_by_commit_sha": "c11a2129cde5f83da883f5097e34330b0778fdc8",
+      "approval_consumed_at": "2026-08-13T15:47:44.597Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

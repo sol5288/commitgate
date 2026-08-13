@@ -267,8 +267,11 @@ For example, it **suggests** reading existing code and docs before starting, spl
 | `phase` | **before every phase commit** | you want to look at each change yourself |
 | `req` *(default)* | **the commit that completes the REQ** | you want to confirm per ticket and delegate the middle |
 | `merge` | if you grouped several REQs into a delivery set, **when that set finishes**; if you did not group them, **just before that REQ's integration** | you want to review large work as one batch |
+| `auto` | same as `merge`, except a **pre-delegation** also carries it through integration | you want to delegate a bounded scope up front and let it run |
 
 🔴 Choosing `merge` **does not remove the stop.** With no delivery set it stops in the same place `req` does — right before that REQ is integrated into main.
+
+🔴 **`auto` is not "unbounded automation".** Changing the value grants nothing on its own — a human must record a **pre-delegation** with `npx commitgate req:delegate ... --run`, and integration stays inside the scope, branch, and baseline SHA that delegation names. With no delegation it stops just like `merge`. `hardCap`, HIGH risk, a BLOCKED review, and anything outside the delegated scope still block. **It does not reduce review calls** — you simply stop waiting; the cost is unchanged. See the "stopGate: auto" section in **[Configuration](https://github.com/sol5288/commitgate/blob/main/docs/configuration.en.md)**.
 
 Under every value the **Codex review gate and the integration (main merge) approval are unchanged** — `stopGate` only moves where the *human stop* happens. How `HIGH` risk is treated and which confirmation `scope` each point requires are defined in **[Workflow](https://github.com/sol5288/commitgate/blob/main/docs/workflow.en.md#human-confirmation-for-high-risk-tickets)**.
 

@@ -71,8 +71,28 @@ export type PhaseCommitPolicy = 'never' | 'low-only'
  * 🔴 **통합(main 병합) 승인은 어느 값에서도 필요하다** — 이 축이 없애는 것은 커밋 지점의 정지뿐이다.
  * 🔴 `"merge"`는 `commitgate delivery` **동작과 함께** 착륙했다(REQ-2026-066 p1~p3 동일 릴리스).
  *    스키마에 값만 먼저 넣으면 고를 수는 있는데 동작이 없는 거짓 UI가 된다 — 그래서 미뤘던 값이다.
+ * 🔴 `"auto"`(REQ-2026-140)도 **동작과 함께** 착륙했다 — 위 `"merge"` 와 같은 규칙이다(설계 DEC-9).
+ *    사전 위임 통합이 완성된 phase 에서 스키마 enum·`setup` 선택지·문서가 **같은 커밋**으로 들어왔다.
+ *    의미는 `merge` 와 같고 다른 것은 통합 지점 하나뿐이다: 유효한 **사전 위임 기록**이 있으면 통합에서도
+ *    멈추지 않고, 없으면 `merge` 처럼 멈춘다 — **값 자체는 권한이 아니다**(권한은 원장에서 나온다).
  */
-export type StopGate = 'phase' | 'req' | 'merge'
+export type StopGate = 'phase' | 'req' | 'merge' | 'auto'
+
+/**
+ * 확인을 **통합 지점까지 미루는** 값인가 (REQ-2026-140 DEC-2a).
+ *
+ * 🔴 **`stopGate === 'merge'` 리터럴 비교를 이것으로 대체한다.** 값이 늘 때 `Record<StopGate, …>` 와
+ *    오버로드는 컴파일 에러로 소비자를 드러내지만, **비소진 분기는 드러내지 못한다** — 그런 자리에서
+ *    새 값은 조용히 `req` 처럼 동작한다. 설계 리뷰가 실측으로 8곳을 찾았고, 그 8곳을 하나씩 고치면
+ *    9번째에서 또 틀린다. 술어 하나로 모으고 소스 가드로 회귀를 막는다.
+ *
+ * 🔴 **타입 술어(`sg is …`)인 것이 중요하다.** 호출부가 조기 반환으로 `'phase' | 'req'` 로 좁혀
+ *    `requiredConfirmScope` 의 단일 인자 오버로드를 쓴다(REQ-2026-128 DEC-2). boolean 을 돌려주면
+ *    그 좁히기가 사라져 조용한 오답이 가능해진다.
+ */
+export function defersToIntegration(sg: StopGate): sg is 'merge' | 'auto' {
+  return sg === 'merge' || sg === 'auto'
+}
 
 /**
  * granularity 정책 강제 수준(REQ-2026-086, 기본값은 REQ-2026-087로 `warn`으로 정정).
@@ -85,7 +105,7 @@ export type GranularityGate = 'block' | 'warn'
 
 /** 유효한 `stopGate` 값인가(순수 — 스냅샷 손상 판별의 SSOT). */
 export function isStopGate(v: unknown): v is StopGate {
-  return v === 'phase' || v === 'req' || v === 'merge'
+  return v === 'phase' || v === 'req' || v === 'merge' || v === 'auto'
 }
 
 /**
@@ -159,7 +179,14 @@ export function effectiveExecutionPolicy(
 }
 
 /** `stopGate` → 파생 `phaseCommit.autoApprove`. 두 축의 유일한 번역표(SSOT). */
-export const AUTO_APPROVE_OF: Record<StopGate, PhaseCommitPolicy> = { phase: 'never', req: 'low-only', merge: 'low-only' }
+export const AUTO_APPROVE_OF: Record<StopGate, PhaseCommitPolicy> = {
+  phase: 'never',
+  req: 'low-only',
+  merge: 'low-only',
+  // 🔴 `auto` 의 커밋 단계 의미는 `merge` 와 **완전히 동일**하다(REQ-2026-140 DEC-2).
+  //    다른 것은 통합 지점 하나뿐이라, merge 경로 테스트가 auto 에서도 그대로 참이다.
+  auto: 'low-only',
+}
 /**
  * 역방향(legacy config에서 `stopGate` 역파생).
  * 🔴 `merge`는 `req`의 **상위 집합**이라(둘 다 phase는 자율 커밋) autoApprove 만으로는 구별되지 않는다.
@@ -446,7 +473,9 @@ export const CONFIG_SCHEMA = {
     promptMaxBytes: { type: ['integer', 'null'], minimum: 1 },
     // REQ-2026-063: 멈춤 위치. 🔴 enum은 **2값만** — `merge`는 delivery set 없이는 동작이 없어 거짓 UI가 된다.
     //    `null`을 넣지 않으므로 "비움" 입력은 기존 검증 경로가 자동으로 거부한다(전역 상속 개념이 없는 축).
-    stopGate: { type: 'string', enum: ['phase', 'req', 'merge'] },
+    // 🔴 REQ-2026-140: `auto` 는 **동작이 완성되는 phase 에서** 열렸다(설계 DEC-9).
+    //    `workflow/req.config.schema.json` 과 **같은 커밋에서** 함께 넓혀야 한다(아래 주석과 같은 이유).
+    stopGate: { type: 'string', enum: ['phase', 'req', 'merge', 'auto'] },
     // REQ-2026-062: setup 완료 마커. 🔴 `workflow/req.config.schema.json` 과 **동시에** 확장해야 한다 —
     // 한쪽만 고치면 소비자의 vendored 스키마가 신규 키를 additionalProperties:false 로 거부해 모든 명령이 죽는다.
     setup: {

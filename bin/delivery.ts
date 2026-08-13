@@ -14,7 +14,7 @@
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { loadConfig, effectiveStopGate, type StopGate } from '../scripts/req/lib/config'
+import { loadConfig, effectiveStopGate, defersToIntegration, type StopGate } from '../scripts/req/lib/config'
 import { createGitAdapter, safeSpawnSyncStatus, type GitAdapter } from '../scripts/req/lib/adapters'
 import { closeProofPath, parseCloseProof } from '../scripts/req/lib/close-proof'
 import { createHash } from 'node:crypto'
@@ -457,14 +457,14 @@ export function collectEligibility(ctx: Ctx, featureRef: string, reqId: string):
      *    delivery 를 쓰지 않는 구성에서 없던 실패가 생긴다(현행 동작 보존).
      */
     const stateText = readAtRef(ctx, featureRef, `${ticketRel}/state.json`)
-    if (stateText === null) return ctx.stopGate === 'merge' ? 'feature ref 에 state.json 이 없습니다' : null
+    if (stateText === null) return defersToIntegration(ctx.stopGate) ? 'feature ref 에 state.json 이 없습니다' : null
     let st: { risk_level?: unknown; user_commit_confirmed?: unknown; policy_snapshot?: unknown }
     try {
       st = JSON.parse(stateText) as typeof st
     } catch {
-      return ctx.stopGate === 'merge' ? 'state.json 파싱 실패' : null
+      return defersToIntegration(ctx.stopGate) ? 'state.json 파싱 실패' : null
     }
-    if (effectiveStopGate(st, { stopGate: ctx.stopGate }) !== 'merge') return null
+    if (!defersToIntegration(effectiveStopGate(st, { stopGate: ctx.stopGate }))) return null
     if (st.risk_level !== 'HIGH') return null // HIGH 가 아니면 요구하지 않는다
     const problem = userConfirmProblem(st.user_commit_confirmed)
     if (problem) return `${problem} — npx commitgate req:confirm ${reqId} --scope delivery --method "<승인 문장>" --run`

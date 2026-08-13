@@ -12,7 +12,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"medium"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
 | `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically. Rounds 6–8 are governed by `onSoftLimit`: `"ask"` (default) requires a human exception record bound to that series and round; `"auto"` runs them without human approval and records the policy grounds in the ledger. Once `hardCap` is spent the next attempt (round 9 onward) is blocked **under both values**. `hardCap ≤ 8`, `autoBudget ≤ hardCap`. See [Review budget](#review-budget--reviewbudget) |
-| `stopGate` | `"req"` | **Decides where a human stops at commits and integration** (preferred axis). 🔴 The review budget (`reviewBudget.onSoftLimit`) is a **separate axis**: regardless of this value, exceeding it during re-reviews can stop you on its own. `phase` = confirm before every phase commit; `req` = auto-commit phases inside a REQ and gather the confirmation at **the commit that completes the REQ**; `merge` = group several REQs into a delivery set and defer until **the whole set** is done (🔴 **with no delivery set it behaves like `req`**, stopping just before this REQ's integration — choosing this value does not remove the stop). The per-value confirmation points, including how `HIGH` risk is treated, are defined in [Workflow — Human confirmation for HIGH-risk tickets](workflow.en.md#human-confirmation-for-high-risk-tickets). Integration (main merge) approval is required under every value |
+| `stopGate` | `"req"` | **Decides where a human stops at commits and integration** (preferred axis). 🔴 The review budget (`reviewBudget.onSoftLimit`) is a **separate axis**: regardless of this value, exceeding it during re-reviews can stop you on its own. `phase` = confirm before every phase commit; `req` = auto-commit phases inside a REQ and gather the confirmation at **the commit that completes the REQ**; `merge` = group several REQs into a delivery set and defer until **the whole set** is done (🔴 **with no delivery set it behaves like `req`**, stopping just before this REQ's integration — choosing this value does not remove the stop); `auto` = same as `merge`, except that **a valid pre-delegation** also carries it through integration (with no delegation it stops exactly as `merge` does — see [`stopGate: "auto"`](#stopgate-auto--automatic-integration-of-verified-changes-within-a-delegated-scope)). The per-value confirmation points, including how `HIGH` risk is treated, are defined in [Workflow — Human confirmation for HIGH-risk tickets](workflow.en.md#human-confirmation-for-high-risk-tickets). Integration (main merge) approval is required under every value |
 | `githubCi` | not configured (`null`) | GitHub Actions workflow that `integrate` may run only after an explicit user request. When absent, CommitGate neither asks about a CI run nor guesses a workflow |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | Per-phase auto-commit policy. **`low-only` is the default**: it auto-commits Codex-approved phases without a human stop and defers the human confirmation. Set `never` **explicitly** to stop for a human before every phase commit. There is no `"all"` value — `stopGate` is the semantic axis, and adding values to the alias would split the two axes again |
 
@@ -27,6 +27,7 @@ Empty `branchPrefix` values and paths that escape the project root are rejected.
 | `phase` | `never` |
 | `req` | `low-only` |
 | `merge` | `low-only` |
+| `auto` | `low-only` |
 
 - Set **either one** and the other is derived. Configs that only use `phaseCommit` keep working unchanged.
 - If both are set and **contradict**, the config is rejected with an error naming both values, the expected
@@ -89,16 +90,53 @@ this, no route runs at all"). They are not the same kind of limit.
   but a **rethink of the design or the phase breakdown**.
 - So `auto` not opening this stop is **by design, not an omission**.
 
-#### There is no `stopGate: "auto"` (no stop even at the final merge)
+#### `stopGate: "auto"` — automatic integration of **verified** changes, within a delegated scope
 
-Deliberately absent. Integration approval is an invariant **shared by all three `stopGate` values**; letting
-one value remove it would make the contract depend on configuration. Having the tool fabricate the
-confirmation record instead would revive the timestamp-forgery surface, so that is not an option either
-(`user_commit_confirmed` is written only by `req:confirm`).
+**It is not "run everything automatically".** Choosing this value grants nothing on its own — authority comes
+from a **record** (`workflow/delegations.jsonl`), not from configuration. With no delegation, `auto` stops
+exactly where `merge` does: right before integration.
 
-The one honest shape would be a **delegation recorded up front** — a human writes a delegation sentence
-against the real clock and the tool merges automatically only within that scope. That is a change to a safety
-property and needs its own discussion; it can be taken up if and when it is needed.
+| | Configuration (`stopGate: "auto"`) | Record (pre-delegation) |
+|---|---|---|
+| What it decides | which **mode** you run in | what you are **allowed to do** |
+| How it changes | editing a file | a human approval sentence, recorded by `req:delegate` |
+| If absent | — | **integration is blocked** |
+
+```sh
+npx commitgate req:delegate --scope ticket:2026-140 --source feat/req-2026-140-x \
+  --sentence "<the human's approval sentence, verbatim>" [--allow-push] [--allow-bypass] [--high-risk] --run
+npx commitgate req:delegate --status                             # what is delegated right now
+npx commitgate req:delegate --revoke <id> --reason "..." --run    # revoke
+```
+
+Timestamps, SHAs, and expiry are **read by the tool** — there is no field for a human to write them
+(the reason REQ-2026-019 was abandoned). Expiry defaults to 12 hours and is capped at 72. You cannot
+issue an open-ended delegation.
+
+**Even with a delegation, these still block.**
+
+| Blocked | Why |
+|---|---|
+| `hardCap` reached | a cost ceiling does not become unbounded in autonomous mode |
+| HIGH risk without its own delegation | it must be delegated explicitly with `--high-risk` |
+| BLOCKED or unresolved review | a change whose review has not concluded is not integrated |
+| trunk moved / different target branch | a delegation is bound to **that** baseline |
+| tickets or delivery records outside the delegated scope | if you name a scope, the scope is enforced |
+| commits whose attribution is undecidable, or `attested` commits | at a blocking point, "unknown" is not a pass |
+| already consumed, revoked, or expired delegation | authority is spent **exactly once** |
+
+**Cost**: `auto` does not reduce review calls. You simply stop waiting — Codex reviews still run and still
+consume usage. The re-review budget is governed separately by `reviewBudget` (see
+[Review budget](#review-budget--reviewbudget) above).
+
+**Push and bypass are denied by default.** Without `--allow-push` the command merges locally and does not
+push. If you do delegate push, `--allow-bypass` is required as well: the merge commit produced by the
+integration has never had required checks run against it, so **the push itself is a bypass**. When a bypass is
+actually used, that fact is recorded in the ledger (an `executed` row) and in the final report.
+
+🔴 **What the tool cannot guarantee**: it cannot verify that the approval sentence really came from a human.
+That is the same limit as `req:confirm`. What the tool does guarantee is the honesty of the timestamp, the
+SHAs, the expiry, and the single consumption.
 
 #### Upgrading an existing project to `auto`
 

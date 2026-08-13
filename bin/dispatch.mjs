@@ -24,6 +24,7 @@ export const VERB_MODULES = {
   'req:rebind': '../scripts/req/req-rebind.ts',
   'req:confirm': '../scripts/req/req-confirm.ts',
   'req:repolicy': '../scripts/req/req-repolicy.ts',
+  'req:delegate': '../scripts/req/req-delegate.ts',
   uninstall: 'uninstall.ts',
   migrate: 'migrate.ts',
   sync: 'sync.ts',

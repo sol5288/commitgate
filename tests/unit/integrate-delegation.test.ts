@@ -1,0 +1,579 @@
+import { describe, it, expect } from 'vitest'
+import {
+  claimCommitProblem,
+  delegationGate,
+  planPushActions,
+  readDeliveryFacts,
+  readTicketFacts,
+  runIntegrate,
+  type AutoFacts,
+  type RunDeps,
+} from '../../bin/integrate'
+import { makeDeps, integrateOpts, fakeGit, fakeReadBlobs, BASE, HEAD, MERGE_SHA, SRC, TRUNK } from '../support/integrate-fakes'
+import {
+  DELEGATION_LEDGER_REL,
+  type DelegationIssued,
+  type DelegationPermissions,
+  type DelegationRow,
+} from '../../scripts/req/lib/delegation'
+import type { GitAdapter } from '../../scripts/req/lib/adapters'
+import type { PreparedIntegration } from '../../scripts/req/lib/integration-coordinator'
+
+/**
+ * REQ-2026-140 phase-4b-1 — `integrate` 의 사전 위임 게이트.
+ *
+ * 🔴 **이 배선의 존재 이유**: `integrate --run` 은 비대화형 세션에서 **오늘도 질문 없이 병합한다**
+ *    (`deps.interactive` 분기). 지금까지 그것을 막은 것은 `AGENTS.md` 계약이지 도구가 아니었다.
+ *    `auto` 는 그 자리에 **처음으로 도구 게이트**를 건다 — 푸는 게 아니라 잠근다.
+ *
+ * 🔴 **무회귀가 첫 번째 오라클이다**: `auto` 가 아니면 이 축은 아무것도 하지 않아야 한다.
+ */
+
+const TICKET = 'REQ-2026-001'
+const FEATURE_001 = 'feat/req-2026-001-x'
+
+const ISSUED = (over: Partial<DelegationIssued> = {}): DelegationIssued => ({
+  kind: 'issued',
+  id: 'D1',
+  at: '2026-08-09T00:00:00.000Z',
+  scope: { kind: 'ticket', req_id: TICKET },
+  trunk_branch: TRUNK,
+  trunk_sha: BASE,
+  source_branch: FEATURE_001,
+  base_sha: HEAD,
+  expires_at: '2026-08-11T00:00:00.000Z',
+  permissions: { local_merge: true, origin_push: false, bypass_protection: false },
+  high_risk_ack: false,
+  approval_sentence: '통합을 사전 위임합니다',
+  ...over,
+})
+
+const ledgerOf = (...rows: DelegationRow[]): string => rows.map((r) => JSON.stringify(r)).join('\n') + '\n'
+
+/** LOW 위험 · 열린 리뷰 없음 — 정상 통과 상태의 티켓 state. */
+const OK_STATE = JSON.stringify({
+  id: TICKET,
+  risk_level: 'LOW',
+  review_series: [{ series_id: 'phase:p1#1', attempts: 1, closed_reason: 'approved' }],
+})
+
+const prepared = (over: Partial<PreparedIntegration> = {}): PreparedIntegration =>
+  ({
+    featureBranch: FEATURE_001,
+    trunkBranch: TRUNK,
+    featureHeadSha: HEAD,
+    trunkHeadSha: BASE,
+    verificationSummary: { counts: {} },
+    ...over,
+  }) as PreparedIntegration
+
+function gateDeps(over: Omit<Partial<RunDeps>, 'git'> = {}): Parameters<typeof delegationGate>[0] {
+  const d = makeDeps({
+    git: fakeGit({ branch: FEATURE_001 }),
+    readBlobs: fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: OK_STATE }),
+    now: () => '2026-08-10T00:00:00.000Z',
+    ...over,
+  })
+  return d
+}
+
+const FACTS_OK: AutoFacts = {
+  riskLevel: 'LOW',
+  budgetHardCapReached: false,
+  reviewInconclusive: false,
+  deliveryMembers: null,
+  compositionChanged: false,
+}
+
+describe('[REQ-2026-140] delegationGate — auto 가 아니면 아무것도 하지 않는다', () => {
+  it('🔴 phase·req·merge 는 not-required 다(무회귀)', () => {
+    for (const sg of ['phase', 'req', 'merge'] as const) {
+      const g = delegationGate(gateDeps({ stopGate: sg, readDelegationLedger: () => null }), prepared(), FACTS_OK)
+      expect(g.kind, sg).toBe('not-required')
+    }
+  })
+})
+
+describe('[REQ-2026-140] delegationGate — auto', () => {
+  it('🔴 위임이 없으면 거부하고 발급 방법을 알려준다', () => {
+    const g = delegationGate(gateDeps({ stopGate: 'auto', readDelegationLedger: () => null }), prepared(), FACTS_OK)
+    expect(g.kind).toBe('denied')
+    if (g.kind === 'denied') {
+      expect(g.lines.join('\n')).toContain('absent')
+      expect(g.lines.join('\n')).toContain('req:delegate')
+    }
+  })
+
+  it('유효한 위임이면 허용하고 id 를 돌려준다', () => {
+    const g = delegationGate(
+      gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED()) }),
+      prepared(),
+      FACTS_OK,
+    )
+    expect(g.kind).toBe('allowed')
+    if (g.kind === 'allowed') expect(g.delegationId).toBe('D1')
+  })
+
+  it('🔴 trunk 가 움직였으면 거부한다', () => {
+    const g = delegationGate(
+      gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED({ trunk_sha: 'f'.repeat(40) })) }),
+      prepared(),
+      FACTS_OK,
+    )
+    expect(g.kind).toBe('denied')
+    if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('trunk-moved')
+  })
+
+  it('🔴 다른 브랜치의 위임은 쓰이지 않는다', () => {
+    const g = delegationGate(
+      gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED({ source_branch: 'feat/req-2026-002-y' })) }),
+      prepared(),
+      FACTS_OK,
+    )
+    expect(g.kind).toBe('denied')
+    if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('source-mismatch')
+  })
+
+  it('🔴 소비된 위임은 다시 쓰이지 않는다', () => {
+    const consumed: DelegationRow = {
+      kind: 'consumed',
+      id: 'D1',
+      at: '2026-08-09T12:00:00.000Z',
+      verified_sha: HEAD,
+      authorized: { local_merge: true, origin_push: false, bypass_protection: false },
+      outcome: 'merged',
+      detail: '',
+    }
+    const g = delegationGate(
+      gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED(), consumed) }),
+      prepared(),
+      FACTS_OK,
+    )
+    expect(g.kind).toBe('denied')
+    if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('consumed')
+  })
+
+  it('🔴 HIGH·hardCap·BLOCKED 는 위임이 있어도 막는다', () => {
+    const deps = gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED()) })
+    const cases = [
+      [{ ...FACTS_OK, riskLevel: 'HIGH' }, 'high-risk-unacked'],
+      [{ ...FACTS_OK, budgetHardCapReached: true }, 'budget-hardcap'],
+      [{ ...FACTS_OK, reviewInconclusive: true }, 'review-inconclusive'],
+    ] as const
+    for (const [facts, reason] of cases) {
+      const g = delegationGate(deps, prepared(), facts)
+      expect(g.kind, reason).toBe('denied')
+      if (g.kind === 'denied') expect(g.lines.join('\n')).toContain(reason)
+    }
+  })
+
+  it('HIGH 는 --high-risk 위임이면 통과한다', () => {
+    const g = delegationGate(
+      gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED({ high_risk_ack: true })) }),
+      prepared(),
+      { ...FACTS_OK, riskLevel: 'HIGH' },
+    )
+    expect(g.kind).toBe('allowed')
+  })
+
+  it('🔴 브랜치에서 대상을 판정할 수 없으면 거부한다', () => {
+    const g = delegationGate(
+      gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED()) }),
+      prepared({ featureBranch: 'hotfix/thing' }),
+      FACTS_OK,
+    )
+    expect(g.kind).toBe('denied')
+    if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('판정할 수 없')
+  })
+
+  /** 🔴 delivery 멤버를 읽지 못하면 거부한다(빈 목록으로 취급하지 않는다). */
+  it('🔴 delivery 멤버를 못 읽으면 거부한다', () => {
+    const g = delegationGate(
+      gateDeps({
+        stopGate: 'auto',
+        readDelegationLedger: () => ledgerOf(ISSUED({ scope: { kind: 'delivery', slug: '0.23.0' }, source_branch: 'delivery/0.23.0' })),
+      }),
+      prepared({ featureBranch: 'delivery/0.23.0' }),
+      { ...FACTS_OK, deliveryMembers: null },
+    )
+    expect(g.kind).toBe('denied')
+  })
+
+  it('🔴 delivery 구성이 바뀌었으면 거부한다', () => {
+    const g = delegationGate(
+      gateDeps({
+        stopGate: 'auto',
+        readDelegationLedger: () => ledgerOf(ISSUED({ scope: { kind: 'delivery', slug: '0.23.0' }, source_branch: 'delivery/0.23.0' })),
+      }),
+      prepared({ featureBranch: 'delivery/0.23.0' }),
+      { ...FACTS_OK, deliveryMembers: [TICKET], compositionChanged: true },
+    )
+    expect(g.kind).toBe('denied')
+    if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('composition-changed')
+  })
+
+  it('delivery 묶음도 멤버·구성이 맞으면 통과한다', () => {
+    const g = delegationGate(
+      gateDeps({
+        stopGate: 'auto',
+        readDelegationLedger: () => ledgerOf(ISSUED({ scope: { kind: 'delivery', slug: '0.23.0' }, source_branch: 'delivery/0.23.0' })),
+      }),
+      prepared({ featureBranch: 'delivery/0.23.0' }),
+      { ...FACTS_OK, deliveryMembers: [TICKET], compositionChanged: false },
+    )
+    expect(g.kind).toBe('allowed')
+  })
+})
+
+describe('[REQ-2026-140] readTicketFacts — 못 읽으면 fail-closed', () => {
+  it('state.json 이 없으면 HIGH·미결로 본다', () => {
+    const f = readTicketFacts(fakeReadBlobs(), HEAD, 'workflow', TICKET, 8)
+    expect(f).toEqual({ riskLevel: 'HIGH', budgetHardCapReached: false, reviewInconclusive: true })
+  })
+
+  it('손상 JSON 도 같은 취급이다', () => {
+    const f = readTicketFacts(fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: '{oops' }), HEAD, 'workflow', TICKET, 8)
+    expect(f.riskLevel).toBe('HIGH')
+    expect(f.reviewInconclusive).toBe(true)
+  })
+
+  it('정상 state 는 그대로 읽는다', () => {
+    const f = readTicketFacts(fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: OK_STATE }), HEAD, 'workflow', TICKET, 8)
+    expect(f).toEqual({ riskLevel: 'LOW', budgetHardCapReached: false, reviewInconclusive: false })
+  })
+
+  it('🔴 hardCap 도달을 읽는다', () => {
+    const st = JSON.stringify({ risk_level: 'LOW', review_series: [{ attempts: 8, closed_reason: 'approved' }] })
+    const f = readTicketFacts(fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: st }), HEAD, 'workflow', TICKET, 8)
+    expect(f.budgetHardCapReached).toBe(true)
+  })
+})
+
+/** DEC-5 불변식 — 검증된 `V` 와 병합할 `C` 사이에 소비 커밋 하나만. */
+describe('[REQ-2026-140] claimCommitProblem', () => {
+  const V = 'a'.repeat(40)
+  const C = 'b'.repeat(40)
+  const stub = (revList: string, show: string): GitAdapter => ({
+    exec: (args) => (args[0] === 'rev-list' ? revList : args[0] === 'show' ? show : ''),
+  })
+
+  it('소비 커밋 하나 · 원장만 변경 → 통과', () => {
+    expect(claimCommitProblem(stub(`${C}\n`, `${DELEGATION_LEDGER_REL}\n`), V, C, BASE, BASE)).toBeNull()
+  })
+
+  it('🔴 trunk 가 움직였으면 거부', () => {
+    expect(claimCommitProblem(stub(`${C}\n`, `${DELEGATION_LEDGER_REL}\n`), V, C, BASE, SRC)).toContain('trunk')
+  })
+
+  it('🔴 소비 커밋이 안 만들어졌으면 거부', () => {
+    expect(claimCommitProblem(stub('', ''), V, V, BASE, BASE)).toContain('만들어지지')
+  })
+
+  it('🔴 사이에 다른 커밋이 있으면 거부', () => {
+    expect(claimCommitProblem(stub(`${C}\n${SRC}\n`, `${DELEGATION_LEDGER_REL}\n`), V, C, BASE, BASE)).toContain('다른 커밋')
+  })
+
+  it('🔴 원장 밖을 바꿨으면 거부', () => {
+    expect(claimCommitProblem(stub(`${C}\n`, `${DELEGATION_LEDGER_REL}\nsrc/app.ts\n`), V, C, BASE, BASE)).toContain('src/app.ts')
+  })
+
+  it('🔴 git 호출이 실패하면 거부한다(통과가 아니다)', () => {
+    const bad: GitAdapter = {
+      exec: () => {
+        throw new Error('boom')
+      },
+    }
+    expect(claimCommitProblem(bad, V, C, BASE, BASE)).toContain('확인하지 못했')
+  })
+})
+
+/**
+ * 🔴 push·bypass 는 **기본 불허**이고 서로 **독립**이다(요구 6).
+ *    보호 설정을 로컬에서 읽을 수 없으므로 "CI 를 확인하지 않은 push = 우회"로 **보수적으로** 본다 —
+ *    틀리는 방향이 더 강한 권한을 요구하는 쪽이라 안전하다.
+ */
+describe('[REQ-2026-140] planPushActions — push·bypass 분리', () => {
+  const P = (over: Partial<DelegationPermissions> = {}): DelegationPermissions => ({
+    local_merge: true,
+    origin_push: false,
+    bypass_protection: false,
+    ...over,
+  })
+
+  it('push 를 위임하지 않았으면 로컬 병합까지만 한다(오류가 아니다)', () => {
+    const r = planPushActions(P())
+    expect(r.problem).toBeNull()
+    expect(r.performed.origin_push).toBe(false)
+  })
+
+  it('🔴 push 위임인데 bypass 위임이 없으면 거부한다', () => {
+    const r = planPushActions(P({ origin_push: true }))
+    expect(r.problem).toContain('--allow-bypass')
+    expect(r.performed.origin_push).toBe(false)
+  })
+
+  /**
+   * 🔴 phase-4c 리뷰 r01 P1 — **CI 를 통과해도 우회는 우회다.**
+   *    CI 는 feature SHA 에 결속되는데 trunk 로 올라가는 것은 소비 커밋과 CAS 병합으로 새로 만들어진
+   *    **merge SHA** 다. 그 SHA 에 required check 가 돌아간 적은 없다.
+   */
+  it('🔴 CI 를 통과했어도 push 에는 bypass 위임이 필요하다(검사 대상이 다르다)', () => {
+    const r = planPushActions(P({ origin_push: true }))
+    expect(r.problem).not.toBeNull()
+    expect(r.problem).toContain('merge SHA')
+  })
+
+  /**
+   * 🔴 phase-4c 리뷰 r02 P1 — **`githubCi` 설정 유무로 판단하지 않는다.**
+   *    그것은 CommitGate 가 CI 를 실행할지의 opt-in 일 뿐이고, 원격에 외부 CI 가 required check 로
+   *    걸려 있을 수 있다. 원격 보호 상태는 로컬에서 알 수 없으므로 **push 자체를 우회로 본다.**
+   */
+  it('🔴 githubCi 설정이 없어도 push 에는 bypass 위임이 필요하다(원격 보호를 알 수 없다)', () => {
+    const r = planPushActions(P({ origin_push: true }))
+    expect(r.problem).not.toBeNull()
+    expect(r.performed.origin_push).toBe(false)
+  })
+
+  it('🔴 bypass 를 위임했으면 진행하고 **우회했다는 사실을 남긴다**', () => {
+    const r = planPushActions(P({ origin_push: true, bypass_protection: true }))
+    expect(r.problem).toBeNull()
+    expect(r.performed).toEqual({ local_merge: true, origin_push: true, bypass_protection: true })
+  })
+
+  it('🔴 bypass 만 위임하고 push 를 위임하지 않으면 push 하지 않는다(함의 없음)', () => {
+    const r = planPushActions(P({ bypass_protection: true }))
+    expect(r.performed.origin_push).toBe(false)
+  })
+})
+
+describe('[REQ-2026-140] runIntegrate 배선 — 순수 테스트가 못 잡는 자리', () => {
+  it('🔴 auto + 위임 없음 → 병합하지 않고 exit 1', async () => {
+    const deps = makeDeps({
+      git: fakeGit({ branch: FEATURE_001 }),
+      readBlobs: fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: OK_STATE }),
+      stopGate: 'auto',
+      readDelegationLedger: () => null,
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.merged).toBe(false)
+    expect(r.exit).toBe(1)
+    expect(deps.logs.join('\n')).toContain('사전 위임')
+    // 🔴 병합을 시도조차 하지 않았다.
+    expect(deps.git.calls.some((c) => c[0] === 'merge')).toBe(false)
+  })
+
+  it('🔴 stopGate 가 auto 가 아니면 위임 원장을 읽지도 않는다(무회귀)', async () => {
+    let read = 0
+    const deps = makeDeps({
+      git: fakeGit({ branch: FEATURE_001 }),
+      stopGate: 'merge',
+      readDelegationLedger: () => {
+        read++
+        return null
+      },
+    })
+    await runIntegrate(integrateOpts({ run: false }), deps)
+    expect(read).toBe(0)
+  })
+})
+
+/**
+ * 🔴 phase-4c 리뷰 r04 P1 — 구성 비교는 **`order` 필드까지** 본다.
+ *    배열 순서만 보면 같은 배열에서 `order` 값만 뒤바뀐 레코드를 동일하다고 읽는데,
+ *    `order` 는 successor 체인의 방향을 정하므로 그것이 바뀐 묶음은 다른 묶음이다.
+ */
+describe('[REQ-2026-140] readDeliveryFacts — 구성 비교', () => {
+  const REL = 'workflow/delivery/S.json'
+  const rec = (members: { req_id: string; order: number }[]): string =>
+    JSON.stringify({
+      schema_version: 1,
+      slug: 'S',
+      branch: 'delivery/S',
+      target_branch: TRUNK,
+      state: 'open',
+      events: [],
+      members: members.map((m) => ({
+        req_id: m.req_id,
+        order: m.order,
+        delivery_base_sha: BASE,
+        status: 'active',
+        successor_of: null,
+        feature_ref: null,
+        integrated_at: null,
+        superseded_evidence: null,
+      })),
+    })
+
+  /** ref 별로 다른 내용을 돌려주는 readBlobs. */
+  const blobsByRef = (byRef: Record<string, string>) => (ref: string, paths: readonly string[]) =>
+    new Map(paths.map((p) => [p, p === REL && byRef[ref] !== undefined ? Buffer.from(byRef[ref] as string, 'utf8') : null]))
+
+  const A1B2 = rec([
+    { req_id: 'REQ-2026-001', order: 1 },
+    { req_id: 'REQ-2026-002', order: 2 },
+  ])
+
+  it('같은 구성이면 변화 없음', () => {
+    const f = readDeliveryFacts(blobsByRef({ HEADREF: A1B2, BASEREF: A1B2 }), 'workflow', 'S', 'HEADREF', 'BASEREF')
+    expect(f.members).toEqual(['REQ-2026-001', 'REQ-2026-002'])
+    expect(f.compositionChanged).toBe(false)
+  })
+
+  it('🔴 배열은 그대로인데 order 값만 뒤바뀌면 구성 변화다', () => {
+    const swapped = rec([
+      { req_id: 'REQ-2026-001', order: 2 },
+      { req_id: 'REQ-2026-002', order: 1 },
+    ])
+    const f = readDeliveryFacts(blobsByRef({ HEADREF: swapped, BASEREF: A1B2 }), 'workflow', 'S', 'HEADREF', 'BASEREF')
+    expect(f.compositionChanged).toBe(true)
+  })
+
+  it('🔴 멤버가 늘면 구성 변화다', () => {
+    const more = rec([
+      { req_id: 'REQ-2026-001', order: 1 },
+      { req_id: 'REQ-2026-002', order: 2 },
+      { req_id: 'REQ-2026-003', order: 3 },
+    ])
+    const f = readDeliveryFacts(blobsByRef({ HEADREF: more, BASEREF: A1B2 }), 'workflow', 'S', 'HEADREF', 'BASEREF')
+    expect(f.compositionChanged).toBe(true)
+  })
+
+  it('🔴 못 읽거나 손상이면 fail-closed', () => {
+    expect(readDeliveryFacts(blobsByRef({}), 'workflow', 'S', 'HEADREF', 'BASEREF')).toEqual({
+      members: null,
+      compositionChanged: true,
+    })
+    const f = readDeliveryFacts(blobsByRef({ HEADREF: A1B2, BASEREF: '{oops' }), 'workflow', 'S', 'HEADREF', 'BASEREF')
+    expect(f.compositionChanged).toBe(true)
+  })
+})
+
+/**
+ * REQ-2026-140 phase-6 — **`runIntegrate` 를 실제로 태우는 push 배선**(phase-4c 리뷰 관측).
+ *
+ * 🔴 순수 판정(`planPushActions`)만 있으면 "판정은 맞는데 아무도 그것을 쓰지 않는" 상태를 못 잡는다.
+ *    이 저장소는 그 실패를 세 번 실증했다(REQ-2026-083·097·099).
+ */
+describe('[REQ-2026-140] runIntegrate — push·수행 기록 배선', () => {
+  const DELEGATION = (perms: Partial<DelegationPermissions>): string =>
+    ledgerOf(ISSUED({ permissions: { local_merge: true, origin_push: false, bypass_protection: false, ...perms } }))
+
+  /**
+   * 🔴 **소비 커밋이 tip 을 움직이는 것을 모사한다.** 공유 fake 는 ref 가 고정이라 `C === V` 가 되어
+   *    CAS 불변식(`claimCommitProblem`)에서 정상 경로가 막힌다 — 그건 fake 의 한계이지 결함이 아니다.
+   *    래퍼를 테스트 안에 두어 공유 fake 를 복잡하게 만들지 않는다.
+   */
+  const CLAIM_SHA = '7'.repeat(40)
+  const gitWithClaim = (opts: Parameters<typeof fakeGit>[0] = {}) => {
+    const inner = fakeGit({ branch: FEATURE_001, ...opts })
+    let claimed = false
+    const g: ReturnType<typeof fakeGit> = {
+      calls: inner.calls,
+      exec(args: string[]): string {
+        /**
+         * 소비 커밋 이후 **feature 쪽 SHA 는 전부 C** 다.
+         * 🔴 `collect()` 는 브랜치 ref 가 아니라 `HEAD^{commit}` 을 읽는다 — ref 이름만 가로채면
+         *    이 경로를 놓친다. trunk 를 가리키지 않는 `rev-parse` 를 전부 C 로 답한다.
+         */
+        if (claimed && args[0] === 'rev-parse' && args[1] !== '--abbrev-ref' && !(args[2] ?? '').includes(TRUNK)) {
+          inner.calls.push(args)
+          return `${CLAIM_SHA}\n`
+        }
+        // `rev-list <V>..<C>` 는 소비 커밋 하나만 돌려준다(`--parents -n 1` 형태와 구별).
+        if (args[0] === 'rev-list' && args.some((a) => a.includes('..'))) {
+          inner.calls.push(args)
+          return `${CLAIM_SHA}\n`
+        }
+        // 병합 후 부모 확인(`rev-list --parents -n 1`)은 **C** 를 부모로 답해야 한다.
+        if (claimed && args[0] === 'rev-list') {
+          inner.calls.push(args)
+          return `${MERGE_SHA} ${BASE} ${CLAIM_SHA}\n`
+        }
+        return inner.exec(args)
+      },
+    }
+    return { git: g, claim: () => void (claimed = true) }
+  }
+
+  const autoDeps = (over: Omit<Partial<RunDeps>, 'git'> & { git: ReturnType<typeof fakeGit> }) =>
+    makeDeps({
+      readBlobs: fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: OK_STATE }),
+      now: () => '2026-08-10T00:00:00.000Z',
+      stopGate: 'auto',
+      ...over,
+    })
+
+  it('🔴 push 를 위임하지 않으면 병합만 하고 push 를 호출하지 않는다', async () => {
+    const { git, claim } = gitWithClaim()
+    const rows: DelegationRow[] = []
+    const deps = autoDeps({
+      git,
+      readDelegationLedger: () => DELEGATION({}),
+      appendDelegationRow: (r) => {
+        rows.push(r)
+        if (r.kind === 'consumed') claim()
+      },
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.merged).toBe(true)
+    expect(git.calls.some((c) => c[0] === 'push')).toBe(false)
+    // 소비(인가) + 수행 기록 두 행이 남는다.
+    expect(rows.map((x) => x.kind)).toEqual(['consumed', 'executed'])
+    const executed = rows[1] as Extract<DelegationRow, { kind: 'executed' }>
+    expect(executed.performed).toEqual({ local_merge: true, origin_push: false, bypass_protection: false })
+  })
+
+  it('🔴 push+bypass 위임이면 두 번 push 한다(병합 · 수행 기록)', async () => {
+    const { git, claim } = gitWithClaim({ pushResults: [null, null] })
+    const rows: DelegationRow[] = []
+    const deps = autoDeps({
+      git,
+      readDelegationLedger: () => DELEGATION({ origin_push: true, bypass_protection: true }),
+      appendDelegationRow: (r) => {
+        rows.push(r)
+        if (r.kind === 'consumed') claim()
+      },
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.exit).toBe(0)
+    expect(git.calls.filter((c) => c[0] === 'push')).toHaveLength(2)
+    const executed = rows.find((x) => x.kind === 'executed') as Extract<DelegationRow, { kind: 'executed' }>
+    expect(executed.performed).toEqual({ local_merge: true, origin_push: true, bypass_protection: true })
+    // 🔴 우회 사실이 **최종 보고에도** 남는다.
+    expect(deps.logs.join('\n')).toContain('required check')
+  })
+
+  it('🔴 1차 push 가 실패하면 exit 1 이고 수행 기록에 push=false 로 남는다', async () => {
+    const { git, claim } = gitWithClaim({ pushResults: [new Error('protected branch')] })
+    const rows: DelegationRow[] = []
+    const deps = autoDeps({
+      git,
+      readDelegationLedger: () => DELEGATION({ origin_push: true, bypass_protection: true }),
+      appendDelegationRow: (r) => {
+        rows.push(r)
+        if (r.kind === 'consumed') claim()
+      },
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.exit).toBe(1)
+    const executed = rows.find((x) => x.kind === 'executed') as Extract<DelegationRow, { kind: 'executed' }>
+    // 🔴 하지 않은 일을 했다고 적지 않는다.
+    expect(executed.performed.origin_push).toBe(false)
+    expect(executed.performed.bypass_protection).toBe(false)
+  })
+
+  it('🔴 2차 push(수행 기록) 실패는 로컬이 앞선다고 알리고 exit 1 이다', async () => {
+    const { git, claim } = gitWithClaim({ pushResults: [null, new Error('rejected')] })
+    const deps = autoDeps({
+      git,
+      readDelegationLedger: () => DELEGATION({ origin_push: true, bypass_protection: true }),
+      appendDelegationRow: (r) => {
+        if (r.kind === 'consumed') claim()
+      },
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.exit).toBe(1)
+    expect(r.merged).toBe(true)
+    expect(deps.logs.join('\n')).toContain('앞서 있습니다')
+  })
+})

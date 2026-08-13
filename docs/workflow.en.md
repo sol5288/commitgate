@@ -65,9 +65,15 @@ Re-reviews of the same `(review kind, phase)` are budgeted
 integration control points, and `hardCap` are all unchanged. `"auto"` also makes `req:review-exception`
 refuse to grant an exception — it would only create an approval record that can never be consumed.
 
-Exactly **what `auto` removes and what it keeps**, why `hardCap` does not open, and why there is no
-`stopGate: "auto"` are defined in [Configuration — Review budget](configuration.en.md#review-budget--reviewbudget),
-which is the authority. The upgrade path for an existing project is there too.
+Exactly **what `auto` removes and what it keeps** and why `hardCap` does not open are defined in
+[Configuration — Review budget](configuration.en.md#review-budget--reviewbudget), which is the authority.
+The upgrade path for an existing project is there too.
+
+🔴 **This axis's `auto` and `stopGate: "auto"` are different things.** The former governs the human exception
+on a re-review round; the latter governs the human confirmation at integration. `stopGate: "auto"` proceeds
+**only when a pre-delegation record exists** — see
+[Configuration](configuration.en.md#stopgate-auto--automatic-integration-of-verified-changes-within-a-delegated-scope).
+🔴 **Neither of them opens `hardCap`.**
 
 If you set `stopGate` to `req` or `merge` for autonomous runs, look at this axis too: a budget stop cuts in
 **regardless** of where `stopGate` says you stop, so opening only one of the two still leaves the workflow
@@ -484,6 +490,26 @@ order or revert just one**. That is why seeing it early matters.
 - The trunk name is `trunkBranch` in `req.config.json` (default `"main"`). Set it to `null` to turn D25 off.
   If the ref does not exist locally the check passes silently — a noisy false positive would train you to
   ignore the whole doctor output.
+
+## When a review is blocked by "ledger integrity failure" — `--close-stale`
+
+If a review run **dies midway**, the ledger keeps only its `attempt-opened` row. The next review tries to
+open the same number and is blocked with a ledger integrity error.
+
+The ledger is append-only, so that row cannot be deleted — and should not be: the call for that round
+**actually went out**. Instead, record that it was abandoned.
+
+```sh
+npx commitgate req:review-exception <REQ> --close-stale <series_id> --reason "<why you are abandoning it>" --run
+```
+
+- Appends an `attempt-closed` row with outcome `abandoned`, and reconciles the round count in `state`.
+- The reason is **required**. A termination with no grounds is not a record.
+- With several open rounds it closes **the earliest first** — re-running resolves them in order.
+- 🔴 **The cost does not disappear.** An abandoned round still counts against `hardCap` (the total call
+  ceiling) and is removed only from `autoBudget`, because it never produced a verdict.
+- 🔴 **Re-running converges even if this command itself dies midway.** It never re-creates a row that is
+  already recorded; it only finishes what is left.
 
 ## Command Cheat Sheet
 

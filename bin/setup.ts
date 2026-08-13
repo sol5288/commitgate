@@ -300,7 +300,7 @@ function derivedStopGate(raw: Record<string, unknown>): string | null {
  *    설정 화면이 실제 동작보다 강한 약속을 하면, 사용자는 보호받는다고 믿는 자리에서 보호받지 못한다.
  */
 export const STOP_GATE_HIGH_NOTICE =
-  '정지 지점은 이 값이 정합니다 — phase: 매 phase 커밋 전 · req: REQ를 끝내는 커밋 전 · merge: 커밋에서는 멈추지 않고 묶음이 끝날 때(묶음이 없으면 REQ 통합 직전) · 통합(main 병합) 승인은 어느 값에서도 필요합니다'
+  '정지 지점은 이 값이 정합니다 — phase: 매 phase 커밋 전 · req: REQ를 끝내는 커밋 전 · merge: 커밋에서는 멈추지 않고 묶음이 끝날 때(묶음이 없으면 REQ 통합 직전) · auto: merge와 같되 유효한 사전 위임이 있으면 통합에서도 멈추지 않습니다 · 통합(main 병합) 승인은 어느 값에서도 필요합니다(auto에서는 사전 위임 기록이 그 승인입니다)'
 
 /** 질문 하나에 붙일 안내 문구(순수 — 프롬프트 렌더링의 SSOT). */
 /**
@@ -351,7 +351,7 @@ export interface SelectItem {
  * 🔴 필수 대응이 아니어야 한다. enum이 늘었을 때 여기 빠졌다고 선택지가 사라지면
  *    스키마가 SSOT라는 계약이 깨진다(REQ-2026-063 DEC-4).
  */
-const VALUE_NOTES: Partial<Record<SetupKey, Record<string, string>>> = {
+export const VALUE_NOTES: Partial<Record<SetupKey, Record<string, string>>> = {
   reviewModel: {
     'gpt-5.6-terra': '기본값',
   },
@@ -361,6 +361,9 @@ const VALUE_NOTES: Partial<Record<SetupKey, Record<string, string>>> = {
     phase: '매 phase 커밋 전에 확인',
     req: 'REQ 하나가 끝날 때 — 통합 직전 한 번',
     merge: '묶음(delivery set)이 끝날 때 한 번 · 묶음이 없으면 req 와 같다',
+    // 🔴 REQ-2026-140: `auto` 는 **위임이 있을 때만** 다르다. 값만 바꾸면 통합에서 막힌다 —
+    //    그 사실을 설명에 넣지 않으면 "골랐는데 왜 멈추지"가 된다.
+    auto: '사전 위임(req:delegate)이 있으면 통합까지 무정지 · 없으면 merge 처럼 멈춘다',
   },
   'reviewBudget.onSoftLimit': {
     ask: '6~8회차마다 사람 승인(기본)',

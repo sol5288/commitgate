@@ -105,12 +105,53 @@ function ticketRelOfManifestPath(path: string): string {
   return path.split('/').slice(0, 2).join('/')
 }
 
-interface ConsumedRow {
+export interface ConsumedRow {
   manifestPath: string
   ticketRel: string
   /** 원 행 텍스트(단독 재검증 입력). */
   line: string
   raw: Record<string, unknown>
+}
+
+/**
+ * 매니페스트에서 **소비 행**(`consumed_by_commit_sha`)을 sha 별로 모은다.
+ *
+ * 🔴 **파서를 두 벌 두지 않으려고 export 한다**(REQ-2026-140 phase-4a). 병합 범위의 **티켓 귀속**도
+ *    같은 매핑이 필요한데, 별도로 파싱하면 한쪽만 고쳐질 때 두 판정이 조용히 갈라진다 —
+ *    이 저장소가 자산 skew 로 두 번 데인 자리다(REQ-2026-025·038).
+ */
+export function collectConsumedRows(manifests: readonly ManifestFile[]): {
+  rows: Map<string, ConsumedRow[]>
+  problems: number
+} {
+  let problems = 0
+  const rows = new Map<string, ConsumedRow[]>()
+  for (const mf of manifests) {
+    for (const line of mf.content.split('\n')) {
+      if (line.trim() === '') continue
+      let raw: unknown
+      try {
+        raw = JSON.parse(line)
+      } catch {
+        problems++
+        continue
+      }
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        problems++
+        continue
+      }
+      const sha = (raw as { consumed_by_commit_sha?: unknown }).consumed_by_commit_sha
+      if (sha === undefined) continue // rebind 등 정당한 비소비 행
+      if (typeof sha !== 'string' || !OID_RE.test(sha)) {
+        problems++
+        continue
+      }
+      const list = rows.get(sha) ?? []
+      list.push({ manifestPath: mf.path, ticketRel: ticketRelOfManifestPath(mf.path), line, raw: raw as Record<string, unknown> })
+      rows.set(sha, list)
+    }
+  }
+  return { rows, problems }
 }
 
 /** 심층 분류(순수). 입력 수집은 전부 호출부 몫 — 이 함수는 프로세스를 모른다. */
@@ -119,33 +160,7 @@ export function verifyRangeDeep(input: DeepVerifyInput): DeepVerifyReport {
   if (input.attestationProblems > 0) notes.push(`attestations.jsonl 손상 행 ${input.attestationProblems}건 — 해당 행만 무시했습니다`)
 
   // 1) 소비 행 수집(관대) — sha → 행 목록. malformed는 manifestProblems.
-  let manifestProblems = 0
-  const consumedRows = new Map<string, ConsumedRow[]>()
-  for (const mf of input.manifests) {
-    for (const line of mf.content.split('\n')) {
-      if (line.trim() === '') continue
-      let raw: unknown
-      try {
-        raw = JSON.parse(line)
-      } catch {
-        manifestProblems++
-        continue
-      }
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        manifestProblems++
-        continue
-      }
-      const sha = (raw as { consumed_by_commit_sha?: unknown }).consumed_by_commit_sha
-      if (sha === undefined) continue // rebind 등 정당한 비소비 행
-      if (typeof sha !== 'string' || !OID_RE.test(sha)) {
-        manifestProblems++
-        continue
-      }
-      const list = consumedRows.get(sha) ?? []
-      list.push({ manifestPath: mf.path, ticketRel: ticketRelOfManifestPath(mf.path), line, raw: raw as Record<string, unknown> })
-      consumedRows.set(sha, list)
-    }
-  }
+  const { rows: consumedRows, problems: manifestProblems } = collectConsumedRows(input.manifests)
 
   // 2) 커밋별 분류.
   const counts: Record<DeepCategory, number> = { merge: 0, bookkeeping: 0, approved: 0, attested: 0, 'invalid-evidence': 0, unproven: 0 }

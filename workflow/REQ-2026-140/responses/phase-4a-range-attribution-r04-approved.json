@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"03eddaeeab4193fbec210b994e18c299de0921d0","status":"COMPLETE","commit_approved":"yes","merge_ready":"yes","review_kind":"phase","full_review_requested":"no","findings":[],"next_action":"이 staged diff를 커밋하고 phase-4b에서 attributeRange를 자동 통합 검증 입력에 연결하세요.","observations":[]}

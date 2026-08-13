@@ -15,7 +15,7 @@
  * 사용: req:confirm <REQ> --scope phase|req|delivery --method "<승인 문장>" [--note "<메모>"] [--run]
  */
 import { join, relative } from 'node:path'
-import { loadConfig, effectiveStopGate } from './lib/config'
+import { loadConfig, effectiveStopGate, defersToIntegration } from './lib/config'
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
@@ -158,7 +158,7 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
       [
         `현재 stopGate="${stopGateNow}" 는 scope="${required}" 확인을 요구합니다(받은 값: "${o.scope}").`,
         '  범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술이라, 다른 범위의 기록은 게이트를 통과하지 못합니다.',
-        stopGateNow === 'merge'
+        defersToIntegration(stopGateNow)
           ? `  이 REQ 는 delivery 묶음에 속하지 ${inDeliverySet ? '있습니다' : '않습니다'} — merge 의 요구 scope 는 소속에 따라 갈립니다(속함=delivery · 속하지 않음=req).`
           : // 🔴 REQ-2026-129 phase-1 r01 observation: 스냅샷이 있으면 config 를 바꿔도 이 오류가 그대로
             //    재현된다 — 티켓 정책이 정본이기 때문이다. 실제로 듣는 명령을 안내한다.
