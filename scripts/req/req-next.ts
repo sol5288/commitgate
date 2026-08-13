@@ -554,6 +554,7 @@ function gateRunCandidate(input: NextInput, cand: RunCandidate): NextAction {
         `series 판정 회차=${counts.productive}(autoBudget ${autoBudget}) · 호출 회차=${counts.dispatched}(hardCap ${hardCap}) · 다음 회차=${nextAttempt}`,
         `직전 리뷰 outcome=${lrOutcome}`,
         `선택지: ${options}`,
+        ...softLimitUpgradeHint(input, hardBlocked),
       ],
     }
   }
@@ -991,6 +992,31 @@ export function parseArgs(argv: string[]): Opts {
 }
 
 /** 사람이 읽는 출력. `displayId`는 표시 전용(argv가 아니다) — `state.id`를 그대로 쓴다. */
+/**
+ * 예산 정지를 **실제로 만난 자리**에서만 내는 업그레이드 안내(REQ-2026-135 DEC-4).
+ *
+ * 세 조건이 **모두** 참일 때만 낸다:
+ *  - `hardBlocked`가 아니다 — 🔴 `hardCap`은 어떤 설정으로도 열리지 않으므로, 거기서 "설정으로 끌 수
+ *    있다"고 말하면 **거짓 안내**다.
+ *  - `stopGate`가 `req`·`merge` — 자율 진행을 이미 고른 사용자다. `phase`를 고른 사용자는 자주 멈추기를
+ *    원했으므로 재촉하지 않는다.
+ *  - `onSoftLimit`이 아직 `ask` — 이미 `auto`면 이 정지 자체가 없다.
+ *
+ * 🔴 **상시 진단(doctor WARN)으로 만들지 않는다.** `ask`는 정당한 선택이고, 그것을 고른 사용자에게 매번
+ *    경고를 띄우면 진단이 아니라 잔소리다. 마찰을 겪는 순간에만 말하는 것이 정확하다.
+ */
+export function softLimitUpgradeHint(input: NextInput, hardBlocked: boolean): string[] {
+  if (hardBlocked) return []
+  const sg = input.stopGate ?? 'phase'
+  if (sg !== 'req' && sg !== 'merge') return []
+  if (input.reviewBudget.onSoftLimit !== 'ask') return []
+  return [
+    '이 정지는 설정으로 끌 수 있다 — req.config.json 의 reviewBudget.onSoftLimit 을 "auto" 로 두면 ' +
+      '소프트 초과 회차가 사람 승인 없이 진행된다(hardCap 은 그대로 남는다). ' +
+      '`npx commitgate setup`(사람이 실행) 으로도 고를 수 있다.',
+  ]
+}
+
 /**
  * 종단의 **통합 정지**(REQ-2026-037 R5 · REQ-2026-128 DEC-1). `req` 와 `merge`(묶음 없음)가 **같은** 판정을
  * 쓰도록 한 곳에 둔다 — 두 곳에서 각자 문장을 만들면 갈라진다(실제로 갈라졌던 이력이 있다).

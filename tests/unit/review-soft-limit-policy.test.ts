@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkReviewBudget, budgetAllowsDispatch, type BudgetDecision } from '../../scripts/req/review-codex'
-import { loadConfig, DEFAULTS, type ReviewBudget } from '../../scripts/req/lib/config'
+import { loadConfig, DEFAULTS, type ReviewBudget, type StopGate } from '../../scripts/req/lib/config'
 import { planReviewException } from '../../scripts/req/req-review-exception'
 import { resolveNext } from '../../scripts/req/req-next'
 import { ledgerRowProblems, OPTIONAL_LEDGER_KEYS, type LedgerRow } from '../../scripts/req/lib/review-ledger'
@@ -166,6 +166,70 @@ describe('[REQ-2026-132] req:next — auto 는 예산으로 멈추지 않는다'
       expect(a.kind, p).toBe('AWAIT_HUMAN')
       expect(a.detail, p).toContain('하드 상한')
     }
+  })
+})
+
+/**
+ * REQ-2026-135 — **업그레이드 안내**. 예산 정지를 실제로 만난 자리에서만 낸다.
+ *
+ * 🔴 `hardCap` 도달에는 내지 않는다 — 그 정지는 어떤 설정으로도 열리지 않으므로 "설정으로 끌 수 있다"는
+ *    말이 **거짓 안내**가 된다.
+ */
+describe('[REQ-2026-135] 소프트 한도 업그레이드 안내', () => {
+  const state = (attempts: number): WorkflowState =>
+    ({
+      id: 'REQ-2026-135',
+      branch: 'feat/req-2026-135-x',
+      commit_allowed: false,
+      design_approved: false,
+      design_approved_hash: null,
+      phases: [],
+      approval_evidence_required: true,
+      review_series_model_version: 1,
+      review_series: [{ series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts, closed_reason: null }],
+    }) as unknown as WorkflowState
+
+  const diagnostics = (attempts: number, stopGate: StopGate, onSoftLimit: 'ask' | 'auto'): string =>
+    (
+      resolveNext({
+        target: { kind: 'req', reqId: '2026-135' },
+        state: state(attempts),
+        packageManager: 'npm',
+        designDocsInIndex: true,
+        currentDesignHash: 'd'.repeat(64),
+        hasStagedChanges: false,
+        worktreeReviewClean: true,
+        currentIndexHash: 'a'.repeat(64),
+        currentSemanticIdentity: 'a'.repeat(64),
+        reviewBudget: budget(onSoftLimit),
+        phaseCommitAutoApprove: 'never',
+        stopGate,
+      }).diagnostics ?? []
+    ).join('\n')
+
+  it('🔴 req/merge + ask + 소프트 소진 → 설정 키와 setup 을 함께 안내한다', () => {
+    for (const sg of ['req', 'merge'] as const) {
+      const d = diagnostics(5, sg, 'ask')
+      expect(d, sg).toContain('reviewBudget.onSoftLimit')
+      expect(d, sg).toContain('"auto"')
+      expect(d, sg).toContain('commitgate setup')
+      // 🔴 hardCap 이 함께 사라진다고 오해하면 안 된다.
+      expect(d, sg).toContain('hardCap 은 그대로')
+    }
+  })
+
+  /** 🔴 열 수 없는 정지에 "끌 수 있다"고 말하면 거짓 안내다. */
+  it('🔴 hardCap 도달에는 안내하지 않는다', () => {
+    expect(diagnostics(8, 'merge', 'ask')).not.toContain('reviewBudget.onSoftLimit')
+  })
+
+  it('phase 를 고른 사용자에게는 재촉하지 않는다', () => {
+    expect(diagnostics(5, 'phase', 'ask')).not.toContain('reviewBudget.onSoftLimit')
+  })
+
+  /** 대조군: auto 면 이 정지 자체가 없다(안내할 자리도 없다). */
+  it('auto 는 애초에 예산으로 멈추지 않는다', () => {
+    expect(diagnostics(5, 'merge', 'auto')).not.toContain('review 예산')
   })
 })
 
