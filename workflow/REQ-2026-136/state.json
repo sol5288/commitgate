@@ -2,15 +2,28 @@
   "id": "REQ-2026-136",
   "branch": "feat/req-2026-136-managed-contract-blocks",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffa20-48fa-7083-b9eb-f940d6484a1e",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ffa27-f12c-71c0-b79f-453572c278d4",
+  "review_base_sha": "5d6c775e2ea8f29afa86c9a567f55a89fa9d2a6a",
+  "review_diff_hash": "88b5cb0c40990557e7e776f25280a2bc119ab4b6",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "4e8157ae6b6ebce4eae650ebdd80dc62b4d45e4269ba1c142512b4abfabec433",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-block-set",
+  "phases": [
+    {
+      "id": "phase-1-block-set",
+      "approved": true
+    },
+    {
+      "id": "phase-2-apply",
+      "approved": false
+    },
+    {
+      "id": "phase-3-doctor-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +37,23 @@
       "phase_id": null,
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-block-set#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-block-set",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-block-set",
     "outcome": "approved",
-    "compare_hash": "1a83d1bfa7de2eb85db34002ce884e73b6652ecf0a5b712ea791d27e51bd442e",
+    "compare_hash": "5016b9129c0d7fcbc71bbab7b2d4f80d896905402933e4fbb4c8169c55d6d82e",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T07:58:35.020Z",
+    "at": "2026-08-13T08:07:27.506Z",
     "findings": [],
     "elided_count": 0
   },
@@ -54,5 +74,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-13T07:58:35.020Z",
     "design_hash": "4e8157ae6b6ebce4eae650ebdd80dc62b4d45e4269ba1c142512b4abfabec433"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "88b5cb0c40990557e7e776f25280a2bc119ab4b6",
+      "phase_id": "phase-1-block-set",
+      "consumed_by_commit_sha": "63b491a3dd0cbd957b2e827b377151dad57fbd66",
+      "approval_consumed_at": "2026-08-13T08:08:02.722Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
