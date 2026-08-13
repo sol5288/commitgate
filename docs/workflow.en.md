@@ -491,6 +491,26 @@ order or revert just one**. That is why seeing it early matters.
   If the ref does not exist locally the check passes silently — a noisy false positive would train you to
   ignore the whole doctor output.
 
+## When a review is blocked by "ledger integrity failure" — `--close-stale`
+
+If a review run **dies midway**, the ledger keeps only its `attempt-opened` row. The next review tries to
+open the same number and is blocked with a ledger integrity error.
+
+The ledger is append-only, so that row cannot be deleted — and should not be: the call for that round
+**actually went out**. Instead, record that it was abandoned.
+
+```sh
+npx commitgate req:review-exception <REQ> --close-stale <series_id> --reason "<why you are abandoning it>" --run
+```
+
+- Appends an `attempt-closed` row with outcome `abandoned`, and reconciles the round count in `state`.
+- The reason is **required**. A termination with no grounds is not a record.
+- With several open rounds it closes **the earliest first** — re-running resolves them in order.
+- 🔴 **The cost does not disappear.** An abandoned round still counts against `hardCap` (the total call
+  ceiling) and is removed only from `autoBudget`, because it never produced a verdict.
+- 🔴 **Re-running converges even if this command itself dies midway.** It never re-creates a row that is
+  already recorded; it only finishes what is left.
+
 ## Command Cheat Sheet
 
 | Command | Purpose |

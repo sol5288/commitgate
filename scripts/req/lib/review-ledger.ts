@@ -41,7 +41,12 @@ export function ledgerPath(ticketRel: string): string {
 export type LedgerEvent = 'attempt-opened' | 'attempt-closed'
 
 /** 완료된 attempt의 판정. 미완(`attempt-opened`)이면 null. */
-export type LedgerOutcome = 'approved' | 'needs-fix' | 'blocked' | 'invalid'
+/**
+ * 🔴 `'abandoned'`(REQ-2026-141)는 **판정이 아니라 사람이 버린 것**이다. 실행이 중단돼 `attempt-opened`
+ *    만 남은 회차를 `--close-stale` 로 닫을 때 쓴다. 새 `event` 를 만들지 않은 이유는 그 행위의 의미가
+ *    정확히 "이 attempt 를 닫는다" 이고, event 를 늘리면 옛 원장 검증까지 건드려야 하기 때문이다.
+ */
+export type LedgerOutcome = 'approved' | 'needs-fix' | 'blocked' | 'invalid' | 'abandoned'
 
 export interface LedgerRow {
   ticket_id: string
@@ -89,6 +94,13 @@ export interface LedgerRow {
    *    사람 승인으로 위장한다.
    */
   soft_limit_resolution?: 'exception' | 'policy' | null
+  /**
+   * REQ-2026-141: 열린 attempt 를 `--close-stale` 로 닫은 **사람 사유**. `null`/키 부재 = 그런 종결이 아님.
+   *
+   * 🔴 정합화(`attempts` 를 이 번호까지 올린 사실)는 **별도 필드로 적지 않는다** — 이 행이
+   *    `attempt: N` 을 닫았다는 사실 자체가 그 근거다. 같은 사실을 두 곳에 적으면 갈라질 자리가 생긴다.
+   */
+  stale_close_reason?: string | null
 }
 
 /**
@@ -133,12 +145,15 @@ export const OPTIONAL_LEDGER_KEYS = [
   'review_reasoning_effort',
   'review_provider',
   'soft_limit_resolution',
+  // REQ-2026-141: `--close-stale` 이 남기는 사람 사유. 🔴 **문자열 한 칸**이다 — 직렬화가
+  //   `row[k] ?? null` 이고 검증이 `null | string` 만 받으므로 객체를 넣으면 그 행이 손상 판정된다.
+  'stale_close_reason',
 ] as const
 
 /** REQ-2026-132: 감사 필드의 허용 값. 🔴 일반 string으로 두면 손상 행이 정상으로 위장한다. */
 const SOFT_LIMIT_RESOLUTIONS: readonly string[] = ['exception', 'policy']
 
-const OUTCOMES: readonly string[] = ['approved', 'needs-fix', 'blocked', 'invalid']
+const OUTCOMES: readonly string[] = ['approved', 'needs-fix', 'blocked', 'invalid', 'abandoned']
 const EVENTS: readonly string[] = ['attempt-opened', 'attempt-closed']
 
 /** 한 줄 직렬화(JSONL): 고정 키 순서 JSON + 끝 개행. */
