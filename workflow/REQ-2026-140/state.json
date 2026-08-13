@@ -2,14 +2,14 @@
   "id": "REQ-2026-140",
   "branch": "feat/req-2026-140-stopgate-auto-predelegation",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffb65-1b3f-74a1-88a2-0e2ca2f027a4",
-  "review_base_sha": "0a3c9c4bff6ec6795493d9dccf6dc26b5c369c23",
-  "review_diff_hash": "1e0237d8540e9a0c85878c6d8113624bcb147a6f",
+  "codex_thread_id": "019ffb7f-a6db-7172-86cc-b5134965bd80",
+  "review_base_sha": "03eddaeeab4193fbec210b994e18c299de0921d0",
+  "review_diff_hash": "4bfb242ce0c14f1760b4e5af16b19eaf6ab7ead4",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496",
-  "current_phase": "phase-3-delegate-verb",
+  "current_phase": "phase-4a-range-attribution",
   "phases": [
     {
       "id": "phase-1-auto-type-and-predicate",
@@ -30,8 +30,14 @@
       "approved": true
     },
     {
-      "id": "phase-4-integrate-auto",
-      "title": "integrate 배선",
+      "id": "phase-4a-range-attribution",
+      "title": "병합 범위 티켓 귀속 계산(순수)",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-4b-integrate-auto",
+      "title": "integrate 배선 — 위임 요구·CAS·push/bypass",
       "status": "pending"
     },
     {
@@ -74,16 +80,23 @@
       "phase_id": "phase-3-delegate-verb",
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4a-range-attribution#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4a-range-attribution",
+      "attempts": 4,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-3-delegate-verb",
+    "phase_id": "phase-4a-range-attribution",
     "outcome": "approved",
-    "compare_hash": "3e93cf41aa48194fb78d56058198aab92cf477b4a1f5201e77774935214c6e00",
+    "compare_hash": "a60d3395e338ab305fe6f0579ef8af78e739d73d900940032798bf56841126ed",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T13:55:28.491Z",
+    "at": "2026-08-13T14:24:40.743Z",
     "findings": [],
     "elided_count": 0
   },
@@ -123,6 +136,12 @@
       "phase_id": "phase-3-delegate-verb",
       "consumed_by_commit_sha": "13a14cf1d1d86ed084d948afac450a4459791c93",
       "approval_consumed_at": "2026-08-13T13:55:58.604Z"
+    },
+    {
+      "approved_tree": "4bfb242ce0c14f1760b4e5af16b19eaf6ab7ead4",
+      "phase_id": "phase-4a-range-attribution",
+      "consumed_by_commit_sha": "5a8dbfb1bc5cca5779dc28ce356cf5db53794a31",
+      "approval_consumed_at": "2026-08-13T14:25:12.899Z"
     }
   ],
   "user_commit_confirmed": null
