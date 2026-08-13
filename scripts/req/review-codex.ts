@@ -33,7 +33,7 @@ import Ajv from 'ajv'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { autoFullReviewReason, type FullReviewReason } from './lib/full-review'
 import { secretScanGate } from './lib/secret-scan'
-import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget, type GranularityGate } from './lib/config'
+import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget, type GranularityGate, type PolicySnapshot } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
 import { archiveBaseName, durableDesignEvidence, isValidIsoInstant, parseManifestEntries } from './lib/evidence'
@@ -1125,6 +1125,11 @@ export interface WorkflowState {
   review_exception_confirmed?: ReviewExceptionConfirmed | null
   // REQ-2026-029 D3: 대체 REQ의 부모 lineage(--successor-of로만 채워짐).
   successor_of?: SuccessorOf
+  /**
+   * REQ-2026-129 DEC-1: 이 티켓에 **고정된** 정지 정책. `req:new`가 심고 게이트 다섯이 읽는다.
+   * 🔴 필드 부재 = legacy → `req.config.json`을 본다(무회귀). 자동으로 심지 않는다.
+   */
+  policy_snapshot?: PolicySnapshot
   [k: string]: unknown
 }
 

@@ -70,6 +70,50 @@ export type StopGate = 'phase' | 'req' | 'merge'
  */
 export type GranularityGate = 'block' | 'warn'
 
+/** 유효한 `stopGate` 값인가(순수 — 스냅샷 손상 판별의 SSOT). */
+export function isStopGate(v: unknown): v is StopGate {
+  return v === 'phase' || v === 'req' || v === 'merge'
+}
+
+/**
+ * 티켓에 고정된 정지 정책(REQ-2026-129 DEC-1). `req:new`가 심고 게이트가 읽는다.
+ *
+ * 🔴 **객체로 둔다.** 나중에 다른 정책 축이 생겨도 최상위 state 필드를 늘리지 않는다.
+ */
+export interface PolicySnapshot {
+  stop_gate: StopGate
+  /** `req:repolicy`가 남기는 append-only 채택 이력(REQ-2026-129 DEC-4). */
+  adopted?: PolicyAdoption[]
+}
+
+/** 정책 채택 1건. 🔴 `at`은 **실제 시계**에서 읽는다(지어내면 REQ-2026-019 폐기 사유의 재발). */
+export interface PolicyAdoption {
+  from: StopGate
+  to: StopGate
+  at: string
+  reason?: string
+}
+
+/**
+ * 이 티켓에 **실제로 적용되는** 정지 정책(REQ-2026-129 DEC-2, 순수). 게이트 다섯이 공유하는 SSOT.
+ *
+ * - 스냅샷이 유효하면 그 값 — **config를 바꿔도 판정이 바뀌지 않는다.** 티켓 하나가 여러 정책으로
+ *   진행되면 이미 받은 확인의 의미가 사후에 달라진다.
+ * - 스냅샷이 없으면(legacy 티켓) `config`. 🔴 자동으로 심지 않는다 — 진행 중이던 티켓에
+ *   "이 정책으로 진행했다"고 적는 것은 사실이 아닌 기록이다(DEC-3).
+ * - 스냅샷이 **손상**(enum 밖)이면 `config`. 잘못된 값으로 게이트를 판정하느니 현행 동작이 낫다.
+ *   조용히 넘기는 것은 아니다 — `req:doctor`가 그 사실을 따로 말한다(DEC-4).
+ */
+export function effectiveStopGate(
+  state: { policy_snapshot?: unknown } | null | undefined,
+  cfg: { stopGate: StopGate },
+): StopGate {
+  const snap = state?.policy_snapshot
+  if (!snap || typeof snap !== 'object') return cfg.stopGate
+  const v = (snap as { stop_gate?: unknown }).stop_gate
+  return isStopGate(v) ? v : cfg.stopGate
+}
+
 /** `stopGate` → 파생 `phaseCommit.autoApprove`. 두 축의 유일한 번역표(SSOT). */
 export const AUTO_APPROVE_OF: Record<StopGate, PhaseCommitPolicy> = { phase: 'never', req: 'low-only', merge: 'low-only' }
 /**

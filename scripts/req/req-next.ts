@@ -19,7 +19,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
-import { loadConfig, buildScriptInvocation, type PackageManager } from './lib/config'
+import { loadConfig, buildScriptInvocation, effectiveStopGate, type PackageManager } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
@@ -1068,6 +1068,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   const state = loadState(ticketDir)
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
+  // REQ-2026-129 DEC-2: 이 명령이 쓰는 정지 정책 — 티켓 스냅샷 우선, 없으면 config.
+  const stopGateNow = effectiveStopGate(state, cfg)
 
   // 설계문서 인덱스 존재 + 현재 해시. 인덱스에 없으면 captureDesignBinding이 throw → null로 흡수(2번 분기가 처리).
   let currentDesignHash: string | null = null
@@ -1105,11 +1107,13 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     committedManifestText: createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(`${ticketRel}/responses/approvals.jsonl`),
     // REQ-2026-066 DEC-10: 묶음 판정은 **delivery ref**에서 읽는다(DEC-3). 실패는 조용히 null —
     // 묶음이 없는 것과 구분되지 않지만, 어느 쪽이든 "묶음 정지 대상 아님"이라 판정은 같다.
-    stopGate: cfg.stopGate,
-    deliveryGate: cfg.stopGate === 'merge' ? readDeliveryGate(cfg.ticketRoot, state.id, roGit) : null,
+    // 🔴 REQ-2026-129: 정지 정책은 **티켓에 고정된 스냅샷**이 정본이다(없으면 config — legacy 무회귀).
+    //    이 지역 변수 하나에서 세 입력이 모두 파생돼야 한 티켓이 두 정책으로 판정되지 않는다.
+    stopGate: stopGateNow,
+    deliveryGate: stopGateNow === 'merge' ? readDeliveryGate(cfg.ticketRoot, state.id, roGit) : null,
     // REQ-2026-071: HIGH + stopGate:'req' 일 때만 필요한 계산 — 그 외에는 안내가 이 값을 보지 않는다.
     completesReq:
-      cfg.stopGate === 'req' && state.risk_level === 'HIGH'
+      stopGateNow === 'req' && state.risk_level === 'HIGH'
         ? (() => {
             const mfAbs = join(ticketDir, 'responses', 'approvals.jsonl')
             const pending = typeof state.current_phase === 'string' ? state.current_phase : null

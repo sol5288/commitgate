@@ -15,7 +15,7 @@
  * 사용: req:confirm <REQ> --scope phase|req|delivery --method "<승인 문장>" [--note "<메모>"] [--run]
  */
 import { join, relative } from 'node:path'
-import { loadConfig } from './lib/config'
+import { loadConfig, effectiveStopGate } from './lib/config'
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
@@ -134,9 +134,12 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
 
   // 🔴 `merge` 는 묶음 소속에 따라 요구가 갈린다(REQ-2026-128 DEC-2) — 안내(`req:next`)와 같은 판정을 쓴다.
   const inDeliverySet = deps.inDeliverySet(cfg.root, cfg.ticketRoot, reqId)
-  const required = requiredConfirmScope(cfg.stopGate, { inDeliverySet })
+  // 🔴 REQ-2026-129 DEC-5: 요구 scope 는 **티켓에 고정된 정책**에서 나온다 — 게이트가 보는 값과 같아야
+  //    안내(`req:next`)·기록(여기)·판정(`req:commit`)이 갈라지지 않는다.
+  const stopGateNow = effectiveStopGate(state, cfg)
+  const required = requiredConfirmScope(stopGateNow, { inDeliverySet })
   deps.log(
-    `[req:confirm] ${reqId} · risk=${String(state.risk_level)} · stopGate="${cfg.stopGate}"` +
+    `[req:confirm] ${reqId} · risk=${String(state.risk_level)} · stopGate="${stopGateNow}"` +
       `(묶음 ${inDeliverySet ? '있음' : '없음'} → 요구 scope="${required}")`,
   )
   deps.log(`  ${scopeMeaning(o.scope)}`)
@@ -148,9 +151,9 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
   if (o.scope !== required)
     throw new Error(
       [
-        `현재 stopGate="${cfg.stopGate}" 는 scope="${required}" 확인을 요구합니다(받은 값: "${o.scope}").`,
+        `현재 stopGate="${stopGateNow}" 는 scope="${required}" 확인을 요구합니다(받은 값: "${o.scope}").`,
         '  범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술이라, 다른 범위의 기록은 게이트를 통과하지 못합니다.',
-        cfg.stopGate === 'merge'
+        stopGateNow === 'merge'
           ? `  이 REQ 는 delivery 묶음에 속하지 ${inDeliverySet ? '있습니다' : '않습니다'} — merge 의 요구 scope 는 소속에 따라 갈립니다(속함=delivery · 속하지 않음=req).`
           : '  이 값으로 기록하려면 먼저 req.config.json 의 stopGate 를 바꾸세요.',
       ].join('\n'),

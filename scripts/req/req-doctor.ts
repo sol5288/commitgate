@@ -54,7 +54,7 @@ import { splitUnboundPhases, designHashFromManifest, consumedApprovalsWithoutRow
 import { createEvidencePorts } from './lib/evidence-ports'
 // REQ-2026-097 DEC-1: 종결 판정의 술어·입력 획득을 intake와 공유한다(자체 구현 금지).
 import { scanTicketIntake } from './lib/intake'
-import { loadConfig, packageRoot, stripBom, DEFAULTS, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
+import { loadConfig, packageRoot, stripBom, DEFAULTS, effectiveStopGate, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { quickstartBackfillTargets, type QuickstartBackfillTarget } from '../../bin/quickstart'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
@@ -1812,7 +1812,9 @@ export function main(argv: string[] = process.argv.slice(2)): void {
           phaseIds: readPhases(state).map((p) => p.id),
           manifestContent: manifest,
         }).complete
-        return userConfirmGate(state, cfg.stopGate, completes)
+        // 🔴 REQ-2026-129: `req:commit` 게이트와 **같은 정지 정책**을 봐야 한다. 여기만 config 를 보면
+        //    같은 티켓을 두 정책으로 판정해, D28 이 통과라고 표시한 커밋을 게이트가 막는다(또는 반대).
+        return userConfirmGate(state, effectiveStopGate(state, cfg), completes)
       } catch {
         return undefined // 판정 불가는 조용히 '점검 불요' — 진단이 doctor를 깨뜨리지 않는다.
       }

@@ -14,7 +14,7 @@
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { loadConfig, type StopGate } from '../scripts/req/lib/config'
+import { loadConfig, effectiveStopGate, type StopGate } from '../scripts/req/lib/config'
 import { createGitAdapter, safeSpawnSyncStatus, type GitAdapter } from '../scripts/req/lib/adapters'
 import { closeProofPath, parseCloseProof } from '../scripts/req/lib/close-proof'
 import { createHash } from 'node:crypto'
@@ -448,15 +448,21 @@ export function collectEligibility(ctx: Ctx, featureRef: string, reqId: string):
      *    완성시키는 커밋에서 받고 소비된다. 그때도 여기서 요구하면 **정상 종결한 HIGH REQ가 영구 거부**된다.
      *    stopGate가 정한 정지 지점은 하나여야 한다는 것이 이 REQ의 요구사항이다.
      */
-    if (ctx.stopGate !== 'merge') return null
+    /**
+     * 🔴 REQ-2026-129: 정지 정책은 **티켓 스냅샷**이 정본이다. config 만 보면 티켓 생성 이후 설정이 바뀐
+     *    경우 이 자격검사와 `req:commit`·`req:next` 가 서로 다른 정책으로 판정한다.
+     *    state 를 먼저 읽되, **읽기 실패의 오류화는 config 가 `merge` 일 때만** 한다 — 그러지 않으면
+     *    delivery 를 쓰지 않는 구성에서 없던 실패가 생긴다(현행 동작 보존).
+     */
     const stateText = readAtRef(ctx, featureRef, `${ticketRel}/state.json`)
-    if (stateText === null) return 'feature ref 에 state.json 이 없습니다'
-    let st: { risk_level?: unknown; user_commit_confirmed?: unknown }
+    if (stateText === null) return ctx.stopGate === 'merge' ? 'feature ref 에 state.json 이 없습니다' : null
+    let st: { risk_level?: unknown; user_commit_confirmed?: unknown; policy_snapshot?: unknown }
     try {
       st = JSON.parse(stateText) as typeof st
     } catch {
-      return 'state.json 파싱 실패'
+      return ctx.stopGate === 'merge' ? 'state.json 파싱 실패' : null
     }
+    if (effectiveStopGate(st, { stopGate: ctx.stopGate }) !== 'merge') return null
     if (st.risk_level !== 'HIGH') return null // HIGH 가 아니면 요구하지 않는다
     const problem = userConfirmProblem(st.user_commit_confirmed)
     if (problem) return `${problem} — npx commitgate req:confirm ${reqId} --scope delivery --method "<승인 문장>" --run`
