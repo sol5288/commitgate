@@ -2,14 +2,14 @@
   "id": "REQ-2026-140",
   "branch": "feat/req-2026-140-stopgate-auto-predelegation",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffb91-dc4b-75f3-9c42-c7c878945577",
-  "review_base_sha": "78f3f63c1d9c2159d603e2381ccfbe90d8364772",
-  "review_diff_hash": "ce073051d0430c74baa129b76e684e5f3ee656c4",
+  "codex_thread_id": "019ffbb4-7152-7411-906b-a54120bd89e9",
+  "review_base_sha": "117c585ef32df35bcae6b23f9ce6e4ed8fb1ff9c",
+  "review_diff_hash": "83d9cf8b9f8be829c09a9dc1e54eb33e56dea150",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496",
-  "current_phase": "phase-4b-integrate-auto",
+  "current_phase": "phase-4c-push-bypass-delivery",
   "phases": [
     {
       "id": "phase-1-auto-type-and-predicate",
@@ -38,6 +38,12 @@
     {
       "id": "phase-4b-integrate-auto",
       "title": "integrate 배선 — 위임 요구·CAS·push/bypass",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-4c-push-bypass-delivery",
+      "title": "push·bypass 분리 실행 + delivery scope 배선",
       "status": "pending",
       "approved": true
     },
@@ -95,16 +101,23 @@
       "phase_id": "phase-4b-integrate-auto",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4c-push-bypass-delivery#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4c-push-bypass-delivery",
+      "attempts": 6,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-4b-integrate-auto",
+    "phase_id": "phase-4c-push-bypass-delivery",
     "outcome": "approved",
-    "compare_hash": "3f87672b7d46853fcb47748164f575a998d286550c33241c560a4428a399cd23",
+    "compare_hash": "3b6c1b7d16e95bea799b2059f01f6ed29756a222ae19b35eacc8c08ec699b822",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T14:43:26.067Z",
+    "at": "2026-08-13T15:21:11.355Z",
     "findings": [],
     "elided_count": 0
   },
@@ -156,6 +169,12 @@
       "phase_id": "phase-4b-integrate-auto",
       "consumed_by_commit_sha": "e47493a002be3c7304668921de108e89beced942",
       "approval_consumed_at": "2026-08-13T14:43:56.771Z"
+    },
+    {
+      "approved_tree": "83d9cf8b9f8be829c09a9dc1e54eb33e56dea150",
+      "phase_id": "phase-4c-push-bypass-delivery",
+      "consumed_by_commit_sha": "ab7d2775fc9055b9f651fc6751f17a14cb56f459",
+      "approval_consumed_at": "2026-08-13T15:21:42.701Z"
     }
   ],
   "user_commit_confirmed": null
