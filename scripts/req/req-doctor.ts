@@ -54,7 +54,7 @@ import { splitUnboundPhases, designHashFromManifest, consumedApprovalsWithoutRow
 import { createEvidencePorts } from './lib/evidence-ports'
 // REQ-2026-097 DEC-1: 종결 판정의 술어·입력 획득을 intake와 공유한다(자체 구현 금지).
 import { scanTicketIntake } from './lib/intake'
-import { loadConfig, packageRoot, stripBom, DEFAULTS, effectiveStopGate, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
+import { loadConfig, packageRoot, stripBom, DEFAULTS, effectiveStopGate, isStopGate, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { quickstartBackfillTargets, type QuickstartBackfillTarget } from '../../bin/quickstart'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
@@ -85,9 +85,38 @@ export type Level = 'OK' | 'WARN' | 'FAIL'
  * ⚠️ 한계: `as CheckId`·`as Check`·`any` 단언은 타입 검사를 의도적으로 우회한다(설계 r03 관찰).
  *    현재 그런 사용은 0건이다. **새 D-체크를 넣으면서 단언으로 이 등록부를 피하지 말 것.**
  */
+/**
+ * D32 입력(REQ-2026-129, 순수 판정 결과). 네 경우를 **구분**한다 — "다르다"만 알려주면 손상과 legacy가
+ * 같은 메시지를 받아 사용자가 무엇을 고쳐야 하는지 알 수 없다.
+ */
+export type PolicyDrift =
+  | { kind: 'aligned'; effective: string }
+  | { kind: 'legacy'; config: string }
+  | { kind: 'corrupt'; raw: unknown; config: string }
+  | { kind: 'drift'; effective: string; config: string }
+
+/**
+ * 안내 문구에 실을 티켓 id(순수). 🔴 `<REQ>` 자리표시자를 두지 않는다 — 사용자가 그대로 복사해
+ * 실행할 수 있어야 한다(REQ-2026-072 "적용 가능한 안내" 원칙).
+ */
+export function ticketIdOf(ticketRel: string | undefined): string {
+  // 경로를 모르면 자리표시자를 쓴다 — 없는 id를 지어내지 않는다.
+  if (!ticketRel) return '<REQ>'
+  return ticketRel.split('/').filter(Boolean).pop() ?? ticketRel
+}
+
+/** `(state, cfg.stopGate)` → D32 판정(순수). */
+export function classifyPolicyDrift(state: { policy_snapshot?: unknown }, configStopGate: string): PolicyDrift {
+  const snap = state.policy_snapshot
+  if (!snap || typeof snap !== 'object') return { kind: 'legacy', config: configStopGate }
+  const raw = (snap as { stop_gate?: unknown }).stop_gate
+  if (!isStopGate(raw)) return { kind: 'corrupt', raw, config: configStopGate }
+  return raw === configStopGate ? { kind: 'aligned', effective: raw } : { kind: 'drift', effective: raw, config: configStopGate }
+}
+
 export const D_CHECK_IDS = [
   'D2', 'D3', 'D5', 'D6', 'D9', 'D10', 'D11', 'D13', 'D15', 'D16', 'D17', 'D18', 'D19',
-  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30', 'D31',
+  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30', 'D31', 'D32',
 ] as const
 
 /** D-체크 id — `D_CHECK_IDS` 등재분만. 새 id는 등록부에 먼저 추가해야 컴파일된다. */
@@ -168,6 +197,11 @@ export interface DoctorInputs {
    * 커밋을 막지 않는다(관측 우선 — 강제는 발화 데이터 후 별도 REQ).
    */
   riskHits?: RiskHit[]
+  /**
+   * D32(REQ-2026-129): 티켓 정지 정책 스냅샷 ↔ `req.config.json` 대조 결과. `main()`이 채운다.
+   * `undefined` = 미계산 → D32는 OK(점검 불요).
+   */
+  policyDrift?: PolicyDrift
   /**
    * D30 상태 분류(REQ-2026-117): `strandedEvidence`와 같은 티켓들의 분류 결과. `main()`이
    * `collectStrandedContext`+`classifyStranded`로 채운다. undefined면 분류 없는 단순 나열로 렌더링
@@ -1095,6 +1129,38 @@ export function runChecks(inp: DoctorInputs): Check[] {
         `. 티켓 위험도(${String((inp.state as { risk_level?: unknown }).risk_level ?? '미상')})와 별개로 이 phase의 실효 위험을 확인하세요 — 민감 변경이면 리뷰·사람 검토를 여기에 집중하십시오.`,
     })
 
+  /**
+   * D32(REQ-2026-129 DEC-4): **정지 정책 드리프트**. 티켓에 고정된 스냅샷과 현재 `req.config.json`이 다르면
+   * 알린다.
+   *
+   * 🔴 **FAIL이 아니다.** 정책을 바꾼 것은 정당한 행위이고, 여기서 막으면 진행 중 티켓이 전부 교착한다.
+   *    게이트는 이미 스냅샷을 쓰므로 **판정은 일관**하다 — 사용자에게 필요한 것은 차단이 아니라
+   *    "이 티켓은 config와 다른 정책으로 돈다"는 **가시성**과 채택 명령이다.
+   * 🔴 손상 스냅샷도 여기서 말한다. `effectiveStopGate`가 조용히 config로 폴백하므로, 그 사실을
+   *    아무도 말하지 않으면 사용자는 자기가 적은 값이 쓰이는 줄 안다.
+   */
+  if (inp.policyDrift === undefined) c.push({ id: 'D32', level: 'OK', applicable: false, msg: '정지 정책 드리프트 점검 불요(미계산)' })
+  else if (inp.policyDrift.kind === 'aligned')
+    c.push({ id: 'D32', level: 'OK', msg: `정지 정책 일치(stopGate="${inp.policyDrift.effective}")` })
+  else if (inp.policyDrift.kind === 'legacy')
+    c.push({ id: 'D32', level: 'OK', msg: `정지 정책 스냅샷 없음(legacy 티켓) — req.config.json("${inp.policyDrift.config}")을 따릅니다` })
+  else if (inp.policyDrift.kind === 'corrupt')
+    c.push({
+      id: 'D32',
+      level: 'WARN',
+      msg:
+        `정지 정책 스냅샷이 손상됐습니다(policy_snapshot.stop_gate=${JSON.stringify(inp.policyDrift.raw)}) — ` +
+        `req.config.json("${inp.policyDrift.config}")을 대신 씁니다. 고정하려면: npx commitgate req:repolicy ${ticketIdOf(inp.ticketRel)} --run`,
+    })
+  else
+    c.push({
+      id: 'D32',
+      level: 'WARN',
+      msg:
+        `이 티켓은 정책 "${inp.policyDrift.effective}" 로 고정돼 있고 req.config.json 은 "${inp.policyDrift.config}" 입니다 — ` +
+        `게이트는 티켓 값을 씁니다(한 티켓이 두 정책으로 판정되지 않도록). 새 값을 채택하려면: npx commitgate req:repolicy ${ticketIdOf(inp.ticketRel)} --run`,
+    })
+
   return c
 }
 
@@ -1819,6 +1885,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
         return undefined // 판정 불가는 조용히 '점검 불요' — 진단이 doctor를 깨뜨리지 않는다.
       }
     })(),
+    // D32(REQ-2026-129): 티켓 정책 스냅샷 ↔ config 대조. 게이트가 쓰는 값과 같은 기준(`isStopGate`)이다.
+    policyDrift: classifyPolicyDrift(state, cfg.stopGate),
     declaredMaxFiles: declaredPhaseMaxFiles(state, typeof state.current_phase === 'string' ? state.current_phase : null),
     stagedCodeFiles: phaseCodeFiles(git([...STAGED_NAMES_Z_ARGS]).split('\0'), ticketRel),
     responseVerdict,

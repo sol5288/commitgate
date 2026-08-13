@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { effectiveStopGate, type StopGate } from '../../scripts/req/lib/config'
+import { classifyPolicyDrift, ticketIdOf, runChecks, type DoctorInputs } from '../../scripts/req/req-doctor'
 import { buildInitialState } from '../../scripts/req/req-new'
 import { userConfirmGate } from '../../scripts/req/req-commit'
 import { resolveNext } from '../../scripts/req/req-next'
@@ -114,5 +115,68 @@ describe('[policy-snapshot] 소비자 일관성 — 스냅샷 ≠ config', () =>
     })
     expect(a.kind).toBe('AWAIT_HUMAN')
     expect(a.controlPoint).toBe('통합(feature→main)')
+  })
+})
+
+/**
+ * D32(REQ-2026-129 DEC-4) — 드리프트 **가시성**. 게이트는 이미 스냅샷을 쓰므로 판정은 일관하다.
+ * 사용자에게 필요한 것은 차단이 아니라 "이 티켓은 config 와 다른 정책으로 돈다"는 사실이다.
+ */
+describe('[policy-snapshot] D32 — 드리프트 진단', () => {
+  it('네 경우를 구분한다', () => {
+    expect(classifyPolicyDrift({ policy_snapshot: { stop_gate: 'req' } }, 'req')).toEqual({ kind: 'aligned', effective: 'req' })
+    expect(classifyPolicyDrift({}, 'merge')).toEqual({ kind: 'legacy', config: 'merge' })
+    expect(classifyPolicyDrift({ policy_snapshot: { stop_gate: 'all' } }, 'req')).toEqual({
+      kind: 'corrupt',
+      raw: 'all',
+      config: 'req',
+    })
+    expect(classifyPolicyDrift({ policy_snapshot: { stop_gate: 'phase' } }, 'merge')).toEqual({
+      kind: 'drift',
+      effective: 'phase',
+      config: 'merge',
+    })
+  })
+
+  const base: DoctorInputs = {
+    state: { id: 'REQ-2026-129', branch: 'feat/req-2026-129-x', commit_allowed: false } as never,
+    currentBranch: 'feat/req-2026-129-x',
+    branchExists: true,
+    branchPrefix: 'feat/req-',
+    stagedTree: 'TREE',
+    statusEntries: [],
+    scratch: [],
+    responseVerdict: null,
+    responseStructureOk: false,
+    designApproved: false,
+    designApprovedHash: null,
+    currentDesignHash: null,
+    ticketDocs: [],
+    ticketRel: 'workflow/REQ-2026-129',
+  }
+  const d32 = (over: Partial<DoctorInputs>) => runChecks({ ...base, ...over }).find((c) => c.id === 'D32')
+
+  /** 🔴 **FAIL 이 아니다** — 여기서 막으면 정책을 바꾼 사용자의 진행 중 티켓이 전부 교착한다. */
+  it('🔴 드리프트는 WARN 이고 채택 명령을 실제 티켓 id 로 안내한다', () => {
+    const c = d32({ policyDrift: { kind: 'drift', effective: 'phase', config: 'merge' } })
+    expect(c?.level).toBe('WARN')
+    expect(c?.msg).toContain('req:repolicy REQ-2026-129 --run')
+  })
+
+  it('손상 스냅샷도 조용하지 않다 — config 로 폴백한다는 사실을 말한다', () => {
+    const c = d32({ policyDrift: { kind: 'corrupt', raw: 'all', config: 'req' } })
+    expect(c?.level).toBe('WARN')
+    expect(c?.msg).toContain('손상')
+  })
+
+  it('일치·legacy·미계산은 OK(진행을 막지 않는다)', () => {
+    expect(d32({ policyDrift: { kind: 'aligned', effective: 'req' } })?.level).toBe('OK')
+    expect(d32({ policyDrift: { kind: 'legacy', config: 'merge' } })?.level).toBe('OK')
+    expect(d32({})?.level).toBe('OK')
+  })
+
+  it('ticketIdOf 는 경로에서 id 를 뽑고, 모르면 지어내지 않는다', () => {
+    expect(ticketIdOf('workflow/REQ-2026-129')).toBe('REQ-2026-129')
+    expect(ticketIdOf(undefined)).toBe('<REQ>')
   })
 })

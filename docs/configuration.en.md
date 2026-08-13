@@ -43,6 +43,27 @@ Empty `branchPrefix` values and paths that escape the project root are rejected.
   `req:confirm` first, then the integration approval. (`req` behaves the same; only the confirmation point moves
   from the commit to the terminal.)
 
+### Policy snapshot — a ticket keeps the `stopGate` it was created with
+
+`req:new` pins the resolved `stopGate` into the ticket's `state.json` (`policy_snapshot.stop_gate`), and the
+gates (`req:next`, `req:commit`, `req:confirm`, `req:doctor`, `delivery integrate`) read that value.
+
+If the gates re-read `req.config.json` on every command, **one ticket runs under several policies**: confirm
+phases 1–2 under `phase`, switch the setting to `merge` midway, and the rest auto-commit with no confirmation —
+the meaning of a confirmation you already gave changes after the fact.
+
+- Changing the setting **does not affect tickets already in flight.** New tickets start on the new policy.
+- A mismatch is reported by `req:doctor` as **D32 WARN** (not FAIL — it never blocks progress).
+- To apply the new policy to a ticket in flight:
+
+  ```sh
+  npx commitgate req:repolicy <REQ> --reason "<why>" --run
+  ```
+
+  🔴 This is not a gate bypass. Only "where you stop" changes; **confirmations already recorded are not
+  erased** — if the new policy requires a different `scope`, it is asked for again at that point.
+- Tickets with no snapshot (created before this feature) follow `req.config.json` as before.
+
 ### Optional GitHub CI runs — `githubCi`
 
 The default is **not configured**, so the user controls GitHub Actions quota and cost. Only projects that want
