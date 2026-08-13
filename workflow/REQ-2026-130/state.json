@@ -2,13 +2,13 @@
   "id": "REQ-2026-130",
   "branch": "feat/req-2026-130-delivery-approval-binding",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019ff93e-dc36-73b2-a809-cf070beb4bee",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "96d9570ac75f76ffc3a2be05f14817058399de83a651485d5b12dbbf491b9788",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,43 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "e9ad8aee2a39e93dbe36e7a55234a63dafc058d3fd97eccc6a655adc8e6c3b17",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T03:52:39.173Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "bcc45a2dc5c8ed85bf07d24f44de50b24ed099f4",
+    "design": "25ad9c2e65d5ea37e21d2f1629285dd28b31141b",
+    "plan": "bec86dbf8399325d3b519e67b4a56bbac7df198e"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-130/responses/design-r03-approved.json",
+    "response_sha256": "b0611e2bab6ea2814d48206b6f14ce5af57f700772606fd284c58221ba5080d3",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "df2b55f0ab4b4ffd21ccdb9fbb52c6f6c44a5671",
+    "codex_thread_id": "019ff93e-dc36-73b2-a809-cf070beb4bee",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T03:52:39.173Z",
+    "design_hash": "96d9570ac75f76ffc3a2be05f14817058399de83a651485d5b12dbbf491b9788"
   }
 }
