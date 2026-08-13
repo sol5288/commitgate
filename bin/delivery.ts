@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto'
 import {
   userConfirmProblem,
   effectiveConfirmScope,
+  requiredConfirmScope,
   type UserCommitConfirmed,
   validateManifest,
   designHashFromManifest,
@@ -460,8 +461,14 @@ export function collectEligibility(ctx: Ctx, featureRef: string, reqId: string):
     const problem = userConfirmProblem(st.user_commit_confirmed)
     if (problem) return `${problem} — npx commitgate req:confirm ${reqId} --scope delivery --method "<승인 문장>" --run`
     const scope = effectiveConfirmScope(st.user_commit_confirmed as UserCommitConfirmed | null)
-    if (scope !== 'delivery')
-      return `scope="${scope}" 는 묶음을 덮지 않습니다(scope="delivery" 필요) — 범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술입니다`
+    /**
+     * 🔴 요구 scope 는 SSOT 함수에서 나온다(REQ-2026-128 DEC-6). 여기는 **묶음 안**이므로
+     *    `inDeliverySet: true` 가 사실이고, 결과는 현행과 같은 `'delivery'` 다 — 동작 불변이며
+     *    바뀌는 것은 "문자열을 손으로 적지 않는다"는 점뿐이다.
+     */
+    const required = requiredConfirmScope('merge', { inDeliverySet: true })
+    if (scope !== required)
+      return `scope="${scope}" 는 묶음을 덮지 않습니다(scope="${required}" 필요) — 범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술입니다`
     return null
   })()
 

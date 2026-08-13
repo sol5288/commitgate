@@ -28,8 +28,8 @@ import { splitUnboundPhases, designHashFromManifest } from './lib/evidence'
 import { recoveryGuidance } from './lib/close-proof'
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { reviewScratchPaths, ARCHIVE_BASE_RE } from './lib/scratch'
-import { deliveryGateVerdict, deliveryRecordProblems, type DeliveryRecord } from './lib/delivery'
-import { REQUIRED_CONFIRM_SCOPE } from './lib/evidence'
+import { readDeliveryGate } from './lib/delivery'
+import { requiredConfirmScope } from './lib/evidence'
 import { integrationPathGuidance } from './lib/control-points'
 import { wouldCompleteReq } from './req-commit'
 import { computeReviewSemanticIdentity } from './lib/review-target'
@@ -734,7 +734,8 @@ function resolveNextCore(input: NextInput): NextAction {
      *    지점과 화면이 어긋난다** — 사용자는 첫 phase에서 "남은 변경 전부를 미리 승인하라"는 말을 듣는다.
      */
     if (gateBlocksHere) {
-      const scope = REQUIRED_CONFIRM_SCOPE[stopGateNow]
+      // 🔴 묶음 소속이 `merge` 의 요구 scope 를 바꾼다(REQ-2026-128 DEC-2). 입력이 이미 판정을 들고 있다.
+      const scope = requiredConfirmScope(stopGateNow, { inDeliverySet: input.deliveryGate != null })
       const reqArg = targetArgs(target).join(' ')
       return {
         kind: 'AWAIT_HUMAN',
@@ -982,62 +983,11 @@ export function parseArgs(argv: string[]): Opts {
 
 /** 사람이 읽는 출력. `displayId`는 표시 전용(argv가 아니다) — `state.id`를 그대로 쓴다. */
 /**
- * 이 REQ 가 속한 delivery 묶음의 게이트 판정(REQ-2026-066 DEC-10).
- *
- * 🔴 **delivery ref에서** 읽는다 — feature 사본은 분기 시점에 고정되어 stale 이므로 그것으로 판정하면
- *    앞선 member 만 반영된 상태를 보고 **조기 정지**한다(DEC-3).
- * 🔴 판정은 `deliveryGateVerdict` **하나**를 쓴다 — `integrate`·`seal`·`status`와 갈라지면 안 된다.
- *
- * 묶음을 찾는 방법: `refs/heads/delivery/*` 를 훑어 각 레코드에서 이 REQ 를 member 로 가진 것을 찾는다.
- * 레코드가 손상됐거나 읽을 수 없으면 `null`(= 묶음 정지 대상 아님) — 여기서 fail-closed 하면
- * delivery 를 쓰지 않는 사용자의 정상 종단까지 막힌다.
+ * 🔴 REQ-2026-128 DEC-4: 이 두 함수는 **`lib/delivery.ts` 로 이관**됐다(delivery 모델의 집).
+ *    `req:confirm` 도 소속을 알아야 하는데, CLI 모듈끼리 import 하는 대신 lib 을 공유한다.
+ *    여기 re-export 는 기존 import 경로를 깨지 않기 위한 것이다.
  */
-/**
- * 레코드가 이 REQ 를 member 로 **언급**하는가(손상 레코드에도 쓰이므로 방어적으로 읽는다).
- * 스키마 검증을 통과하지 못한 값에서도 소속을 식별할 수 있어야 fail-closed 판정이 가능하다.
- */
-export function mentionsMember(record: unknown, reqId: string): boolean {
-  if (!record || typeof record !== 'object') return false
-  const ms = (record as { members?: unknown }).members
-  if (!Array.isArray(ms)) return false
-  return ms.some((m) => !!m && typeof m === 'object' && (m as { req_id?: unknown }).req_id === reqId)
-}
-
-export function readDeliveryGate(
-  ticketRoot: string,
-  reqId: string,
-  roGit: (args: string[]) => string,
-): { slug: string; kind: 'continue' | 'await-human' | 'corrupt'; detail: string } | null {
-  let branches: string[]
-  try {
-    branches = roGit(['for-each-ref', '--format=%(refname:short)', 'refs/heads/delivery/'])
-      .split('\n')
-      .map((x) => x.trim())
-      .filter(Boolean)
-  } catch {
-    return null
-  }
-  for (const branch of branches) {
-    const slug = branch.slice('delivery/'.length)
-    if (!slug) continue
-    let record: unknown
-    try {
-      record = JSON.parse(roGit(['show', `${branch}:${ticketRoot}/delivery/${slug}.json`]))
-    } catch {
-      continue
-    }
-    // 🔴 손상 레코드를 그냥 건너뛰면 "묶음 없음"과 구분되지 않아 종단이 DONE 이 된다 —
-    //    묶음 정지 게이트가 조용히 사라진다(phase-3 r02 P1). 이 REQ 를 member 로 **식별할 수 있으면**
-    //    손상이라도 fail-closed 로 전파한다. 식별조차 안 되는 레코드만 건너뛴다.
-    const problems = deliveryRecordProblems(record)
-    if (!mentionsMember(record, reqId)) continue
-    if (problems.length)
-      return { slug, kind: 'corrupt', detail: `delivery 레코드 손상(${branch}): ${problems.slice(0, 3).join('; ')}` }
-    const v = deliveryGateVerdict(record as DeliveryRecord)
-    return { slug, kind: v.kind, detail: v.detail }
-  }
-  return null
-}
+export { mentionsMember, readDeliveryGate } from './lib/delivery'
 
 export function renderAction(displayId: string, a: NextAction): string {
   const lines = [`[req:next] ${a.kind}  ${displayId}`, `  ${a.detail}`]

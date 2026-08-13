@@ -1,5 +1,6 @@
 /**
- * delivery set — 상위 작업 묶음 모델 (REQ-2026-066). **순수 함수만**(fs·git 무의존).
+ * delivery set — 상위 작업 묶음 모델 (REQ-2026-066). **fs·git 를 import 하지 않는다** —
+ * git 이 필요한 판정(`readDeliveryGate`)은 읽기 전용 실행자를 **주입**받는다(REQ-2026-128 DEC-4).
  *
  * 목적: 여러 REQ를 하나의 묶음으로 묶어 **묶음이 끝날 때까지 main 병합을 미루고 마지막에 한 번만 멈춘다.**
  *
@@ -265,6 +266,69 @@ export function deliveryGateVerdict(r: DeliveryRecord): DeliveryGateVerdict {
       `묶음 '${r.slug}'이 닫혔고 모든 REQ가 종결됐습니다 — ${r.branch} → ${r.target_branch} 통합은 사람 승인이 필요합니다. ` +
       '`commitgate delivery approve`로 승인을 기록한 뒤, 경로(PR 또는 direct push)와 승인 문장은 AGENTS.md 통제점표(I1/I2/B1)를 따르세요.',
   }
+}
+
+// ──────────────────────────────────────── 소속·게이트 조회(주입된 read-only git) ──
+
+/**
+ * 레코드가 이 REQ 를 member 로 **언급**하는가(손상 레코드에도 쓰이므로 방어적으로 읽는다).
+ * 스키마 검증을 통과하지 못한 값에서도 소속을 식별할 수 있어야 fail-closed 판정이 가능하다.
+ */
+export function mentionsMember(record: unknown, reqId: string): boolean {
+  if (!record || typeof record !== 'object') return false
+  const ms = (record as { members?: unknown }).members
+  if (!Array.isArray(ms)) return false
+  return ms.some((m) => !!m && typeof m === 'object' && (m as { req_id?: unknown }).req_id === reqId)
+}
+
+/** `readDeliveryGate` 의 반환. `null` 은 **이 REQ 가 어떤 묶음에도 속하지 않음**(또는 refs 를 못 읽음)이다. */
+export type DeliveryGateLookup = { slug: string; kind: 'continue' | 'await-human' | 'corrupt'; detail: string } | null
+
+/**
+ * 이 REQ 가 속한 delivery 묶음의 게이트 판정(REQ-2026-066 DEC-10).
+ *
+ * 🔴 **delivery ref에서** 읽는다 — feature 사본은 분기 시점에 고정되어 stale 이므로 그것으로 판정하면
+ *    앞선 member 만 반영된 상태를 보고 **조기 정지**한다(DEC-3).
+ * 🔴 판정은 `deliveryGateVerdict` **하나**를 쓴다 — `integrate`·`seal`·`status`와 갈라지면 안 된다.
+ *
+ * 묶음을 찾는 방법: `refs/heads/delivery/*` 를 훑어 각 레코드에서 이 REQ 를 member 로 가진 것을 찾는다.
+ * 레코드가 손상됐거나 읽을 수 없으면 `null`(= 묶음 정지 대상 아님) — 여기서 fail-closed 하면
+ * delivery 를 쓰지 않는 사용자의 정상 종단까지 막힌다.
+ *
+ * ⚠️ **한계**(REQ-2026-128 DEC-7): 반환 `null` 은 "묶음 없음"과 "refs 를 못 읽음"을 **구분하지 않는다**.
+ *    소속 판정을 이 값으로 대신하는 소비자는 그 사실을 알고 써야 한다 — 묶음 보증의 강제 지점은
+ *    `delivery integrate` 자격검사이지 이 조회가 아니다.
+ */
+export function readDeliveryGate(ticketRoot: string, reqId: string, roGit: (args: string[]) => string): DeliveryGateLookup {
+  let branches: string[]
+  try {
+    branches = roGit(['for-each-ref', '--format=%(refname:short)', 'refs/heads/delivery/'])
+      .split('\n')
+      .map((x) => x.trim())
+      .filter(Boolean)
+  } catch {
+    return null
+  }
+  for (const branch of branches) {
+    const slug = branch.slice('delivery/'.length)
+    if (!slug) continue
+    let record: unknown
+    try {
+      record = JSON.parse(roGit(['show', `${branch}:${ticketRoot}/delivery/${slug}.json`]))
+    } catch {
+      continue
+    }
+    // 🔴 손상 레코드를 그냥 건너뛰면 "묶음 없음"과 구분되지 않아 종단이 DONE 이 된다 —
+    //    묶음 정지 게이트가 조용히 사라진다(phase-3 r02 P1). 이 REQ 를 member 로 **식별할 수 있으면**
+    //    손상이라도 fail-closed 로 전파한다. 식별조차 안 되는 레코드만 건너뛴다.
+    const problems = deliveryRecordProblems(record)
+    if (!mentionsMember(record, reqId)) continue
+    if (problems.length)
+      return { slug, kind: 'corrupt', detail: `delivery 레코드 손상(${branch}): ${problems.slice(0, 3).join('; ')}` }
+    const v = deliveryGateVerdict(record as DeliveryRecord)
+    return { slug, kind: v.kind, detail: v.detail }
+  }
+  return null
 }
 
 /** `approve` 가능 판정 — `sealed` && 모든 member terminal 일 때만(설계 DEC-8). */

@@ -34,7 +34,7 @@ import { bookkeepingMessage } from './lib/bookkeeping'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { LEDGER_BASENAME } from './lib/review-ledger'
 import { CLOSE_PROOF_BASENAME, parseCloseProof, deriveBaseState } from './lib/close-proof'
-import { REQUIRED_CONFIRM_SCOPE, effectiveConfirmScope } from './lib/evidence'
+import { requiredConfirmScope, effectiveConfirmScope } from './lib/evidence'
 import type { StopGate } from './lib/config'
 import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
 // REQ-2026-048 phase-1: 매니페스트 모델·검증과 그 보조 술어는 leaf `lib/evidence.ts`가 정본.
@@ -132,7 +132,12 @@ export function userConfirmGate(
   if (stopGate === 'merge') return { blocked: false }
   if (stopGate === 'req' && !completesReq) return { blocked: false }
 
-  const required = REQUIRED_CONFIRM_SCOPE[stopGate]
+  /**
+   * 🔴 위의 `merge` 조기 반환 덕분에 여기 `stopGate` 는 `'phase' | 'req'` 로 좁혀져 있다 —
+   *    그 두 값은 묶음 맥락과 무관하므로 `requiredConfirmScope` 의 단일 인자 오버로드를 쓴다.
+   *    조기 반환이 사라지면 이 호출은 **타입 에러**가 된다(REQ-2026-128 DEC-2 — 조용한 오답 방지).
+   */
+  const required = requiredConfirmScope(stopGate)
   const problem = userConfirmProblem(state.user_commit_confirmed)
   if (problem)
     return {

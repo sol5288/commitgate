@@ -3,7 +3,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { parseArgs, buildConfirm, scopeMeaning, CONFIRM_SCOPES, main } from '../../scripts/req/req-confirm'
-import { userConfirmProblem, REQUIRED_CONFIRM_SCOPE, effectiveConfirmScope } from '../../scripts/req/lib/evidence'
+import { userConfirmProblem, requiredConfirmScope, effectiveConfirmScope } from '../../scripts/req/lib/evidence'
+import type { StopGate } from '../../scripts/req/lib/config'
 import { resolveDispatch, VERB_MODULES } from '../../bin/dispatch.mjs'
 import { STAGE_B_REQ_VERBS, STAGE_B_REQ_SCRIPTS } from '../../bin/init'
 
@@ -79,10 +80,30 @@ describe('[req:confirm] scopeMeaning — 넓은 범위의 뜻을 말한다', () 
   })
 })
 
-describe('[req:confirm] stopGate ↔ scope 대응표', () => {
-  /** 두 축이 갈라지지 않도록 표 하나가 SSOT 다. */
-  it('세 값이 1:1로 대응한다', () => {
-    expect(REQUIRED_CONFIRM_SCOPE).toEqual({ phase: 'phase', req: 'req', merge: 'delivery' })
+/**
+ * REQ-2026-128 DEC-2 — 대응은 **표가 아니라 함수**다. `merge` 가 요구하는 scope 는 이 REQ 가
+ * delivery 묶음에 속하는지에 달려 있고, 표는 그 조건을 담지 못한다.
+ *
+ * 🔴 expected 를 SUT 로 구성하지 않는다(과거 phase-4 r04 P1 동어반복 교훈) — 전부 리터럴로 고정한다.
+ */
+describe('[req:confirm] requiredConfirmScope — stopGate ↔ scope 진리표', () => {
+  it('phase·req 는 묶음 맥락과 무관하다', () => {
+    expect(requiredConfirmScope('phase')).toBe('phase')
+    expect(requiredConfirmScope('req')).toBe('req')
+    expect(requiredConfirmScope('phase', { inDeliverySet: true })).toBe('phase')
+    expect(requiredConfirmScope('req', { inDeliverySet: true })).toBe('req')
+  })
+
+  it('🔴 merge + 묶음에 속함 → delivery(현행 유지)', () => {
+    expect(requiredConfirmScope('merge', { inDeliverySet: true })).toBe('delivery')
+  })
+
+  /**
+   * 🔴 이 REQ 의 핵심. 존재하지 않는 묶음을 승인하라고 요구하면 `scopeMeaning('delivery')` 가 말하는
+   *    "이 묶음의 남은 REQ 전부"가 **거짓 진술**이 된다. 묶음이 없을 때의 참값은 `req` 다.
+   */
+  it('🔴 merge + 묶음 없음 → req', () => {
+    expect(requiredConfirmScope('merge', { inDeliverySet: false })).toBe('req')
   })
 })
 
@@ -106,8 +127,8 @@ describe('[req:confirm] verb 등록', () => {
  *    `merge`는 "언제 멈추는가"이고 `delivery`는 "무엇을 승인했는가"다 — 승인 대상은 묶음이지 병합 행위가 아니다.
  */
 describe('[req:confirm] merge → delivery 대응(양방향)', () => {
-  it('🔴 merge 가 요구하는 것은 delivery 다', () => {
-    expect(REQUIRED_CONFIRM_SCOPE.merge).toBe('delivery')
+  it('🔴 merge 가 묶음 안에서 요구하는 것은 delivery 다', () => {
+    expect(requiredConfirmScope('merge', { inDeliverySet: true })).toBe('delivery')
   })
 
   it("🔴 scope 에 'merge' 라는 값은 존재하지 않는다", () => {
@@ -127,24 +148,28 @@ describe('[req:confirm] merge → delivery 대응(양방향)', () => {
  * (실행 경로는 REQ 티켓에서 실측된다).
  */
 describe('[req:confirm] stopGate 와 다른 scope 는 거부된다', () => {
-  const mismatches: Array<[keyof typeof REQUIRED_CONFIRM_SCOPE, string]> = [
-    ['phase', 'req'],
-    ['phase', 'delivery'],
-    ['req', 'phase'],
-    ['req', 'delivery'],
-    ['merge', 'phase'],
-    ['merge', 'req'],
+  const mismatches: Array<[StopGate, boolean, string]> = [
+    ['phase', false, 'req'],
+    ['phase', false, 'delivery'],
+    ['req', false, 'phase'],
+    ['req', false, 'delivery'],
+    ['merge', true, 'phase'],
+    ['merge', true, 'req'],
+    // 🔴 REQ-2026-128: 묶음이 없으면 `delivery` 가 오히려 불일치다(없는 묶음을 승인할 수 없다).
+    ['merge', false, 'phase'],
+    ['merge', false, 'delivery'],
   ]
-  for (const [stopGate, given] of mismatches) {
-    it(`stopGate:'${stopGate}' 에 scope:'${given}' 는 요구와 다르다`, () => {
-      expect(REQUIRED_CONFIRM_SCOPE[stopGate]).not.toBe(given)
+  for (const [stopGate, inDeliverySet, given] of mismatches) {
+    it(`stopGate:'${stopGate}'(묶음 ${inDeliverySet ? '있음' : '없음'}) 에 scope:'${given}' 는 요구와 다르다`, () => {
+      expect(requiredConfirmScope(stopGate, { inDeliverySet })).not.toBe(given)
     })
   }
 
   it('일치하는 조합만 요구를 만족한다', () => {
-    expect(REQUIRED_CONFIRM_SCOPE.phase).toBe('phase')
-    expect(REQUIRED_CONFIRM_SCOPE.req).toBe('req')
-    expect(REQUIRED_CONFIRM_SCOPE.merge).toBe('delivery')
+    expect(requiredConfirmScope('phase', { inDeliverySet: false })).toBe('phase')
+    expect(requiredConfirmScope('req', { inDeliverySet: false })).toBe('req')
+    expect(requiredConfirmScope('merge', { inDeliverySet: true })).toBe('delivery')
+    expect(requiredConfirmScope('merge', { inDeliverySet: false })).toBe('req')
   })
 })
 
@@ -172,27 +197,58 @@ describe('[req:confirm] main() — 불일치 scope 실행 경로', () => {
     while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
   })
 
-  const run = (root: string, scope: string) =>
-    main(['2026-999', '--scope', scope, '--method', 'm', '--root', root, '--run'], { now: () => '2026-07-27T00:00:00.000Z', log: () => {} })
+  const run = (root: string, scope: string, inDeliverySet = false) =>
+    main(['2026-999', '--scope', scope, '--method', 'm', '--root', root, '--run'], {
+      now: () => '2026-07-27T00:00:00.000Z',
+      log: () => {},
+      inDeliverySet: () => inDeliverySet,
+    })
 
-  const cases: Array<['phase' | 'req' | 'merge', string]> = [
-    ['phase', 'req'],
-    ['phase', 'delivery'],
-    ['req', 'phase'],
-    ['req', 'delivery'],
-    ['merge', 'phase'],
-    ['merge', 'req'],
+  /** `[stopGate, 묶음 소속, 거부되어야 할 scope]` */
+  const cases: Array<[StopGate, boolean, string]> = [
+    ['phase', false, 'req'],
+    ['phase', false, 'delivery'],
+    ['req', false, 'phase'],
+    ['req', false, 'delivery'],
+    ['merge', true, 'phase'],
+    ['merge', true, 'req'],
+    // 🔴 REQ-2026-128: 묶음이 없는 merge 에서 `delivery` 는 없는 묶음을 승인하는 거짓 진술이다.
+    ['merge', false, 'phase'],
+    ['merge', false, 'delivery'],
   ]
 
-  for (const [stopGate, given] of cases) {
-    it(`🔴 stopGate:'${stopGate}' + --scope ${given} → 거부하고 state 를 쓰지 않는다`, () => {
+  for (const [stopGate, inDeliverySet, given] of cases) {
+    it(`🔴 stopGate:'${stopGate}'(묶음 ${inDeliverySet ? '있음' : '없음'}) + --scope ${given} → 거부하고 state 를 쓰지 않는다`, () => {
       const { root, ticket, before } = setup(stopGate)
       roots.push(root)
-      expect(() => run(root, given)).toThrow(/stopGate/)
+      expect(() => run(root, given, inDeliverySet)).toThrow(/stopGate/)
       // 🔴 오라클의 핵심: 거부는 checkpoint **前**이므로 state 가 그대로여야 한다.
       expect(readFileSync(join(ticket, 'state.json'), 'utf8')).toBe(before)
     })
   }
+
+  /**
+   * 🔴 REQ-2026-128 의 안내↔도구 정합. `req:next` 종단이 `merge` + 묶음 없음에서 `--scope req` 를
+   *    안내하는데 이 명령이 거부하면 사용자는 실행할 수 없는 명령을 받는다.
+   */
+  it('🔴 merge + 묶음 없음 + --scope req 는 scope 사유로 막히지 않는다', () => {
+    const { root } = setup('merge')
+    roots.push(root)
+    let msg = ''
+    try {
+      run(root, 'req', false)
+    } catch (e) {
+      msg = (e as Error).message
+    }
+    expect(msg).not.toMatch(/요구합니다/)
+  })
+
+  /** 대조군: 같은 명령이 묶음 **안**에서는 거부된다 — 묶음 확인을 좁은 확인으로 대체할 수 없다. */
+  it('🔴 merge + 묶음 있음 + --scope req 는 거부된다', () => {
+    const { root } = setup('merge')
+    roots.push(root)
+    expect(() => run(root, 'req', true)).toThrow(/stopGate/)
+  })
 
   /** 대조군: 일치하면 거부 사유가 scope 가 아니다(그 뒤 git 단계까지는 여기서 다루지 않는다). */
   it('일치하는 scope 는 scope 사유로 막히지 않는다', () => {
@@ -212,7 +268,11 @@ describe('[req:confirm] main() — 불일치 scope 실행 경로', () => {
     const { root } = setup('req')
     roots.push(root)
     expect(() =>
-      main(['2026-999', '--scope', 'phase', '--method', 'm', '--root', root], { now: () => 'x', log: () => {} }),
+      main(['2026-999', '--scope', 'phase', '--method', 'm', '--root', root], {
+        now: () => 'x',
+        log: () => {},
+        inDeliverySet: () => false,
+      }),
     ).toThrow(/stopGate/)
   })
 })

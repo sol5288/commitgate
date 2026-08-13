@@ -19,7 +19,8 @@ import { loadConfig } from './lib/config'
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
-import { REQUIRED_CONFIRM_SCOPE, userConfirmProblem, type ConfirmScope, type UserCommitConfirmed } from './lib/evidence'
+import { requiredConfirmScope, userConfirmProblem, type ConfirmScope, type UserCommitConfirmed } from './lib/evidence'
+import { readDeliveryGate } from './lib/delivery'
 import { loadState, writeState, type WorkflowState } from './review-codex'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 
@@ -90,9 +91,31 @@ export function buildConfirm(args: { scope: ConfirmScope; method: string; note: 
 export interface Deps {
   now: () => string
   log: (m: string) => void
+  /**
+   * 이 REQ 가 delivery 묶음에 속하는가(REQ-2026-128 DEC-7). `merge` 의 요구 scope 가 여기에 달려 있다.
+   *
+   * ⚠️ **이 검증은 편의이지 강제가 아니다.** `readDeliveryGate` 는 "묶음 없음"과 "refs 를 못 읽음"을
+   *    구분하지 않으므로, git 이 고장 난 환경에서는 묶음에 속한 REQ 가 `req` 확인을 받아들일 수 있다.
+   *    묶음 보증의 강제 지점은 `delivery integrate` 자격검사(`scope === 'delivery'` 독립 요구)다.
+   */
+  inDeliverySet: (root: string, ticketRoot: string, reqId: string) => boolean
 }
 
-const defaultDeps: Deps = { now: () => new Date().toISOString(), log: (m) => console.log(m) }
+/** 기본 구현 — 읽기 전용 git 으로 `refs/heads/delivery/*` 를 훑는다. 실패는 `false`(위 한계 참조). */
+export function detectInDeliverySet(root: string, ticketRoot: string, reqId: string): boolean {
+  try {
+    const git = createGitAdapter(root)
+    return readDeliveryGate(ticketRoot, reqId, (args) => git.exec(args)) !== null
+  } catch {
+    return false
+  }
+}
+
+const defaultDeps: Deps = {
+  now: () => new Date().toISOString(),
+  log: (m) => console.log(m),
+  inDeliverySet: detectInDeliverySet,
+}
 
 export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaultDeps): void {
   const o = parseArgs(argv)
@@ -109,8 +132,13 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
   const state = loadState(ticketDir)
 
-  const required = REQUIRED_CONFIRM_SCOPE[cfg.stopGate]
-  deps.log(`[req:confirm] ${reqId} · risk=${String(state.risk_level)} · stopGate="${cfg.stopGate}"(요구 scope="${required}")`)
+  // 🔴 `merge` 는 묶음 소속에 따라 요구가 갈린다(REQ-2026-128 DEC-2) — 안내(`req:next`)와 같은 판정을 쓴다.
+  const inDeliverySet = deps.inDeliverySet(cfg.root, cfg.ticketRoot, reqId)
+  const required = requiredConfirmScope(cfg.stopGate, { inDeliverySet })
+  deps.log(
+    `[req:confirm] ${reqId} · risk=${String(state.risk_level)} · stopGate="${cfg.stopGate}"` +
+      `(묶음 ${inDeliverySet ? '있음' : '없음'} → 요구 scope="${required}")`,
+  )
   deps.log(`  ${scopeMeaning(o.scope)}`)
   /**
    * 🔴 **불일치를 거부한다**(설계 r05 P1). 경고만 하면 사용자는 성공·checkpoint 를 받고서 나중에
@@ -122,7 +150,9 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
       [
         `현재 stopGate="${cfg.stopGate}" 는 scope="${required}" 확인을 요구합니다(받은 값: "${o.scope}").`,
         '  범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술이라, 다른 범위의 기록은 게이트를 통과하지 못합니다.',
-        '  이 값으로 기록하려면 먼저 req.config.json 의 stopGate 를 바꾸세요.',
+        cfg.stopGate === 'merge'
+          ? `  이 REQ 는 delivery 묶음에 속하지 ${inDeliverySet ? '있습니다' : '않습니다'} — merge 의 요구 scope 는 소속에 따라 갈립니다(속함=delivery · 속하지 않음=req).`
+          : '  이 값으로 기록하려면 먼저 req.config.json 의 stopGate 를 바꾸세요.',
       ].join('\n'),
     )
 

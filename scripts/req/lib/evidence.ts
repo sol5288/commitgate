@@ -16,6 +16,7 @@
 import { isArchiveFileName } from './scratch'
 import { bookkeepingMessage } from './bookkeeping'
 import type { ApprovalEvidence, ReviewKind } from './review-types'
+import type { StopGate } from './config'
 
 // ─────────────────────────────────────────────────────── 공통 형식 술어 ──
 
@@ -85,8 +86,28 @@ export interface UserCommitConfirmed {
 /** 사람 확인이 덮는 범위(REQ-2026-071). `stopGate`의 세 값과 1:1로 대응한다. */
 export type ConfirmScope = 'phase' | 'req' | 'delivery'
 
-/** `stopGate` → 그 값이 요구하는 확인 scope(SSOT). 두 축이 갈라지지 않도록 표 하나로 둔다. */
-export const REQUIRED_CONFIRM_SCOPE = { phase: 'phase', req: 'req', merge: 'delivery' } as const
+/**
+ * `stopGate` → 그 값이 요구하는 확인 scope(**SSOT**). 네 소비자(`req:next` 안내 · `req:commit` 게이트 ·
+ * `req:confirm` 입력 검증 · `delivery integrate` 자격검사)가 이 함수 하나를 공유한다.
+ *
+ * 🔴 **표가 아니라 함수인 이유**(REQ-2026-128 DEC-2): `merge` 가 요구하는 scope 는 이 REQ 가 delivery
+ *    묶음에 **속하는지**에 달려 있다. 묶음이 없는데 `'delivery'` 를 요구하면 존재하지 않는 묶음을
+ *    승인하라는 말이 되고, `scopeMeaning('delivery')` 가 말하는 "이 묶음의 남은 REQ 전부"는 거짓 진술이
+ *    된다. scope 는 크기 순서가 아니라 **무엇을 승인했는가에 대한 진술**이므로(REQ-2026-071 DEC-4b),
+ *    묶음이 없을 때의 참값은 `'req'` 다.
+ *
+ * 🔴 **오버로드로 foot-gun 을 막는다.** `userConfirmGate` 는 `merge` 를 조기 반환한 뒤에야 scope 를
+ *    계산한다. 거기서 `inDeliverySet` 을 하드코딩하게 두면 나중에 조기 반환이 사라졌을 때 `'delivery'`
+ *    대신 `'req'` 가 **조용히** 나온다. 그래서 `merge` 를 포함한 union 을 넘기는 호출부는 `ctx` 를
+ *    반드시 주게 하고, `'phase' | 'req'` 로 이미 좁혀진 호출부만 생략할 수 있게 한다.
+ */
+export function requiredConfirmScope(stopGate: 'phase' | 'req'): ConfirmScope
+export function requiredConfirmScope(stopGate: StopGate, ctx: { inDeliverySet: boolean }): ConfirmScope
+export function requiredConfirmScope(stopGate: StopGate, ctx?: { inDeliverySet: boolean }): ConfirmScope {
+  if (stopGate === 'phase') return 'phase'
+  if (stopGate === 'req') return 'req'
+  return ctx?.inDeliverySet ? 'delivery' : 'req'
+}
 
 /** 확인의 실효 scope. 🔴 부재는 가장 좁은 `phase`(하위호환). */
 export function effectiveConfirmScope(c: UserCommitConfirmed | null | undefined): ConfirmScope {
