@@ -34,7 +34,7 @@ import { bookkeepingMessage } from './lib/bookkeeping'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { LEDGER_BASENAME } from './lib/review-ledger'
 import { CLOSE_PROOF_BASENAME, parseCloseProof, deriveBaseState } from './lib/close-proof'
-import { REQUIRED_CONFIRM_SCOPE, effectiveConfirmScope } from './lib/evidence'
+import { requiredConfirmScope, effectiveConfirmScope } from './lib/evidence'
 import type { StopGate } from './lib/config'
 import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
 // REQ-2026-048 phase-1: 매니페스트 모델·검증과 그 보조 술어는 leaf `lib/evidence.ts`가 정본.
@@ -71,7 +71,7 @@ export {
   type UserCommitConfirmed,
   type ArchiveInventoryItem,
 } from './lib/evidence'
-import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type PackageManager, type ResolvedConfig } from './lib/config'
+import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, effectiveStopGate, type PackageManager, type ResolvedConfig } from './lib/config'
 import { createGitAdapter, quietGitRunner, safeSpawnSync, type GitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
@@ -132,7 +132,12 @@ export function userConfirmGate(
   if (stopGate === 'merge') return { blocked: false }
   if (stopGate === 'req' && !completesReq) return { blocked: false }
 
-  const required = REQUIRED_CONFIRM_SCOPE[stopGate]
+  /**
+   * 🔴 위의 `merge` 조기 반환 덕분에 여기 `stopGate` 는 `'phase' | 'req'` 로 좁혀져 있다 —
+   *    그 두 값은 묶음 맥락과 무관하므로 `requiredConfirmScope` 의 단일 인자 오버로드를 쓴다.
+   *    조기 반환이 사라지면 이 호출은 **타입 에러**가 된다(REQ-2026-128 DEC-2 — 조용한 오답 방지).
+   */
+  const required = requiredConfirmScope(stopGate)
   const problem = userConfirmProblem(state.user_commit_confirmed)
   if (problem)
     return {
@@ -840,6 +845,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const manifestPath = join(responsesDir, 'approvals.jsonl')
   const ev = (state.approval_evidence as ApprovalEvidence | undefined) ?? null
   const validPhaseIds = readPhases(state).map((p) => p.id)
+  // REQ-2026-129 DEC-2: 이 티켓에 고정된 정지 정책(없으면 config — legacy 무회귀).
+  const stopGateNow = effectiveStopGate(state, cfg)
 
   /**
    * 🔴 이 커밋이 REQ 를 완성시키는가 — **DRY-RUN·LIVE·복구가 같은 계산을 쓴다**(phase-3 r01 P1).
@@ -848,7 +855,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
    *    판정은 `wouldCompleteReq` 하나를 공유하므로 `dev-complete` 발행과도 갈라지지 않는다.
    */
   const computeCompletesReq = (st: WorkflowState, evidence: ApprovalEvidence | null): boolean => {
-    if (cfg.stopGate !== 'req' || st.risk_level !== 'HIGH') return false
+    if (stopGateNow !== 'req' || st.risk_level !== 'HIGH') return false
     const pendingPhase = typeof st.current_phase === 'string' ? st.current_phase : null
     if (!pendingPhase) return false
     const existing = existsSync(manifestPath) ? readFileSync(manifestPath, 'utf8') : ''
@@ -865,7 +872,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   // ── DRY-RUN(부작용 없음): 게이트/계획 미리보기 ──
   if (!run) {
-    const gate = userConfirmGate(state, cfg.stopGate, computeCompletesReq(state, ev))
+    const gate = userConfirmGate(state, stopGateNow, computeCompletesReq(state, ev))
     const mode = finalizeDesign ? 'finalize-design' : finalize ? 'finalize(복구)' : '정상'
     console.log(`[req:commit] DRY-RUN (모드=${mode}; 실제 실행은 --run)`)
     console.log(`  ticket=${ticketRel} commit_allowed=${String(state.commit_allowed)} risk=${String(state.risk_level)}`)
@@ -943,7 +950,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // doctor --finalize: D9를 source 커밋 tree로 교체(우회 아님), 나머지 검사 정상.
     runDoctor([...doctorArgs, '--finalize'])
     // 복구 경로도 **같은 계산**을 쓴다 — 중간 phase 복구에서 불필요한 확인을 요구하지 않는다.
-    const gate = userConfirmGate(fstate, cfg.stopGate, computeCompletesReq(fstate, ev))
+    const gate = userConfirmGate(fstate, stopGateNow, computeCompletesReq(fstate, ev))
     if (gate.blocked) throw new Error(gate.reason)
     finalizeEvidenceAndConsume({ ticketDir, ticketRel, responsesDir, manifestPath, state: fstate, ev, archiveNames, validPhaseIds, sourceSha, rootForClose: cfg.root })
     console.log(`[req:commit] ✅ finalize 복구 완료 — source=${sourceSha.slice(0, 8)} · evidence/consume 복구`)
@@ -959,7 +966,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   //    🔴 `req`는 **이 커밋이 REQ를 완성시킬 때만** 막는다. 중간 phase를 막으면 REQ 종료 지점에
   //       도달할 수 없다(설계 r01 P1). 판정은 `wouldCompleteReq` 하나를 공유해 `dev-complete` 발행과
   //       갈라지지 않는다 — 갈라지면 "게이트는 막는데 proof는 안 나오는" 상태가 생긴다.
-  const gate = userConfirmGate(state, cfg.stopGate, computeCompletesReq(state, ev))
+  const gate = userConfirmGate(state, stopGateNow, computeCompletesReq(state, ev))
   if (gate.blocked) throw new Error(gate.reason)
   // 3) 전제: 승인 존재 + staged tree == approved_diff_hash + staged=코드만(state/responses 금지)
   if (state.commit_allowed !== true) throw new Error('commit_allowed=true 아님 — 승인된 phase 없음(req:review-codex 승인 필요)')

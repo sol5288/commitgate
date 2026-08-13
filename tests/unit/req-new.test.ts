@@ -84,7 +84,7 @@ describe('req:new — 브랜치명/초기 state', () => {
     expect(branchName('REQ-2026-001', 'camera-hardfail', 'feature/REQ-')).toBe('feature/REQ-2026-001-camera-hardfail')
   })
   it('buildInitialState 기본값(BOM 없는 writeState로 기록될 객체)', () => {
-    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
+    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW', undefined, 'req')
     expect(s.id).toBe('REQ-2026-001')
     expect(s.commit_allowed).toBe(false)
     expect(s.risk_level).toBe('LOW')
@@ -94,13 +94,13 @@ describe('req:new — 브랜치명/초기 state', () => {
   // 🔴 REQ-2026-085 DEC-5.1: 죽은 필드를 더 이상 방출하지 않는다. 키 **부재**를 단언한다 —
   //    `toBeUndefined()`는 키가 `undefined` 값으로 있어도 통과하므로 직렬화 결과에도 없음을 확인한다.
   it('[REQ-085 R4] buildInitialState는 죽은 state.phase를 방출하지 않는다', () => {
-    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
+    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW', undefined, 'req')
     expect('phase' in s).toBe(false)
     expect(Object.keys(JSON.parse(JSON.stringify(s)) as object)).not.toContain('phase')
   })
 
   it('[Phase2] buildInitialState: DEC-WF-027 design/phase 상태 필드 초기화', () => {
-    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
+    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW', undefined, 'req')
     expect(s.design_approved).toBe(false)
     expect(s.design_approved_hash).toBe(null)
     expect(s.current_phase).toBe(null)
@@ -108,14 +108,14 @@ describe('req:new — 브랜치명/초기 state', () => {
   })
 
   it('[REQ-016 A1] buildInitialState: 신규 REQ는 approval_evidence_required=true stamp(grandfathering 트리거)', () => {
-    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
+    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW', undefined, 'req')
     expect(s.approval_evidence_required).toBe(true)
   })
 
   // REQ-2026-027 phase-1 O1-1: 새 ticket은 첫 리뷰 전에도 review series 모델 버전을 갖는다(D1).
   // 이 stamp가 "새 ticket(레코드 없음)"과 "legacy(필드 부재)"를 구분한다 — 빼면 새 ticket이 legacy로 오분류된다.
   it('[REQ-2026-027] buildInitialState: 새 ticket에 review_series_model_version=1 stamp', () => {
-    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW')
+    const s = buildInitialState('REQ-2026-001', 'feat/req-2026-001-x', 'LOW', undefined, 'req')
     expect((s as { review_series_model_version?: number }).review_series_model_version).toBe(1)
   })
 })

@@ -4670,7 +4670,7 @@ describe('REQ-2026-027 phase-2 — attempt 영속 선행(near-fs)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'req027-wa-'))
     try {
       const state: WorkflowState = { id: 'X', phase: 'INTAKE', review_series_model_version: 1 }
-      const { attempt } = gateAndRecordAttempt({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: { autoBudget: 5, hardCap: 8 } })
+      const { attempt } = gateAndRecordAttempt({ ticketDir: dir, state, kind: 'design', phaseId: null, budget: { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const } })
       expect(attempt.attempt).toBe(1)
       // 🔴 반환 **직후** 디스크를 읽는다 — 외부 호출은 아직 일어나지 않았다. 이미 기록돼 있어야
       //    이후 호출이 실패해도 회차가 되돌아가지 않는다(예산 세탁 차단).
@@ -4688,7 +4688,7 @@ describe('REQ-2026-027 phase-2 — attempt 영속 선행(near-fs)', () => {
  * REQ-2026-028 phase-1 — 예산 게이트(순수). 게이트 기준은 attempts뿐(배분표 ⑤).
  */
 describe('REQ-2026-028 phase-1 — checkReviewBudget(순수)', () => {
-  const B = { autoBudget: 5, hardCap: 8 }
+  const B = { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const }
   /** REQ-2026-084 이전 형태(void 없음) — productive === dispatched. 하위호환 축을 그대로 고정한다. */
   const at = (n: number) => ({ productive: n, dispatched: n })
   it('O1-1: 자동 1~5 허용 — 회차 0..4는 allow(5회차 포함)', () => {
@@ -4876,7 +4876,7 @@ describe('REQ-2026-028 phase-1 — 예산 게이트 강제(main near-e2e)', () =
         expect(series[0]!.closed_reason).toBeNull() // 🔴 NEEDS_FIX라 열린 채 — 예외 소비가 닫으면 실패
         // 7회차(attempts=6)를 예외 없이 시도하면 또 막힌다(우회 없음). 예외가 닫았다면 새 series(0회)로 뚫렸을 것.
         // gateAndRecordAttempt로 게이트 경로만 직접 검증(near-e2e는 D10 등 부수 상태에 얽혀 격리가 어렵다).
-        expect(() => gateAndRecordAttempt({ ticketDir: ticket, state: s6, kind: 'design', phaseId: null, budget: { autoBudget: 5, hardCap: 8 } })).toThrow(/사람 승인/)
+        expect(() => gateAndRecordAttempt({ ticketDir: ticket, state: s6, kind: 'design', phaseId: null, budget: { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const } })).toThrow(/사람 승인/)
       } finally { exitSpy.mockRestore() }
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
@@ -4901,7 +4901,7 @@ describe('REQ-2026-028 phase-1 — 예산 게이트 강제(main near-e2e)', () =
     const dir = mkdtempSync(join(tmpdir(), 'req028-hash-'))
     try {
       // gateAndRecordAttempt가 열린 record의 series_id를 직접 써서 예외를 소비해야 한다(throw 없이).
-      const { state: after } = gateAndRecordAttempt({ ticketDir: dir, state, kind: 'phase', phaseId: 'phase#alpha', budget: { autoBudget: 5, hardCap: 8 } })
+      const { state: after } = gateAndRecordAttempt({ ticketDir: dir, state, kind: 'phase', phaseId: 'phase#alpha', budget: { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const } })
       expect((after.review_series as SeriesRecord[])[0]!.attempts).toBe(6)
       expect(after.review_exception_confirmed).toBeNull() // 소비됨 — series_id 매칭 성공
     } finally { rmSync(dir, { recursive: true, force: true }) }
@@ -4954,7 +4954,7 @@ describe('REQ-2026-029 phase-1 — human-resolution 순수', () => {
 
 describe('REQ-2026-029 phase-1 — terminal 가드(gateAndRecordAttempt)', () => {
   const validHR: HumanResolution = { decision: 'terminate', method: '종결 승인', decided_at: '2026-07-18T00:00:00Z' }
-  const B = { autoBudget: 5, hardCap: 8 }
+  const B = { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const }
 
   it('O1-4 🔴 human-resolution terminal 키는 recordAttempt 전에 막힌다(배분표 ③)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'req029-'))

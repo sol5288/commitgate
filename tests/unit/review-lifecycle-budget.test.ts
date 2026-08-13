@@ -25,7 +25,7 @@ const openDesign = (attempts: number, refunded?: number): SeriesRecord => ({
   closed_reason: null,
   ...(refunded !== undefined ? { refunded_attempts: refunded } : {}),
 })
-const BUDGET = { autoBudget: 5, hardCap: 8 }
+const BUDGET = { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' } as const
 
 describe('[REQ-2026-054] ReviewCallError(DEC-C1)', () => {
   it('⑤ dispatchPhase 보존 · Error 서브클래스', () => {

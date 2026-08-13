@@ -23,7 +23,7 @@ import {
   type Io,
 } from '../../bin/delivery'
 import { resolveDispatch, VERB_MODULES } from '../../bin/dispatch.mjs'
-import { deliveryGateVerdict } from '../../scripts/req/lib/delivery'
+import { deliveryGateVerdict, readPostApprovalCommits, type DeliveryRecord } from '../../scripts/req/lib/delivery'
 import { buildArchiveInventory, buildManifestEntry, serializeManifestLine } from '../../scripts/req/lib/evidence'
 import { createHash } from 'node:crypto'
 
@@ -121,6 +121,14 @@ function writeApprovedEvidence(dir: string, reqId: string, phaseIds: string[], g
   )
   gitFn(dir, ['add', '--', `${ticketRel}/responses/`])
   gitFn(dir, ['commit', '-qm', `chore(${reqId}): dev-complete`])
+}
+
+/**
+ * 승인 이후 레코드 밖 커밋(REQ-2026-130). 실행 경로와 **같은 함수**를 쓴다 — 테스트가 자기만의
+ * rev-list 를 적으면 `:(exclude)` 하나가 갈라져도 통과한다.
+ */
+function postCommits(dir: string, ctx: { ticketRoot: string }, r: DeliveryRecord): string[] | null {
+  return readPostApprovalCommits(r, ctx.ticketRoot, (args) => git(dir, args))
 }
 
 function git(dir: string, args: string[]): string {
@@ -853,6 +861,78 @@ describe('[delivery] seal/approve/reopen — 확인 문구 통제점', () => {
       expect(reopened.events.map((e) => e.event)).toEqual(['created', 'sealed', 'approved', 'reopened'])
       // 실제 시계에서 읽는다(고정값 위조 금지) — IO_SILENT 는 테스트 주입이고, 기본 Io 는 new Date() 다.
       expect(reopened.events.every((e) => typeof e.at === 'string' && e.at.length > 0)).toBe(true)
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /**
+   * REQ-2026-130 — 승인 결속. 두 단언이 함께 있어야 의미가 있다:
+   *   ① 승인 **직후**에는 `continue` — 승인이 만든 레코드 커밋을 staleness로 세면 정상 경로가 완료 불가다.
+   *   ② 그 뒤 코드 커밋이 들어오면 `await-human` — 승인한 것과 병합될 것이 다르다.
+   */
+  it('🔴 승인은 자기 자신을 무효화하지 않고, 이후 코드 커밋이 들어오면 재승인을 요구한다', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'bind', IO_SILENT)
+      addMemberAndBranch(dir, 'bind', 'REQ-2026-031', { devComplete: true })
+      cmdIntegrate(ctx, 'bind', 'REQ-2026-031', IO_SILENT)
+      cmdSeal(ctx, 'bind', confirmSentence('seal', 'bind'), IO_SILENT)
+      const approved = cmdApprove(ctx, 'bind', confirmSentence('approve', 'bind'), IO_SILENT)
+
+      // 결속이 실제로 기록됐다 — 기준점은 delivery 브랜치 tip 이다(실행 위치의 HEAD 가 아니다).
+      expect(approved.approval?.base_sha).toMatch(/^[0-9a-f]{40}$/)
+
+      // ① 승인 직후: 레코드 밖 커밋이 없으므로 continue.
+      const after = readRecord(ctx, 'bind')
+      expect(deliveryGateVerdict(after, { postApprovalCommits: postCommits(dir, ctx, after) }).kind).toBe('continue')
+
+      // ② delivery 브랜치에 코드 커밋을 추가하면 재승인이 필요하다.
+      const back = git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+      git(dir, ['checkout', '-q', 'delivery/bind'])
+      writeFileSync(join(dir, 'sneaked.txt'), 'unreviewed\n')
+      git(dir, ['add', '--', 'sneaked.txt'])
+      git(dir, ['commit', '-q', '-m', 'chore: sneak'])
+      git(dir, ['checkout', '-q', back])
+
+      const v = deliveryGateVerdict(after, { postApprovalCommits: postCommits(dir, ctx, after) })
+      expect(v.kind).toBe('await-human')
+
+      /**
+       * 🔴 phase-1 r01 P1: 안내는 **실제로 실행 가능한 명령**이어야 한다. 상태가 아직 `approved`라
+       *    `approve`만 안내하면 `canApprove`가 "이미 승인됐습니다"로 즉시 거부한다 — 사용자는 빠져나갈
+       *    길이 없다. 안내가 말하는 순서를 그대로 태워서 실제로 재승인이 되는지 확인한다.
+       */
+      expect(v.detail).toContain('delivery reopen')
+      expect(v.detail).toContain('delivery seal')
+      expect(v.detail).toContain('delivery approve')
+      cmdReopen(ctx, 'bind', confirmSentence('reopen', 'bind'), IO_SILENT)
+      cmdSeal(ctx, 'bind', confirmSentence('seal', 'bind'), IO_SILENT)
+      const reapproved = cmdApprove(ctx, 'bind', confirmSentence('approve', 'bind'), IO_SILENT)
+      expect(reapproved.state).toBe('approved')
+      // 재승인은 새 기준점을 잡는다 — 아까 끼어든 커밋은 이제 승인 범위 안이다.
+      expect(reapproved.approval?.base_sha).not.toBe(approved.approval?.base_sha)
+      const fresh = readRecord(ctx, 'bind')
+      expect(deliveryGateVerdict(fresh, { postApprovalCommits: postCommits(dir, ctx, fresh) }).kind).toBe('continue')
+    } finally {
+      cleanup(dir)
+    }
+  })
+
+  /** 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a) — `approve`만 빠져 있었다(phase-1 r01 P1). */
+  it('🔴 approve 가 전이 직후 게이트를 출력한다(승인 직후는 continue)', () => {
+    const dir = setupRepo()
+    try {
+      const ctx = ctxFor(dir)
+      cmdCreate(ctx, 'gateout', IO_SILENT)
+      addMemberAndBranch(dir, 'gateout', 'REQ-2026-032', { devComplete: true })
+      cmdIntegrate(ctx, 'gateout', 'REQ-2026-032', IO_SILENT)
+      cmdSeal(ctx, 'gateout', confirmSentence('seal', 'gateout'), IO_SILENT)
+      const lines: string[] = []
+      cmdApprove(ctx, 'gateout', confirmSentence('approve', 'gateout'), { log: (m) => lines.push(m), now: () => '2026-08-13T00:00:00.000Z' })
+      const out = lines.join('\n')
+      expect(out).toContain('gate: continue')
     } finally {
       cleanup(dir)
     }

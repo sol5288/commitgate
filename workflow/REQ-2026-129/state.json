@@ -1,0 +1,111 @@
+{
+  "id": "REQ-2026-129",
+  "branch": "feat/req-2026-129-policy-snapshot-per-ticket",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ff932-1792-7fc1-af03-b30a8c8a19d6",
+  "review_base_sha": "2bae37604495e284705eca17f6568422f023164b",
+  "review_diff_hash": "a7aff664d2d5352916d6cd2f40976274aec15111",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "35573f17bb421cf6302928580f586b94a4dbdc2a72fbde660151a81adbcab1bb",
+  "current_phase": "phase-3-drift-doctor-docs",
+  "phases": [
+    {
+      "id": "phase-1-snapshot-core",
+      "approved": true
+    },
+    {
+      "id": "phase-2-repolicy-verb",
+      "approved": true
+    },
+    {
+      "id": "phase-3-drift-doctor-docs",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-snapshot-core#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-snapshot-core",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-repolicy-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-repolicy-verb",
+      "attempts": 3,
+      "closed_reason": "approved",
+      "void_attempts": 1
+    },
+    {
+      "series_id": "phase:phase-3-drift-doctor-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-drift-doctor-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-drift-doctor-docs",
+    "outcome": "approved",
+    "compare_hash": "0b89b078421210fae5d602f3fd05e1ec900f1f1126f2fd0c4aab23c575254fbd",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T03:39:33.670Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "687d136736dff51177908597f992cc41ff747c79",
+    "design": "5a623a68fd4f855a652176aeb923e184b91703a9",
+    "plan": "ee540070e947cb95e69cfcc26614ced2182e44be"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-129/responses/design-r02-approved.json",
+    "response_sha256": "a6714442fe511ee61a78b52c3231bd552c1cfd368cf6032f0195c5fb3bb0d4ec",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "f8d7c8689a88e2e344cf9f3098a29da557bf498c",
+    "codex_thread_id": "019ff91b-16f1-7462-a5a1-227e40e7b781",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T03:14:14.104Z",
+    "design_hash": "35573f17bb421cf6302928580f586b94a4dbdc2a72fbde660151a81adbcab1bb"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "82200ea0637e61648117fbf75daee132a785b461",
+      "phase_id": "phase-1-snapshot-core",
+      "consumed_by_commit_sha": "e711374ec4fbeb808bbf6bd86b151c1601484d3d",
+      "approval_consumed_at": "2026-08-13T03:22:10.398Z"
+    },
+    {
+      "approved_tree": "962cd46c8eb4d0db565e7161213462529d93db7b",
+      "phase_id": "phase-2-repolicy-verb",
+      "consumed_by_commit_sha": "9853a2ffb53f54a8f5b012149583464f8198719c",
+      "approval_consumed_at": "2026-08-13T03:33:01.538Z"
+    },
+    {
+      "approved_tree": "a7aff664d2d5352916d6cd2f40976274aec15111",
+      "phase_id": "phase-3-drift-doctor-docs",
+      "consumed_by_commit_sha": "bfdeb3bc6cf38b9a8d70411a4264013ba9a89d3c",
+      "approval_consumed_at": "2026-08-13T03:40:09.616Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

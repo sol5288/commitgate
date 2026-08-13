@@ -47,6 +47,25 @@ npm run req:next -- 2026-002
 
 main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 branch protection을 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 **별도 통제점**이고 각각 따로 승인받습니다. **GitHub CI는 이 어느 단계의 전제도 아닙니다** — 이 저장소의 `ci.yml`은 `workflow_dispatch` 전용이라 push·tag·PR로 자동 실행되지 않고, 검사를 원하면 사람이 직접 실행합니다. 실행했으면 run 결과를, 생략했으면 **생략했다는 사실**을 보고에 남깁니다. 자세한 계약은 [AGENTS.template.md](../AGENTS.template.md)와 [docs/RELEASING.md](../docs/RELEASING.md)를 참고하세요.
 
+## 재리뷰 예산 — 몇 번까지 돌 수 있습니까
+
+같은 `(리뷰 종류, phase)`의 재리뷰 횟수에는 예산이 있습니다(`req.config.json`의
+[`reviewBudget`](configuration.md#리뷰-예산--reviewbudget)).
+
+- 1~`autoBudget`회(기본 5)는 사람 개입 없이 돕니다.
+- `autoBudget`을 넘긴 회차(기본 6~8)의 처리는 **`onSoftLimit`이 정합니다**:
+  `"ask"`(기본)면 회차마다 `req:review-exception` 사람 승인이 필요하고,
+  `"auto"`면 사람 승인 없이 진행하며 원장에 **정책으로 통과했다**는 사실이 남습니다.
+- `hardCap`(기본 8)을 소진하면 그다음 회차는 **두 값 모두에서** 차단됩니다. 그때는 종료하거나
+  정합한 대체 REQ를 만듭니다.
+
+🔴 이 정지는 **비용 통제**이지 안전 게이트가 아닙니다. `"auto"`로 두어도 리뷰 승인·증거·통합 통제점은
+그대로이고, `hardCap`도 그대로입니다. `"auto"`에서는 `req:review-exception`이 예외를 부여하지 않습니다 —
+소비될 일이 없는 승인 기록을 만들지 않기 위해서입니다.
+
+`stopGate`를 `req`·`merge`로 두어 자율 진행을 설정했다면 이 축도 함께 보십시오. 예산 정지는
+`stopGate`가 정한 지점과 **무관하게** 끼어들기 때문에, 한쪽만 열어 두면 워크플로가 여전히 끊깁니다.
+
 ## 관측 요약 — commitgate report
 
 도구가 로컬에 쌓는 관측 로그 3종(`.doctor-runs` · `.review-calls` · `.verify-runs`)을 한 번에
@@ -196,11 +215,42 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 - `seal` 이후에는 `begin` 할 수 없습니다. 되돌리려면 `reopen` — 승인이 있었다는 사실은 이력에 남습니다.
 - 🔴 **도구는 `delivery` → `main` 을 병합하지 않습니다.** `approve`는 승인을 기록할 뿐이고, 실제 병합은
   기존 통제점표(I1/I2/B1)에서 사람이 실행합니다.
+- 🔴 **승인은 그 시점의 묶음 내용에 결속됩니다.** `approve`는 승인 직전 묶음 브랜치 tip을 레코드에
+  남기고(`approval.base_sha`), 그 뒤 **묶음 레코드 밖을 건드린 커밋**이 들어오면 게이트가 다시
+  `AWAIT_HUMAN`(재승인)을 냅니다 — 승인한 내용과 병합될 내용이 다르기 때문입니다.
+  재승인은 `reopen` → `seal` → `approve` 순서입니다(상태가 아직 `approved`라 `approve`만으로는 되지 않습니다).
+  승인 자체가 만드는 레코드 커밋은 이 판정에서 제외되므로 승인이 자기 자신을 무효화하지 않습니다.
+  이 결속이 없는 옛 레코드는 예전처럼 통과합니다.
 - 브랜치 위치에 의존하지 않습니다 — 도구가 필요한 곳으로 옮겼다가 **원래 브랜치로 되돌립니다**.
 
 `stopGate: "merge"` 를 켜면 `req:next` 종단도 묶음을 봅니다: 묶음이 아직 열려 있으면 `DONE`(다음 REQ를
 열 수 있다), 닫혔고 모든 member가 종결됐으면 `AWAIT_HUMAN`. 같은 판정을 `integrate`와 `seal`도
 전이 직후에 냅니다 — 마지막 `integrate` 뒤에 `seal` 한 사용자는 `req:next`를 다시 부를 이유가 없기 때문입니다.
+
+🔴 **묶음에 속하지 않은 REQ 는 `req` 와 똑같이 멈춥니다**: 종단이 `AWAIT_HUMAN`(통합 feature→main)이고,
+`HIGH` 티켓이면 그 직전에 `req:confirm --scope req` 를 요구합니다. `merge` 를 골랐다고 해서 정지가
+사라지지는 않습니다 — 묶음이 없으면 이 REQ 다음에 올 것이 다음 REQ 가 아니라 **통합**이기 때문입니다.
+
+## 에이전트는 언제 묻지 않습니까
+
+`req:next`의 `kind`가 정지 여부를 정합니다. `RUN`·`AGENT`·`DONE`이면 에이전트는 **확인을 구하지 않고**
+그대로 진행합니다. 묻고 기다리는 것은 멈추는 것과 같은 효과라, 설정으로 정한 정지 지점이 세션마다
+늘어나기 때문입니다.
+
+도구 통제점이 아닌 판단(설계 선택지·구현 방식)은 `stopGate`가 `req`·`merge`일 때 에이전트가 권장안을
+택하고 그 근거를 `01-design.md`에 남긴 뒤 계속합니다. `phase`를 고르셨다면 이 자율 규칙은 적용되지 않습니다.
+
+멈추는 자리는 정해져 있습니다: 통제점표(I1/I2/B1·R1/R2/R3), HIGH 확인, destructive 작업, 설계 **범위**
+변경, 리뷰 `BLOCKED`, 전제 미충족, `AWAIT_HUMAN`/`BLOCKED`, `commitgate setup`,
+그리고 **확인 문장(`--confirm`)을 요구하는 명령**(`req:rebind`·`delivery seal`/`approve`/`reopen`).
+마지막 항목이 중요한 이유는 그런 명령이 `AGENT` 상태의 **진단 줄**로 나올 수 있기 때문입니다 —
+`kind`만 보고 판단하면 에이전트가 사람의 확인 문장을 대신 써 넣게 됩니다.
+
+설계를 손대야 할 때는 **정정**과 **범위 변경**을 가릅니다. 같은 목표를 유지한 채 방법을 고치는 것은
+정정이고 자율로 진행한 뒤 설계 재승인을 받습니다. `00-requirement.md`를 고쳐야 한다면 범위 변경이고,
+그때는 멈추고 보고합니다.
+
+정본은 `AGENTS.md`(설치 시 생성되는 계약)입니다.
 
 ## phase 분해는 사람이 채웁니다
 
@@ -300,7 +350,8 @@ npx commitgate req:rebind 2026-069 --phase phase-1-x --confirm "rebind REQ-2026-
 |---|---|---|
 | `phase` | 매 phase 커밋 전 | `phase` |
 | `req` | **REQ를 완성시키는 커밋** | `req` |
-| `merge` | `delivery integrate` | `delivery` |
+| `merge` (묶음에 속함) | `delivery integrate` | `delivery` |
+| `merge` (묶음 없음) | **`req:next` 종단**(통합 직전) | `req` |
 
 ```sh
 npx commitgate req:confirm 2026-071 --scope req --method "<무엇을 근거로 승인했는지>" --run

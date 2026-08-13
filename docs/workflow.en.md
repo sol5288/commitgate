@@ -49,6 +49,26 @@ If a change is too fundamental to judge as a delta, the reviewer requests a full
 
 Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses branch protection**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. tag, npm publish, and GitHub release are **control points of their own**, each approved separately and never bundled with the integration approval. **GitHub CI is not a precondition for any of them** — this repository's `ci.yml` is `workflow_dispatch`-only, so push, tag, and PR events never start it; if you want the check, a human runs it explicitly. Report the run result if you ran it, and report **that you skipped it** if you did not. See [AGENTS.template.md](../AGENTS.template.md) and [docs/RELEASING.md](../docs/RELEASING.md) for the full contract.
 
+## Re-review budget — how many rounds you get
+
+Re-reviews of the same `(review kind, phase)` are budgeted
+([`reviewBudget`](configuration.en.md#review-budget--reviewbudget) in `req.config.json`).
+
+- Rounds 1 through `autoBudget` (default 5) run with no human involvement.
+- What happens past `autoBudget` (rounds 6–8 by default) is decided by **`onSoftLimit`**:
+  `"ask"` (default) needs a human approval per round via `req:review-exception`;
+  `"auto"` runs them without approval and the ledger records that they passed **by policy**.
+- Once `hardCap` (default 8) is spent, the next round is blocked **under both values**. At that point you
+  either close the ticket or write a coherent successor REQ.
+
+🔴 This stop is **cost control**, not a safety gate. Under `"auto"` the review approval, the evidence, the
+integration control points, and `hardCap` are all unchanged. `"auto"` also makes `req:review-exception`
+refuse to grant an exception — it would only create an approval record that can never be consumed.
+
+If you set `stopGate` to `req` or `merge` for autonomous runs, look at this axis too: a budget stop cuts in
+**regardless** of where `stopGate` says you stop, so opening only one of the two still leaves the workflow
+interrupted.
+
 ## Observability summary — commitgate report
 
 Summarizes the three local observation logs the tool accumulates (`.doctor-runs` · `.review-calls` ·
@@ -208,12 +228,46 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 - After `seal` you cannot `begin`. Use `reopen` to undo it — the fact that an approval existed stays in the log.
 - 🔴 **The tool never merges `delivery` into `main`.** `approve` records the approval; the merge itself is
   performed by a human at the existing control points (I1/I2/B1).
+- 🔴 **An approval is bound to the group's contents at that moment.** `approve` records the group branch tip
+  as of just before it (`approval.base_sha`); if a commit touching anything **outside the delivery record**
+  lands afterwards, the gate returns `AWAIT_HUMAN` again — what you approved is no longer what would merge.
+  Re-approving goes `reopen` → `seal` → `approve` (the state is still `approved`, so `approve` alone is refused).
+  The record commit made by `approve` itself is excluded, so an approval never invalidates itself.
+  Older records without this binding pass as before.
 - It does not depend on your current branch — the tool moves where it needs to and **returns you where you were**.
 
 With `stopGate: "merge"`, the `req:next` terminal also looks at the group: still open → `DONE` (you may open
 the next REQ); sealed with every member terminal → `AWAIT_HUMAN`. `integrate` and `seal` emit the same verdict
 right after the transition they cause — someone who seals after the last `integrate` has no reason to call
 `req:next` again.
+
+🔴 **A REQ that belongs to no group stops exactly like `req` does**: the terminal is `AWAIT_HUMAN`
+(integrate feature→main), and a `HIGH` ticket must record `req:confirm --scope req` just before it.
+Choosing `merge` does not remove the stop — with no group, what comes after this REQ is not the next REQ
+but the **integration**.
+
+## When an agent does not ask
+
+The `kind` from `req:next` decides whether to stop. On `RUN`, `AGENT`, and `DONE` the agent proceeds
+**without asking for confirmation**. Asking and waiting stops progress just as surely as stopping does, so the
+stop points you configured would otherwise multiply from session to session.
+
+Judgements that are not tool control points (design options, implementation approach) are resolved by the agent
+picking the recommended option and recording the grounds in `01-design.md`, when `stopGate` is `req` or `merge`.
+If you chose `phase`, this autonomy rule does not apply.
+
+The places it does stop are fixed: the control-point table (I1/I2/B1, R1/R2/R3), HIGH confirmation, destructive
+operations, a change of design **scope**, a `BLOCKED` review, unmet prerequisites, `AWAIT_HUMAN`/`BLOCKED`,
+`commitgate setup`, and **any command that demands a confirmation sentence** (`--confirm`) —
+`req:rebind`, `delivery seal`/`approve`/`reopen`. That last one matters because such a command can appear as a
+**diagnostic line** while `kind` is `AGENT`: judging by `kind` alone would have the agent write your confirmation
+sentence for you.
+
+When the design has to change, separate a **correction** from a **scope change**. Fixing the method while the goal
+stands is a correction: the agent proceeds and takes the design re-approval. If `00-requirement.md` has to change,
+it is a scope change and the agent stops and reports.
+
+The authority is `AGENTS.md` — the contract created at install time.
 
 ## You fill in the phase breakdown yourself
 
@@ -317,7 +371,8 @@ A ticket with `risk_level: HIGH` **cannot pass the point `stopGate` designates w
 |---|---|---|
 | `phase` | before every phase commit | `phase` |
 | `req` | **the commit that completes the REQ** | `req` |
-| `merge` | `delivery integrate` | `delivery` |
+| `merge` (in a delivery set) | `delivery integrate` | `delivery` |
+| `merge` (no delivery set) | **the `req:next` terminal** (just before integration) | `req` |
 
 ```sh
 npx commitgate req:confirm 2026-071 --scope req --method "<what you based the approval on>" --run

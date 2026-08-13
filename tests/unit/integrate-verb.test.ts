@@ -55,6 +55,136 @@ describe('parseArgs·dispatch 배선', () => {
   })
 })
 
+/**
+ * REQ-2026-130 phase-2 — 소스가 delivery 묶음이면 **그 묶음의 승인이 병합 인가**다.
+ *
+ * 🔴 **두 구성을 모두 태운다**(설계 r04 P1). 기본 `branchPrefix`에서는 전제가 delivery 브랜치를 거르지만
+ *    `branchPrefix: "delivery/"` 는 **지원되는 설정**이라 전제를 통과한다 — 기본 구성만 검사하면
+ *    그 구성의 우회를 놓친다. 실제 진입점(`runIntegrate`)을 태워야 배선 끊김도 함께 잡힌다.
+ */
+describe('delivery 묶음 승인 결속(REQ-2026-130)', () => {
+  const DELIVERY = 'delivery/payment'
+  const recordJson = (over: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      schema_version: 1,
+      slug: 'payment',
+      branch: DELIVERY,
+      target_branch: 'main',
+      state: 'approved',
+      members: [{ req_id: 'REQ-2026-001', order: 1, delivery_base_sha: BASE, status: 'integrated' }],
+      events: [],
+      approval: { base_sha: BASE, at: '2026-08-10T00:00:00.000Z' },
+      ...over,
+    })
+
+  /** delivery 브랜치를 소스로 하는 fake git — `show`(레코드)와 staleness `rev-list` 를 추가로 답한다. */
+  const deliveryGit = (post: string[], record: string | null = recordJson()) => {
+    const base = fakeGit({ branch: DELIVERY })
+    return {
+      calls: base.calls,
+      exec(args: string[]): string {
+        if (args[0] === 'show') {
+          if (record === null) throw new Error('no such path')
+          return record
+        }
+        // staleness 조회만 가로챈다(병합 경로의 `rev-list --parents` 는 그대로 둔다).
+        if (args[0] === 'rev-list' && args.includes('--')) return post.join('\n')
+        return base.exec(args)
+      },
+    }
+  }
+  /** `branchPrefix: "delivery/"` — 지원되는 설정. 이때 delivery 브랜치가 전제를 통과한다. */
+  const deliveryPrefixDeps = (post: string[], record?: string | null) => ({
+    ...makeDeps({ git: deliveryGit(post, record) as never }),
+    branchPrefix: 'delivery/',
+  })
+
+  it('🔴 기본 branchPrefix 에서는 전제가 먼저 거른다(병합 시도 없음)', async () => {
+    const deps = makeDeps({ git: deliveryGit([]) as never })
+    const r = await runIntegrate(opts({ run: true }), deps)
+    expect(r.merged).toBe(false)
+    expect(deps.logs.some((l) => l.includes('feature 브랜치가 아닙니다'))).toBe(true)
+    expect(deps.git.calls.some((c) => c[0] === 'merge' || c[0] === 'update-ref')).toBe(false)
+  })
+
+  it('🔴 branchPrefix:"delivery/" 에서 승인 이후 커밋이 있으면 병합하지 않는다', async () => {
+    const deps = deliveryPrefixDeps(['c'.repeat(40)])
+    const r = await runIntegrate(opts({ run: true }), deps)
+    expect(r.exit).toBe(1)
+    expect(r.merged).toBe(false)
+    expect(deps.logs.some((l) => l.includes('통합 승인 이후'))).toBe(true)
+    // 🔴 로그만 찍고 진행하면 아무것도 막지 못한다 — 실제로 병합을 시도하지 않았다.
+    expect(deps.git.calls.some((c) => c[0] === 'merge' || c[0] === 'update-ref')).toBe(false)
+  })
+
+  it('branchPrefix:"delivery/" + 승인 이후 변경 없음 → 병합한다(대조군)', async () => {
+    const deps = deliveryPrefixDeps([])
+    const r = await runIntegrate(opts({ run: true }), deps)
+    expect(r.merged).toBe(true)
+  })
+
+  it('🔴 레코드가 손상됐으면 병합하지 않는다(fail-closed)', async () => {
+    const deps = deliveryPrefixDeps([], JSON.stringify({ slug: 'payment' }))
+    const r = await runIntegrate(opts({ run: true }), deps)
+    expect(r.merged).toBe(false)
+    expect(deps.logs.some((l) => l.includes('손상'))).toBe(true)
+  })
+
+  /** 🔴 파싱 실패를 "레코드 없음"으로 흡수하면 깨진 JSON 을 둔 브랜치가 그대로 병합된다. */
+  it('🔴 JSON 이 깨졌으면 병합하지 않는다', async () => {
+    const deps = deliveryPrefixDeps([], '{not json')
+    const r = await runIntegrate(opts({ run: true }), deps)
+    expect(r.merged).toBe(false)
+    expect(deps.logs.some((l) => l.includes('파싱 실패'))).toBe(true)
+  })
+
+  /** 🔴 한 번도 승인되지 않은 묶음이 병합되면 이 REQ 의 전제("승인이 병합 인가")가 무너진다. */
+  it('🔴 승인되지 않은 묶음(open · sealed-미종결)은 병합하지 않는다', async () => {
+    for (const state of ['open', 'sealed'] as const) {
+      const rec = recordJson({
+        state,
+        members: [{ req_id: 'REQ-2026-001', order: 1, delivery_base_sha: BASE, status: 'active' }],
+        approval: undefined,
+      })
+      const deps = deliveryPrefixDeps([], rec)
+      const r = await runIntegrate(opts({ run: true }), deps)
+      expect(r.merged, `state=${state}`).toBe(false)
+      expect(deps.logs.some((l) => l.includes('승인되지 않았습니다')), `state=${state}`).toBe(true)
+    }
+  })
+
+  /** 🔴 손상이 곧 우회 수단이 되면 안 된다 — 결속을 확인할 수 없으면 병합하지 않는다. */
+  it('🔴 승인 결속을 확인할 수 없으면 병합하지 않는다', async () => {
+    const base = fakeGit({ branch: DELIVERY })
+    const git = {
+      calls: base.calls,
+      exec(args: string[]): string {
+        if (args[0] === 'show') return recordJson()
+        if (args[0] === 'rev-list' && args.includes('--')) throw new Error('fatal: bad revision')
+        return base.exec(args)
+      },
+    }
+    const deps = { ...makeDeps({ git: git as never }), branchPrefix: 'delivery/' }
+    const r = await runIntegrate(opts({ run: true }), deps)
+    expect(r.merged).toBe(false)
+    expect(deps.logs.some((l) => l.includes('확인할 수 없습니다'))).toBe(true)
+  })
+
+  /** 🔴 레코드가 다른 브랜치를 가리키면 staleness 조회가 엉뚱한 범위를 본다. */
+  it('🔴 레코드 branch 가 소스와 다르면 병합하지 않는다', async () => {
+    const deps = deliveryPrefixDeps([], recordJson({ branch: 'delivery/other' }))
+    const r = await runIntegrate(opts({ run: true }), deps)
+    expect(r.merged).toBe(false)
+    expect(deps.logs.some((l) => l.includes('다릅니다'))).toBe(true)
+  })
+
+  it('delivery 가 아닌 브랜치에는 이 검사가 개입하지 않는다', async () => {
+    const deps = makeDeps()
+    const r = await runIntegrate(opts({ run: true }), deps)
+    expect(r.merged).toBe(true)
+  })
+})
+
 describe('dry-run(기본) — 병합하지 않는다', () => {
   it('전제 통과 → 계획·결속 SHA 렌더·merge 미호출·exit 0·감사 로그 1행(ci: null)', async () => {
     const deps = makeDeps()

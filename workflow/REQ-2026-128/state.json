@@ -1,0 +1,110 @@
+{
+  "id": "REQ-2026-128",
+  "branch": "feat/req-2026-128-stopgate-merge-terminal-parity",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ff911-b2c5-70a2-a2bf-e76620010401",
+  "review_base_sha": "a3b9d34b75b51fc67f8d5c2d19947e9117216a56",
+  "review_diff_hash": "2dbd7ca61f39ba960a5fedb0d8a7159ce2f223d7",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "7e7ce50339a4621cbaac8468f7f11b9a602ce0906e3bbaa4c11e167065709dbd",
+  "current_phase": "phase-3-docs",
+  "phases": [
+    {
+      "id": "phase-1-scope-ssot",
+      "approved": true
+    },
+    {
+      "id": "phase-2-merge-terminal",
+      "approved": true
+    },
+    {
+      "id": "phase-3-docs",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-scope-ssot#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-scope-ssot",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-merge-terminal#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-merge-terminal",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-docs",
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "9621d96b6831fc9098ab73ecea54a5c06c340a99",
+    "design": "f26c2fcbf1d141a40cfe3b7a069a07e392b5f2f1",
+    "plan": "ca6dab1d6c860a3e4555de86923d84967cf51699"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-128/responses/design-r01-approved.json",
+    "response_sha256": "9089f86bb21a3c4a95d100860fb295acb0d3a9f218c236d9b0d362ca5cf6277b",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "a491314e9937d3921642cc7e17f0d631d832c273",
+    "codex_thread_id": "019ff8fc-61db-7381-92bc-e58043826196",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T02:39:19.311Z",
+    "design_hash": "7e7ce50339a4621cbaac8468f7f11b9a602ce0906e3bbaa4c11e167065709dbd"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-docs",
+    "outcome": "approved",
+    "compare_hash": "3d8ea01be0235e1d8968704cfaf9a556593c68d25ff286a6ff1647ce04cf9bce",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T03:03:24.616Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "ba7ae7b4645e091638d8dcb74171edb74ed5b969",
+      "phase_id": "phase-1-scope-ssot",
+      "consumed_by_commit_sha": "f24cbbca528351af0629474b07a78fc939de60c3",
+      "approval_consumed_at": "2026-08-13T02:48:18.494Z"
+    },
+    {
+      "approved_tree": "b456231a3d76bec23932667340dd13c2ed46a327",
+      "phase_id": "phase-2-merge-terminal",
+      "consumed_by_commit_sha": "88be30e4362967194419677f2053d887a6f46907",
+      "approval_consumed_at": "2026-08-13T02:54:52.840Z"
+    },
+    {
+      "approved_tree": "2dbd7ca61f39ba960a5fedb0d8a7159ce2f223d7",
+      "phase_id": "phase-3-docs",
+      "consumed_by_commit_sha": "c8388f78132e108adc779b1146425c91884a9a71",
+      "approval_consumed_at": "2026-08-13T03:03:59.235Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

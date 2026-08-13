@@ -1,0 +1,103 @@
+{
+  "id": "REQ-2026-132",
+  "branch": "feat/req-2026-132-review-budget-soft-limit-policy",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ff998-1174-7a70-8f8e-41ba5f25bdf8",
+  "review_base_sha": "e0c63bb2a9cf2a8d1da45198b8fdf71eb2a5b1c0",
+  "review_diff_hash": "4787adb5ed9e892a9e9ca86a984a4caaed5bab6a",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "86f5c5c62a9bac2f9d3d61b355667b60cc0d24e7f07a7bfb52182dbd660d7cd5",
+  "current_phase": "phase-2-docs",
+  "phases": [
+    {
+      "id": "phase-1-soft-limit",
+      "approved": true
+    },
+    {
+      "id": "phase-2-docs",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-soft-limit#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-soft-limit",
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-docs",
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-docs",
+    "outcome": "approved",
+    "compare_hash": "e99b20e146dc21652ce7214ee4f2494269c9a5a1724a67a189ed7a00f6b8084a",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T05:29:20.526Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "c4200c26043aceaf8500ab2d7ff16a0b8ed72ac3",
+    "design": "9139ac1e0fd22416ff56fce281713706b75de81f",
+    "plan": "d3c1f2e14a8179b8063e8e11baba5c44288d3d3a"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-132/responses/design-r03-approved.json",
+    "response_sha256": "9499f170ac068711a946c02450e7f68e27263f321631bead360f172d92c57f82",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "5138b856b7319929e1b916cfefa32e2d3e0fb60e",
+    "codex_thread_id": "019ff991-850d-77e3-8e40-c64401d97c5e",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T05:22:43.315Z",
+    "design_hash": "86f5c5c62a9bac2f9d3d61b355667b60cc0d24e7f07a7bfb52182dbd660d7cd5"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "c83801b13584baf46a3ce80cfbfb2b52bfc15a3e",
+      "phase_id": "phase-1-soft-limit",
+      "consumed_by_commit_sha": "9ec8d815f5d3ff0eb407102cce30887118ee8659",
+      "approval_consumed_at": "2026-08-13T05:25:22.771Z"
+    },
+    {
+      "approved_tree": "4787adb5ed9e892a9e9ca86a984a4caaed5bab6a",
+      "phase_id": "phase-2-docs",
+      "consumed_by_commit_sha": "394c128794594c80c6dbe8890c8d6544c5ad7fcf",
+      "approval_consumed_at": "2026-08-13T05:29:49.021Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

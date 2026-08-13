@@ -393,7 +393,7 @@ const cfgStub = (over: Partial<ResolvedConfig> = {}): ResolvedConfig => ({
   designDocs: { requirement: '00-requirement.md', design: '01-design.md', plan: '02-plan.md' },
   reviewModel: 'gpt-5.6-terra',
   reviewReasoningEffort: 'high',
-  reviewBudget: { autoBudget: 5, hardCap: 8 },
+  reviewBudget: { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const },
   phaseCommit: { autoApprove: 'never' },
   lockfilePromptFull: false,
   secretScan: 'block',

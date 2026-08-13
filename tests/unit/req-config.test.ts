@@ -428,13 +428,13 @@ describe('REQ-2026-028 — reviewBudget 설정·범위 검증', () => {
   it('미설정 → 기본값 {5,8}', () => {
     const dir = tmpRoot({})
     try {
-      expect(loadConfig({ root: dir }).reviewBudget).toEqual({ autoBudget: 5, hardCap: 8 })
+      expect(loadConfig({ root: dir }).reviewBudget).toEqual({ autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' })
     } finally { cleanup(dir) }
   })
   it('정상값 통과', () => {
     const dir = tmpRoot({ reviewBudget: { autoBudget: 3, hardCap: 6 } })
     try {
-      expect(loadConfig({ root: dir }).reviewBudget).toEqual({ autoBudget: 3, hardCap: 6 })
+      expect(loadConfig({ root: dir }).reviewBudget).toEqual({ autoBudget: 3, hardCap: 6, onSoftLimit: 'ask' })
     } finally { cleanup(dir) }
   })
   it('O1-6 🔴 hardCap>8 → throw(R4는 설정 상한이 아니다, 배분표 ⑥)', () => {

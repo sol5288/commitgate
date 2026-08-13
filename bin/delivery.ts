@@ -14,13 +14,14 @@
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { loadConfig, type StopGate } from '../scripts/req/lib/config'
+import { loadConfig, effectiveStopGate, type StopGate } from '../scripts/req/lib/config'
 import { createGitAdapter, safeSpawnSyncStatus, type GitAdapter } from '../scripts/req/lib/adapters'
 import { closeProofPath, parseCloseProof } from '../scripts/req/lib/close-proof'
 import { createHash } from 'node:crypto'
 import {
   userConfirmProblem,
   effectiveConfirmScope,
+  requiredConfirmScope,
   type UserCommitConfirmed,
   validateManifest,
   designHashFromManifest,
@@ -41,8 +42,10 @@ import {
   nextOrder,
   serializeDeliveryRecord,
   activeMember,
+  readPostApprovalCommits,
   type DeliveryEvent,
   type DeliveryRecord,
+  type DeliveryGateContext,
 } from '../scripts/req/lib/delivery'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 import { createEvidencePorts } from '../scripts/req/lib/evidence-ports'
@@ -447,21 +450,33 @@ export function collectEligibility(ctx: Ctx, featureRef: string, reqId: string):
      *    완성시키는 커밋에서 받고 소비된다. 그때도 여기서 요구하면 **정상 종결한 HIGH REQ가 영구 거부**된다.
      *    stopGate가 정한 정지 지점은 하나여야 한다는 것이 이 REQ의 요구사항이다.
      */
-    if (ctx.stopGate !== 'merge') return null
+    /**
+     * 🔴 REQ-2026-129: 정지 정책은 **티켓 스냅샷**이 정본이다. config 만 보면 티켓 생성 이후 설정이 바뀐
+     *    경우 이 자격검사와 `req:commit`·`req:next` 가 서로 다른 정책으로 판정한다.
+     *    state 를 먼저 읽되, **읽기 실패의 오류화는 config 가 `merge` 일 때만** 한다 — 그러지 않으면
+     *    delivery 를 쓰지 않는 구성에서 없던 실패가 생긴다(현행 동작 보존).
+     */
     const stateText = readAtRef(ctx, featureRef, `${ticketRel}/state.json`)
-    if (stateText === null) return 'feature ref 에 state.json 이 없습니다'
-    let st: { risk_level?: unknown; user_commit_confirmed?: unknown }
+    if (stateText === null) return ctx.stopGate === 'merge' ? 'feature ref 에 state.json 이 없습니다' : null
+    let st: { risk_level?: unknown; user_commit_confirmed?: unknown; policy_snapshot?: unknown }
     try {
       st = JSON.parse(stateText) as typeof st
     } catch {
-      return 'state.json 파싱 실패'
+      return ctx.stopGate === 'merge' ? 'state.json 파싱 실패' : null
     }
+    if (effectiveStopGate(st, { stopGate: ctx.stopGate }) !== 'merge') return null
     if (st.risk_level !== 'HIGH') return null // HIGH 가 아니면 요구하지 않는다
     const problem = userConfirmProblem(st.user_commit_confirmed)
     if (problem) return `${problem} — npx commitgate req:confirm ${reqId} --scope delivery --method "<승인 문장>" --run`
     const scope = effectiveConfirmScope(st.user_commit_confirmed as UserCommitConfirmed | null)
-    if (scope !== 'delivery')
-      return `scope="${scope}" 는 묶음을 덮지 않습니다(scope="delivery" 필요) — 범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술입니다`
+    /**
+     * 🔴 요구 scope 는 SSOT 함수에서 나온다(REQ-2026-128 DEC-6). 여기는 **묶음 안**이므로
+     *    `inDeliverySet: true` 가 사실이고, 결과는 현행과 같은 `'delivery'` 다 — 동작 불변이며
+     *    바뀌는 것은 "문자열을 손으로 적지 않는다"는 점뿐이다.
+     */
+    const required = requiredConfirmScope('merge', { inDeliverySet: true })
+    if (scope !== required)
+      return `scope="${scope}" 는 묶음을 덮지 않습니다(scope="${required}" 필요) — 범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술입니다`
     return null
   })()
 
@@ -534,9 +549,17 @@ export function cmdCreate(ctx: Ctx, slug: string, io: Io = defaultIo, target = D
   io.log(`  다음: commitgate delivery begin <req-slug> --slug ${slug} --run`)
 }
 
+/**
+ * 승인 staleness 보조 입력(REQ-2026-130). 세 출력 지점이 **같은 계산**을 쓰도록 한 곳에 둔다.
+ * 실패는 `null`(무판정) — 읽지 못한 것을 "달라졌다"로 읽지 않는다.
+ */
+function gateCtx(ctx: Ctx, r: DeliveryRecord): DeliveryGateContext {
+  return { postApprovalCommits: readPostApprovalCommits(r, ctx.ticketRoot, (args) => ctx.git.exec(args)) }
+}
+
 export function cmdStatus(ctx: Ctx, slug: string, io: Io = defaultIo): void {
   const r = readRecord(ctx, slug)
-  const gate = deliveryGateVerdict(r)
+  const gate = deliveryGateVerdict(r, gateCtx(ctx, r))
   io.log(`[delivery] ${r.slug} — state=${r.state} · members=${r.members.length} · ${r.branch} → ${r.target_branch}`)
   for (const m of r.members)
     io.log(`  #${m.order} ${m.req_id} [${m.status}]${m.successor_of ? ` (successor-of ${m.successor_of})` : ''}`)
@@ -689,7 +712,7 @@ export function cmdIntegrate(ctx: Ctx, slug: string, reqId: string, io: Io = def
     //    무관한 변경이 섞이지 않는 근거는 ②-0의 clean 가드다(그 뒤로 인덱스를 건드리는 것은 merge와 레코드뿐).
     ctx.git.exec(['commit', '-m', bookkeepingMessage(`chore(delivery): integrate ${reqId} into ${slug}`)])
     io.log(`[delivery] ${reqId} 반영 완료 → ${branch}`)
-    const gate = deliveryGateVerdict(updated)
+    const gate = deliveryGateVerdict(updated, gateCtx(ctx, updated))
     // 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a) — req:next만 판정하면 영영 안 나온다.
     io.log(`  gate: ${gate.kind} — ${gate.detail}`)
     // 성공해도 사용자를 원래 자리로 되돌린다 — 도구의 이동은 수단이지 결과가 아니다(DEC-7).
@@ -760,7 +783,7 @@ export function cmdSeal(ctx: Ctx, slug: string, confirm: string | null, io: Io =
   const updated = commitTransition(ctx, slug, record, 'sealed', 'sealed', confirmSentence('seal', slug), io)
   io.log(`[delivery] '${slug}' 묶음을 닫았습니다(더 이상 begin 할 수 없습니다).`)
   // 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a). seal이 마지막 전이인 경우 여기가 유일한 발생지다.
-  const gate = deliveryGateVerdict(updated)
+  const gate = deliveryGateVerdict(updated, gateCtx(ctx, updated))
   io.log(`  gate: ${gate.kind} — ${gate.detail}`)
   return updated
 }
@@ -771,8 +794,22 @@ export function cmdApprove(ctx: Ctx, slug: string, confirm: string | null, io: I
   const v = canApprove(record)
   if (!v.ok) throw new Error(`[delivery approve] ${v.reason}`)
   checkConfirm('approve', slug, confirm)
-  const updated = commitTransition(ctx, slug, record, 'approved', 'approved', confirmSentence('approve', slug), io)
+  /**
+   * 🔴 REQ-2026-130 DEC-1: 승인을 **그 시점 묶음 내용**에 결속한다. 기준점은 `HEAD`가 아니라
+   *    **delivery 브랜치 tip**이다 — 이 도구는 위치 비의존이라 다른 브랜치에서 실행될 수 있고,
+   *    그때 `HEAD`를 쓰면 묶음의 기존 커밋 전부가 "승인 이후 변경"으로 잡힌다(설계 r02 P1).
+   */
+  const baseSha = ctx.git.exec(['rev-parse', deliveryBranchName(slug)]).trim()
+  const withApproval: DeliveryRecord = { ...record, approval: { base_sha: baseSha, at: io.now() } }
+  const updated = commitTransition(ctx, slug, withApproval, 'approved', 'approved', confirmSentence('approve', slug), io)
   io.log(`[delivery] '${slug}' 통합 승인을 기록했습니다.`)
+  /**
+   * 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a) — `seal`·`integrate`와 같은 계약이다(phase-1 r01 P1:
+   *    여기만 빠져 있었다). 승인 **직후**에는 레코드 밖 커밋이 없으므로 `continue`가 나와야 한다 —
+   *    그것이 "승인이 자기 자신을 무효화하지 않는다"의 사용자 관측 지점이다.
+   */
+  const gate = deliveryGateVerdict(updated, gateCtx(ctx, updated))
+  io.log(`  gate: ${gate.kind} — ${gate.detail}`)
   // 🔴 병합은 하지 않는다(DEC-11) — 실행은 사람이 I1/I2/B1 절차로 한다.
   io.log(`  🔴 이 명령은 병합하지 않습니다. ${updated.branch} → ${updated.target_branch} 는 AGENTS.md 통제점표(I1/I2/B1)를 따르세요.`)
   return updated

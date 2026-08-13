@@ -78,7 +78,7 @@ function baseInput(over: Partial<NextInput> = {}): NextInput {
     // REQ-2026-052: G2 compare_hash 재계산 정본은 semantic identity. 기존 G2 테스트가 compare_hash: HASH_A를
     // 쓰므로 기본값도 HASH_A로 맞춘다(무회귀). 특정 G2 시나리오는 이 값을 override한다.
     currentSemanticIdentity: HASH_A,
-    reviewBudget: { autoBudget: 5, hardCap: 8 },
+    reviewBudget: { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' as const },
     // REQ-2026-037: 기본은 never(현행 매 phase 정지) — 대부분의 기존 테스트가 이 무회귀 경로를 검증한다.
     phaseCommitAutoApprove: 'never',
     ...over,
@@ -902,7 +902,7 @@ describe('REQ-2026-028 — G3 예산 소진 안내(resolveNext)', () => {
   })
 
   it('O2-6 config 예산이 G3 경계를 움직인다 — autoBudget=3이면 attempts=3에서 escalated', () => {
-    const a = resolveNext(baseInput({ state: withOpenSeries(3), hasStagedChanges: true, reviewBudget: { autoBudget: 3, hardCap: 6 } }))
+    const a = resolveNext(baseInput({ state: withOpenSeries(3), hasStagedChanges: true, reviewBudget: { autoBudget: 3, hardCap: 6, onSoftLimit: 'ask' as const } }))
     expect(a.kind).toBe('AWAIT_HUMAN')
   })
 })
@@ -1271,16 +1271,77 @@ describe('[req:next] stopGate=merge 종단', () => {
       }),
     )
 
-  it('묶음이 없으면 DONE — delivery 를 안 쓰는 사용자를 막지 않는다', () => {
+  /**
+   * 🔴 REQ-2026-128 DEC-1. 이전 계약은 여기서 `DONE` + "묶음을 찾지 못했다" 였다 — `merge` 를 골랐는데
+   *    **아무 데서도 멈추지 않는** 상태였고(`req` 는 같은 자리에서 AWAIT_HUMAN 을 낸다),
+   *    HIGH 확인을 요구하는 게이트도 없었다. 묶음이 없으면 이 REQ 다음에 올 것은 다음 REQ 가 아니라
+   *    **통합**이므로 `req` 종단과 같은 판정이어야 한다.
+   */
+  it('🔴 묶음이 없으면 AWAIT_HUMAN(통합) — req 종단과 같다', () => {
     const a = done({ deliveryGate: null })
-    expect(a.kind).toBe('DONE')
-    expect(a.detail).toContain('찾지 못했다')
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.controlPoint).toBe('통합(feature→main)')
+    expect(a.approvalSentence ?? '').toContain(I2_APPROVAL)
   })
 
+  /** 🔴 `merge` 의 존재 이유는 그대로다 — 묶음이 살아 있으면 다음 REQ 를 열 수 있어야 한다. */
   it('묶음이 진행 중이면 DONE — 다음 REQ 를 열 수 있다', () => {
     const a = done({ deliveryGate: { slug: 'pay', kind: 'continue', detail: '묶음이 열려 있습니다' } })
     expect(a.kind).toBe('DONE')
     expect(a.detail).toContain('pay')
+  })
+
+  /**
+   * 🔴 REQ-2026-128 DEC-3 — HIGH 확인 공백. `merge` 는 커밋을 막지 않고(`userConfirmGate`),
+   *    묶음 확인은 `delivery integrate` 에서만 요구된다. 묶음이 없으면 **어느 게이트도** 확인을
+   *    요구하지 않아 HIGH 티켓이 기록 0건으로 통합 지점에 도달했다.
+   */
+  describe('HIGH + 묶음 없음 — 확인을 종단에서 요구한다', () => {
+    const high = (stateOver: Record<string, unknown> = {}) =>
+      resolveNext(
+        baseInput({
+          state: baseState({
+            risk_level: 'HIGH',
+            phases: [{ id: 'p1', approved: true }],
+            consumed_approvals: [{ phase_id: 'p1' }],
+            ...stateOver,
+          } as never),
+          stopGate: 'merge',
+          deliveryGate: null,
+        }),
+      )
+
+    it('🔴 확인이 없으면 req:confirm --scope req 를 안내한다(통합 안내보다 먼저)', () => {
+      const a = high()
+      expect(a.kind).toBe('AWAIT_HUMAN')
+      expect(a.command ?? '').toContain('req:confirm')
+      expect(a.command ?? '').toContain('--scope req')
+      // 🔴 넓은 범위의 뜻을 말해야 한다 — 사용자가 모른 채 승인하면 안 된다.
+      expect(a.detail).toContain('아직 작성되지 않은 변경')
+    })
+
+    const confirmedWith = (scope: string) => ({
+      user_commit_confirmed: { confirmed: true, method: 'm', confirmed_at: '2026-08-13T00:00:00.000Z', scope },
+    })
+
+    it('🔴 scope 가 좁으면(phase) 여전히 확인을 요구한다 — 넓으면 통과가 아니다', () => {
+      const a = high(confirmedWith('phase'))
+      expect(a.kind).toBe('AWAIT_HUMAN')
+      expect(a.command ?? '').toContain('req:confirm')
+    })
+
+    it('유효한 scope=req 확인이 있으면 통합 AWAIT_HUMAN 으로 넘어간다', () => {
+      const a = high(confirmedWith('req'))
+      expect(a.kind).toBe('AWAIT_HUMAN')
+      expect(a.controlPoint).toBe('통합(feature→main)')
+      expect(a.command ?? '').not.toContain('req:confirm')
+    })
+
+    /** 대조군: LOW 는 확인을 요구하지 않는다 — 곧바로 통합 안내다. */
+    it('LOW 는 확인 없이 통합 AWAIT_HUMAN', () => {
+      const a = high({ risk_level: 'LOW' })
+      expect(a.controlPoint).toBe('통합(feature→main)')
+    })
   })
 
   it('묶음이 닫히고 전부 종결이면 AWAIT_HUMAN + 승인 문장', () => {

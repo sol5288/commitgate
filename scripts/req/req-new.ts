@@ -14,7 +14,7 @@
 import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { writeState, loadState, resolveSuccessorLineage, durableParentSeriesTerminal, type WorkflowState, type SuccessorOf } from './review-codex'
-import { loadConfig, packageRoot, buildScriptInvocation, type DesignDocs, type PackageManager } from './lib/config'
+import { loadConfig, packageRoot, buildScriptInvocation, type DesignDocs, type PackageManager, type StopGate } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { parseStatusZ, formatStatusEntry, STATUS_Z_ARGS, type StatusEntry } from './lib/porcelain'
 import { isToolOutputScratch } from './lib/scratch'
@@ -97,7 +97,18 @@ export function renderIntakeSummary(tickets: readonly IntakeTicketResult[]): str
   return lines.join('\n')
 }
 
-export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | 'HIGH', successorOf?: SuccessorOf): WorkflowState {
+/**
+ * 🔴 `stopGate`는 **필수 인자**다(REQ-2026-129 DEC-1). 선택으로 두면 호출부가 잊었을 때 스냅샷이 조용히
+ *    빠지고, 그 티켓은 legacy 로 취급돼 config 를 따라간다 — 이 REQ 가 막으려는 상태가 그대로 재현된다.
+ *    이 저장소가 반복해서 데인 "배선 끊김은 순수 테스트가 못 잡는다"를 타입으로 막는다.
+ */
+export function buildInitialState(
+  reqId: string,
+  branch: string,
+  risk: 'LOW' | 'HIGH',
+  successorOf: SuccessorOf | undefined,
+  stopGate: StopGate,
+): WorkflowState {
   return {
     id: reqId,
     branch,
@@ -124,6 +135,11 @@ export function buildInitialState(reqId: string, branch: string, risk: 'LOW' | '
     review_series_model_version: 1,
     // REQ-2026-029 D3: 대체 REQ면 부모 lineage(--successor-of). 빈 review_series로 새 예산 — 부모 이력만 보존.
     ...(successorOf ? { successor_of: successorOf } : {}),
+    /**
+     * REQ-2026-129 DEC-1: 이 티켓의 정지 정책을 **여기서 고정**한다. 값은 `loadConfig`의 해소값이므로
+     * legacy `phaseCommit`만 쓴 config 도 역파생된 값이 들어간다(원시 config 가 아니다).
+     */
+    policy_snapshot: { stop_gate: stopGate },
   } as WorkflowState
 }
 
@@ -273,7 +289,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   git(['checkout', '-b', branch]) // D11/DEC-WF-020: feat/req-* 생성·체크아웃
   mkdirSync(ticketDir, { recursive: true })
-  writeState(ticketDir, buildInitialState(reqId, branch, o.risk, successorOf))
+  writeState(ticketDir, buildInitialState(reqId, branch, o.risk, successorOf, cfg.stopGate))
   writeFileSync(join(ticketDir, dd.requirement), `# ${reqId} 요구사항\n\n${o.title ?? '(요구사항 작성)'}\n`, 'utf8')
   // DEC-WF-027 design-first: design·plan 스캐폴드도 함께 생성 — 첫 --kind design 리뷰가 문서 누락으로 fail-closed 되지 않게.
   writeFileSync(

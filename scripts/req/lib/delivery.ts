@@ -1,5 +1,6 @@
 /**
- * delivery set — 상위 작업 묶음 모델 (REQ-2026-066). **순수 함수만**(fs·git 무의존).
+ * delivery set — 상위 작업 묶음 모델 (REQ-2026-066). **fs·git 를 import 하지 않는다** —
+ * git 이 필요한 판정(`readDeliveryGate`)은 읽기 전용 실행자를 **주입**받는다(REQ-2026-128 DEC-4).
  *
  * 목적: 여러 REQ를 하나의 묶음으로 묶어 **묶음이 끝날 때까지 main 병합을 미루고 마지막에 한 번만 멈춘다.**
  *
@@ -73,6 +74,8 @@ export interface DeliveryRecord {
   state: DeliveryState
   members: DeliveryMember[]
   events: DeliveryEvent[]
+  /** REQ-2026-130: 통합 승인의 결속 대상. 옛 레코드에는 없다(그 경우 staleness를 판정하지 않는다). */
+  approval?: DeliveryApproval
 }
 
 /**
@@ -89,8 +92,22 @@ export const REQUIRED_RECORD_KEYS = [
   'events',
 ] as const
 
-/** 레코드 **선택** 최상위 키(현재 없음 — 자리를 열어 둔다). 있으면 허용되고 없어도 통과한다. */
-export const OPTIONAL_RECORD_KEYS: readonly string[] = []
+/** 레코드 **선택** 최상위 키. 있으면 허용되고 없어도 통과한다(옛 레코드 무회귀). */
+export const OPTIONAL_RECORD_KEYS: readonly string[] = ['approval']
+
+/**
+ * 통합 승인의 **결속 대상**(REQ-2026-130 DEC-1). 승인이 무엇에 대한 것이었는지를 남긴다 —
+ * `state: 'approved'` 플래그만으로는 "승인했다"는 알아도 "무엇을 승인했다"는 알 수 없다.
+ *
+ * 🔴 `base_sha`는 **승인 직전 delivery 브랜치 tip**이다(실행 위치의 `HEAD`가 아니다 — 이 도구는
+ *    위치 비의존이라 다른 브랜치에서 실행될 수 있고, 그때 `HEAD`를 쓰면 묶음의 기존 커밋 전부가
+ *    "승인 이후 변경"으로 잡힌다).
+ */
+export interface DeliveryApproval {
+  base_sha: string
+  /** 🔴 실제 시계에서 읽는다(다른 전이 이벤트와 같은 원천). */
+  at: string
+}
 
 /** member **필수** 키. */
 export const REQUIRED_MEMBER_KEYS = ['req_id', 'order', 'delivery_base_sha', 'status'] as const
@@ -121,6 +138,16 @@ export function deliveryRecordProblems(raw: unknown): string[] {
   if (typeof raw.state !== 'string' || !STATES.includes(raw.state)) p.push(`state 부적합: ${String(raw.state)}`)
   if (!Array.isArray(raw.members)) p.push('members가 배열이 아님')
   if (!Array.isArray(raw.events)) p.push('events가 배열이 아님')
+  // 선택 키는 **있으면** 검증한다(REQ-2026-130). 없으면 통과 — 옛 레코드는 그대로 유효하다.
+  if ('approval' in raw) {
+    const a = raw.approval
+    if (!isPlainObject(a)) p.push('approval이 객체가 아님')
+    else {
+      if (typeof a.base_sha !== 'string' || a.base_sha === '') p.push('approval.base_sha가 비어 있음')
+      if (typeof a.at !== 'string' || a.at === '') p.push('approval.at이 비어 있음')
+      for (const k of Object.keys(a)) if (k !== 'base_sha' && k !== 'at') p.push(`approval 알 수 없는 키: ${k}`)
+    }
+  }
   if (p.length) return p
 
   const seenIds = new Set<string>()
@@ -244,27 +271,238 @@ export interface DeliveryGateVerdict {
 }
 
 /**
+ * 판정 보조 입력(REQ-2026-130 DEC-2). **선택**이다 — 주지 않으면 승인 staleness를 판정하지 않고
+ * 현행과 같이 동작한다(순수 모델을 쓰는 기존 호출부 무회귀).
+ *
+ * 🔴 git 실행은 **호출부**가 한다. 이 모듈은 fs·git을 import하지 않는다는 계약을 지킨다.
+ *    호출부는 `git rev-list <approval.base_sha>..<branch> -- ':(exclude)<ticketRoot>/delivery/*'` 결과를 넘긴다.
+ */
+export interface DeliveryGateContext {
+  /** 승인 이후 delivery 레코드 **밖**을 건드린 커밋. `null`/`undefined` = 판정 불가(무판정). */
+  postApprovalCommits?: string[] | null
+}
+
+/**
+ * `postApprovalCommits`를 구하는 **git 인자**(순수·SSOT). `null` = 승인 결속이 없어 판정 대상 아님.
+ *
+ * 🔴 인자를 한 곳에서 만든다 — 호출부가 셋(`delivery status`·`req:next`·`commitgate integrate`)인데
+ *    각자 적으면 `:(exclude)` 하나가 빠져도 조용히 다른 답이 나온다. 그 exclude 가 빠지면 승인이
+ *    만든 레코드 커밋 때문에 **승인이 즉시 자기 자신을 무효화**한다.
+ */
+export function postApprovalRevListArgs(r: DeliveryRecord, ticketRoot: string): string[] | null {
+  const base = r.approval?.base_sha
+  if (!base) return null
+  return ['rev-list', `${base}..${r.branch}`, '--', `:(exclude)${ticketRoot}/delivery/*`]
+}
+
+/** `rev-list` stdout → 커밋 목록(순수). */
+export function parseRevList(stdout: string): string[] {
+  return stdout
+    .split('\n')
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
+/**
  * 최종 게이트 판정(설계 DEC-8a) — **단일 SSOT**.
  *
  * 🔴 `req:next`만 이 판정을 하면 게이트가 **영영 나오지 않는다**: 마지막 member를 integrate하면 그 REQ의
  *    `req:next`는 이미 끝나 있고, 그 뒤 `seal`을 해도 `req:next`를 다시 부를 이유가 없다.
  *    그래서 `integrate`·`seal`·`status`·`req:next` **네 곳이 이 함수 하나를 공유**한다 — 각자 판정하면 갈라진다.
  */
-export function deliveryGateVerdict(r: DeliveryRecord): DeliveryGateVerdict {
+export function deliveryGateVerdict(r: DeliveryRecord, ctx?: DeliveryGateContext): DeliveryGateVerdict {
   if (r.state === 'open')
     return { kind: 'continue', detail: '묶음이 열려 있습니다 — 다음 REQ를 시작하거나 `delivery seal`로 닫으세요.' }
   if (!allMembersTerminal(r)) {
     const pending = r.members.filter((m) => !isTerminal(r, m.req_id)).map((m) => m.req_id)
     return { kind: 'continue', detail: `아직 종결되지 않은 member: ${pending.join(', ')}` }
   }
-  if (r.state === 'approved')
+  if (r.state === 'approved') {
+    /**
+     * 🔴 REQ-2026-130: 승인은 **그 시점 묶음 내용**에 대한 것이다. 승인 뒤 delivery 레코드 밖을 건드린
+     *    커밋이 들어왔다면 병합될 것은 승인받은 것과 다르다 — 다시 물어야 한다.
+     *
+     * 🔴 `postApprovalCommits`가 `null`/`undefined`면 **판정하지 않는다**. "읽지 못했다"를 "달라졌다"로
+     *    읽으면 git이 잠깐 실패한 것만으로 정상 승인이 무효가 된다. `approval`이 없는 옛 레코드도 같다 —
+     *    없는 결속을 소급 요구하면 이미 승인받은 묶음이 영구히 막힌다.
+     * 🔴 레코드 커밋 자신은 여기 들어오지 않는다(호출부가 `:(exclude)<ticketRoot>/delivery/*`로 뺀다).
+     *    빼지 않으면 승인이 만든 커밋 때문에 승인이 **즉시 자기 자신을 무효화**한다.
+     */
+    const post = ctx?.postApprovalCommits
+    if (r.approval && post && post.length > 0)
+      return {
+        kind: 'await-human',
+        detail:
+          `통합 승인 이후 묶음에 커밋 ${post.length}건이 들어왔습니다(${post.slice(0, 3).map((c) => c.slice(0, 8)).join(', ')}${post.length > 3 ? ' 외' : ''}) — ` +
+          `승인한 내용과 병합될 내용이 다릅니다. 다시 승인하려면 ` +
+          `\`delivery reopen --slug ${r.slug} --confirm "reopen ${r.slug}" --run\` → ` +
+          `\`delivery seal --slug ${r.slug} --confirm "seal ${r.slug}" --run\` → ` +
+          `\`delivery approve --slug ${r.slug} --confirm "approve ${r.slug}" --run\` 순서로 진행하세요.`,
+      }
     return { kind: 'continue', detail: '이미 통합 승인이 기록됐습니다 — 사람이 I1/I2/B1 절차로 병합합니다.' }
+  }
   return {
     kind: 'await-human',
     detail:
       `묶음 '${r.slug}'이 닫혔고 모든 REQ가 종결됐습니다 — ${r.branch} → ${r.target_branch} 통합은 사람 승인이 필요합니다. ` +
       '`commitgate delivery approve`로 승인을 기록한 뒤, 경로(PR 또는 direct push)와 승인 문장은 AGENTS.md 통제점표(I1/I2/B1)를 따르세요.',
   }
+}
+
+// ──────────────────────────────────────── 소속·게이트 조회(주입된 read-only git) ──
+
+/**
+ * 레코드가 이 REQ 를 member 로 **언급**하는가(손상 레코드에도 쓰이므로 방어적으로 읽는다).
+ * 스키마 검증을 통과하지 못한 값에서도 소속을 식별할 수 있어야 fail-closed 판정이 가능하다.
+ */
+export function mentionsMember(record: unknown, reqId: string): boolean {
+  if (!record || typeof record !== 'object') return false
+  const ms = (record as { members?: unknown }).members
+  if (!Array.isArray(ms)) return false
+  return ms.some((m) => !!m && typeof m === 'object' && (m as { req_id?: unknown }).req_id === reqId)
+}
+
+/** `readDeliveryGate` 의 반환. `null` 은 **이 REQ 가 어떤 묶음에도 속하지 않음**(또는 refs 를 못 읽음)이다. */
+export type DeliveryGateLookup = { slug: string; kind: 'continue' | 'await-human' | 'corrupt'; detail: string } | null
+
+/**
+ * 이 REQ 가 속한 delivery 묶음의 게이트 판정(REQ-2026-066 DEC-10).
+ *
+ * 🔴 **delivery ref에서** 읽는다 — feature 사본은 분기 시점에 고정되어 stale 이므로 그것으로 판정하면
+ *    앞선 member 만 반영된 상태를 보고 **조기 정지**한다(DEC-3).
+ * 🔴 판정은 `deliveryGateVerdict` **하나**를 쓴다 — `integrate`·`seal`·`status`와 갈라지면 안 된다.
+ *
+ * 묶음을 찾는 방법: `refs/heads/delivery/*` 를 훑어 각 레코드에서 이 REQ 를 member 로 가진 것을 찾는다.
+ * 레코드가 손상됐거나 읽을 수 없으면 `null`(= 묶음 정지 대상 아님) — 여기서 fail-closed 하면
+ * delivery 를 쓰지 않는 사용자의 정상 종단까지 막힌다.
+ *
+ * ⚠️ **한계**(REQ-2026-128 DEC-7): 반환 `null` 은 "묶음 없음"과 "refs 를 못 읽음"을 **구분하지 않는다**.
+ *    소속 판정을 이 값으로 대신하는 소비자는 그 사실을 알고 써야 한다 — 묶음 보증의 강제 지점은
+ *    `delivery integrate` 자격검사이지 이 조회가 아니다.
+ */
+/**
+ * 승인 이후 레코드 밖 커밋 조회(주입된 read-only git). 실패는 `null`(판정 불가 — 무판정).
+ * 🔴 실패를 빈 배열로 읽으면 "변경 없음"이 되어 stale 승인이 조용히 통과한다.
+ */
+export function readPostApprovalCommits(
+  r: DeliveryRecord,
+  ticketRoot: string,
+  roGit: (args: string[]) => string,
+): string[] | null {
+  const args = postApprovalRevListArgs(r, ticketRoot)
+  if (!args) return null
+  try {
+    return parseRevList(roGit(args))
+  } catch {
+    return null
+  }
+}
+
+/** 브랜치 이름이 delivery 묶음이면 slug, 아니면 `null`(순수). */
+export function deliverySlugOfBranch(branch: string): string | null {
+  if (!branch.startsWith('delivery/')) return null
+  return branch.slice('delivery/'.length) || null
+}
+
+/**
+ * **병합 차단 사유**(REQ-2026-130 DEC-4). 병합 소스가 delivery 묶음일 때 그 묶음의 승인이 아직
+ * 유효한지 본다. `null` = 막지 않는다.
+ *
+ * 🔴 판정은 **소스 브랜치 이름**으로 한다 — `branchPrefix` 전제를 통과했는지와 별개다.
+ *    `branchPrefix`는 임의 문자열을 허용하는 지원 설정이라 `"delivery/"` 로 두면 delivery 브랜치가
+ *    `commitgate integrate` 의 전제를 통과한다(설계 r04 P1). 기본 설정에서 실행되지 않는다는 사실이
+ *    이 검사를 불필요하게 만들지 않는다 — 그 구성에서 없으면 stale 승인이 정상 CAS 경로로 병합된다.
+ * 🔴 안내 층(`req:next`·`delivery status`)과 **같은 함수**(`deliveryGateVerdict`)로 판정한다.
+ *    여기만 다른 규칙을 쓰면 "안내는 재승인하라는데 병합은 통과"가 된다.
+ *
+ * 🔴 **`approved` 가 아니면 막는다**(phase-2 r01 P1-a). `deliveryGateVerdict` 의 `continue` 에는
+ *    `open` 과 "sealed인데 member가 남음"도 들어 있다 — 그것을 통과로 읽으면 **한 번도 승인되지 않은
+ *    묶음**이 trunk로 병합된다. 이 함수의 질문은 "게이트가 조용한가"가 아니라 **"이 병합이 인가됐는가"**다.
+ *
+ * ⚠️ 한계: 레코드 **파일이 없으면** 막지 않는다(`delivery/` 이름만 쓰는 브랜치일 수 있다).
+ * 🔴 그러나 **파싱 실패는 부재가 아니다**(phase-2 r01 P1-b). 둘을 한 `try`로 묶으면 깨진 JSON이
+ *    "관리되는 묶음이 아님"으로 흡수돼 그대로 병합된다 — fail-closed 요구의 정반대다. 읽기와 파싱을 분리한다.
+ */
+export function deliveryApprovalBlock(branch: string, ticketRoot: string, roGit: (args: string[]) => string): string | null {
+  const slug = deliverySlugOfBranch(branch)
+  if (!slug) return null
+  let text: string
+  try {
+    text = roGit(['show', `${branch}:${ticketRoot}/delivery/${slug}.json`])
+  } catch {
+    return null // 레코드 **파일 없음** = 관리되는 묶음이 아니다. (여기만 통과시킨다)
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch (e) {
+    return `delivery 레코드 파싱 실패(${branch}): ${e instanceof Error ? e.message : String(e)}`
+  }
+  const problems = deliveryRecordProblems(raw)
+  if (problems.length) return `delivery 레코드 손상(${branch}): ${problems.slice(0, 3).join('; ')}`
+  const record = raw as DeliveryRecord
+  /**
+   * 🔴 레코드가 **자기 브랜치를 다르게 선언**하면 손상이다(phase-2 r02 P1-b). staleness 조회는
+   *    `record.branch`를 쓰므로, payment 레코드의 `branch`를 `delivery/other`로 바꿔 두면 조회가
+   *    엉뚱한(빈) 범위를 보고 통과한다 — 승인되지 않은 payment tip이 병합된다.
+   */
+  if (record.branch !== branch)
+    return `delivery 레코드의 branch(${record.branch})가 병합 소스(${branch})와 다릅니다 — 레코드가 손상됐거나 다른 묶음의 것입니다.`
+  if (record.state !== 'approved')
+    return (
+      `묶음 '${slug}' 은 아직 통합 승인되지 않았습니다(state=${record.state}) — ` +
+      `\`delivery seal\` 후 \`delivery approve --slug ${slug} --confirm "approve ${slug}" --run\` 으로 승인하세요.`
+    )
+  const post = readPostApprovalCommits(record, ticketRoot, roGit)
+  /**
+   * 🔴 **차단 지점에서는 "확인 불가"가 "통과"가 아니다**(phase-2 r02 P1-a). 안내 지점에서는 `null`을
+   *    무판정으로 두는 것이 옳다(git이 잠깐 실패했다고 멀쩡한 승인을 무효화하면 안 된다). 그러나 여기서는
+   *    실제로 trunk가 바뀌므로, 결속이 **있는데** 검증할 수 없으면 막는다 — 예: `base_sha`가 존재하지 않는
+   *    SHA로 손상되면 `rev-list`가 실패하고, 그것을 통과로 읽으면 손상이 곧 우회 수단이 된다.
+   *
+   * 🔴 `approval`이 **없는** legacy approved 레코드는 그대로 통과한다(소급 요구 금지 — DEC-3).
+   */
+  if (record.approval && post === null)
+    return (
+      `승인 결속(base_sha=${record.approval.base_sha.slice(0, 8)})을 확인할 수 없습니다 — ` +
+      `그 커밋이 이 브랜치 이력에 없거나 레코드가 손상됐습니다. 확인 없이 병합하지 않습니다.`
+    )
+  const v = deliveryGateVerdict(record, { postApprovalCommits: post })
+  return v.kind === 'await-human' ? v.detail : null
+}
+
+export function readDeliveryGate(ticketRoot: string, reqId: string, roGit: (args: string[]) => string): DeliveryGateLookup {
+  let branches: string[]
+  try {
+    branches = roGit(['for-each-ref', '--format=%(refname:short)', 'refs/heads/delivery/'])
+      .split('\n')
+      .map((x) => x.trim())
+      .filter(Boolean)
+  } catch {
+    return null
+  }
+  for (const branch of branches) {
+    const slug = branch.slice('delivery/'.length)
+    if (!slug) continue
+    let record: unknown
+    try {
+      record = JSON.parse(roGit(['show', `${branch}:${ticketRoot}/delivery/${slug}.json`]))
+    } catch {
+      continue
+    }
+    // 🔴 손상 레코드를 그냥 건너뛰면 "묶음 없음"과 구분되지 않아 종단이 DONE 이 된다 —
+    //    묶음 정지 게이트가 조용히 사라진다(phase-3 r02 P1). 이 REQ 를 member 로 **식별할 수 있으면**
+    //    손상이라도 fail-closed 로 전파한다. 식별조차 안 되는 레코드만 건너뛴다.
+    const problems = deliveryRecordProblems(record)
+    if (!mentionsMember(record, reqId)) continue
+    if (problems.length)
+      return { slug, kind: 'corrupt', detail: `delivery 레코드 손상(${branch}): ${problems.slice(0, 3).join('; ')}` }
+    // REQ-2026-130: 승인 staleness 까지 같은 함수가 판정하도록 보조 입력을 넘긴다.
+    const rec = record as DeliveryRecord
+    const v = deliveryGateVerdict(rec, { postApprovalCommits: readPostApprovalCommits(rec, ticketRoot, roGit) })
+    return { slug, kind: v.kind, detail: v.detail }
+  }
+  return null
 }
 
 /** `approve` 가능 판정 — `sealed` && 모든 member terminal 일 때만(설계 DEC-8). */

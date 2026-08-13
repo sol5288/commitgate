@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"8185c36df56f6813c5e663c5d78b98b4785f1be1","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"phase-1-contract를 구현하고 선언한 단위 테스트로 검증한 뒤 phase 리뷰를 요청하세요.","observations":[]}

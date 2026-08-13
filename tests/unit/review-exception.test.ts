@@ -26,7 +26,7 @@ const grant = (over: Partial<ExceptionGrantRow> = {}): ExceptionGrantRow => ({
   reconstructed: false,
   ...over,
 })
-const BUDGET = { autoBudget: 5, hardCap: 8 }
+const BUDGET = { autoBudget: 5, hardCap: 8, onSoftLimit: 'ask' } as const
 const st = (series: SeriesRecord[]): WorkflowState => ({ id: 'REQ-2026-001', review_series: series }) as unknown as WorkflowState
 const openDesign = (attempts: number, extra: Partial<SeriesRecord> = {}): SeriesRecord => ({
   series_id: 'design:-#1', review_kind: 'design', phase_id: null, attempts, closed_reason: null, ...extra,

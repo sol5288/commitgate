@@ -274,9 +274,14 @@ describe('[REQ-2026-112] setup 고지 문구 ↔ 실제 정지 규칙', () => {
      *    게이트는 조용하다. 그래서 **긍정 의미를 단언하고 부정형을 금지**한다.
      */
     it('통합 승인이 어느 값에서도 **필요하다**고 말한다(부정형 금지)', () => {
+      /**
+       * 🔴 needle 은 **`통합(main 병합) 승인`**이다(REQ-2026-133). 그냥 `'통합'`으로 찾으면
+       *    `merge` 값 설명의 "REQ 통합 직전"이 먼저 걸려 **엉뚱한 절을 검사**한다 —
+       *    오라클이 조용히 다른 문장을 보게 된다.
+       */
       const tail = STOP_GATE_HIGH_NOTICE.split('·')
         .map((s) => s.trim())
-        .find((s) => s.includes('통합'))
+        .find((s) => s.includes('통합(main 병합) 승인'))
       if (!tail) throw new Error(`고지에 통합 승인 절이 없다 — 실제 값: ${STOP_GATE_HIGH_NOTICE}`)
       expect(tail).toContain('어느 값에서도 필요')
       // '필요하지 않'·'필요 없'·'불필요' 어느 형태로도 뒤집을 수 없다.

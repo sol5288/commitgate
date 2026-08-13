@@ -11,8 +11,8 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it — but delta design reviews still inject the built-in delta contract |
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"medium"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
-| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically, rounds 6–8 each require a human exception record bound to that series and round, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception. `hardCap ≤ 8`, `autoBudget ≤ hardCap` |
-| `stopGate` | `"req"` | **Decides on its own where a human stops** (preferred axis). `phase` = confirm before every phase commit; `req` = auto-commit phases inside a REQ and gather the confirmation at **the commit that completes the REQ**; `merge` = group several REQs into a delivery set and defer until **the whole set** is done. The per-value confirmation points, including how `HIGH` risk is treated, are defined in [Workflow — Human confirmation for HIGH-risk tickets](workflow.en.md#human-confirmation-for-high-risk-tickets). Integration (main merge) approval is required under every value |
+| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically. Rounds 6–8 are governed by `onSoftLimit`: `"ask"` (default) requires a human exception record bound to that series and round; `"auto"` runs them without human approval and records the policy grounds in the ledger. Once `hardCap` is spent the next attempt (round 9 onward) is blocked **under both values**. `hardCap ≤ 8`, `autoBudget ≤ hardCap`. See [Review budget](#review-budget--reviewbudget) |
+| `stopGate` | `"req"` | **Decides where a human stops at commits and integration** (preferred axis). 🔴 The review budget (`reviewBudget.onSoftLimit`) is a **separate axis**: regardless of this value, exceeding it during re-reviews can stop you on its own. `phase` = confirm before every phase commit; `req` = auto-commit phases inside a REQ and gather the confirmation at **the commit that completes the REQ**; `merge` = group several REQs into a delivery set and defer until **the whole set** is done (🔴 **with no delivery set it behaves like `req`**, stopping just before this REQ's integration — choosing this value does not remove the stop). The per-value confirmation points, including how `HIGH` risk is treated, are defined in [Workflow — Human confirmation for HIGH-risk tickets](workflow.en.md#human-confirmation-for-high-risk-tickets). Integration (main merge) approval is required under every value |
 | `githubCi` | not configured (`null`) | GitHub Actions workflow that `integrate` may run only after an explicit user request. When absent, CommitGate neither asks about a CI run nor guesses a workflow |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | Per-phase auto-commit policy. **`low-only` is the default**: it auto-commits Codex-approved phases without a human stop and defers the human confirmation. Set `never` **explicitly** to stop for a human before every phase commit. There is no `"all"` value — `stopGate` is the semantic axis, and adding values to the alias would split the two axes again |
 
@@ -35,8 +35,56 @@ Empty `branchPrefix` values and paths that escape the project root are rejected.
   (a file where the two axes contradict would block every command afterwards).
 - 🔴 `merge` and `req` map to the **same** `phaseCommit.autoApprove` (both auto-commit phases). A config that
   only sets the legacy `phaseCommit` therefore resolves conservatively to `req` — set `stopGate` explicitly to use `merge`.
-- `merge` only means something with a [delivery set](workflow.en.md#delivery-set--several-reqs-as-one-group).
-  With no set, the `req:next` terminal is simply `DONE` and you can open the next REQ.
+- With a [delivery set](workflow.en.md#delivery-set--several-reqs-as-one-group), `merge` defers **the stops of
+  several REQs into that one group**. With no set it behaves like `req`: the `req:next` terminal is
+  `AWAIT_HUMAN` (integration feature→main).
+- Under any value the phase commits do not stop (except `phase`) and the stops collect at the terminal. How many
+  control points the terminal has depends on risk: `LOW` is **one** (the integration approval), `HIGH` is **two** —
+  `req:confirm` first, then the integration approval. (`req` behaves the same; only the confirmation point moves
+  from the commit to the terminal.)
+
+### Review budget — `reviewBudget`
+
+```jsonc
+"reviewBudget": { "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }
+```
+
+- `autoBudget` (default 5): reviews repeat this many times with no human involvement.
+- `hardCap` (default 8): the **absolute call ceiling**. A 9th attempt never runs, by any route.
+- `onSoftLimit` (default `ask`): what happens once `autoBudget` is exceeded.
+  - `ask`: attempts 6–8 each need a human approval via `req:review-exception` (current behaviour).
+  - `auto`: they proceed without human approval up to `hardCap`, and the ledger records that they passed
+    **by policy**.
+
+🔴 **This stop is cost control, not a safety gate.** Switching to `auto` changes nothing about review
+approval, evidence, the integration control points, or `hardCap`. All it removes is the budget question,
+"may we spend one more round?"
+
+- Under `auto`, `req:review-exception` **refuses to grant** an exception — it would only create an approval
+  record that can never be consumed. Keep `ask` if you want the human approval.
+- A config that sets only the two original keys (`{"autoBudget":3,"hardCap":6}`) stays valid and gets
+  `onSoftLimit: "ask"`.
+
+### Policy snapshot — a ticket keeps the `stopGate` it was created with
+
+`req:new` pins the resolved `stopGate` into the ticket's `state.json` (`policy_snapshot.stop_gate`), and the
+gates (`req:next`, `req:commit`, `req:confirm`, `req:doctor`, `delivery integrate`) read that value.
+
+If the gates re-read `req.config.json` on every command, **one ticket runs under several policies**: confirm
+phases 1–2 under `phase`, switch the setting to `merge` midway, and the rest auto-commit with no confirmation —
+the meaning of a confirmation you already gave changes after the fact.
+
+- Changing the setting **does not affect tickets already in flight.** New tickets start on the new policy.
+- A mismatch is reported by `req:doctor` as **D32 WARN** (not FAIL — it never blocks progress).
+- To apply the new policy to a ticket in flight:
+
+  ```sh
+  npx commitgate req:repolicy <REQ> --reason "<why>" --run
+  ```
+
+  🔴 This is not a gate bypass. Only "where you stop" changes; **confirmations already recorded are not
+  erased** — if the new policy requires a different `scope`, it is asked for again at that point.
+- Tickets with no snapshot (created before this feature) follow `req.config.json` as before.
 
 ### Optional GitHub CI runs — `githubCi`
 
@@ -72,12 +120,25 @@ for the full execution order.
 
 ## Interactive setup — `commitgate setup`
 
-Instead of editing the file by hand, you can set the review model and reasoning effort with a wizard.
-It **also handles codex login**.
+Instead of editing the file by hand, you can set the review model, reasoning effort, and **where you stop**
+with a wizard. It **also handles codex login**.
 
 ```sh
 npx commitgate setup
 ```
+
+It asks four questions.
+
+| Question | Config key |
+|---|---|
+| Review model | `reviewModel` |
+| Review reasoning effort | `reviewReasoningEffort` |
+| Where a human stops | `stopGate` |
+| What to do past the review budget | `reviewBudget.onSoftLimit` |
+
+🔴 **Two axes create stops.** Even with `stopGate` set for autonomous runs, exceeding the review budget stops
+you separately — opening only one of the two still leaves the workflow interrupted, so both are asked on the
+same screen. `autoBudget` and `hardCap` are **not asked and are preserved** as they are (edit them in the file).
 
 - Questions with a fixed set of values (reasoning effort, stop gate) are **arrow-key menus**: ↑/↓ to move,
   Enter to confirm, Ctrl+C to cancel. The first entry is **keep the current value** and the cursor starts

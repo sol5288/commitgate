@@ -106,6 +106,17 @@ export function planReviewException(state: WorkflowState, kind: ReviewKind, phas
     return { ok: false, reason: `아직 예외 불요(판정 회차 ${counts.productive} < autoBudget ${budget.autoBudget})`, hint: '그냥 req:review-codex로 리뷰하세요' }
   if (decision.kind === 'hard-blocked')
     return { ok: false, reason: `예산 소진 — 예외로도 불가(hardCap ${budget.hardCap})`, hint: '종료하거나 정합한 대체 REQ를 작성하세요' }
+  /**
+   * 🔴 REQ-2026-132 DEC-4b: `onSoftLimit: "auto"` 에서는 6~8회차가 사람 승인 **없이** 진행된다.
+   *    여기서 예외를 부여하면 도구가 스스로 "auto 는 사람 승인을 만들지 않는다"를 어긴다 —
+   *    쓰이지도 않을 사람 승인 기록만 남는다.
+   */
+  if (decision.kind === 'soft-auto')
+    return {
+      ok: false,
+      reason: `이 설정(reviewBudget.onSoftLimit: "auto")에서는 ${decision.attempt}회차가 사람 승인 없이 진행됩니다 — 부여할 예외가 없습니다`,
+      hint: '사람 승인을 요구하려면 req.config.json 의 reviewBudget.onSoftLimit 를 "ask" 로 바꾸세요',
+    }
   return { ok: true, seriesId: open.series_id, forAttempt: decision.attempt }
 }
 

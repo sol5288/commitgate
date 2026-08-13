@@ -37,7 +37,7 @@ It asks three questions. Each one is answered by **moving with ↑/↓ and confi
 
 - **Model** has a "type your own…" item because values outside the list are valid. The other two are schema enums, so you pick from the list only.
 - **Empty** does not clear the setting — it means *follow the codex global configuration*.
-- **Stop point** decides where a human confirms: `phase` = before every phase commit; `req` = at the commit that completes the REQ; `merge` = when the delivery set is done. The single source, including how `HIGH` risk is treated, is [Workflow — Human confirmation for HIGH-risk tickets](./workflow.en.md#human-confirmation-for-high-risk-tickets).
+- **Stop point** decides where a human confirms: `phase` = before every phase commit; `req` = at the commit that completes the REQ; `merge` = when the delivery set is done (with no set, just before this REQ's integration, like `req`). The single source, including how `HIGH` risk is treated, is [Workflow — Human confirmation for HIGH-risk tickets](./workflow.en.md#human-confirmation-for-high-risk-tickets).
 - setup finishes by checking your **codex login** and signing you in if needed.
 - To change an answer later, run setup again or edit `req.config.json` directly.
 

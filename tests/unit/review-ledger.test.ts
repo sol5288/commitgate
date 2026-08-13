@@ -79,6 +79,7 @@ describe('[ledger] ① 직렬화 — 고정 키 순서 + 끝 개행', () => {
       'review_model',
       'review_reasoning_effort',
       'review_provider',
+      'soft_limit_resolution',
     ])
   })
 
@@ -107,7 +108,7 @@ describe('[ledger] ② round-trip', () => {
     const { rows, problems } = parseLedger(serializeLedgerRow(row))
     expect(problems).toEqual([])
     // REQ-2026-064: 직렬화가 optional 키를 null로 채우므로, round-trip 결과는 그 키를 갖는다.
-    expect(rows).toEqual([{ ...row, review_model: null, review_reasoning_effort: null, review_provider: null }])
+    expect(rows).toEqual([{ ...row, review_model: null, review_reasoning_effort: null, review_provider: null, soft_limit_resolution: null }])
   })
 
   it('빈 줄은 무시한다', () => {

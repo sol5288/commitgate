@@ -90,7 +90,7 @@ export const NON_TTY_MESSAGE = [
  *    묻게 되어 이 REQ의 범위(모델·effort)를 넘는다. 대신 **질문은 여기서 명시하고, 검증 규칙만 스키마에서
  *    가져온다**(`subSchemaFor`). 그래서 enum이 늘어도 질문이 자동으로 따라가고 스키마와 갈라지지 않는다.
  */
-export const SETUP_KEYS = ['reviewModel', 'reviewReasoningEffort', 'stopGate'] as const
+export const SETUP_KEYS = ['reviewModel', 'reviewReasoningEffort', 'stopGate', 'reviewBudget.onSoftLimit'] as const
 export type SetupKey = (typeof SETUP_KEYS)[number]
 
 /**
@@ -140,13 +140,46 @@ export interface Prompter {
   close?(): void
 }
 
+/**
+ * setup 키의 경로(REQ-2026-133 DEC-2). `'a'` → `['a']`, `'a.b'` → `['a','b']`.
+ * 🔴 깊이 2까지만 실제로 쓴다 — 필요해지기 전에 일반화하지 않는다.
+ */
+export function keyPath(key: SetupKey): string[] {
+  return key.split('.')
+}
+
+/** 이 키가 중첩 키인가(부모 객체를 합성해 기록해야 하는가). */
+export function isNestedKey(key: SetupKey): boolean {
+  return keyPath(key).length > 1
+}
+
 /** `CONFIG_SCHEMA`에서 해당 키의 서브스키마를 꺼낸다(검증 SSOT — DEC-4). 없으면 fail-closed. */
 export function subSchemaFor(key: SetupKey): Record<string, unknown> {
-  const props = CONFIG_SCHEMA.properties as Record<string, unknown>
-  const sub = props[key]
-  if (!sub || typeof sub !== 'object')
-    throw new Error(`CONFIG_SCHEMA에 '${key}' 서브스키마가 없습니다 — 설정 검증 SSOT가 깨졌습니다(fail-closed).`)
-  return sub as Record<string, unknown>
+  let node = CONFIG_SCHEMA as unknown as Record<string, unknown>
+  for (const seg of keyPath(key)) {
+    const props = node.properties as Record<string, unknown> | undefined
+    const sub = props?.[seg]
+    if (!sub || typeof sub !== 'object')
+      throw new Error(`CONFIG_SCHEMA에 '${key}' 서브스키마가 없습니다 — 설정 검증 SSOT가 깨졌습니다(fail-closed).`)
+    node = sub as Record<string, unknown>
+  }
+  return node
+}
+
+/** 현재 설정에서 이 키의 값을 **경로로** 읽는다. 없으면 `undefined`. */
+export function readAtPath(raw: Record<string, unknown>, key: SetupKey): unknown {
+  let cur: unknown = raw
+  for (const seg of keyPath(key)) {
+    if (!cur || typeof cur !== 'object') return undefined
+    if (!Object.prototype.hasOwnProperty.call(cur, seg)) return undefined
+    cur = (cur as Record<string, unknown>)[seg]
+  }
+  return cur
+}
+
+/** 이 키의 DEFAULTS 값을 **경로로** 읽는다. */
+function defaultAtPath(key: SetupKey): unknown {
+  return readAtPath(DEFAULTS as unknown as Record<string, unknown>, key)
 }
 
 const ajv = new Ajv({ allErrors: true })
@@ -190,6 +223,8 @@ export function buildQuestions(raw: Record<string, unknown>): Question[] {
     reviewModel: '리뷰 모델(codex `-c model=`)',
     reviewReasoningEffort: '리뷰 추론강도(codex `-c model_reasoning_effort=`)',
     stopGate: '사람이 멈추는 지점',
+    // 🔴 이 자리에서 "비용 통제"임을 말한다 — 그러지 않으면 `auto`가 리뷰 승인을 끄는 것으로 오해된다.
+    'reviewBudget.onSoftLimit': '리뷰 예산을 넘겼을 때(비용 통제 — 안전 게이트가 아닙니다)',
   }
   return SETUP_KEYS.map((key) => {
     // 🔴 `reviewModel`은 스키마상 자유 문자열이다 — 추천 목록일 뿐 enum이 아니다(위 `freeTextAllowed`).
@@ -197,10 +232,10 @@ export function buildQuestions(raw: Record<string, unknown>): Question[] {
     // 🔴 `stopGate`는 legacy `phaseCommit`에서 **역파생**될 수 있다(REQ-2026-063 DEC-3). 그 경우를 무시하고
     //    DEFAULTS를 보여 주면, 파일이 `low-only`인데 화면은 `phase [기본값]`이라고 말하는 거짓 표시가 된다.
     const derived = key === 'stopGate' ? derivedStopGate(raw) : null
-    const present = Object.prototype.hasOwnProperty.call(raw, key) || derived !== null
-    const v = Object.prototype.hasOwnProperty.call(raw, key)
-      ? raw[key]
-      : (derived ?? (DEFAULTS as Record<string, unknown>)[key])
+    // 🔴 REQ-2026-133: 현재값·출처 판정은 **경로 기준**이다. 최상위만 보면 중첩 키가 항상 "기본값"으로 보인다.
+    const inFile = readAtPath(raw, key) !== undefined
+    const present = inFile || derived !== null
+    const v = inFile ? readAtPath(raw, key) : (derived ?? defaultAtPath(key))
     return {
       key,
       prompt: PROMPTS[key],
@@ -210,6 +245,39 @@ export function buildQuestions(raw: Record<string, unknown>): Question[] {
       freeTextAllowed: key === 'reviewModel',
     }
   })
+}
+
+/**
+ * **답변 → 파일에 쓸 patch**(REQ-2026-133 DEC-3). 이 함수가 두 표현의 **유일한 변환점**이다.
+ *
+ * - `answers`의 키는 setup 질문 키(점 경로 포함)다.
+ * - 반환값의 키는 **최상위 키만**이다 — `mergeConfigText`는 그대로 두고 값만 완성해서 넘긴다.
+ *
+ * 🔴 중첩 키는 부모 객체를 **합성**한다: `DEFAULTS → 기존 파일 → 고른 값` 순서.
+ *    `reviewBudget`은 `autoBudget`·`hardCap`이 required 라 leaf 하나만 써서는 유효한 파일이 되지 않고,
+ *    합성하지 않으면 사용자가 조정한 기존 값이 사라진다.
+ */
+export function toWritePatch(
+  answers: Partial<Record<SetupKey, string | null>>,
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(answers) as Array<[SetupKey, string | null]>) {
+    const path = keyPath(k)
+    if (path.length === 1) {
+      out[k] = v
+      continue
+    }
+    const [parent, leaf] = path as [string, string]
+    const fromFile = raw[parent]
+    // 같은 부모의 답변이 여럿이면 한 객체에 모은다(현재는 하나지만 규칙을 정해 둔다).
+    const base = (out[parent] as Record<string, unknown> | undefined) ?? {
+      ...((defaultAtPath(parent as SetupKey) as Record<string, unknown> | undefined) ?? {}),
+      ...(fromFile && typeof fromFile === 'object' ? (fromFile as Record<string, unknown>) : {}),
+    }
+    out[parent] = { ...base, [leaf]: v }
+  }
+  return out
 }
 
 /** legacy `phaseCommit`에서 역파생한 `stopGate`. 그 키가 없으면 `null`. */
@@ -232,7 +300,7 @@ function derivedStopGate(raw: Record<string, unknown>): string | null {
  *    설정 화면이 실제 동작보다 강한 약속을 하면, 사용자는 보호받는다고 믿는 자리에서 보호받지 못한다.
  */
 export const STOP_GATE_HIGH_NOTICE =
-  '정지 지점은 이 값이 정합니다 — phase: 매 phase 커밋 전 · req: REQ를 끝내는 커밋 전 · merge: 커밋에서는 멈추지 않음 · 통합(main 병합) 승인은 어느 값에서도 필요합니다'
+  '정지 지점은 이 값이 정합니다 — phase: 매 phase 커밋 전 · req: REQ를 끝내는 커밋 전 · merge: 커밋에서는 멈추지 않고 묶음이 끝날 때(묶음이 없으면 REQ 통합 직전) · 통합(main 병합) 승인은 어느 값에서도 필요합니다'
 
 /** 질문 하나에 붙일 안내 문구(순수 — 프롬프트 렌더링의 SSOT). */
 /**
@@ -246,7 +314,7 @@ export function hintFor(q: Question): string {
   const cur = q.current === null ? '(비움 — codex 전역 설정 상속)' : q.current
   const src = q.currentIsDefault ? ' [기본값]' : ''
   // 🔴 근거는 스키마 하나다(`allowsNullValue`) — 하드코딩을 두 곳에 두면 화면과 검증이 갈라진다.
-  const notice = !allowsNullValue(q.key) ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}` : ''
+  const notice = q.key === 'stopGate' ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}` : ''
   // 메뉴 질문: 현재 값 + (해당되면) 고지만. 조작 안내는 위젯이 낸다.
   if (q.choices) return `현재: ${cur}${src}${notice}`
   return freeInputHint(q)
@@ -262,7 +330,7 @@ export function hintFor(q: Question): string {
 export function freeInputHint(q: Question): string {
   const cur = q.current === null ? '(비움 — codex 전역 설정 상속)' : q.current
   const src = q.currentIsDefault ? ' [기본값]' : ''
-  const notice = !allowsNullValue(q.key) ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}` : ''
+  const notice = q.key === 'stopGate' ? `\n  ⚠️ ${STOP_GATE_HIGH_NOTICE}` : ''
   const list = q.choices?.length ? `\n  ${q.freeTextAllowed ? '추천' : '선택지'}: ${q.choices.join(' / ')}` : ''
   const keep = allowsNullValue(q.key) ? `\n  Enter=유지 · '${NULL_SENTINEL}'=비움(전역 상속)` : `\n  Enter=유지`
   return `현재: ${cur}${src}${notice}${list}${keep}`
@@ -287,10 +355,16 @@ const VALUE_NOTES: Partial<Record<SetupKey, Record<string, string>>> = {
   reviewModel: {
     'gpt-5.6-terra': '기본값',
   },
+  // 🔴 REQ-2026-133: 값 설명은 **어디서 멈추는지**를 말한다. `merge`는 묶음이 없으면 `req`와 같은
+  //    지점에서 멈춘다(REQ-2026-128) — 그 사실을 빼면 사용자가 "정지가 없어진다"고 오해한다.
   stopGate: {
     phase: '매 phase 커밋 전에 확인',
-    req: 'REQ 하나가 끝날 때 한 번 확인',
-    merge: '여러 REQ를 묶어 묶음이 끝날 때까지 미룸',
+    req: 'REQ 하나가 끝날 때 — 통합 직전 한 번',
+    merge: '묶음(delivery set)이 끝날 때 한 번 · 묶음이 없으면 req 와 같다',
+  },
+  'reviewBudget.onSoftLimit': {
+    ask: '6~8회차마다 사람 승인(기본)',
+    auto: '사람 승인 없이 hardCap 까지 진행 · 원장에 정책 근거 기록',
   },
   reviewReasoningEffort: {
     none: '추론 없음 · 가장 빠르고 얕다',
@@ -622,9 +696,9 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
   // ④ 질문(모델·effort). 현재 값이 기본 답변이다(DEC-11).
   //    🔴 prompter 는 반드시 닫는다 — readline 이 열린 채면 프로세스가 끝나지 않는다.
   const prompter = deps.createPrompter()
-  let patch: Partial<Record<SetupKey, string | null>>
+  let answers: Partial<Record<SetupKey, string | null>>
   try {
-    patch = await askAll(buildQuestions(raw), prompter, (m) => deps.log(`  ⚠️  ${m}`))
+    answers = await askAll(buildQuestions(raw), prompter, (m) => deps.log(`  ⚠️  ${m}`))
   } finally {
     prompter.close?.()
   }
@@ -649,7 +723,7 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
   //    확인의 결과다. 다만 **마커가 이미 있고 값 변경도 없으면** 아무것도 쓰지 않는다(무의미한 diff 방지).
   const marker: SetupMarker = { completedVersion: deps.version, completedAt: deps.now() }
   const hadMarker = Object.prototype.hasOwnProperty.call(raw, 'setup')
-  if (Object.keys(patch).length === 0 && hadMarker) {
+  if (Object.keys(answers).length === 0 && hadMarker) {
     deps.log('변경된 설정이 없습니다 — req.config.json 을 건드리지 않았습니다.')
     return
   }
@@ -657,12 +731,16 @@ export async function runSetup(opts: Opts, deps: SetupDeps): Promise<void> {
   //    지우지 않으면 기존 `low-only` 프로젝트에서 `phase`를 고른 **정상 경로**가
   //    두 축이 모순인 파일을 만들고, 그 파일이 config 충돌 검사에 걸려 **이후 모든 명령이 죽는다.**
   //    값이 마침 일치해도 지운다 — alias를 남기면 다음에 한쪽만 손으로 고쳤을 때 같은 덫이 재발한다.
-  const deleteKeys = patch.stopGate !== undefined ? ['phaseCommit'] : []
-  const merged = mergeConfigText(existingText, patch, marker, deleteKeys)
+  //    🔴 판정은 **답변**을 본다(REQ-2026-133 DEC-3) — `writePatch`는 부모 합성 때문에 키가 달라진다.
+  const deleteKeys = answers.stopGate !== undefined ? ['phaseCommit'] : []
+  const writePatch = toWritePatch(answers, raw)
+  const merged = mergeConfigText(existingText, writePatch, marker, deleteKeys)
 
   // ⑦ 유일한 쓰기.
   deps.io.write(merged)
-  const changed = Object.keys(patch)
+  // 🔴 "무엇이 바뀌었나"는 **답변 키**로 말한다 — 사용자가 고른 것이 `reviewBudget.onSoftLimit`이지
+  //    `reviewBudget`(부모 객체 전체)이 아니기 때문이다.
+  const changed = Object.keys(answers)
   deps.log(savedMessage(opts.dir, changed, process.cwd()))
 }
 

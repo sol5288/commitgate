@@ -14,12 +14,16 @@
 
 ## Commands an agent does not run
 
-Two commands belong to **the human**. An agent does not run them — it **asks you to**.
+The command below belongs to **the human**. An agent does not run it — it **asks you to**.
 
 | Command | Why it is yours |
 |---|---|
 | `npx commitgate setup` | It is **interactive-only**. In pipes, CI, or agent sessions it exits immediately without asking anything, so an agent running it produces nothing but a failure. It picks the review model, reasoning effort, and stop point, and finishes codex login. |
-| `npm run req:confirm -- <id> --scope <s> --method "..." --run` | It records **your judgement**. The timestamp is read from the real clock, so it cannot be fabricated by hand-editing, and what you write in `--method` — the grounds on which you approved — is the content of the audit record. |
+
+🔴 `req:confirm` is **not** in this table. It is a **control point**, not a human-only command — the agent runs it
+after receiving your approval sentence verbatim (`req:next` prints the exact command). Reading the timestamp from
+the real clock exists to remove the hand-edited-record surface, not to fix who types the command.
+You make the judgement (the grounds you write in `--method`); the agent executes.
 
 On a fresh install, workflow commands such as `req:new` are **blocked** until setup completes. An agent that hits that state must not try to work around it; it should ask you to run setup.
 
