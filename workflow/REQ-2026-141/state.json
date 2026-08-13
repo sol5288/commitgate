@@ -2,14 +2,14 @@
   "id": "REQ-2026-141",
   "branch": "feat/req-2026-141-finalize-recovery-escape",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffc0f-e7da-7ff1-9ec1-57c3dbac129d",
-  "review_base_sha": "1b177b82192116e9ec09cdce3368f4e3363dbd5f",
-  "review_diff_hash": "f57443b0cc605fb92992617c91908d7e739b0b14",
+  "codex_thread_id": "019ffc2d-cc1d-7bf2-aaed-ef1914dfaeea",
+  "review_base_sha": "a815bb600705d340e3d92b1c8dfcdfe872e5f57c",
+  "review_diff_hash": "1d48cfc47e6a1cb9fb039216c0546346f2a873f4",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "81439c47e7afdc2dcf72a5b7ea7627bde65e645679f1a36af955de5af80fc470",
-  "current_phase": "phase-1-runcli-and-push-tests",
+  "current_phase": "phase-2-close-stale-attempt",
   "phases": [
     {
       "id": "phase-1-runcli-and-push-tests",
@@ -20,7 +20,8 @@
     {
       "id": "phase-2-close-stale-attempt",
       "title": "열린 attempt 해소 경로",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -50,16 +51,23 @@
       "phase_id": "phase-1-runcli-and-push-tests",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-close-stale-attempt#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-close-stale-attempt",
+      "attempts": 6,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-runcli-and-push-tests",
+    "phase_id": "phase-2-close-stale-attempt",
     "outcome": "approved",
-    "compare_hash": "f2cff879db78367975c669d06f1918292fca991be871d7c085ed1d8cbca31e7f",
+    "compare_hash": "f880e17d380f0f6ecb512425b68d1b0aae1a86e4439522e136970328199b0223",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T17:00:16.305Z",
+    "at": "2026-08-13T17:33:37.885Z",
     "findings": [],
     "elided_count": 0
   },
@@ -87,6 +95,12 @@
       "phase_id": "phase-1-runcli-and-push-tests",
       "consumed_by_commit_sha": "dc388dba0305a700d12403d18a8bbc235dfcf4f5",
       "approval_consumed_at": "2026-08-13T17:00:43.492Z"
+    },
+    {
+      "approved_tree": "1d48cfc47e6a1cb9fb039216c0546346f2a873f4",
+      "phase_id": "phase-2-close-stale-attempt",
+      "consumed_by_commit_sha": "d2e211e8b9a18c2c1bc75ad43eec26b2e8230408",
+      "approval_consumed_at": "2026-08-13T17:34:12.917Z"
     }
   ],
   "user_commit_confirmed": null
