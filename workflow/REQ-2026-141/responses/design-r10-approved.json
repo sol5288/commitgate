@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"903dee2a4f3382253d27fe1676211a5a4e37d063","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계 승인 후 Phase 0에서 state.json의 phases[]를 선언하고 Phase 1을 구현·검증하세요.","observations":[]}
