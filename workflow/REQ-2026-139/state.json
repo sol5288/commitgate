@@ -2,13 +2,13 @@
   "id": "REQ-2026-139",
   "branch": "feat/req-2026-139-adopt-auto-review-budget",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019ffb18-9ab6-7ea0-b107-24a838252c87",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "4d7ddcb0dbc4d54838e78ba3f28f17a35e885cde4462245490b62bfe68bd1c76",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,43 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "30cf37f433809c2bab939741920ae380908bd6d5",
+    "design": "3c864331f2be236948bb0d4ea80ad0ad82474dda",
+    "plan": "d62e9ddb514c482d2f799dc7a381fb51a71f936e"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-139/responses/design-r01-approved.json",
+    "response_sha256": "cca2aff7eb268e26c427a933f9bdd0f1b28ce34ead3993750331994ddccb8749",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "d684837ec17a86dbe5140ac8efa380eb508950c8",
+    "codex_thread_id": "019ffb18-9ab6-7ea0-b107-24a838252c87",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T12:29:51.230Z",
+    "design_hash": "4d7ddcb0dbc4d54838e78ba3f28f17a35e885cde4462245490b62bfe68bd1c76"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "86669a0dd779438e6aaa214da63b799bd791a73283dda1533a0b219befcef886",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T12:29:51.230Z",
+    "findings": [],
+    "elided_count": 0
   }
 }
