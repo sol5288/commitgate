@@ -11,6 +11,8 @@ import {
   isTerminal,
   allMembersTerminal,
   deliveryGateVerdict,
+  postApprovalRevListArgs,
+  parseRevList,
   integrateTopologyProblems,
   newDeliveryRecord,
   nextOrder,
@@ -252,8 +254,70 @@ describe('[delivery] deliveryGateVerdict — 단일 SSOT(DEC-8a)', () => {
     expect(deliveryGateVerdict({ ...done(), state: 'approved' }).kind).toBe('continue')
   })
 
+  /**
+   * REQ-2026-130 — 승인은 **그 시점 묶음 내용**에 결속된다. 승인 뒤 레코드 밖을 건드린 커밋이 들어오면
+   * 병합될 것은 승인받은 것과 다르다.
+   */
+  describe('승인 staleness(REQ-2026-130)', () => {
+    const approved = () => ({ ...done(), state: 'approved' as const, approval: { base_sha: 'a'.repeat(40), at: 'T' } })
+
+    it('🔴 승인 이후 레코드 밖 커밋이 있으면 다시 await-human(재승인)', () => {
+      const v = deliveryGateVerdict(approved(), { postApprovalCommits: ['c'.repeat(40)] })
+      expect(v.kind).toBe('await-human')
+      expect(v.detail).toContain('delivery approve')
+      expect(v.detail).toContain('cccccccc')
+    })
+
+    /**
+     * 🔴 **자기 무효화 회귀 가드**(설계 r01 P1). `approve`는 레코드 커밋을 하나 더 만든다. 그 커밋을
+     *    staleness로 세면 방금 받은 승인이 즉시 무효가 되고 재승인도 같은 일을 반복해 **정상 경로가
+     *    완료 불가**가 된다. 호출부가 레코드 경로를 exclude하므로 여기 목록은 비어 있어야 한다.
+     */
+    it('🔴 레코드 밖 커밋이 없으면 continue — 승인이 자기 자신을 무효화하지 않는다', () => {
+      expect(deliveryGateVerdict(approved(), { postApprovalCommits: [] }).kind).toBe('continue')
+    })
+
+    it('🔴 판정 불가(null)는 "달라졌다"가 아니다 — git 실패로 승인이 무효가 되면 안 된다', () => {
+      expect(deliveryGateVerdict(approved(), { postApprovalCommits: null }).kind).toBe('continue')
+      expect(deliveryGateVerdict(approved(), {}).kind).toBe('continue')
+    })
+
+    it('결속이 없는 옛 레코드는 커밋이 있어도 continue(무회귀 — 소급 요구 금지)', () => {
+      const legacy = { ...done(), state: 'approved' as const }
+      expect(deliveryGateVerdict(legacy, { postApprovalCommits: ['c'.repeat(40)] }).kind).toBe('continue')
+    })
+
+    it('ctx 를 주지 않는 기존 호출부는 현행 그대로다', () => {
+      expect(deliveryGateVerdict(approved()).kind).toBe('continue')
+    })
+  })
+
   it('빈 sealed 묶음도 await-human(member 0건은 종결로 본다 — seal 판단은 사용자 몫)', () => {
     expect(deliveryGateVerdict(record({ state: 'sealed' })).kind).toBe('await-human')
+  })
+})
+
+describe('[delivery] postApprovalRevListArgs — 판정 명령의 SSOT(REQ-2026-130)', () => {
+  it('결속이 없으면 null(판정 대상 아님)', () => {
+    expect(postApprovalRevListArgs(record({ state: 'approved' }), 'workflow')).toBeNull()
+  })
+
+  /**
+   * 🔴 `:(exclude)` 가 빠지면 승인 레코드 커밋이 목록에 들어와 승인이 즉시 자기 자신을 무효화한다.
+   *    인자를 리터럴로 고정한다(expected 를 SUT 로 구성하지 않는다).
+   */
+  it('🔴 레코드 경로를 제외한 rev-list 인자를 만든다', () => {
+    const r = { ...record({ state: 'approved' }), approval: { base_sha: 'b'.repeat(40), at: 'T' } }
+    expect(postApprovalRevListArgs(r, 'workflow')).toEqual([
+      'rev-list',
+      `${'b'.repeat(40)}..delivery/payment`,
+      '--',
+      ':(exclude)workflow/delivery/*',
+    ])
+  })
+
+  it('parseRevList 는 공백·빈 줄을 버린다', () => {
+    expect(parseRevList('aaa\n\n  bbb  \n')).toEqual(['aaa', 'bbb'])
   })
 })
 

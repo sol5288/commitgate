@@ -74,6 +74,8 @@ export interface DeliveryRecord {
   state: DeliveryState
   members: DeliveryMember[]
   events: DeliveryEvent[]
+  /** REQ-2026-130: 통합 승인의 결속 대상. 옛 레코드에는 없다(그 경우 staleness를 판정하지 않는다). */
+  approval?: DeliveryApproval
 }
 
 /**
@@ -90,8 +92,22 @@ export const REQUIRED_RECORD_KEYS = [
   'events',
 ] as const
 
-/** 레코드 **선택** 최상위 키(현재 없음 — 자리를 열어 둔다). 있으면 허용되고 없어도 통과한다. */
-export const OPTIONAL_RECORD_KEYS: readonly string[] = []
+/** 레코드 **선택** 최상위 키. 있으면 허용되고 없어도 통과한다(옛 레코드 무회귀). */
+export const OPTIONAL_RECORD_KEYS: readonly string[] = ['approval']
+
+/**
+ * 통합 승인의 **결속 대상**(REQ-2026-130 DEC-1). 승인이 무엇에 대한 것이었는지를 남긴다 —
+ * `state: 'approved'` 플래그만으로는 "승인했다"는 알아도 "무엇을 승인했다"는 알 수 없다.
+ *
+ * 🔴 `base_sha`는 **승인 직전 delivery 브랜치 tip**이다(실행 위치의 `HEAD`가 아니다 — 이 도구는
+ *    위치 비의존이라 다른 브랜치에서 실행될 수 있고, 그때 `HEAD`를 쓰면 묶음의 기존 커밋 전부가
+ *    "승인 이후 변경"으로 잡힌다).
+ */
+export interface DeliveryApproval {
+  base_sha: string
+  /** 🔴 실제 시계에서 읽는다(다른 전이 이벤트와 같은 원천). */
+  at: string
+}
 
 /** member **필수** 키. */
 export const REQUIRED_MEMBER_KEYS = ['req_id', 'order', 'delivery_base_sha', 'status'] as const
@@ -122,6 +138,16 @@ export function deliveryRecordProblems(raw: unknown): string[] {
   if (typeof raw.state !== 'string' || !STATES.includes(raw.state)) p.push(`state 부적합: ${String(raw.state)}`)
   if (!Array.isArray(raw.members)) p.push('members가 배열이 아님')
   if (!Array.isArray(raw.events)) p.push('events가 배열이 아님')
+  // 선택 키는 **있으면** 검증한다(REQ-2026-130). 없으면 통과 — 옛 레코드는 그대로 유효하다.
+  if ('approval' in raw) {
+    const a = raw.approval
+    if (!isPlainObject(a)) p.push('approval이 객체가 아님')
+    else {
+      if (typeof a.base_sha !== 'string' || a.base_sha === '') p.push('approval.base_sha가 비어 있음')
+      if (typeof a.at !== 'string' || a.at === '') p.push('approval.at이 비어 있음')
+      for (const k of Object.keys(a)) if (k !== 'base_sha' && k !== 'at') p.push(`approval 알 수 없는 키: ${k}`)
+    }
+  }
   if (p.length) return p
 
   const seenIds = new Set<string>()
@@ -245,21 +271,76 @@ export interface DeliveryGateVerdict {
 }
 
 /**
+ * 판정 보조 입력(REQ-2026-130 DEC-2). **선택**이다 — 주지 않으면 승인 staleness를 판정하지 않고
+ * 현행과 같이 동작한다(순수 모델을 쓰는 기존 호출부 무회귀).
+ *
+ * 🔴 git 실행은 **호출부**가 한다. 이 모듈은 fs·git을 import하지 않는다는 계약을 지킨다.
+ *    호출부는 `git rev-list <approval.base_sha>..<branch> -- ':(exclude)<ticketRoot>/delivery/*'` 결과를 넘긴다.
+ */
+export interface DeliveryGateContext {
+  /** 승인 이후 delivery 레코드 **밖**을 건드린 커밋. `null`/`undefined` = 판정 불가(무판정). */
+  postApprovalCommits?: string[] | null
+}
+
+/**
+ * `postApprovalCommits`를 구하는 **git 인자**(순수·SSOT). `null` = 승인 결속이 없어 판정 대상 아님.
+ *
+ * 🔴 인자를 한 곳에서 만든다 — 호출부가 셋(`delivery status`·`req:next`·`commitgate integrate`)인데
+ *    각자 적으면 `:(exclude)` 하나가 빠져도 조용히 다른 답이 나온다. 그 exclude 가 빠지면 승인이
+ *    만든 레코드 커밋 때문에 **승인이 즉시 자기 자신을 무효화**한다.
+ */
+export function postApprovalRevListArgs(r: DeliveryRecord, ticketRoot: string): string[] | null {
+  const base = r.approval?.base_sha
+  if (!base) return null
+  return ['rev-list', `${base}..${r.branch}`, '--', `:(exclude)${ticketRoot}/delivery/*`]
+}
+
+/** `rev-list` stdout → 커밋 목록(순수). */
+export function parseRevList(stdout: string): string[] {
+  return stdout
+    .split('\n')
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
+/**
  * 최종 게이트 판정(설계 DEC-8a) — **단일 SSOT**.
  *
  * 🔴 `req:next`만 이 판정을 하면 게이트가 **영영 나오지 않는다**: 마지막 member를 integrate하면 그 REQ의
  *    `req:next`는 이미 끝나 있고, 그 뒤 `seal`을 해도 `req:next`를 다시 부를 이유가 없다.
  *    그래서 `integrate`·`seal`·`status`·`req:next` **네 곳이 이 함수 하나를 공유**한다 — 각자 판정하면 갈라진다.
  */
-export function deliveryGateVerdict(r: DeliveryRecord): DeliveryGateVerdict {
+export function deliveryGateVerdict(r: DeliveryRecord, ctx?: DeliveryGateContext): DeliveryGateVerdict {
   if (r.state === 'open')
     return { kind: 'continue', detail: '묶음이 열려 있습니다 — 다음 REQ를 시작하거나 `delivery seal`로 닫으세요.' }
   if (!allMembersTerminal(r)) {
     const pending = r.members.filter((m) => !isTerminal(r, m.req_id)).map((m) => m.req_id)
     return { kind: 'continue', detail: `아직 종결되지 않은 member: ${pending.join(', ')}` }
   }
-  if (r.state === 'approved')
+  if (r.state === 'approved') {
+    /**
+     * 🔴 REQ-2026-130: 승인은 **그 시점 묶음 내용**에 대한 것이다. 승인 뒤 delivery 레코드 밖을 건드린
+     *    커밋이 들어왔다면 병합될 것은 승인받은 것과 다르다 — 다시 물어야 한다.
+     *
+     * 🔴 `postApprovalCommits`가 `null`/`undefined`면 **판정하지 않는다**. "읽지 못했다"를 "달라졌다"로
+     *    읽으면 git이 잠깐 실패한 것만으로 정상 승인이 무효가 된다. `approval`이 없는 옛 레코드도 같다 —
+     *    없는 결속을 소급 요구하면 이미 승인받은 묶음이 영구히 막힌다.
+     * 🔴 레코드 커밋 자신은 여기 들어오지 않는다(호출부가 `:(exclude)<ticketRoot>/delivery/*`로 뺀다).
+     *    빼지 않으면 승인이 만든 커밋 때문에 승인이 **즉시 자기 자신을 무효화**한다.
+     */
+    const post = ctx?.postApprovalCommits
+    if (r.approval && post && post.length > 0)
+      return {
+        kind: 'await-human',
+        detail:
+          `통합 승인 이후 묶음에 커밋 ${post.length}건이 들어왔습니다(${post.slice(0, 3).map((c) => c.slice(0, 8)).join(', ')}${post.length > 3 ? ' 외' : ''}) — ` +
+          `승인한 내용과 병합될 내용이 다릅니다. 다시 승인하려면 ` +
+          `\`delivery reopen --slug ${r.slug} --confirm "reopen ${r.slug}" --run\` → ` +
+          `\`delivery seal --slug ${r.slug} --confirm "seal ${r.slug}" --run\` → ` +
+          `\`delivery approve --slug ${r.slug} --confirm "approve ${r.slug}" --run\` 순서로 진행하세요.`,
+      }
     return { kind: 'continue', detail: '이미 통합 승인이 기록됐습니다 — 사람이 I1/I2/B1 절차로 병합합니다.' }
+  }
   return {
     kind: 'await-human',
     detail:
@@ -299,6 +380,24 @@ export type DeliveryGateLookup = { slug: string; kind: 'continue' | 'await-human
  *    소속 판정을 이 값으로 대신하는 소비자는 그 사실을 알고 써야 한다 — 묶음 보증의 강제 지점은
  *    `delivery integrate` 자격검사이지 이 조회가 아니다.
  */
+/**
+ * 승인 이후 레코드 밖 커밋 조회(주입된 read-only git). 실패는 `null`(판정 불가 — 무판정).
+ * 🔴 실패를 빈 배열로 읽으면 "변경 없음"이 되어 stale 승인이 조용히 통과한다.
+ */
+export function readPostApprovalCommits(
+  r: DeliveryRecord,
+  ticketRoot: string,
+  roGit: (args: string[]) => string,
+): string[] | null {
+  const args = postApprovalRevListArgs(r, ticketRoot)
+  if (!args) return null
+  try {
+    return parseRevList(roGit(args))
+  } catch {
+    return null
+  }
+}
+
 export function readDeliveryGate(ticketRoot: string, reqId: string, roGit: (args: string[]) => string): DeliveryGateLookup {
   let branches: string[]
   try {
@@ -325,7 +424,9 @@ export function readDeliveryGate(ticketRoot: string, reqId: string, roGit: (args
     if (!mentionsMember(record, reqId)) continue
     if (problems.length)
       return { slug, kind: 'corrupt', detail: `delivery 레코드 손상(${branch}): ${problems.slice(0, 3).join('; ')}` }
-    const v = deliveryGateVerdict(record as DeliveryRecord)
+    // REQ-2026-130: 승인 staleness 까지 같은 함수가 판정하도록 보조 입력을 넘긴다.
+    const rec = record as DeliveryRecord
+    const v = deliveryGateVerdict(rec, { postApprovalCommits: readPostApprovalCommits(rec, ticketRoot, roGit) })
     return { slug, kind: v.kind, detail: v.detail }
   }
   return null

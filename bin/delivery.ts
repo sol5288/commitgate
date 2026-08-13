@@ -42,8 +42,10 @@ import {
   nextOrder,
   serializeDeliveryRecord,
   activeMember,
+  readPostApprovalCommits,
   type DeliveryEvent,
   type DeliveryRecord,
+  type DeliveryGateContext,
 } from '../scripts/req/lib/delivery'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 import { createEvidencePorts } from '../scripts/req/lib/evidence-ports'
@@ -547,9 +549,17 @@ export function cmdCreate(ctx: Ctx, slug: string, io: Io = defaultIo, target = D
   io.log(`  다음: commitgate delivery begin <req-slug> --slug ${slug} --run`)
 }
 
+/**
+ * 승인 staleness 보조 입력(REQ-2026-130). 세 출력 지점이 **같은 계산**을 쓰도록 한 곳에 둔다.
+ * 실패는 `null`(무판정) — 읽지 못한 것을 "달라졌다"로 읽지 않는다.
+ */
+function gateCtx(ctx: Ctx, r: DeliveryRecord): DeliveryGateContext {
+  return { postApprovalCommits: readPostApprovalCommits(r, ctx.ticketRoot, (args) => ctx.git.exec(args)) }
+}
+
 export function cmdStatus(ctx: Ctx, slug: string, io: Io = defaultIo): void {
   const r = readRecord(ctx, slug)
-  const gate = deliveryGateVerdict(r)
+  const gate = deliveryGateVerdict(r, gateCtx(ctx, r))
   io.log(`[delivery] ${r.slug} — state=${r.state} · members=${r.members.length} · ${r.branch} → ${r.target_branch}`)
   for (const m of r.members)
     io.log(`  #${m.order} ${m.req_id} [${m.status}]${m.successor_of ? ` (successor-of ${m.successor_of})` : ''}`)
@@ -702,7 +712,7 @@ export function cmdIntegrate(ctx: Ctx, slug: string, reqId: string, io: Io = def
     //    무관한 변경이 섞이지 않는 근거는 ②-0의 clean 가드다(그 뒤로 인덱스를 건드리는 것은 merge와 레코드뿐).
     ctx.git.exec(['commit', '-m', bookkeepingMessage(`chore(delivery): integrate ${reqId} into ${slug}`)])
     io.log(`[delivery] ${reqId} 반영 완료 → ${branch}`)
-    const gate = deliveryGateVerdict(updated)
+    const gate = deliveryGateVerdict(updated, gateCtx(ctx, updated))
     // 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a) — req:next만 판정하면 영영 안 나온다.
     io.log(`  gate: ${gate.kind} — ${gate.detail}`)
     // 성공해도 사용자를 원래 자리로 되돌린다 — 도구의 이동은 수단이지 결과가 아니다(DEC-7).
@@ -773,7 +783,7 @@ export function cmdSeal(ctx: Ctx, slug: string, confirm: string | null, io: Io =
   const updated = commitTransition(ctx, slug, record, 'sealed', 'sealed', confirmSentence('seal', slug), io)
   io.log(`[delivery] '${slug}' 묶음을 닫았습니다(더 이상 begin 할 수 없습니다).`)
   // 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a). seal이 마지막 전이인 경우 여기가 유일한 발생지다.
-  const gate = deliveryGateVerdict(updated)
+  const gate = deliveryGateVerdict(updated, gateCtx(ctx, updated))
   io.log(`  gate: ${gate.kind} — ${gate.detail}`)
   return updated
 }
@@ -784,8 +794,22 @@ export function cmdApprove(ctx: Ctx, slug: string, confirm: string | null, io: I
   const v = canApprove(record)
   if (!v.ok) throw new Error(`[delivery approve] ${v.reason}`)
   checkConfirm('approve', slug, confirm)
-  const updated = commitTransition(ctx, slug, record, 'approved', 'approved', confirmSentence('approve', slug), io)
+  /**
+   * 🔴 REQ-2026-130 DEC-1: 승인을 **그 시점 묶음 내용**에 결속한다. 기준점은 `HEAD`가 아니라
+   *    **delivery 브랜치 tip**이다 — 이 도구는 위치 비의존이라 다른 브랜치에서 실행될 수 있고,
+   *    그때 `HEAD`를 쓰면 묶음의 기존 커밋 전부가 "승인 이후 변경"으로 잡힌다(설계 r02 P1).
+   */
+  const baseSha = ctx.git.exec(['rev-parse', deliveryBranchName(slug)]).trim()
+  const withApproval: DeliveryRecord = { ...record, approval: { base_sha: baseSha, at: io.now() } }
+  const updated = commitTransition(ctx, slug, withApproval, 'approved', 'approved', confirmSentence('approve', slug), io)
   io.log(`[delivery] '${slug}' 통합 승인을 기록했습니다.`)
+  /**
+   * 🔴 전이를 만든 명령이 게이트를 낸다(DEC-8a) — `seal`·`integrate`와 같은 계약이다(phase-1 r01 P1:
+   *    여기만 빠져 있었다). 승인 **직후**에는 레코드 밖 커밋이 없으므로 `continue`가 나와야 한다 —
+   *    그것이 "승인이 자기 자신을 무효화하지 않는다"의 사용자 관측 지점이다.
+   */
+  const gate = deliveryGateVerdict(updated, gateCtx(ctx, updated))
+  io.log(`  gate: ${gate.kind} — ${gate.detail}`)
   // 🔴 병합은 하지 않는다(DEC-11) — 실행은 사람이 I1/I2/B1 절차로 한다.
   io.log(`  🔴 이 명령은 병합하지 않습니다. ${updated.branch} → ${updated.target_branch} 는 AGENTS.md 통제점표(I1/I2/B1)를 따르세요.`)
   return updated
