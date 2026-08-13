@@ -2,14 +2,14 @@
   "id": "REQ-2026-129",
   "branch": "feat/req-2026-129-policy-snapshot-per-ticket",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff92c-38fa-74f3-935c-992f01a556e7",
-  "review_base_sha": "2de7f15829031a4f1d1a18852d45a1605f954440",
-  "review_diff_hash": "962cd46c8eb4d0db565e7161213462529d93db7b",
+  "codex_thread_id": "019ff932-1792-7fc1-af03-b30a8c8a19d6",
+  "review_base_sha": "2bae37604495e284705eca17f6568422f023164b",
+  "review_diff_hash": "a7aff664d2d5352916d6cd2f40976274aec15111",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "35573f17bb421cf6302928580f586b94a4dbdc2a72fbde660151a81adbcab1bb",
-  "current_phase": "phase-2-repolicy-verb",
+  "current_phase": "phase-3-drift-doctor-docs",
   "phases": [
     {
       "id": "phase-1-snapshot-core",
@@ -21,7 +21,7 @@
     },
     {
       "id": "phase-3-drift-doctor-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -49,16 +49,23 @@
       "attempts": 3,
       "closed_reason": "approved",
       "void_attempts": 1
+    },
+    {
+      "series_id": "phase:phase-3-drift-doctor-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-drift-doctor-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-repolicy-verb",
+    "phase_id": "phase-3-drift-doctor-docs",
     "outcome": "approved",
-    "compare_hash": "298ff607fc0188d00cf1ceb41937d68f8460e180912b67d267255a1179972b64",
+    "compare_hash": "0b89b078421210fae5d602f3fd05e1ec900f1f1126f2fd0c4aab23c575254fbd",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T03:32:30.767Z",
+    "at": "2026-08-13T03:39:33.670Z",
     "findings": [],
     "elided_count": 0
   },
@@ -92,6 +99,12 @@
       "phase_id": "phase-2-repolicy-verb",
       "consumed_by_commit_sha": "9853a2ffb53f54a8f5b012149583464f8198719c",
       "approval_consumed_at": "2026-08-13T03:33:01.538Z"
+    },
+    {
+      "approved_tree": "a7aff664d2d5352916d6cd2f40976274aec15111",
+      "phase_id": "phase-3-drift-doctor-docs",
+      "consumed_by_commit_sha": "bfdeb3bc6cf38b9a8d70411a4264013ba9a89d3c",
+      "approval_consumed_at": "2026-08-13T03:40:09.616Z"
     }
   ],
   "user_commit_confirmed": null
