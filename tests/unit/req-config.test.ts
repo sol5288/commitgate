@@ -574,9 +574,9 @@ describe('[P1] stopGate ⇄ phaseCommit — 두 축 해소(DEC-1~DEC-3)', () => 
    * 🔴 REQ-2026-066 p3: `merge`가 **동작(`commitgate delivery`)과 같은 릴리스로** 착륙하면서 3값이 됐다.
    * "동작 없는 선택지 금지"(REQ-2026-063 DEC-5)는 그대로다 — 그래서 값만 먼저 열지 않고 여기까지 기다렸다.
    */
-  it('스키마 enum 은 3값 — merge 는 delivery 동작과 함께 들어왔다', () => {
+  it('스키마 enum 은 4값 — 각 값이 동작과 함께 들어왔다(REQ-2026-140 auto 포함)', () => {
     const sg = (CONFIG_SCHEMA.properties as unknown as Record<string, { enum?: unknown[] }>).stopGate
-    expect(sg?.enum).toEqual(['phase', 'req', 'merge'])
+    expect(sg?.enum).toEqual(['phase', 'req', 'merge', 'auto'])
     const d = tmpRoot({ stopGate: 'merge' })
     try {
       // merge 는 req 와 같은 autoApprove 로 파생된다(둘 다 phase 자율 커밋).

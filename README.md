@@ -266,8 +266,11 @@ CommitGate는 게이트(리뷰·승인·커밋)로 품질을 **강제**하는 �
 | `phase` | **매 phase 커밋 전** | 변경을 하나하나 직접 보고 넘기고 싶을 때 |
 | `req` *(기본값)* | **REQ를 완성시키는 커밋** | 티켓 단위로 확인하고 중간은 맡기고 싶을 때 |
 | `merge` | 여러 REQ를 delivery set으로 **묶었으면 그 묶음이 끝날 때**, 묶지 않았으면 **그 REQ의 통합 직전** | 큰 작업을 묶어 한 번에 검토하고 싶을 때 |
+| `auto` | `merge`와 같되, **사전 위임**이 있으면 통합에서도 멈추지 않음 | 시작할 때 범위를 정해 위임하고 끝까지 맡기고 싶을 때 |
 
 🔴 `merge`를 골라도 **정지가 없어지지는 않습니다.** delivery set을 만들지 않았다면 `req`와 같은 자리 — 그 REQ를 main에 통합하기 직전 — 에서 멈춥니다.
+
+🔴 **`auto`는 "무제한 자동"이 아닙니다.** 값을 바꾸는 것만으로는 아무 권한도 생기지 않습니다 — 사람이 `npx commitgate req:delegate ... --run`으로 **사전 위임**을 기록해야 하고, 그 위임이 정한 대상·브랜치·기준 SHA 안에서만 통합합니다. 위임이 없으면 `merge`처럼 멈춥니다. `hardCap`·HIGH 위험·BLOCKED 리뷰·범위 밖 변경은 위임이 있어도 막습니다. **리뷰 호출은 줄지 않습니다** — 사람이 기다리지 않을 뿐 비용은 그대로입니다. 자세히는 **[설정](https://github.com/sol5288/commitgate/blob/main/docs/configuration.md)**의 "stopGate: auto" 절을 보세요.
 
 어느 값이든 **Codex 리뷰 게이트와 통합(main 병합) 승인은 그대로**입니다 — `stopGate`가 옮기는 것은 *사람 정지* 위치뿐입니다. 위험도 `HIGH` 취급과 확인 범위(`scope`) 대응은 **[워크플로](https://github.com/sol5288/commitgate/blob/main/docs/workflow.md)**의 "HIGH 위험 티켓의 사람 확인" 절이 정본입니다.
 

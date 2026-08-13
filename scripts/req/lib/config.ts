@@ -71,9 +71,10 @@ export type PhaseCommitPolicy = 'never' | 'low-only'
  * 🔴 **통합(main 병합) 승인은 어느 값에서도 필요하다** — 이 축이 없애는 것은 커밋 지점의 정지뿐이다.
  * 🔴 `"merge"`는 `commitgate delivery` **동작과 함께** 착륙했다(REQ-2026-066 p1~p3 동일 릴리스).
  *    스키마에 값만 먼저 넣으면 고를 수는 있는데 동작이 없는 거짓 UI가 된다 — 그래서 미뤘던 값이다.
- * 🔴 `"auto"`(REQ-2026-140)는 **아직 사용자에게 노출되지 않는다** — 스키마 enum·`setup` 선택지에 없다.
- *    사전 위임 통합 동작이 완성되는 phase 에서 노출과 문서를 **같은 커밋**으로 넣는다(설계 DEC-9).
- *    `"merge"` 가 동작과 함께 착륙했던 것(위 줄)과 같은 이유다.
+ * 🔴 `"auto"`(REQ-2026-140)도 **동작과 함께** 착륙했다 — 위 `"merge"` 와 같은 규칙이다(설계 DEC-9).
+ *    사전 위임 통합이 완성된 phase 에서 스키마 enum·`setup` 선택지·문서가 **같은 커밋**으로 들어왔다.
+ *    의미는 `merge` 와 같고 다른 것은 통합 지점 하나뿐이다: 유효한 **사전 위임 기록**이 있으면 통합에서도
+ *    멈추지 않고, 없으면 `merge` 처럼 멈춘다 — **값 자체는 권한이 아니다**(권한은 원장에서 나온다).
  */
 export type StopGate = 'phase' | 'req' | 'merge' | 'auto'
 
@@ -472,7 +473,9 @@ export const CONFIG_SCHEMA = {
     promptMaxBytes: { type: ['integer', 'null'], minimum: 1 },
     // REQ-2026-063: 멈춤 위치. 🔴 enum은 **2값만** — `merge`는 delivery set 없이는 동작이 없어 거짓 UI가 된다.
     //    `null`을 넣지 않으므로 "비움" 입력은 기존 검증 경로가 자동으로 거부한다(전역 상속 개념이 없는 축).
-    stopGate: { type: 'string', enum: ['phase', 'req', 'merge'] },
+    // 🔴 REQ-2026-140: `auto` 는 **동작이 완성되는 phase 에서** 열렸다(설계 DEC-9).
+    //    `workflow/req.config.schema.json` 과 **같은 커밋에서** 함께 넓혀야 한다(아래 주석과 같은 이유).
+    stopGate: { type: 'string', enum: ['phase', 'req', 'merge', 'auto'] },
     // REQ-2026-062: setup 완료 마커. 🔴 `workflow/req.config.schema.json` 과 **동시에** 확장해야 한다 —
     // 한쪽만 고치면 소비자의 vendored 스키마가 신규 키를 additionalProperties:false 로 거부해 모든 명령이 죽는다.
     setup: {

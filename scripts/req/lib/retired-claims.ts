@@ -287,6 +287,34 @@ export const RETIRED_CLAIMS: readonly RetiredClaim[] = [
     text: 'you are not stopped in the middle',
     why: 'past the soft limit the default policy (ask) requires a human exception (README.en.md)',
   },
+  /**
+   * 🔴 REQ-2026-140 — `stopGate: "auto"` 가 **없다고** 적던 서술이다.
+   *
+   *    그 결정은 옳았고 근거도 그대로다("통합 승인은 공통 불변식" · "도구가 확인 기록을 대신 만들면
+   *    시각 날조 표면"). 같은 문서가 **정직한 유일한 형태는 사전 위임 기록**이라고 적어 두었고,
+   *    이 REQ 가 정확히 그 형태로 구현했다 — 그래서 "없습니다"만 거짓이 됐다.
+   */
+  {
+    text: '`stopGate: "auto"`(최종 merge까지 무정지)는 없습니다',
+    why: 'REQ-2026-140 이 사전 위임 기반으로 구현했다 — 다만 "무정지"가 아니라 위임 범위 안의 검증된 변경만 자동 통합한다 (configuration.md)',
+  },
+  /**
+   * 🔴 **선행 단어를 뺐다** — 매칭은 대소문자를 구별하는데 이 문구는 문장 첫머리(`There is no …`)로도,
+   *    문장 중간(`why there is no …`)으로도 쓰였다. 실제로 phase-5 에서 영문 workflow 문서가 후자 형태로
+   *    남았고 가드가 **그것을 놓쳤다**(리뷰가 잡았다). 두 항목으로 나누는 대신 공통 부분만 등재한다.
+   */
+  {
+    text: 'is no `stopGate: "auto"`',
+    why: 'REQ-2026-140 implemented it on pre-delegation — and it is not "no stop": only verified changes inside the delegated scope integrate automatically (configuration.en.md · workflow.en.md)',
+  },
+  /**
+   * 🔴 함께 등재한다: 이 REQ 가 **가장 오해받기 쉬운 방향**의 문구다. `auto` 를 "무제한 자동"으로
+   *    적으면 사용자는 위임·hardCap·HIGH·범위 검사가 전부 사라진다고 읽는다.
+   */
+  {
+    text: 'auto 는 최종 merge 까지 무정지',
+    why: '위임이 없으면 merge 처럼 멈추고, hardCap·HIGH·BLOCKED·범위 밖 변경은 위임이 있어도 막는다',
+  },
 ]
 
 /**

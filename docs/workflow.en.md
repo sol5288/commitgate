@@ -65,9 +65,15 @@ Re-reviews of the same `(review kind, phase)` are budgeted
 integration control points, and `hardCap` are all unchanged. `"auto"` also makes `req:review-exception`
 refuse to grant an exception — it would only create an approval record that can never be consumed.
 
-Exactly **what `auto` removes and what it keeps**, why `hardCap` does not open, and why there is no
-`stopGate: "auto"` are defined in [Configuration — Review budget](configuration.en.md#review-budget--reviewbudget),
-which is the authority. The upgrade path for an existing project is there too.
+Exactly **what `auto` removes and what it keeps** and why `hardCap` does not open are defined in
+[Configuration — Review budget](configuration.en.md#review-budget--reviewbudget), which is the authority.
+The upgrade path for an existing project is there too.
+
+🔴 **This axis's `auto` and `stopGate: "auto"` are different things.** The former governs the human exception
+on a re-review round; the latter governs the human confirmation at integration. `stopGate: "auto"` proceeds
+**only when a pre-delegation record exists** — see
+[Configuration](configuration.en.md#stopgate-auto--automatic-integration-of-verified-changes-within-a-delegated-scope).
+🔴 **Neither of them opens `hardCap`.**
 
 If you set `stopGate` to `req` or `merge` for autonomous runs, look at this axis too: a budget stop cuts in
 **regardless** of where `stopGate` says you stop, so opening only one of the two still leaves the workflow
