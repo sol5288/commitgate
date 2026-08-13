@@ -149,6 +149,14 @@ export function makeDeps(over?: Partial<RunDeps> & { git?: ReturnType<typeof fak
     githubCi: over?.githubCi === undefined ? null : over.githubCi,
     gitStateExists: over?.gitStateExists ?? (() => false),
     readBlobs: over?.readBlobs ?? fakeReadBlobs(),
+    /**
+     * 🔴 기본값은 **현행 동작**이다(REQ-2026-140). `auto` 가 아니면 사전 위임 축이 아무것도 하지 않으므로,
+     *    기존 integrate 테스트가 그대로 유효하다 — 무회귀가 이 기본값에 걸려 있다.
+     */
+    stopGate: over?.stopGate ?? 'merge',
+    reviewHardCap: over?.reviewHardCap ?? 8,
+    readDelegationLedger: over?.readDelegationLedger ?? (() => null),
+    appendDelegationRow: over?.appendDelegationRow ?? (() => {}),
     logs,
     rows,
     asked,

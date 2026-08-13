@@ -273,6 +273,27 @@ export function foldDelegations(rows: readonly DelegationRow[], scope: Delegatio
 // ───────────────────────────────── 판정 ──
 
 /**
+ * 병합 소스 브랜치 → 위임을 찾을 **scope**. 판정할 수 없으면 `null`.
+ *
+ * 🔴 **브랜치에서 유도한다**(REQ-2026-140 phase-4b). "원장을 뒤져 이 브랜치를 가리키는 위임을 찾는"
+ *    방향으로 하면 도구가 **어느 위임을 쓸지 고르게** 되고, 그 선택이 곧 권한 확대다.
+ *    대상을 먼저 확정하고 그 대상의 위임만 본다.
+ *
+ * 🔴 판정할 수 없으면 `null` — 호출부는 이것을 **거부**로 다룬다(차단 지점 fail-closed).
+ */
+export function scopeOfBranch(branch: string, branchPrefix: string): DelegationScope | null {
+  if (branch.startsWith('delivery/')) {
+    const slug = branch.slice('delivery/'.length)
+    return slug === '' ? null : { kind: 'delivery', slug }
+  }
+  if (branchPrefix !== '' && branch.startsWith(branchPrefix)) {
+    const m = /^(\d{4}-\d{3,})/.exec(branch.slice(branchPrefix.length))
+    if (m !== null) return { kind: 'ticket', req_id: `REQ-${m[1] as string}` }
+  }
+  return null
+}
+
+/**
  * 거부 사유 **등록부**. 🔴 union 을 이 배열에서 파생시킨다 — 두 벌로 두면 한쪽만 갱신될 때
  *    전수 테스트가 **조용히 그 사유를 건너뛴다**(이 저장소가 `D_CHECK_IDS` 로 같은 결론에 도달했다:
  *    권위는 관찰이 아니라 등록부이고, 등재는 타입이 강제해야 사각지대가 없다).

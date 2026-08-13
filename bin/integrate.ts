@@ -17,7 +17,7 @@
  * 🔴 push·PR·자동 stash/reset·브랜치 삭제를 하지 않는다.
  */
 import { resolve, join, dirname } from 'node:path'
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { loadConfig } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitAdapter } from '../scripts/req/lib/adapters'
@@ -33,7 +33,18 @@ import {
 } from '../scripts/req/lib/integration-coordinator'
 import { awaitCiRun, createGhCiRunAdapter, type GithubCiRunPort, type CiRunResult } from '../scripts/req/lib/github-ci-run'
 import { deliveryApprovalBlock } from '../scripts/req/lib/delivery'
+import { bookkeepingMessage } from '../scripts/req/lib/bookkeeping'
 import { collectDeepInput, type RunDeps as VerifyRunDeps } from './verify-range'
+import { attributeRange } from '../scripts/req/lib/range-attribution'
+import {
+  DELEGATION_LEDGER_REL,
+  DENY_GUIDANCE,
+  delegationVerdict,
+  scopeOfBranch,
+  type DelegationPermissions,
+  type DelegationRow,
+} from '../scripts/req/lib/delegation'
+import type { StopGate } from '../scripts/req/lib/config'
 
 // ───────────────────────────────── 인자 파싱(fail-closed) ──
 
@@ -149,6 +160,17 @@ export interface RunDeps {
   gitStateExists: (name: string) => boolean
   /** head tree blob 배치 읽기(REQ-2026-127 — verify-range와 같은 심층 수집 공유). 테스트는 fake 주입. */
   readBlobs: VerifyRunDeps['readBlobs']
+  /**
+   * 이 저장소의 정지 정책(REQ-2026-140). `'auto'` 일 때만 **사전 위임을 요구**한다.
+   * 🔴 다른 값에서는 이 축이 아무것도 바꾸지 않는다 — 무회귀가 이 한 줄에 걸려 있다.
+   */
+  stopGate: StopGate
+  /** 위임 원장 텍스트(없으면 `null`). */
+  readDelegationLedger: () => string | null
+  /** 원장에 한 행을 append 하고 그 파일만 부기 커밋한다(CAS 선점). */
+  appendDelegationRow: (row: DelegationRow, subject: string) => void
+  /** 리뷰 하드 상한 — 도달하면 위임이 있어도 통합을 막는다(설계 DEC-7). */
+  reviewHardCap: number
 }
 
 /**
@@ -172,6 +194,172 @@ export interface RunResult {
   exit: 0 | 1
   plan: IntegrationPlan
   merged: boolean
+}
+
+// ───────────────────────────────── 사전 위임 게이트 (REQ-2026-140 phase-4b) ──
+
+/** 이번 통합에서 하려는 작업. 4b-1 은 로컬 병합만 한다(push·bypass 는 4b-2). */
+const REQUESTED_LOCAL_ONLY: DelegationPermissions = {
+  local_merge: true,
+  origin_push: false,
+  bypass_protection: false,
+}
+
+export type DelegationGateResult =
+  | { kind: 'not-required' }
+  | { kind: 'allowed'; delegationId: string }
+  | { kind: 'denied'; lines: string[] }
+
+/**
+ * `stopGate: "auto"` 에서 **사전 위임을 요구**한다.
+ *
+ * 🔴 **다른 값에서는 아무것도 하지 않는다**(`not-required`) — `phase`·`req`·`merge` 무회귀가 여기 걸려 있다.
+ * 🔴 **오늘 이 경로에 도구 게이트가 없다**는 사실이 이 함수의 존재 이유다: `integrate --run` 은
+ *    비대화형 세션에서 질문 없이 병합한다(`deps.interactive` 분기). 지금까지 그것을 막은 것은
+ *    `AGENTS.md` 계약이지 도구가 아니었다. `auto` 는 그 자리에 **처음으로** 도구 게이트를 건다.
+ */
+export function delegationGate(
+  deps: Pick<RunDeps, 'stopGate' | 'readDelegationLedger' | 'now' | 'branchPrefix' | 'ticketRoot' | 'git' | 'readBlobs'>,
+  prepared: PreparedIntegration,
+  ticketFacts: { riskLevel: string | null; budgetHardCapReached: boolean; reviewInconclusive: boolean },
+): DelegationGateResult {
+  if (deps.stopGate !== 'auto') return { kind: 'not-required' }
+
+  const scope = scopeOfBranch(prepared.featureBranch, deps.branchPrefix)
+  if (scope === null)
+    return {
+      kind: 'denied',
+      lines: [
+        `사전 위임 대상을 브랜치 이름에서 판정할 수 없습니다: ${prepared.featureBranch}`,
+        `  stopGate:"auto" 는 위임 대상이 확정돼야 진행합니다 — 사람 확인으로 통합하세요.`,
+      ],
+    }
+  /**
+   * 🔴 delivery scope 는 **4b-2 에서 배선한다**(멤버 집합·구성 변경 판정이 delivery 레코드 읽기를
+   *    요구한다). 그때까지는 거부한다 — 반쪽 판정으로 통합하느니 멈춘다.
+   *    사용자에게 도달하지 않는 상태다: `auto` 는 phase-5 전까지 스키마가 거부한다(DEC-9).
+   */
+  if (scope.kind === 'delivery')
+    return {
+      kind: 'denied',
+      lines: [
+        `delivery 묶음의 자율 통합은 아직 배선되지 않았습니다(slug=${scope.slug}).`,
+        '  사람 확인으로 통합하세요.',
+      ],
+    }
+
+  // 범위 귀속(DEC-4a) — `verifyRangeDeep` 과 **같은 입력**으로 계산한다(분류기 이원화 금지).
+  const deepInput = collectDeepInput(deps.git, deps.readBlobs, prepared.trunkHeadSha, prepared.featureHeadSha, deps.ticketRoot)
+  const report = verifyRangeDeep(deepInput)
+  const attribution = attributeRange({
+    commits: deepInput.commits,
+    entries: report.entries,
+    manifests: deepInput.manifests,
+    ticketRoot: deps.ticketRoot,
+  })
+
+  const verdict = delegationVerdict({
+    ledgerText: deps.readDelegationLedger(),
+    scope,
+    now: deps.now(),
+    trunkBranch: prepared.trunkBranch,
+    trunkSha: prepared.trunkHeadSha,
+    sourceBranch: prepared.featureBranch,
+    requested: REQUESTED_LOCAL_ONLY,
+    riskLevel: ticketFacts.riskLevel,
+    budgetHardCapReached: ticketFacts.budgetHardCapReached,
+    reviewInconclusive: ticketFacts.reviewInconclusive,
+    evidenceOk: true, // strict 는 이 지점 **전에** 이미 통과했다(plan.ok) — 그 사실을 그대로 넘긴다.
+    rangeAttribution: attribution,
+    deliveryMembers: null,
+    compositionChanged: false,
+  })
+
+  if (verdict.ok) return { kind: 'allowed', delegationId: verdict.row.id }
+  const lines = [`사전 위임이 이 통합을 허용하지 않습니다 (${verdict.reason}): ${verdict.detail}`, `  → ${DENY_GUIDANCE[verdict.reason]}`]
+  for (const u of attribution.unattributableCommits.slice(0, 3))
+    lines.push(`  · 판정 불가: ${u.sha.slice(0, 8)} ${u.subject} — ${u.why}`)
+  return { kind: 'denied', lines }
+}
+
+/**
+ * DEC-5 불변식 — **검증된 `V` 와 병합할 `C` 사이에 소비 커밋 하나만 허용**한다.
+ *
+ * 1. `rev-list V..C` 가 정확히 `[C]`
+ * 2. `C` 가 바꾼 경로가 위임 원장 하나뿐
+ * 3. trunk 가 그대로
+ *
+ * 🔴 이 검사가 없으면 "검증한 SHA만 병합한다"가 소비 커밋 때문에 조용히 깨진다. 문제가 있으면
+ *    **병합하지 않는다** — 위임은 이미 소진됐고, 그것이 이 방향의 트레이드오프다.
+ */
+export function claimCommitProblem(
+  git: GitAdapter,
+  verifiedSha: string,
+  claimedSha: string,
+  trunkBefore: string,
+  trunkNow: string,
+): string | null {
+  if (trunkNow !== trunkBefore) return `소비 커밋 사이에 trunk 가 움직였습니다(${trunkBefore.slice(0, 8)} → ${trunkNow.slice(0, 8)})`
+  if (claimedSha === verifiedSha) return '소비 커밋이 만들어지지 않았습니다'
+  let between: string[]
+  let paths: string[]
+  try {
+    between = git
+      .exec(['rev-list', `${verifiedSha}..${claimedSha}`])
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+    paths = git
+      .exec(['show', '--name-only', '--format=', claimedSha])
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+  } catch (err) {
+    return `소비 커밋을 확인하지 못했습니다: ${msg(err)}`
+  }
+  if (between.length !== 1 || between[0] !== claimedSha)
+    return `검증한 SHA 와 병합할 SHA 사이에 다른 커밋이 있습니다(${between.length}건)`
+  const foreign = paths.filter((p) => p !== DELEGATION_LEDGER_REL)
+  if (foreign.length > 0)
+    return `소비 커밋이 위임 원장 밖을 바꿨습니다: ${foreign.slice(0, 3).join(', ')}`
+  return null
+}
+
+/**
+ * 티켓 `state.json` 에서 위험도·예산·리뷰 상태를 읽는다(head tree 기준).
+ *
+ * 🔴 읽지 못하면 **fail-closed** 로 되돌린다: 위험도 미상은 `HIGH` 로, 리뷰 상태는 미결로 본다.
+ *    자율 통합의 입력을 "모르니까 통과"로 읽으면 그것이 곧 구멍이다.
+ */
+export function readTicketFacts(
+  readBlobs: VerifyRunDeps['readBlobs'],
+  ref: string,
+  ticketRoot: string,
+  reqId: string,
+  hardCap: number,
+): { riskLevel: string | null; budgetHardCapReached: boolean; reviewInconclusive: boolean } {
+  const rel = `${ticketRoot}/${reqId}/state.json`
+  const unknown = { riskLevel: 'HIGH', budgetHardCapReached: false, reviewInconclusive: true }
+  let text: string
+  try {
+    const buf = readBlobs(ref, [rel]).get(rel)
+    if (buf === null || buf === undefined) return unknown
+    text = buf.toString('utf8')
+  } catch {
+    return unknown
+  }
+  let st: { risk_level?: unknown; review_series?: unknown }
+  try {
+    st = JSON.parse(text) as typeof st
+  } catch {
+    return unknown
+  }
+  const series = Array.isArray(st.review_series) ? (st.review_series as { attempts?: unknown; closed_reason?: unknown }[]) : []
+  return {
+    riskLevel: typeof st.risk_level === 'string' ? st.risk_level : 'HIGH',
+    budgetHardCapReached: series.some((s) => typeof s.attempts === 'number' && s.attempts >= hardCap),
+    reviewInconclusive: series.some((s) => s.closed_reason === null),
+  }
 }
 
 export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: IntegrationCoordinator): Promise<RunResult> {
@@ -230,7 +418,25 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
     return { exit: 1, plan, merged: false }
   }
 
+  /**
+   * 🔴 사전 위임 게이트(REQ-2026-140). `auto` 가 아니면 `not-required` 라 아무것도 바뀌지 않는다.
+   *    dry-run 에서도 판정한다 — 실행할 때 무엇이 막히는지 **미리** 보여야 한다.
+   */
+  const scopeForFacts = scopeOfBranch(prepared.featureBranch, deps.branchPrefix)
+  const ticketFacts =
+    deps.stopGate === 'auto' && scopeForFacts?.kind === 'ticket'
+      ? readTicketFacts(deps.readBlobs, prepared.featureHeadSha, deps.ticketRoot, scopeForFacts.req_id, deps.reviewHardCap)
+      : { riskLevel: null, budgetHardCapReached: false, reviewInconclusive: false }
+  const gate = delegationGate(deps, prepared, ticketFacts)
+  if (gate.kind === 'denied') {
+    deps.log('commitgate integrate — 차단:')
+    for (const l of gate.lines) deps.log(`  ${l}`)
+    safeAppend(row({ exit: 1 }))
+    return { exit: 1, plan, merged: false }
+  }
+
   deps.log(`commitgate integrate — ${prepared.featureBranch} → ${prepared.trunkBranch}`)
+  if (gate.kind === 'allowed') deps.log(`  사전 위임: ${gate.delegationId} (사람 확인 없이 진행합니다 — 소비는 1회)`)
   const c = prepared.verificationSummary.counts
   deps.log(`  증거: 승인 소비 ${c.approved} · 도구 부기 ${c.bookkeeping} · 머지 ${c.merge} · attested ${c.attested} · 미입증 ${c.unproven} (strict 통과)`)
   deps.log(`  결속: feature ${prepared.featureHeadSha.slice(0, 8)} · trunk ${prepared.trunkHeadSha.slice(0, 8)} (이 두 SHA가 그대로일 때만 병합합니다)`)
@@ -281,7 +487,8 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
   }
 
   // 사람의 최종 통합 확인(설계 DEC-5). 대화형은 [y/N] 기본 No, 비대화형은 --run 자체가 확정 동작.
-  if (deps.interactive) {
+  // 🔴 유효한 사전 위임이 있으면 **이 자리를 묻지 않는다** — 그것이 위임의 목적이다(REQ-2026-140).
+  if (deps.interactive && gate.kind !== 'allowed') {
     const ans = await deps.ask(finalMergePrompt(prepared.featureBranch, prepared.trunkBranch))
     if (!isYes(ans)) {
       deps.log('통합을 취소했습니다(병합하지 않았습니다).')
@@ -290,8 +497,44 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
     }
   }
 
+  /**
+   * 🔴 **CAS 선점**(설계 DEC-5). 위임을 먼저 소진하고 병합한다. 반대로 하면 병합과 기록 사이의
+   *    중단에서 권한이 두 번 쓰일 수 있다 — 소진은 되돌릴 수 있고(사람이 다시 발급) 이중 사용은 아니다.
+   *
+   * 소비 커밋 `C` 는 `V`(검증된 SHA) 위에 얹히므로 병합 대상이 `V` 에서 `C` 로 바뀐다.
+   * 두 SHA 를 하나로 만들려던 것이 설계 리뷰가 잡은 모순이었고, 답은 **그 차이를 계약으로 못 박는 것**이다.
+   */
+  let target = prepared
+  if (gate.kind === 'allowed') {
+    const verified = prepared.featureHeadSha
+    deps.appendDelegationRow(
+      {
+        kind: 'consumed',
+        id: gate.delegationId,
+        at: deps.now(),
+        verified_sha: verified,
+        performed: REQUESTED_LOCAL_ONLY,
+        outcome: 'merged',
+        detail: `${prepared.featureBranch} → ${prepared.trunkBranch}`,
+      },
+      `delegate — ${gate.delegationId.slice(0, 8)} 소비(통합)`,
+    )
+    const re = coord.collect()
+    const problem =
+      re.prepared === null
+        ? '소비 커밋 뒤 통합 계획을 다시 결속하지 못했습니다'
+        : claimCommitProblem(deps.git, verified, re.prepared.featureHeadSha, prepared.trunkHeadSha, re.prepared.trunkHeadSha)
+    if (problem !== null || re.prepared === null) {
+      deps.log(`🔴 ${problem ?? '재결속 실패'} — 병합하지 않았습니다(위임은 소비됐습니다).`)
+      safeAppend(row({ ci, ci_run_id: ciResult?.runId ?? null, ci_conclusion: ciResult?.conclusion ?? null, exit: 1 }))
+      return { exit: 1, plan, merged: false }
+    }
+    target = re.prepared
+    deps.log(`  소비 기록: ${verified.slice(0, 8)} → ${target.featureHeadSha.slice(0, 8)} (부기 1커밋만 얹혔습니다)`)
+  }
+
   // 🔴 재검증 + CAS 병합 — CI 대기·사람 확인 사이에 상태가 바뀌었으면 여기서 멈춘다.
-  const exec = coord.merge(prepared)
+  const exec = coord.merge(target)
   deps.log(exec.merged ? `✅ ${exec.detail}` : `🔴 ${exec.detail}`)
   const exit: 0 | 1 = exec.merged ? 0 : 1
   safeAppend(
@@ -388,6 +631,19 @@ export async function runCli(argv: string[]): Promise<void> {
       githubCi: cfg.githubCi,
       gitStateExists: (name) => existsSync(resolve(cfg.root, gitDir, name)),
       readBlobs: (ref, paths) => readBlobsAtRef(cfg.root, ref, paths),
+      stopGate: cfg.stopGate,
+      reviewHardCap: cfg.reviewBudget.hardCap,
+      readDelegationLedger: () => {
+        const abs = join(cfg.root, ...DELEGATION_LEDGER_REL.split('/'))
+        return existsSync(abs) ? readFileSync(abs, 'utf8') : null
+      },
+      appendDelegationRow: (delegationRow, subject) => {
+        const abs = join(cfg.root, ...DELEGATION_LEDGER_REL.split('/'))
+        mkdirSync(dirname(abs), { recursive: true })
+        appendFileSync(abs, `${JSON.stringify(delegationRow)}\n`, 'utf8')
+        git.exec(['add', DELEGATION_LEDGER_REL])
+        git.exec(['commit', '-m', bookkeepingMessage(subject)])
+      },
     })
     if (result.exit !== 0) process.exitCode = result.exit
   } catch (err) {
