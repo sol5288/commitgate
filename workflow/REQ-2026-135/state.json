@@ -2,14 +2,14 @@
   "id": "REQ-2026-135",
   "branch": "feat/req-2026-135-auto-scope-and-setup-upgrade",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffa0e-18c4-7491-bc41-5f5aeae3f67a",
-  "review_base_sha": "e849e074d05f5b0990e6b8aeeb64bfb8e6b13fd9",
-  "review_diff_hash": "d8dcec940ab526ca262e8fca7bef99ed78b6872e",
+  "codex_thread_id": "019ffa11-625d-7231-880f-9dd8f2557538",
+  "review_base_sha": "c7a8d48a8f32d286b50406ea5382947947fe5160",
+  "review_diff_hash": "9ad2f36bc814920866c6e131670087adb60d9938",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "709845a338b85cba5132537f67addcb70fe8ef494b2a34b6a7ac08ab47db7160",
-  "current_phase": "phase-1-upgrade-hint",
+  "current_phase": "phase-2-scope-docs",
   "phases": [
     {
       "id": "phase-1-upgrade-hint",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-scope-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -40,16 +40,23 @@
       "phase_id": "phase-1-upgrade-hint",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-scope-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-scope-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-upgrade-hint",
+    "phase_id": "phase-2-scope-docs",
     "outcome": "approved",
-    "compare_hash": "3f0095895f348c708b08696698d9d2b8cba0a7d01dc520f957c17ea3cf714401",
+    "compare_hash": "4df01081654594fddbe7d22cc47ae504d6a2a62f7dfc03a52865784571394ec6",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T07:38:43.432Z",
+    "at": "2026-08-13T07:42:20.313Z",
     "findings": [],
     "elided_count": 0
   },
@@ -77,6 +84,12 @@
       "phase_id": "phase-1-upgrade-hint",
       "consumed_by_commit_sha": "2ac05cc50874a221ae4e8cbbdbaf3988315f8863",
       "approval_consumed_at": "2026-08-13T07:39:16.383Z"
+    },
+    {
+      "approved_tree": "9ad2f36bc814920866c6e131670087adb60d9938",
+      "phase_id": "phase-2-scope-docs",
+      "consumed_by_commit_sha": "3ed698fa305699c46a1ef7ed26ba007efcda3b9c",
+      "approval_consumed_at": "2026-08-13T07:42:56.149Z"
     }
   ],
   "user_commit_confirmed": null
