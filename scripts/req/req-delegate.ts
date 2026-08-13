@@ -367,5 +367,10 @@ export function main(argv: string[]): void {
   })
 }
 
-const runCli = makeRunCli(main, 'req:delegate')
+/**
+ * 🔴 **export 해야 한다** — `dispatch.test.ts` 가 `VERB_MODULES` 의 모든 대상이 `runCli` 를 내보내는지
+ *    검사한다(REQ-2026-090 경계 계약). phase-3 에서 `const` 로만 두어 그 계약이 깨졌고,
+ *    **전체 스위트에서만** 드러났다 — 이 verb 만 골라 돌린 테스트는 dispatch 표면을 보지 않는다.
+ */
+export const runCli = makeRunCli(main, 'req:delegate')
 if (isEntrypoint(import.meta.url)) runCli(process.argv.slice(2))

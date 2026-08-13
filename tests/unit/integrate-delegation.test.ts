@@ -9,7 +9,7 @@ import {
   type AutoFacts,
   type RunDeps,
 } from '../../bin/integrate'
-import { makeDeps, integrateOpts, fakeGit, fakeReadBlobs, BASE, HEAD, SRC, TRUNK } from '../support/integrate-fakes'
+import { makeDeps, integrateOpts, fakeGit, fakeReadBlobs, BASE, HEAD, MERGE_SHA, SRC, TRUNK } from '../support/integrate-fakes'
 import {
   DELEGATION_LEDGER_REL,
   type DelegationIssued,
@@ -445,5 +445,135 @@ describe('[REQ-2026-140] readDeliveryFacts — 구성 비교', () => {
     })
     const f = readDeliveryFacts(blobsByRef({ HEADREF: A1B2, BASEREF: '{oops' }), 'workflow', 'S', 'HEADREF', 'BASEREF')
     expect(f.compositionChanged).toBe(true)
+  })
+})
+
+/**
+ * REQ-2026-140 phase-6 — **`runIntegrate` 를 실제로 태우는 push 배선**(phase-4c 리뷰 관측).
+ *
+ * 🔴 순수 판정(`planPushActions`)만 있으면 "판정은 맞는데 아무도 그것을 쓰지 않는" 상태를 못 잡는다.
+ *    이 저장소는 그 실패를 세 번 실증했다(REQ-2026-083·097·099).
+ */
+describe('[REQ-2026-140] runIntegrate — push·수행 기록 배선', () => {
+  const DELEGATION = (perms: Partial<DelegationPermissions>): string =>
+    ledgerOf(ISSUED({ permissions: { local_merge: true, origin_push: false, bypass_protection: false, ...perms } }))
+
+  /**
+   * 🔴 **소비 커밋이 tip 을 움직이는 것을 모사한다.** 공유 fake 는 ref 가 고정이라 `C === V` 가 되어
+   *    CAS 불변식(`claimCommitProblem`)에서 정상 경로가 막힌다 — 그건 fake 의 한계이지 결함이 아니다.
+   *    래퍼를 테스트 안에 두어 공유 fake 를 복잡하게 만들지 않는다.
+   */
+  const CLAIM_SHA = '7'.repeat(40)
+  const gitWithClaim = (opts: Parameters<typeof fakeGit>[0] = {}) => {
+    const inner = fakeGit({ branch: FEATURE_001, ...opts })
+    let claimed = false
+    const g: ReturnType<typeof fakeGit> = {
+      calls: inner.calls,
+      exec(args: string[]): string {
+        /**
+         * 소비 커밋 이후 **feature 쪽 SHA 는 전부 C** 다.
+         * 🔴 `collect()` 는 브랜치 ref 가 아니라 `HEAD^{commit}` 을 읽는다 — ref 이름만 가로채면
+         *    이 경로를 놓친다. trunk 를 가리키지 않는 `rev-parse` 를 전부 C 로 답한다.
+         */
+        if (claimed && args[0] === 'rev-parse' && args[1] !== '--abbrev-ref' && !(args[2] ?? '').includes(TRUNK)) {
+          inner.calls.push(args)
+          return `${CLAIM_SHA}\n`
+        }
+        // `rev-list <V>..<C>` 는 소비 커밋 하나만 돌려준다(`--parents -n 1` 형태와 구별).
+        if (args[0] === 'rev-list' && args.some((a) => a.includes('..'))) {
+          inner.calls.push(args)
+          return `${CLAIM_SHA}\n`
+        }
+        // 병합 후 부모 확인(`rev-list --parents -n 1`)은 **C** 를 부모로 답해야 한다.
+        if (claimed && args[0] === 'rev-list') {
+          inner.calls.push(args)
+          return `${MERGE_SHA} ${BASE} ${CLAIM_SHA}\n`
+        }
+        return inner.exec(args)
+      },
+    }
+    return { git: g, claim: () => void (claimed = true) }
+  }
+
+  const autoDeps = (over: Omit<Partial<RunDeps>, 'git'> & { git: ReturnType<typeof fakeGit> }) =>
+    makeDeps({
+      readBlobs: fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: OK_STATE }),
+      now: () => '2026-08-10T00:00:00.000Z',
+      stopGate: 'auto',
+      ...over,
+    })
+
+  it('🔴 push 를 위임하지 않으면 병합만 하고 push 를 호출하지 않는다', async () => {
+    const { git, claim } = gitWithClaim()
+    const rows: DelegationRow[] = []
+    const deps = autoDeps({
+      git,
+      readDelegationLedger: () => DELEGATION({}),
+      appendDelegationRow: (r) => {
+        rows.push(r)
+        if (r.kind === 'consumed') claim()
+      },
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.merged).toBe(true)
+    expect(git.calls.some((c) => c[0] === 'push')).toBe(false)
+    // 소비(인가) + 수행 기록 두 행이 남는다.
+    expect(rows.map((x) => x.kind)).toEqual(['consumed', 'executed'])
+    const executed = rows[1] as Extract<DelegationRow, { kind: 'executed' }>
+    expect(executed.performed).toEqual({ local_merge: true, origin_push: false, bypass_protection: false })
+  })
+
+  it('🔴 push+bypass 위임이면 두 번 push 한다(병합 · 수행 기록)', async () => {
+    const { git, claim } = gitWithClaim({ pushResults: [null, null] })
+    const rows: DelegationRow[] = []
+    const deps = autoDeps({
+      git,
+      readDelegationLedger: () => DELEGATION({ origin_push: true, bypass_protection: true }),
+      appendDelegationRow: (r) => {
+        rows.push(r)
+        if (r.kind === 'consumed') claim()
+      },
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.exit).toBe(0)
+    expect(git.calls.filter((c) => c[0] === 'push')).toHaveLength(2)
+    const executed = rows.find((x) => x.kind === 'executed') as Extract<DelegationRow, { kind: 'executed' }>
+    expect(executed.performed).toEqual({ local_merge: true, origin_push: true, bypass_protection: true })
+    // 🔴 우회 사실이 **최종 보고에도** 남는다.
+    expect(deps.logs.join('\n')).toContain('required check')
+  })
+
+  it('🔴 1차 push 가 실패하면 exit 1 이고 수행 기록에 push=false 로 남는다', async () => {
+    const { git, claim } = gitWithClaim({ pushResults: [new Error('protected branch')] })
+    const rows: DelegationRow[] = []
+    const deps = autoDeps({
+      git,
+      readDelegationLedger: () => DELEGATION({ origin_push: true, bypass_protection: true }),
+      appendDelegationRow: (r) => {
+        rows.push(r)
+        if (r.kind === 'consumed') claim()
+      },
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.exit).toBe(1)
+    const executed = rows.find((x) => x.kind === 'executed') as Extract<DelegationRow, { kind: 'executed' }>
+    // 🔴 하지 않은 일을 했다고 적지 않는다.
+    expect(executed.performed.origin_push).toBe(false)
+    expect(executed.performed.bypass_protection).toBe(false)
+  })
+
+  it('🔴 2차 push(수행 기록) 실패는 로컬이 앞선다고 알리고 exit 1 이다', async () => {
+    const { git, claim } = gitWithClaim({ pushResults: [null, new Error('rejected')] })
+    const deps = autoDeps({
+      git,
+      readDelegationLedger: () => DELEGATION({ origin_push: true, bypass_protection: true }),
+      appendDelegationRow: (r) => {
+        if (r.kind === 'consumed') claim()
+      },
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.exit).toBe(1)
+    expect(r.merged).toBe(true)
+    expect(deps.logs.join('\n')).toContain('앞서 있습니다')
   })
 })

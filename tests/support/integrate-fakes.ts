@@ -11,6 +11,7 @@
 import { createHash } from 'node:crypto'
 import { createFakeCiRunPort, type RunInfo } from '../../scripts/req/lib/github-ci-run'
 import { BOOKKEEPING_TRAILER } from '../../scripts/req/lib/bookkeeping'
+import { DELEGATION_LEDGER_REL } from '../../scripts/req/lib/delegation'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
 import type { Opts, RunDeps, IntegrateRunRow } from '../../bin/integrate'
 
@@ -53,6 +54,11 @@ export interface FakeGitOpts {
   checkIgnoreOk?: boolean
   /** 재검증에서 돌려줄 ref 값(표류 시뮬레이션). */
   refs?: Record<string, string>
+  /**
+   * `git push` 응답(REQ-2026-140 phase-6). 배열이면 **호출 순서대로** 소비한다 —
+   * 1차는 병합 push, 2차는 수행 기록 push 다. `Error` 면 그 호출이 실패한다.
+   */
+  pushResults?: (null | Error)[]
 }
 
 /**
@@ -64,6 +70,7 @@ export function fakeGit(over?: FakeGitOpts): GitAdapter & { calls: string[][] } 
   const calls: string[][] = []
   const branch = over?.branch ?? FEATURE
   const refs: Record<string, string> = { [`refs/heads/${TRUNK}`]: BASE, [`refs/heads/${branch}`]: HEAD, ...over?.refs }
+  const pushQueue: (null | Error)[] = [...(over?.pushResults ?? [])]
   const logOut =
     over?.logOut ??
     [
@@ -99,6 +106,13 @@ export function fakeGit(over?: FakeGitOpts): GitAdapter & { calls: string[][] } 
         return ''
       }
       if (cmd === 'rev-list') return `${MERGE_SHA} ${BASE} ${HEAD}\n` // --parents -n 1 HEAD
+      if (cmd === 'push') {
+        const next = pushQueue.shift()
+        if (next instanceof Error) throw next
+        return ''
+      }
+      // 소비 커밋 불변식 검사(`claimCommitProblem`)가 보는 경로 목록 — 원장만 바꿨다고 답한다.
+      if (cmd === 'show') return `${DELEGATION_LEDGER_REL}\n`
       if (cmd === 'checkout' || cmd === 'merge' || cmd === 'update-ref') return ''
       throw new Error(`fakeGit: 예상 밖 호출 ${args.join(' ')}`)
     },
