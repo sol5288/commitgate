@@ -2,13 +2,13 @@
   "id": "REQ-2026-132",
   "branch": "feat/req-2026-132-review-budget-soft-limit-policy",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019ff981-2b2e-7cd1-8523-047dc038098e",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "2d7599fd10b712c1bae0c23acffea7f2911b77901d2d00738febb8b3e6bdb614",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,43 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "c16c541d36913ea0bf6be455d8ae0097dcc4903c20c963f5f490c26c6394db71",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T05:05:32.195Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "c4200c26043aceaf8500ab2d7ff16a0b8ed72ac3",
+    "design": "9139ac1e0fd22416ff56fce281713706b75de81f",
+    "plan": "1d014cd3f770d71138cccbf94dff26ae06862fcc"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-132/responses/design-r02-approved.json",
+    "response_sha256": "11c95ebf47a4b640a71aa6b0419541f443b54d20165960b9e6ff2e7e8e7ea557",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "d8aea66186754086352467e9167e43faccf8bcbb",
+    "codex_thread_id": "019ff981-2b2e-7cd1-8523-047dc038098e",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T05:05:32.195Z",
+    "design_hash": "2d7599fd10b712c1bae0c23acffea7f2911b77901d2d00738febb8b3e6bdb614"
   }
 }
