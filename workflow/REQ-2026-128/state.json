@@ -2,14 +2,14 @@
   "id": "REQ-2026-128",
   "branch": "feat/req-2026-128-stopgate-merge-terminal-parity",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff903-a382-73c3-81fb-5f06c53d91c1",
-  "review_base_sha": "360be6d7b70b60302f01c5c9c8ef1dfabe6c47e0",
-  "review_diff_hash": "ba7ae7b4645e091638d8dcb74171edb74ed5b969",
+  "codex_thread_id": "019ff909-8f60-7430-8494-0a43712d12eb",
+  "review_base_sha": "f35cffe76eff078e63fe002dd7f9e681cd6d3a7f",
+  "review_diff_hash": "b456231a3d76bec23932667340dd13c2ed46a327",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "7e7ce50339a4621cbaac8468f7f11b9a602ce0906e3bbaa4c11e167065709dbd",
-  "current_phase": "phase-1-scope-ssot",
+  "current_phase": "phase-2-merge-terminal",
   "phases": [
     {
       "id": "phase-1-scope-ssot",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-merge-terminal",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-docs",
@@ -39,6 +39,13 @@
       "series_id": "phase:phase-1-scope-ssot#1",
       "review_kind": "phase",
       "phase_id": "phase-1-scope-ssot",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-merge-terminal#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-merge-terminal",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -63,12 +70,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-scope-ssot",
+    "phase_id": "phase-2-merge-terminal",
     "outcome": "approved",
-    "compare_hash": "7ef5e58bf997f29f5dddceafe14f77ba59ed9383cb4a10899850089896e3903c",
+    "compare_hash": "f5ac8d1d5830809bcd067b2a6d85dd3fa1ac0f2d52b9253298a64682c781fe15",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T02:47:41.036Z",
+    "at": "2026-08-13T02:54:15.812Z",
     "findings": [],
     "elided_count": 0
   },
@@ -78,6 +85,12 @@
       "phase_id": "phase-1-scope-ssot",
       "consumed_by_commit_sha": "f24cbbca528351af0629474b07a78fc939de60c3",
       "approval_consumed_at": "2026-08-13T02:48:18.494Z"
+    },
+    {
+      "approved_tree": "b456231a3d76bec23932667340dd13c2ed46a327",
+      "phase_id": "phase-2-merge-terminal",
+      "consumed_by_commit_sha": "88be30e4362967194419677f2053d887a6f46907",
+      "approval_consumed_at": "2026-08-13T02:54:52.840Z"
     }
   ],
   "user_commit_confirmed": null
