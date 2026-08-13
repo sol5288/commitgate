@@ -9,6 +9,10 @@ import {
   quickstartBackfillTargets,
   runQuickstart,
   shippedQuickstartBlock,
+  MANAGED_BLOCKS,
+  blockRe,
+  markerStreamProblems,
+  injectManagedBlock,
 } from '../../bin/quickstart'
 import { AGENTS_CONTRACT_MARKER, PACKAGE_ROOT } from '../../bin/init'
 
@@ -28,6 +32,111 @@ const BLOCK = [
 
 // 블록이 갱신된 버전(마커 유지, 본문 상이) — updated 케이스용.
 const NEW_BLOCK = BLOCK.replace('1. 요구를 확인한다.', '1. 요구를 확인한다.\n2. req:new 로 티켓.')
+
+/**
+ * REQ-2026-136 phase-1 — **관리 블록 집합**과 마커 스트림 안전 판정.
+ *
+ * 🔴 이 그룹의 헤드라인: **블록별 개수만 세면 교차 중첩을 놓친다.** 두 id 가 각각 "정상 쌍 1회"로
+ *    보이는데도 앞 블록을 치환하면 다른 블록의 여는 마커가 지워진다 — 사용자 문서를 삼킬 수 있는 경로다.
+ */
+describe('[REQ-2026-136] 관리 블록 집합', () => {
+  it('Quick Start 와 자율 진행 계약을 담고, 계약 본문은 AGENTS.md 에만 간다', () => {
+    expect(MANAGED_BLOCKS.map((b) => b.id)).toEqual(['quickstart', 'autonomy'])
+    const autonomy = MANAGED_BLOCKS.find((b) => b.id === 'autonomy')
+    expect(autonomy?.targets).toEqual(['AGENTS.md'])
+    // 🔴 CLAUDE.md 의 몫은 자립형 Quick Start 다 — 계약 전문을 복제하면 두 벌이 갈라진다.
+    expect(autonomy?.targets).not.toContain('CLAUDE.md')
+  })
+
+  it('마커는 id 에서 생성된다(블록마다 상수를 늘리지 않는다)', () => {
+    expect(blockRe('autonomy').test('<!-- commitgate:autonomy -->x<!-- /commitgate:autonomy -->')).toBe(true)
+    expect(blockRe('autonomy').test('<!-- commitgate:quickstart -->x<!-- /commitgate:quickstart -->')).toBe(false)
+  })
+})
+
+describe('[REQ-2026-136] markerStreamProblems — 문서 전체 스트림', () => {
+  const open = (id: string) => `<!-- commitgate:${id} -->`
+  const close = (id: string) => `<!-- /commitgate:${id} -->`
+
+  it('정상(순차 두 블록)은 문제 없음', () => {
+    const s = [open('quickstart'), 'a', close('quickstart'), '', open('autonomy'), 'b', close('autonomy')].join('\n')
+    expect(markerStreamProblems(s)).toEqual([])
+  })
+
+  it('블록이 없어도 문제 없음', () => {
+    expect(markerStreamProblems('# 제목\n본문\n')).toEqual([])
+  })
+
+  /** `commitgate:contract` 는 쌍이 없는 **파일 정체성 마커**다 — 스트림에 넣으면 항상 위반이 된다. */
+  it('🔴 계약 정체성 마커는 스트림 대상이 아니다', () => {
+    expect(markerStreamProblems('<!-- commitgate:contract -->\n# AGENTS.md\n')).toEqual([])
+  })
+
+  it('여는 마커만 있으면 위반', () => {
+    expect(markerStreamProblems(`${open('autonomy')}\n본문\n`).join(' ')).toContain('닫히지 않음')
+  })
+
+  it('닫는 마커만 있으면 위반', () => {
+    expect(markerStreamProblems(`본문\n${close('autonomy')}\n`).join(' ')).toContain('여는 마커가 없음')
+  })
+
+  it('같은 블록이 2회면 위반', () => {
+    const s = [open('autonomy'), 'a', close('autonomy'), open('autonomy'), 'b', close('autonomy')].join('\n')
+    expect(markerStreamProblems(s).join(' ')).toContain('2회 이상')
+  })
+
+  it('🔴 중첩은 위반(블록별 개수로는 정상으로 보인다)', () => {
+    const s = [open('quickstart'), open('autonomy'), close('autonomy'), close('quickstart')].join('\n')
+    expect(markerStreamProblems(s).join(' ')).toContain('중첩')
+  })
+
+  /**
+   * 🔴 이 REQ 의 핵심 경로(설계 r01 P1). 두 id 모두 여는 1·닫는 1이라 개수 검사로는 통과한다.
+   */
+  it('🔴 교차는 위반 — 개수 검사로는 두 블록 다 "정상"이다', () => {
+    const s = [open('quickstart'), open('autonomy'), close('quickstart'), close('autonomy')].join('\n')
+    // 전제: 각 id 의 마커 개수는 정확히 1·1 이다(개수만으로는 못 잡는다는 증명).
+    for (const id of ['quickstart', 'autonomy']) {
+      expect((s.match(new RegExp(open(id), 'g')) ?? []).length, id).toBe(1)
+      expect((s.match(new RegExp(close(id), 'g')) ?? []).length, id).toBe(1)
+    }
+    expect(markerStreamProblems(s).length).toBeGreaterThan(0)
+  })
+})
+
+describe('[REQ-2026-136] injectManagedBlock — 임의 id 주입', () => {
+  const A_BLOCK = ['<!-- commitgate:autonomy -->', '### 4-1. 자율 진행', '<!-- /commitgate:autonomy -->'].join('\n')
+
+  /** 🔴 계약 절은 문맥 의존 heading 이라 "첫 H1 뒤"에 넣으면 계층이 뒤집힌다 — 파일 끝에 붙인다. */
+  it('🔴 부재 시 파일 끝에 붙는다(첫 heading 뒤가 아니다)', () => {
+    const src = '# AGENTS.md\n\n## 사용자 절\n내용\n'
+    const r = injectManagedBlock(src, 'autonomy', A_BLOCK)
+    expect(r.action).toBe('inserted')
+    expect(r.content.startsWith(src)).toBe(true)
+    expect(r.content.trimEnd().endsWith('<!-- /commitgate:autonomy -->')).toBe(true)
+  })
+
+  it('있으면 그 자리에서 치환하고 밖은 보존한다', () => {
+    const src = `머리\n${A_BLOCK}\n꼬리\n`
+    const updated = A_BLOCK.replace('### 4-1. 자율 진행', '### 4-1. 자율 진행(개정)')
+    const r = injectManagedBlock(src, 'autonomy', updated)
+    expect(r.action).toBe('updated')
+    expect(r.content.startsWith('머리\n')).toBe(true)
+    expect(r.content.endsWith('꼬리\n')).toBe(true)
+    expect(r.content).toContain('개정')
+  })
+
+  it('동일하면 noop(멱등)', () => {
+    const src = `머리\n${A_BLOCK}\n꼬리\n`
+    expect(injectManagedBlock(src, 'autonomy', A_BLOCK)).toEqual({ content: src, action: 'noop' })
+  })
+
+  /** Quick Start 는 기존 계약(첫 H1 뒤)을 유지한다 — 이 REQ 는 그 동작을 바꾸지 않는다. */
+  it('quickstart 는 기존 삽입 규칙 그대로다(무회귀)', () => {
+    const src = '# 제목\n본문\n'
+    expect(injectManagedBlock(src, 'quickstart', BLOCK)).toEqual(injectQuickstart(src, BLOCK))
+  })
+})
 
 describe('[REQ-2026-040] extractQuickstartBlock', () => {
   it('마커 블록(마커 포함)을 추출한다', () => {
@@ -211,6 +320,62 @@ describe('[REQ-2026-040] runQuickstart (verb)', () => {
     } finally {
       cleanup(dir)
     }
+  })
+
+  /**
+   * 🔴 REQ-2026-136 phase-1 r01 P1 — 판정 함수를 만들어 두고 **plan 에 연결하지 않으면** 보호가
+   *    실재하지 않는다. 교차 중첩 파일에서 블록 치환은 다른 블록의 마커와 그 사이 **사용자 내용을
+   *    함께 덮어쓴다.** 그래서 실 파일이 **바이트 그대로**임을 본다.
+   */
+  describe('[REQ-2026-136] 마커가 손상된 파일에는 쓰지 않는다', () => {
+    const broken = (body: string): string => `${AGENTS_CONTRACT_MARKER}\n# AGENTS.md\n\n${body}\n소중한 사용자 절\n`
+    const cases: Array<[string, string]> = [
+      [
+        '교차',
+        [
+          '<!-- commitgate:quickstart -->',
+          '옛 본문',
+          '<!-- commitgate:autonomy -->',
+          '계약',
+          '<!-- /commitgate:quickstart -->',
+          '<!-- /commitgate:autonomy -->',
+        ].join('\n'),
+      ],
+      ['중첩', ['<!-- commitgate:quickstart -->', '<!-- commitgate:autonomy -->', 'x', '<!-- /commitgate:autonomy -->', '<!-- /commitgate:quickstart -->'].join('\n')],
+      ['반쪽(여는 마커만)', '<!-- commitgate:quickstart -->\n옛 본문'],
+      ['중복', ['<!-- commitgate:quickstart -->', 'a', '<!-- /commitgate:quickstart -->', '<!-- commitgate:quickstart -->', 'b', '<!-- /commitgate:quickstart -->'].join('\n')],
+    ]
+
+    for (const [name, body] of cases) {
+      it(`🔴 ${name} — --apply 해도 파일이 바이트 그대로다`, () => {
+        const dir = tmpRepo()
+        try {
+          const before = broken(body)
+          writeFileSync(join(dir, 'AGENTS.md'), before)
+          const plan = runQuickstart({ dir, apply: true })
+          const f = plan.files.find((x) => x.rel === 'AGENTS.md')
+          expect(f?.action, name).toBe('skip')
+          expect(f?.reason ?? '', name).toContain('손상')
+          expect(plan.writes.some((w) => w.rel === 'AGENTS.md'), name).toBe(false)
+          // 🔴 오라클의 핵심: 실제 파일이 한 바이트도 바뀌지 않았다.
+          expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), name).toBe(before)
+        } finally {
+          cleanup(dir)
+        }
+      })
+    }
+
+    /** 대조군: 마커가 정상이면 같은 경로가 실제로 쓴다(위 단언이 공허하지 않음을 증명). */
+    it('대조군 — 정상 파일은 쓴다', () => {
+      const dir = tmpRepo()
+      try {
+        writeFileSync(join(dir, 'AGENTS.md'), `${AGENTS_CONTRACT_MARKER}\n# AGENTS.md\n\n내용\n`)
+        const plan = runQuickstart({ dir, apply: true })
+        expect(plan.writes.some((w) => w.rel === 'AGENTS.md')).toBe(true)
+      } finally {
+        cleanup(dir)
+      }
+    })
   })
 
   it('멱등 — --apply 두 번째는 noop(쓰기 0건)', () => {

@@ -16,6 +16,95 @@ import { makeRunCli, isEntrypoint } from '../scripts/req/lib/cli-boundary'
 /** 마커 쌍(포함) 매칭. 비탐욕 — 첫 close에서 끝난다. 마커 문자열의 정본은 이 정규식이다(REQ-2026-103: 참조 0인 상수 2개 제거). */
 const QS_RE = /<!-- commitgate:quickstart -->[\s\S]*?<!-- \/commitgate:quickstart -->/
 
+/**
+ * commitgate가 관리하는 블록 하나(REQ-2026-136 DEC-1).
+ *
+ * 🔴 마커 문자열을 블록마다 손으로 늘리지 않는다 — **id에서 생성**한다(`blockRe`).
+ */
+export interface ManagedBlock {
+  /** 마커 id — `<!-- commitgate:<id> -->` … `<!-- /commitgate:<id> -->` */
+  id: string
+  /** 이 블록을 넣을 대상 파일(repo 상대). */
+  targets: readonly string[]
+}
+
+/**
+ * 관리 블록 집합.
+ *
+ * 🔴 **계약 본문(`autonomy`)은 `AGENTS.md`에만** 넣는다. `CLAUDE.md`의 몫은 항상 로드되는 자립형
+ *    Quick Start이고(REQ-2026-039), 계약 전문을 거기 복제하면 두 벌이 갈라지며 Quick Start의 존재
+ *    이유(첫 요청에서 올바른 첫 행동)가 희석된다.
+ */
+export const MANAGED_BLOCKS: readonly ManagedBlock[] = [
+  { id: 'quickstart', targets: ['CLAUDE.md', 'AGENTS.md'] },
+  { id: 'autonomy', targets: ['AGENTS.md'] },
+]
+
+/** id → 마커 쌍(포함) 정규식. 비탐욕. */
+export function blockRe(id: string): RegExp {
+  return new RegExp(`<!-- commitgate:${id} -->[\\s\\S]*?<!-- /commitgate:${id} -->`)
+}
+
+/** 문서 안 관리 마커 하나(등장 순서 스캔용). */
+interface MarkerToken {
+  id: string
+  kind: 'open' | 'close'
+  index: number
+}
+
+/** 모든 관리 마커를 **등장 순서대로** 뽑는다(어떤 id든 — 미등록 id도 포함). */
+function scanMarkers(content: string): MarkerToken[] {
+  // 🔴 닫는 마커의 슬래시는 `commitgate` **앞**이다(`<!-- /commitgate:id -->`).
+  const re = /<!-- (\/?)commitgate:([a-z0-9-]+) -->/g
+  const out: MarkerToken[] = []
+  for (const m of content.matchAll(re)) {
+    // `<!-- commitgate:contract -->`(파일 정체성 마커)는 **쌍이 없는 단독 마커**다 — 스트림에서 제외한다.
+    if (m[2] === 'contract') continue
+    out.push({ id: m[2] as string, kind: m[1] ? 'close' : 'open', index: m.index })
+  }
+  return out
+}
+
+/** 마커 스트림 위반 사유(빈 배열 = 정상). */
+export type MarkerStreamProblem = string
+
+/**
+ * **문서 전체 마커 스트림** 검증(REQ-2026-136 DEC-4).
+ *
+ * 🔴 블록마다 "여는 1 · 닫는 1"만 세면 **교차 중첩을 놓친다**:
+ * ```
+ * <!-- commitgate:quickstart --> … <!-- commitgate:autonomy --> …
+ * <!-- /commitgate:quickstart --> … <!-- /commitgate:autonomy -->
+ * ```
+ * 두 id 모두 "정상 쌍 1회"로 보이지만, 앞 블록을 치환하면 **다른 블록의 여는 마커가 지워진다.**
+ * 그래서 등장 순서를 하나의 스트림으로 훑어 스택 깊이 0/1만 허용한다.
+ */
+export function markerStreamProblems(content: string): MarkerStreamProblem[] {
+  const problems: MarkerStreamProblem[] = []
+  const stack: string[] = []
+  const closed = new Set<string>()
+  for (const t of scanMarkers(content)) {
+    if (t.kind === 'open') {
+      if (stack.length > 0) {
+        problems.push(`'${t.id}' 여는 마커가 '${stack[0] as string}' 블록 안에 중첩됨`)
+        continue
+      }
+      if (closed.has(t.id)) problems.push(`'${t.id}' 블록이 2회 이상 있음`)
+      stack.push(t.id)
+    } else {
+      const top = stack.pop()
+      if (top === undefined) problems.push(`'${t.id}' 닫는 마커에 대응하는 여는 마커가 없음`)
+      else if (top !== t.id) {
+        problems.push(`마커가 교차함 — '${top}' 이 열린 채 '${t.id}' 이 닫힘`)
+        // 교차 이후의 판정은 신뢰할 수 없다. 남은 스택을 비워 중복 보고를 막는다.
+        stack.length = 0
+      } else closed.add(t.id)
+    }
+  }
+  for (const open of stack) problems.push(`'${open}' 블록이 닫히지 않음`)
+  return problems
+}
+
 const toLf = (s: string): string => s.replace(/\r\n/g, '\n')
 
 /** 템플릿 본문에서 마커 포함 Quick Start 블록을 뽑는다. 부재면 null. */
@@ -114,6 +203,30 @@ export function injectQuickstart(fileContent: string, block: string): InjectResu
     return { content, action: 'inserted', insertAt: 'after-heading' }
   }
   return { content: eolBlock + eol + eol + fileContent, action: 'inserted', insertAt: 'top' }
+}
+
+/**
+ * 블록 하나를 주입한다(순수 · 임의 id — REQ-2026-136 DEC-1). `injectQuickstart`의 일반화다.
+ *
+ * 🔴 **부재 시 삽입 위치는 파일 끝**이다(DEC-4b). Quick Start는 "첫 H1 뒤"였지만, 계약 절은 문맥 의존
+ *    heading(`### 4-1 …`)이라 같은 규칙을 쓰면 §4 앞에 놓여 계층이 뒤집힌다. 사용자가 절 순서를 바꿔 둔
+ *    파일에서 "적절한 자리"를 추측하면 엉뚱한 곳에 들어간다 — 위치가 완벽하지 않은 것과 사용자 문서를
+ *    잘못 건드리는 것은 위험도가 다르다.
+ * 🔴 이미 있으면 **그 자리에서** 치환한다(위치를 옮기지 않는다).
+ */
+export function injectManagedBlock(fileContent: string, id: string, block: string): InjectResult {
+  const re = blockRe(id)
+  const existing = fileContent.match(re)
+  const eol = dominantEol(fileContent)
+  const eolBlock = matchEol(block, eol)
+  if (existing) {
+    if (toLf(existing[0]) === toLf(block)) return { content: fileContent, action: 'noop' }
+    return { content: fileContent.replace(re, () => eolBlock), action: 'updated' }
+  }
+  // Quick Start 는 기존 계약(첫 H1 뒤)을 유지한다 — 이 REQ 는 그 동작을 바꾸지 않는다.
+  if (id === 'quickstart') return injectQuickstart(fileContent, block)
+  const sep = fileContent.length === 0 || fileContent.endsWith('\n') || fileContent.endsWith('\r') ? '' : eol
+  return { content: `${fileContent}${sep}${eol}${eolBlock}${eol}`, action: 'inserted', insertAt: 'top' }
 }
 
 // ─────────────────────────────────────────────────────── CLI verb (phase-2) ──
@@ -224,6 +337,23 @@ export function planQuickstart(targetRoot: string, block: string): QuickstartPla
     }
     if (rel === 'AGENTS.md' && !st.content.includes(AGENTS_CONTRACT_MARKER)) {
       files.push({ rel, action: 'skip', reason: 'CommitGate 계약 마커 없음 — 미접촉' })
+      continue
+    }
+    /**
+     * 🔴 REQ-2026-136 DEC-4: **파일 단위 안전 게이트.** 마커 스트림이 깨졌으면(반쪽·중복·중첩·교차)
+     *    이 파일에는 **아무것도 쓰지 않는다.** 판정 함수를 만들어 두고 여기에 연결하지 않으면
+     *    보호가 실재하지 않는다 — 교차 중첩 파일에서 블록 치환이 다른 블록의 마커와 그 사이
+     *    **사용자 내용을 함께 덮어쓴다**(phase-1 r01 P1).
+     */
+    const streamProblems = markerStreamProblems(st.content)
+    if (streamProblems.length > 0) {
+      files.push({
+        rel,
+        action: 'skip',
+        reason:
+          `commitgate 관리 마커가 손상돼 안전하게 식별할 수 없음 — 자동 수정하지 않습니다: ${streamProblems.slice(0, 3).join('; ')}. ` +
+          `해당 마커 쌍을 손으로 정리한 뒤 다시 실행하세요.`,
+      })
       continue
     }
     const r = injectQuickstart(st.content, block)
