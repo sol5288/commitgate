@@ -208,6 +208,12 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 - After `seal` you cannot `begin`. Use `reopen` to undo it — the fact that an approval existed stays in the log.
 - 🔴 **The tool never merges `delivery` into `main`.** `approve` records the approval; the merge itself is
   performed by a human at the existing control points (I1/I2/B1).
+- 🔴 **An approval is bound to the group's contents at that moment.** `approve` records the group branch tip
+  as of just before it (`approval.base_sha`); if a commit touching anything **outside the delivery record**
+  lands afterwards, the gate returns `AWAIT_HUMAN` again — what you approved is no longer what would merge.
+  Re-approving goes `reopen` → `seal` → `approve` (the state is still `approved`, so `approve` alone is refused).
+  The record commit made by `approve` itself is excluded, so an approval never invalidates itself.
+  Older records without this binding pass as before.
 - It does not depend on your current branch — the tool moves where it needs to and **returns you where you were**.
 
 With `stopGate: "merge"`, the `req:next` terminal also looks at the group: still open → `DONE` (you may open

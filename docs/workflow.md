@@ -196,6 +196,12 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 - `seal` 이후에는 `begin` 할 수 없습니다. 되돌리려면 `reopen` — 승인이 있었다는 사실은 이력에 남습니다.
 - 🔴 **도구는 `delivery` → `main` 을 병합하지 않습니다.** `approve`는 승인을 기록할 뿐이고, 실제 병합은
   기존 통제점표(I1/I2/B1)에서 사람이 실행합니다.
+- 🔴 **승인은 그 시점의 묶음 내용에 결속됩니다.** `approve`는 승인 직전 묶음 브랜치 tip을 레코드에
+  남기고(`approval.base_sha`), 그 뒤 **묶음 레코드 밖을 건드린 커밋**이 들어오면 게이트가 다시
+  `AWAIT_HUMAN`(재승인)을 냅니다 — 승인한 내용과 병합될 내용이 다르기 때문입니다.
+  재승인은 `reopen` → `seal` → `approve` 순서입니다(상태가 아직 `approved`라 `approve`만으로는 되지 않습니다).
+  승인 자체가 만드는 레코드 커밋은 이 판정에서 제외되므로 승인이 자기 자신을 무효화하지 않습니다.
+  이 결속이 없는 옛 레코드는 예전처럼 통과합니다.
 - 브랜치 위치에 의존하지 않습니다 — 도구가 필요한 곳으로 옮겼다가 **원래 브랜치로 되돌립니다**.
 
 `stopGate: "merge"` 를 켜면 `req:next` 종단도 묶음을 봅니다: 묶음이 아직 열려 있으면 `DONE`(다음 REQ를
