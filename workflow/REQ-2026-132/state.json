@@ -2,14 +2,14 @@
   "id": "REQ-2026-132",
   "branch": "feat/req-2026-132-review-budget-soft-limit-policy",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff993-1330-7a71-9336-7eafb815a34f",
-  "review_base_sha": "1164003d49891a28ca0921f8a9bf8880f235ddbe",
-  "review_diff_hash": "c83801b13584baf46a3ce80cfbfb2b52bfc15a3e",
+  "codex_thread_id": "019ff998-1174-7a70-8f8e-41ba5f25bdf8",
+  "review_base_sha": "e0c63bb2a9cf2a8d1da45198b8fdf71eb2a5b1c0",
+  "review_diff_hash": "4787adb5ed9e892a9e9ca86a984a4caaed5bab6a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "86f5c5c62a9bac2f9d3d61b355667b60cc0d24e7f07a7bfb52182dbd660d7cd5",
-  "current_phase": "phase-1-soft-limit",
+  "current_phase": "phase-2-docs",
   "phases": [
     {
       "id": "phase-1-soft-limit",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -47,16 +47,23 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-docs",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-soft-limit",
+    "phase_id": "phase-2-docs",
     "outcome": "approved",
-    "compare_hash": "dc24f01e8634cd95febff17579952b318560434eabdd1e469520ddf306a7a48a",
+    "compare_hash": "e99b20e146dc21652ce7214ee4f2494269c9a5a1724a67a189ed7a00f6b8084a",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T05:24:45.080Z",
+    "at": "2026-08-13T05:29:20.526Z",
     "findings": [],
     "elided_count": 0
   },
@@ -84,6 +91,12 @@
       "phase_id": "phase-1-soft-limit",
       "consumed_by_commit_sha": "9ec8d815f5d3ff0eb407102cce30887118ee8659",
       "approval_consumed_at": "2026-08-13T05:25:22.771Z"
+    },
+    {
+      "approved_tree": "4787adb5ed9e892a9e9ca86a984a4caaed5bab6a",
+      "phase_id": "phase-2-docs",
+      "consumed_by_commit_sha": "394c128794594c80c6dbe8890c8d6544c5ad7fcf",
+      "approval_consumed_at": "2026-08-13T05:29:49.021Z"
     }
   ],
   "user_commit_confirmed": null
