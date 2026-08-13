@@ -2,15 +2,24 @@
   "id": "REQ-2026-131",
   "branch": "feat/req-2026-131-agent-autonomy-contract",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff971-2c07-7b73-8932-897923e35a8f",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ff975-5cb0-7bd1-8fb6-0794303917d5",
+  "review_base_sha": "312bf94fb083b4e65fd215a877274a4a4034d15e",
+  "review_diff_hash": "577421a61ff56eb180e20b50907e65223203d32c",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "197c0be1c4232d2f02f8f2a6428b4bf4ec1f9446b61d3f0dd43e7240dde9cea5",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-contract",
+  "phases": [
+    {
+      "id": "phase-1-contract",
+      "approved": true
+    },
+    {
+      "id": "phase-2-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -31,6 +40,13 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-contract#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-contract",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -39,13 +55,13 @@
     "plan": "f832f6065a9a51a2cae8175cba2e9b0c8e95eaa5"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-contract",
     "outcome": "approved",
-    "compare_hash": "0e00256b9d50858588cf3217c945577dec0a85017a964d39f92768f9950798ca",
+    "compare_hash": "dc0d69c11fbb2a098efa7758ad70a6645a9953f64bcce5104cbc7a0b183930f6",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T04:48:11.175Z",
+    "at": "2026-08-13T04:52:46.643Z",
     "findings": [],
     "elided_count": 0
   },
@@ -61,5 +77,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-13T04:48:11.175Z",
     "design_hash": "197c0be1c4232d2f02f8f2a6428b4bf4ec1f9446b61d3f0dd43e7240dde9cea5"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "577421a61ff56eb180e20b50907e65223203d32c",
+      "phase_id": "phase-1-contract",
+      "consumed_by_commit_sha": "08b5f580f2aeaf40b2b1e37f2fe1b4cbece508a6",
+      "approval_consumed_at": "2026-08-13T04:53:22.181Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
