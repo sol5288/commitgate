@@ -2,14 +2,14 @@
   "id": "REQ-2026-129",
   "branch": "feat/req-2026-129-policy-snapshot-per-ticket",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff922-4fc8-7cb2-91c7-e8a583d8d3e5",
-  "review_base_sha": "973c64ec955626ad051487f3e124f2b72830df46",
-  "review_diff_hash": "82200ea0637e61648117fbf75daee132a785b461",
+  "codex_thread_id": "019ff92c-38fa-74f3-935c-992f01a556e7",
+  "review_base_sha": "2de7f15829031a4f1d1a18852d45a1605f954440",
+  "review_diff_hash": "962cd46c8eb4d0db565e7161213462529d93db7b",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "35573f17bb421cf6302928580f586b94a4dbdc2a72fbde660151a81adbcab1bb",
-  "current_phase": "phase-1-snapshot-core",
+  "current_phase": "phase-2-repolicy-verb",
   "phases": [
     {
       "id": "phase-1-snapshot-core",
@@ -17,7 +17,7 @@
     },
     {
       "id": "phase-2-repolicy-verb",
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-drift-doctor-docs",
@@ -41,16 +41,24 @@
       "phase_id": "phase-1-snapshot-core",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-repolicy-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-repolicy-verb",
+      "attempts": 3,
+      "closed_reason": "approved",
+      "void_attempts": 1
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-snapshot-core",
+    "phase_id": "phase-2-repolicy-verb",
     "outcome": "approved",
-    "compare_hash": "558094c7291541f59c409c8d1135df5e7a8e087bcd7eef4d1ec7db99fd1464ca",
+    "compare_hash": "298ff607fc0188d00cf1ceb41937d68f8460e180912b67d267255a1179972b64",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T03:21:30.357Z",
+    "at": "2026-08-13T03:32:30.767Z",
     "findings": [],
     "elided_count": 0
   },
@@ -78,6 +86,12 @@
       "phase_id": "phase-1-snapshot-core",
       "consumed_by_commit_sha": "e711374ec4fbeb808bbf6bd86b151c1601484d3d",
       "approval_consumed_at": "2026-08-13T03:22:10.398Z"
+    },
+    {
+      "approved_tree": "962cd46c8eb4d0db565e7161213462529d93db7b",
+      "phase_id": "phase-2-repolicy-verb",
+      "consumed_by_commit_sha": "9853a2ffb53f54a8f5b012149583464f8198719c",
+      "approval_consumed_at": "2026-08-13T03:33:01.538Z"
     }
   ],
   "user_commit_confirmed": null
