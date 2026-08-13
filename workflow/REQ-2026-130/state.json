@@ -2,14 +2,14 @@
   "id": "REQ-2026-130",
   "branch": "feat/req-2026-130-delivery-approval-binding",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff962-5172-74a0-b782-8d679da8e900",
-  "review_base_sha": "137e69510959f5c241dbbeb0854a5604f826ee89",
-  "review_diff_hash": "baccf15a91b5758e8b21e16ff14286aaf96b1e02",
+  "codex_thread_id": "019ff965-418d-7313-879d-d67a4b1eac82",
+  "review_base_sha": "3f3f115db569b2dff15833e21dbd28cc2969beea",
+  "review_diff_hash": "7daf98b9814d57e64c7afad5c5fb484a2c44e27a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "fd07bc771f95c421972f60b63978d0afbdbc1d646b27bc414b216de6a305b2c6",
-  "current_phase": "phase-2-integrate-block",
+  "current_phase": "phase-3-docs",
   "phases": [
     {
       "id": "phase-1-approval-binding",
@@ -21,7 +21,7 @@
     },
     {
       "id": "phase-3-docs",
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -58,16 +58,23 @@
       "phase_id": "phase-2-integrate-block",
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-docs#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-docs",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-integrate-block",
+    "phase_id": "phase-3-docs",
     "outcome": "approved",
-    "compare_hash": "f44b926a88d087ffa37fa73678afd28906db8a3a0c83e563975aba92c8fd289a",
+    "compare_hash": "9b4e5881991833048c60d79b6107c1441c560c0ffac8d8212650de4ac87fc87e",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T04:31:38.639Z",
+    "at": "2026-08-13T04:34:15.161Z",
     "findings": [],
     "elided_count": 0
   },
@@ -88,6 +95,12 @@
       "phase_id": "phase-2-integrate-block",
       "consumed_by_commit_sha": "f1b4c4dad69a01e2811e59886e10a7716c20affb",
       "approval_consumed_at": "2026-08-13T04:32:07.222Z"
+    },
+    {
+      "approved_tree": "7daf98b9814d57e64c7afad5c5fb484a2c44e27a",
+      "phase_id": "phase-3-docs",
+      "consumed_by_commit_sha": "a1adfbfebf461f55386c8c66179ad61f6b824093",
+      "approval_consumed_at": "2026-08-13T04:34:41.818Z"
     }
   ],
   "user_commit_confirmed": null,
