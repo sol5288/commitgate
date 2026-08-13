@@ -29,7 +29,7 @@ import { recoveryGuidance } from './lib/close-proof'
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { reviewScratchPaths, ARCHIVE_BASE_RE } from './lib/scratch'
 import { readDeliveryGate } from './lib/delivery'
-import { requiredConfirmScope } from './lib/evidence'
+import { requiredConfirmScope, userConfirmProblem, effectiveConfirmScope, type UserCommitConfirmed } from './lib/evidence'
 import { integrationPathGuidance } from './lib/control-points'
 import { wouldCompleteReq } from './req-commit'
 import { computeReviewSemanticIdentity } from './lib/review-target'
@@ -881,21 +881,23 @@ function resolveNextCore(input: NextInput): NextAction {
             // 🔴 통합 경로 안내는 상수에서 파생한다 — 손으로 적으면 일반 경로와 갈라진다(실제로 갈라졌다).
             `" --run\` 로 승인을 기록한 뒤, 통합 경로의 정본 승인 문장을 받는다 — ${integrationPathGuidance({ short: true })}`,
         }
-      return {
-        kind: 'DONE',
-        detail: g
-          ? `이 REQ 는 끝났다. 묶음 '${g.slug}' 은 아직 진행 중이다(${g.detail}) — 다음 REQ 를 열거나 \`commitgate delivery seal\` 로 닫는다.`
-          : '이 REQ 는 끝났다. stopGate=merge 인데 이 feature 가 속한 delivery 묶음을 찾지 못했다 — `commitgate delivery status --slug <묶음>` 으로 확인하거나, 통합 통제점(I1/B1)을 사람이 진행한다.',
-      }
+      // 묶음이 살아 있으면(열려 있거나 다른 member 가 남음) 여기서 멈추지 않는다 — 그것이 `merge`의 존재 이유다.
+      if (g)
+        return {
+          kind: 'DONE',
+          detail: `이 REQ 는 끝났다. 묶음 '${g.slug}' 은 아직 진행 중이다(${g.detail}) — 다음 REQ 를 열거나 \`commitgate delivery seal\` 로 닫는다.`,
+        }
+      /**
+       * 🔴 REQ-2026-128 DEC-1: 묶음이 **없으면** `req` 종단과 같다. 이전에는 여기가 `DONE` 이라
+       *    `merge` 를 고른 사용자가 **어느 지점에서도 멈추지 않았다** — 더 늦게 멈추겠다고 고른 값이
+       *    오히려 정지를 잃었다. 묶음이 없으면 이 REQ 다음에 올 것은 다음 REQ 가 아니라 통합이다.
+       */
+      return terminalIntegrationAction(input, {
+        prefix: 'stopGate=merge 인데 이 feature 가 속한 delivery 묶음이 없다 — 이 REQ 의 통합이 다음 지점이다. ',
+        requireHighConfirm: true,
+      })
     }
-    if (input.phaseCommitAutoApprove === 'low-only')
-      return {
-        kind: 'AWAIT_HUMAN',
-        detail:
-          '모든 phase가 자동 커밋됐다. feature→main 통합은 사람 승인이 필요하다 — 경로(PR 또는 direct push)와 승인 문장은 AGENTS.md 통제점표(I1/I2/B1)를 따른다. 승인 전에 `npx commitgate verify-range` 로 이 범위의 승인 증거를 로컬에서 확인할 수 있다(GitHub CI는 opt-in — 기본 생략).',
-        controlPoint: '통합(feature→main)',
-        approvalSentence: `통합 경로를 택하고 그 통제점의 정본 승인 문장을 받는다 — ${integrationPathGuidance()}`,
-      }
+    if (input.phaseCommitAutoApprove === 'low-only') return terminalIntegrationAction(input)
     // never(기본): 현행 그대로 DONE — 기존 사용자 무회귀.
     return {
       kind: 'DONE',
@@ -982,6 +984,52 @@ export function parseArgs(argv: string[]): Opts {
 }
 
 /** 사람이 읽는 출력. `displayId`는 표시 전용(argv가 아니다) — `state.id`를 그대로 쓴다. */
+/**
+ * 종단의 **통합 정지**(REQ-2026-037 R5 · REQ-2026-128 DEC-1). `req` 와 `merge`(묶음 없음)가 **같은** 판정을
+ * 쓰도록 한 곳에 둔다 — 두 곳에서 각자 문장을 만들면 갈라진다(실제로 갈라졌던 이력이 있다).
+ *
+ * `requireHighConfirm` 은 **`merge` + 묶음 없음에서만 참**이다(DEC-3).
+ * 🔴 `req` 에서 참으로 두면 **같은 확인을 두 번 요구**한다: 그 값은 REQ 를 완성시키는 커밋에서 이미
+ *    확인을 받았고, 승인 소비(`consumeApproval`)가 `user_commit_confirmed` 를 비웠기 때문에 종단에서는
+ *    항상 "확인 없음"으로 보인다. 확인이 사라진 것이 아니라 **이미 쓰였다**.
+ */
+function terminalIntegrationAction(input: NextInput, opts: { prefix?: string; requireHighConfirm?: boolean } = {}): NextAction {
+  if (opts.requireHighConfirm && input.state.risk_level === 'HIGH') {
+    const scope = requiredConfirmScope(input.stopGate ?? 'phase', { inDeliverySet: input.deliveryGate != null })
+    const problem = userConfirmProblem(input.state.user_commit_confirmed)
+    const got = effectiveConfirmScope(input.state.user_commit_confirmed as UserCommitConfirmed | null)
+    // 🔴 scope 는 크기 순서가 아니라 진술이다 — 정확히 일치할 때만 통과한다(REQ-2026-071 DEC-4b).
+    if (problem || got !== scope) {
+      const reqArg = targetArgs(input.target).join(' ')
+      return {
+        kind: 'AWAIT_HUMAN',
+        detail:
+          `HIGH 위험 티켓이고 이 REQ 의 통합이 다음 지점이다. stopGate="${input.stopGate}" 는 scope="${scope}" 확인을 요구한다 — ` +
+          '🔴 그 범위의 **아직 작성되지 않은 변경까지 미리 승인**하는 것이다. ' +
+          '커밋에서 멈추지 않는 설정이므로 이 확인이 이 티켓의 **유일한** 사람 확인이다.',
+        command: buildScriptInvocation(input.packageManager, 'req:confirm', [
+          reqArg,
+          '--scope',
+          scope,
+          '--method',
+          '"<승인 문장>"',
+          '--run',
+        ]).join(' '),
+        controlPoint: `HIGH 사람 확인(scope=${scope})`,
+        approvalSentence: `req:confirm --scope ${scope} 승인`,
+      }
+    }
+  }
+  return {
+    kind: 'AWAIT_HUMAN',
+    detail:
+      (opts.prefix ?? '') +
+      '모든 phase가 자동 커밋됐다. feature→main 통합은 사람 승인이 필요하다 — 경로(PR 또는 direct push)와 승인 문장은 AGENTS.md 통제점표(I1/I2/B1)를 따른다. 승인 전에 `npx commitgate verify-range` 로 이 범위의 승인 증거를 로컬에서 확인할 수 있다(GitHub CI는 opt-in — 기본 생략).',
+    controlPoint: '통합(feature→main)',
+    approvalSentence: `통합 경로를 택하고 그 통제점의 정본 승인 문장을 받는다 — ${integrationPathGuidance()}`,
+  }
+}
+
 /**
  * 🔴 REQ-2026-128 DEC-4: 이 두 함수는 **`lib/delivery.ts` 로 이관**됐다(delivery 모델의 집).
  *    `req:confirm` 도 소속을 알아야 하는데, CLI 모듈끼리 import 하는 대신 lib 을 공유한다.
