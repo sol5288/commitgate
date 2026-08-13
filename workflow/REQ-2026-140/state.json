@@ -2,14 +2,14 @@
   "id": "REQ-2026-140",
   "branch": "feat/req-2026-140-stopgate-auto-predelegation",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffb5a-3a57-7ab1-85ec-6b39a4ebbc77",
-  "review_base_sha": "363aea94462f5f06221b0679bbb8a9123c1ec514",
-  "review_diff_hash": "62a34983cd42df88148a2d9459b0ed0e309c1c4e",
+  "codex_thread_id": "019ffb65-1b3f-74a1-88a2-0e2ca2f027a4",
+  "review_base_sha": "0a3c9c4bff6ec6795493d9dccf6dc26b5c369c23",
+  "review_diff_hash": "1e0237d8540e9a0c85878c6d8113624bcb147a6f",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496",
-  "current_phase": "phase-2-delegation-model",
+  "current_phase": "phase-3-delegate-verb",
   "phases": [
     {
       "id": "phase-1-auto-type-and-predicate",
@@ -26,7 +26,8 @@
     {
       "id": "phase-3-delegate-verb",
       "title": "req:delegate verb",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     },
     {
       "id": "phase-4-integrate-auto",
@@ -66,16 +67,23 @@
       "phase_id": "phase-2-delegation-model",
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-delegate-verb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-delegate-verb",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-delegation-model",
+    "phase_id": "phase-3-delegate-verb",
     "outcome": "approved",
-    "compare_hash": "21688f6ecc0683d109c14aeef4e1b801474e5813fdcd8b82ff32fe5f4fd13b44",
+    "compare_hash": "3e93cf41aa48194fb78d56058198aab92cf477b4a1f5201e77774935214c6e00",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T13:42:12.806Z",
+    "at": "2026-08-13T13:55:28.491Z",
     "findings": [],
     "elided_count": 0
   },
@@ -109,6 +117,12 @@
       "phase_id": "phase-2-delegation-model",
       "consumed_by_commit_sha": "f0080e5b12f0f4662f806ca502d3a712f8c8fe7f",
       "approval_consumed_at": "2026-08-13T13:42:42.961Z"
+    },
+    {
+      "approved_tree": "1e0237d8540e9a0c85878c6d8113624bcb147a6f",
+      "phase_id": "phase-3-delegate-verb",
+      "consumed_by_commit_sha": "13a14cf1d1d86ed084d948afac450a4459791c93",
+      "approval_consumed_at": "2026-08-13T13:55:58.604Z"
     }
   ],
   "user_commit_confirmed": null
