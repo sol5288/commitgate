@@ -2,13 +2,13 @@
   "id": "REQ-2026-135",
   "branch": "feat/req-2026-135-auto-scope-and-setup-upgrade",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019ffa0a-fdbd-73c3-8da0-f8f6276c23c6",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "709845a338b85cba5132537f67addcb70fe8ef494b2a34b6a7ac08ab47db7160",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,43 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "512dad61cfa625d253c69035a4333b124664e8a56423520d45683c04a15359c0",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-13T07:35:36.562Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "550ae2487d2121dfaa9fc275e82fbaebb584decc",
+    "design": "0be6ac4f3c380d98d3efd8b52f23f4d1674c628e",
+    "plan": "fd178817850e997f524a955b87c3530ccd556f25"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-135/responses/design-r02-approved.json",
+    "response_sha256": "3a7d6fb583a9e49f78e52132a8a51b89472360f136c0b608cb7c3ff58702fedd",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "6ba6dc5ff0b4e47ec095840239e244681df8d439",
+    "codex_thread_id": "019ffa0a-fdbd-73c3-8da0-f8f6276c23c6",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-13T07:35:36.562Z",
+    "design_hash": "709845a338b85cba5132537f67addcb70fe8ef494b2a34b6a7ac08ab47db7160"
   }
 }
