@@ -303,6 +303,13 @@ export type DelegationDenyReason = (typeof DELEGATION_DENY_REASONS)[number]
 export interface RangeAttribution {
   tickets: string[]
   unattributable: number
+  /**
+   * 범위가 건드린 **delivery 레코드의 슬러그**(`<ticketRoot>/delivery/<slug>.json`).
+   *
+   * 🔴 티켓 위임으로 delivery 상태를 옮기면 안 되므로 별도 축으로 둔다(phase-4a 리뷰 r03).
+   *    부재(`undefined`)는 "없음"이지 "모름"이 아니다 — `attributeRange` 는 항상 채운다.
+   */
+  deliveries?: string[]
 }
 
 export interface DelegationCheckInput {
@@ -420,6 +427,15 @@ export function scopeRangeProblem(
   const outside = attribution.tickets.filter((t) => !allowed.includes(t))
   if (outside.length > 0)
     return `병합 범위에 위임 대상 밖 티켓이 있다: ${outside.join(', ')} (허용: ${allowed.join(', ') || '(없음)'})`
+  /**
+   * 🔴 delivery 레코드 변경은 **그 묶음의 위임에서만** 정상이다(phase-4a 리뷰 r03 P1).
+   *    티켓 위임으로 묶음 상태를 옮기면 위임 대상 밖을 바꾸는 것이고, 다른 묶음의 레코드도 마찬가지다.
+   */
+  const touched = attribution.deliveries ?? []
+  const allowedSlug = scope.kind === 'delivery' ? scope.slug : null
+  const foreignDeliveries = touched.filter((s) => s !== allowedSlug)
+  if (foreignDeliveries.length > 0)
+    return `병합 범위가 위임 대상 밖 delivery 레코드를 바꾼다: ${foreignDeliveries.join(', ')}`
   return null
 }
 
