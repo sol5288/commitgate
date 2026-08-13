@@ -2,15 +2,28 @@
   "id": "REQ-2026-130",
   "branch": "feat/req-2026-130-delivery-approval-binding",
   "risk_level": "LOW",
-  "codex_thread_id": "019ff93e-dc36-73b2-a809-cf070beb4bee",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ff94d-68db-7733-9572-ae53b65dd782",
+  "review_base_sha": "506fbf16e13c4423f118afec71aeb34369464b45",
+  "review_diff_hash": "b3a7473692b0beefa4a312b16536488f4b3c07bd",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "96d9570ac75f76ffc3a2be05f14817058399de83a651485d5b12dbbf491b9788",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-approval-binding",
+  "phases": [
+    {
+      "id": "phase-1-approval-binding",
+      "approved": true
+    },
+    {
+      "id": "phase-2-integrate-block",
+      "approved": false
+    },
+    {
+      "id": "phase-3-docs",
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +37,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-approval-binding#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-approval-binding",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-approval-binding",
     "outcome": "approved",
-    "compare_hash": "e9ad8aee2a39e93dbe36e7a55234a63dafc058d3fd97eccc6a655adc8e6c3b17",
+    "compare_hash": "50356c81afcbbbd9e0b3cd1b29f00bbad377b3417b77e945ba09cc42c9cd492d",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T03:52:39.173Z",
+    "at": "2026-08-13T04:08:33.082Z",
     "findings": [],
     "elided_count": 0
   },
@@ -54,5 +74,14 @@
     "commit_approved": "yes",
     "approved_at": "2026-08-13T03:52:39.173Z",
     "design_hash": "96d9570ac75f76ffc3a2be05f14817058399de83a651485d5b12dbbf491b9788"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "b3a7473692b0beefa4a312b16536488f4b3c07bd",
+      "phase_id": "phase-1-approval-binding",
+      "consumed_by_commit_sha": "bdfe74f90224bb9e862d87a7d7b359241bb7f86d",
+      "approval_consumed_at": "2026-08-13T04:09:06.571Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
