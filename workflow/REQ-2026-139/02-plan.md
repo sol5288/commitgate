@@ -8,9 +8,18 @@
 > - **phase 진행 중**: 변경한 소스를 import하는 테스트만(빠른 피드백). 예: `grep -rl "<변경한 모듈>" tests/`
 > - **통합(main 병합) 직전 1회**: **전체 스위트**. 범위 한정은 이것을 **대체하지 않는다** — 영향 분석은 놓친 회귀를 통과시킨다.
 
-## Phase 1 — (제목) (`phase-1-...`)
+## Phase 1 — 리뷰 예산 정책 채택 (`phase-1-adopt-auto-budget`)
+
 범위:
-Exit: typecheck0 · 변경 범위 단위 그린 · Codex phase 리뷰 승인.
+- `req.config.json`에 `"reviewBudget": { "autoBudget": 5, "hardCap": 8, "onSoftLimit": "auto" }` 추가(DEC-2·DEC-3).
+- `CHANGELOG.md` Unreleased — 도구 기본값 변경이 아님 + 진행 중 티켓에 즉시 적용됨을 명시.
+
+Exit:
+- `npm run typecheck`
+- `npm run docs:lint`
+- `npx vitest run tests/unit/review-soft-limit-policy.test.ts tests/unit/req-config.test.ts`
+- 실제 로드 확인: `npx tsx scripts/req/req-next.ts 2026-139` 이 스키마 오류 없이 동작
+- Codex phase 리뷰 승인.
 
 ## 완료
 - 게이트 해당분(typecheck·해당 시 lint) · **통합 직전 전체 스위트 1회** · 사용자 main 머지(별도 승인).
