@@ -2,14 +2,14 @@
   "id": "REQ-2026-140",
   "branch": "feat/req-2026-140-stopgate-auto-predelegation",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffb33-2b72-7fb3-98d2-da45af340fab",
-  "review_base_sha": "b7ae7856d8fe15a5ec2d2fbd5d48660ecb453581",
-  "review_diff_hash": "93f9d30374b75039df36fcd978f74afdd0d15587",
+  "codex_thread_id": "019ffb5a-3a57-7ab1-85ec-6b39a4ebbc77",
+  "review_base_sha": "363aea94462f5f06221b0679bbb8a9123c1ec514",
+  "review_diff_hash": "62a34983cd42df88148a2d9459b0ed0e309c1c4e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "55ee2e2d6570a33dcf340380c31f8832b6bb719dc3fd650d8171634a5b1c1496",
-  "current_phase": "phase-1-auto-type-and-predicate",
+  "current_phase": "phase-2-delegation-model",
   "phases": [
     {
       "id": "phase-1-auto-type-and-predicate",
@@ -20,7 +20,8 @@
     {
       "id": "phase-2-delegation-model",
       "title": "위임 레코드 모델(순수)",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     },
     {
       "id": "phase-3-delegate-verb",
@@ -58,16 +59,23 @@
       "phase_id": "phase-1-auto-type-and-predicate",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-delegation-model#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-delegation-model",
+      "attempts": 3,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-auto-type-and-predicate",
+    "phase_id": "phase-2-delegation-model",
     "outcome": "approved",
-    "compare_hash": "cb0c6b6db9692c4c095a07aa2a4f630dc63d7b0cb14cc2363ac0ea3007e0719c",
+    "compare_hash": "21688f6ecc0683d109c14aeef4e1b801474e5813fdcd8b82ff32fe5f4fd13b44",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T13:00:39.604Z",
+    "at": "2026-08-13T13:42:12.806Z",
     "findings": [],
     "elided_count": 0
   },
@@ -95,6 +103,12 @@
       "phase_id": "phase-1-auto-type-and-predicate",
       "consumed_by_commit_sha": "3f6e33e5b439a0b51bfa273b8822d2e24071dbc3",
       "approval_consumed_at": "2026-08-13T13:01:07.634Z"
+    },
+    {
+      "approved_tree": "62a34983cd42df88148a2d9459b0ed0e309c1c4e",
+      "phase_id": "phase-2-delegation-model",
+      "consumed_by_commit_sha": "f0080e5b12f0f4662f806ca502d3a712f8c8fe7f",
+      "approval_consumed_at": "2026-08-13T13:42:42.961Z"
     }
   ],
   "user_commit_confirmed": null
