@@ -47,6 +47,25 @@ npm run req:next -- 2026-002
 
 main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 유효합니다. PR은 의무가 아닙니다. 다만 protected branch로 직접 push하면 branch protection을 **우회**하므로 "branch protection bypass를 사용한 direct push 승인"을 따로 받아야 합니다 — bypass 권한이 있다는 사실은 승인이 아닙니다. tag, npm publish, GitHub release는 반영과 묶이지 않는 **별도 통제점**이고 각각 따로 승인받습니다. **GitHub CI는 이 어느 단계의 전제도 아닙니다** — 이 저장소의 `ci.yml`은 `workflow_dispatch` 전용이라 push·tag·PR로 자동 실행되지 않고, 검사를 원하면 사람이 직접 실행합니다. 실행했으면 run 결과를, 생략했으면 **생략했다는 사실**을 보고에 남깁니다. 자세한 계약은 [AGENTS.template.md](../AGENTS.template.md)와 [docs/RELEASING.md](../docs/RELEASING.md)를 참고하세요.
 
+## 재리뷰 예산 — 몇 번까지 돌 수 있습니까
+
+같은 `(리뷰 종류, phase)`의 재리뷰 횟수에는 예산이 있습니다(`req.config.json`의
+[`reviewBudget`](configuration.md#리뷰-예산--reviewbudget)).
+
+- 1~`autoBudget`회(기본 5)는 사람 개입 없이 돕니다.
+- `autoBudget`을 넘긴 회차(기본 6~8)의 처리는 **`onSoftLimit`이 정합니다**:
+  `"ask"`(기본)면 회차마다 `req:review-exception` 사람 승인이 필요하고,
+  `"auto"`면 사람 승인 없이 진행하며 원장에 **정책으로 통과했다**는 사실이 남습니다.
+- `hardCap`(기본 8)을 소진하면 그다음 회차는 **두 값 모두에서** 차단됩니다. 그때는 종료하거나
+  정합한 대체 REQ를 만듭니다.
+
+🔴 이 정지는 **비용 통제**이지 안전 게이트가 아닙니다. `"auto"`로 두어도 리뷰 승인·증거·통합 통제점은
+그대로이고, `hardCap`도 그대로입니다. `"auto"`에서는 `req:review-exception`이 예외를 부여하지 않습니다 —
+소비될 일이 없는 승인 기록을 만들지 않기 위해서입니다.
+
+`stopGate`를 `req`·`merge`로 두어 자율 진행을 설정했다면 이 축도 함께 보십시오. 예산 정지는
+`stopGate`가 정한 지점과 **무관하게** 끼어들기 때문에, 한쪽만 열어 두면 워크플로가 여전히 끊깁니다.
+
 ## 관측 요약 — commitgate report
 
 도구가 로컬에 쌓는 관측 로그 3종(`.doctor-runs` · `.review-calls` · `.verify-runs`)을 한 번에

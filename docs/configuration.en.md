@@ -11,7 +11,7 @@ Defaults are enough for most projects. If needed, edit `req.config.json` in the 
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | First block of the review prompt. `null` disables it — but delta design reviews still inject the built-in delta contract |
 | `reviewModel` | `"gpt-5.6-terra"` | codex review model (pinned via `-c model=`). `null` inherits your global codex config |
 | `reviewReasoningEffort` | `"medium"` | codex review reasoning effort. One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `null` inherits the global setting |
-| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically, rounds 6–8 each require a human exception record bound to that series and round, and once `hardCap` is spent the next attempt (round 9 onward) is blocked even with an exception. `hardCap ≤ 8`, `autoBudget ≤ hardCap` |
+| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }` | Re-review attempt budget for an open `(review_kind, phase_id)` review series. With the defaults, rounds 1–5 run automatically. Rounds 6–8 are governed by `onSoftLimit`: `"ask"` (default) requires a human exception record bound to that series and round; `"auto"` runs them without human approval and records the policy grounds in the ledger. Once `hardCap` is spent the next attempt (round 9 onward) is blocked **under both values**. `hardCap ≤ 8`, `autoBudget ≤ hardCap`. See [Review budget](#review-budget--reviewbudget) |
 | `stopGate` | `"req"` | **Decides on its own where a human stops** (preferred axis). `phase` = confirm before every phase commit; `req` = auto-commit phases inside a REQ and gather the confirmation at **the commit that completes the REQ**; `merge` = group several REQs into a delivery set and defer until **the whole set** is done. The per-value confirmation points, including how `HIGH` risk is treated, are defined in [Workflow — Human confirmation for HIGH-risk tickets](workflow.en.md#human-confirmation-for-high-risk-tickets). Integration (main merge) approval is required under every value |
 | `githubCi` | not configured (`null`) | GitHub Actions workflow that `integrate` may run only after an explicit user request. When absent, CommitGate neither asks about a CI run nor guesses a workflow |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | Per-phase auto-commit policy. **`low-only` is the default**: it auto-commits Codex-approved phases without a human stop and defers the human confirmation. Set `never` **explicitly** to stop for a human before every phase commit. There is no `"all"` value — `stopGate` is the semantic axis, and adding values to the alias would split the two axes again |
@@ -42,6 +42,28 @@ Empty `branchPrefix` values and paths that escape the project root are rejected.
   control points the terminal has depends on risk: `LOW` is **one** (the integration approval), `HIGH` is **two** —
   `req:confirm` first, then the integration approval. (`req` behaves the same; only the confirmation point moves
   from the commit to the terminal.)
+
+### Review budget — `reviewBudget`
+
+```jsonc
+"reviewBudget": { "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }
+```
+
+- `autoBudget` (default 5): reviews repeat this many times with no human involvement.
+- `hardCap` (default 8): the **absolute call ceiling**. A 9th attempt never runs, by any route.
+- `onSoftLimit` (default `ask`): what happens once `autoBudget` is exceeded.
+  - `ask`: attempts 6–8 each need a human approval via `req:review-exception` (current behaviour).
+  - `auto`: they proceed without human approval up to `hardCap`, and the ledger records that they passed
+    **by policy**.
+
+🔴 **This stop is cost control, not a safety gate.** Switching to `auto` changes nothing about review
+approval, evidence, the integration control points, or `hardCap`. All it removes is the budget question,
+"may we spend one more round?"
+
+- Under `auto`, `req:review-exception` **refuses to grant** an exception — it would only create an approval
+  record that can never be consumed. Keep `ask` if you want the human approval.
+- A config that sets only the two original keys (`{"autoBudget":3,"hardCap":6}`) stays valid and gets
+  `onSoftLimit: "ask"`.
 
 ### Policy snapshot — a ticket keeps the `stopGate` it was created with
 

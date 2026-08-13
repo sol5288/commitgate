@@ -49,6 +49,26 @@ If a change is too fundamental to judge as a delta, the reviewer requests a full
 
 Both integration paths are valid: **through a PR (optional)** and **direct push**. A PR is not mandatory. But a direct push to a protected branch **bypasses branch protection**, so it needs a separate "branch protection bypass를 사용한 direct push 승인" — holding bypass permission is not approval. tag, npm publish, and GitHub release are **control points of their own**, each approved separately and never bundled with the integration approval. **GitHub CI is not a precondition for any of them** — this repository's `ci.yml` is `workflow_dispatch`-only, so push, tag, and PR events never start it; if you want the check, a human runs it explicitly. Report the run result if you ran it, and report **that you skipped it** if you did not. See [AGENTS.template.md](../AGENTS.template.md) and [docs/RELEASING.md](../docs/RELEASING.md) for the full contract.
 
+## Re-review budget — how many rounds you get
+
+Re-reviews of the same `(review kind, phase)` are budgeted
+([`reviewBudget`](configuration.en.md#review-budget--reviewbudget) in `req.config.json`).
+
+- Rounds 1 through `autoBudget` (default 5) run with no human involvement.
+- What happens past `autoBudget` (rounds 6–8 by default) is decided by **`onSoftLimit`**:
+  `"ask"` (default) needs a human approval per round via `req:review-exception`;
+  `"auto"` runs them without approval and the ledger records that they passed **by policy**.
+- Once `hardCap` (default 8) is spent, the next round is blocked **under both values**. At that point you
+  either close the ticket or write a coherent successor REQ.
+
+🔴 This stop is **cost control**, not a safety gate. Under `"auto"` the review approval, the evidence, the
+integration control points, and `hardCap` are all unchanged. `"auto"` also makes `req:review-exception`
+refuse to grant an exception — it would only create an approval record that can never be consumed.
+
+If you set `stopGate` to `req` or `merge` for autonomous runs, look at this axis too: a budget stop cuts in
+**regardless** of where `stopGate` says you stop, so opening only one of the two still leaves the workflow
+interrupted.
+
 ## Observability summary — commitgate report
 
 Summarizes the three local observation logs the tool accumulates (`.doctor-runs` · `.review-calls` ·

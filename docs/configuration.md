@@ -11,7 +11,7 @@
 | `reviewPersonaPath` | `"workflow/review-persona.md"` | 리뷰 프롬프트 첫 블록. `null`이면 비활성 — 단 delta design 리뷰에는 내장 delta 계약이 주입된다 |
 | `reviewModel` | `"gpt-5.6-terra"` | codex 리뷰 모델(`-c model=`로 고정). `null`이면 codex 전역 설정을 상속 |
 | `reviewReasoningEffort` | `"medium"` | codex 리뷰 추론강도. `none`·`minimal`·`low`·`medium`·`high`·`xhigh` 중 하나. `null`이면 전역 상속 |
-| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8 }` | 열린 `(review_kind, phase_id)` review series의 재리뷰 시도 예산. 기본값 기준 1~5회차는 자동, 6~8회차는 회차마다 그 series·회차에 바인딩된 사람 예외 기록이 있어야 진행, `hardCap` 회를 이미 소진하면 그 다음 시도(9회차부터)는 예외가 있어도 차단. `hardCap ≤ 8`·`autoBudget ≤ hardCap` |
+| `reviewBudget` | `{ "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }` | 열린 `(review_kind, phase_id)` review series의 재리뷰 시도 예산. 기본값 기준 1~5회차는 자동. 6~8회차는 `onSoftLimit`이 정한다 — `"ask"`(기본)면 회차마다 그 series·회차에 바인딩된 사람 예외 기록이 있어야 진행하고, `"auto"`면 사람 승인 없이 진행하며 원장에 정책 근거를 남긴다. `hardCap` 회를 이미 소진하면 그 다음 시도(9회차부터)는 **두 값 모두에서** 차단. `hardCap ≤ 8`·`autoBudget ≤ hardCap`. 자세히는 [리뷰 예산](#리뷰-예산--reviewbudget) |
 | `stopGate` | `"req"` | **사람이 멈추는 지점을 단독으로 정합니다**(권장 축). `phase`=매 phase 커밋 전 확인 · `req`=REQ 안의 phase는 자율 커밋하고 확인을 **REQ를 완성시키는 커밋**으로 모음 · `merge`=여러 REQ를 delivery set으로 묶어 **묶음 전체가 끝날 때까지** 미룸. 위험도(`HIGH`)를 포함한 확인 지점 상세는 [워크플로 — HIGH 위험 티켓의 사람 확인](workflow.md#high-위험-티켓의-사람-확인)이 정본입니다. 통합(main 병합) 승인은 어느 값에서나 필요합니다 |
 | `githubCi` | 미설정 (`null`) | `integrate`에서 사용자가 명시적으로 요청할 때 실행할 GitHub Actions 워크플로. 미설정이면 CI 실행을 묻지도, 추측해서 실행하지도 않습니다 |
 | `phaseCommit` *(deprecated alias)* | `{ "autoApprove": "low-only" }` | phase 자동 커밋 정책. **`low-only`가 기본**이며 Codex 승인 phase를 사람 정지 없이 자동 커밋하고 사람 확인을 뒤로 모은다. `never`를 **명시하면** 매 phase 커밋 전에 사람이 확인한다. `"all"` 같은 값은 없다 — 의미 축은 `stopGate`이고, alias에 값을 늘리면 두 축이 또 갈라진다 |
@@ -40,6 +40,27 @@
 - 어느 값이든 **phase 커밋에서는 멈추지 않고**(`phase` 제외) 정지는 종단에 모입니다. 다만 종단의 통제점 수는
   위험도에 따라 다릅니다: `LOW`는 통합 승인 **한 번**, `HIGH`는 `req:confirm` 기록 **뒤에** 통합 승인이라
   **두 번**입니다(`req`도 같습니다 — 확인 지점만 커밋에서 종단으로 옮겨진 것입니다).
+
+### 리뷰 예산 — `reviewBudget`
+
+```jsonc
+"reviewBudget": { "autoBudget": 5, "hardCap": 8, "onSoftLimit": "ask" }
+```
+
+- `autoBudget`(기본 5): 여기까지는 사람 개입 없이 리뷰가 반복됩니다.
+- `hardCap`(기본 8): **절대 호출 상한**. 9회차는 어떤 경로로도 실행되지 않습니다.
+- `onSoftLimit`(기본 `ask`): `autoBudget`을 넘겼을 때 무엇을 할지.
+  - `ask`: 6~8회차마다 `req:review-exception` 사람 승인이 필요합니다(현행).
+  - `auto`: 사람 승인 없이 `hardCap`까지 진행하고, 원장에 **정책으로 통과했다는 사실**을 남깁니다.
+
+🔴 **이 정지는 비용 통제이지 안전 게이트가 아닙니다.** `auto`로 바꿔도 리뷰 승인·증거·통합 통제점은
+전부 그대로이고 `hardCap`도 그대로입니다. `auto`가 없애는 것은 "한 번 더 돌려도 되는가"라는 **예산
+질문**뿐입니다.
+
+- `auto`에서는 `req:review-exception`이 예외를 **부여하지 않습니다** — 소비될 일이 없는 승인 기록을
+  만들지 않기 위해서입니다. 사람 승인을 원하시면 `ask`로 두세요.
+- 기존에 `{"autoBudget":3,"hardCap":6}`처럼 두 키만 쓰던 설정은 **그대로 유효**하고 `onSoftLimit`는
+  `ask`로 채워집니다.
 
 ### 정책 스냅샷 — 티켓은 만들어질 때의 `stopGate`로 끝까지 간다
 
