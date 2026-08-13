@@ -1256,6 +1256,98 @@ describe('[REQ-2026-048] req:next main() 배선 — HEAD 기준 DONE 게이트',
 })
 
 /**
+ * REQ-2026-134 — **교차 설정 재현**(실 git · `req:next` main 배선).
+ *
+ * 🔴 이 그룹이 없으면 이 REQ의 결함을 잡을 수 없다. `resolveNext`(순수)는 **이미 옳게 동작하고 있었고**,
+ *    틀린 것은 main이 만드는 **입력**이었다 — `stopGate`는 스냅샷에서, 파생 축은 config에서 왔다.
+ *    그래서 순수 테스트는 전부 그린인 채로 사용자는 매 phase 멈췄다.
+ */
+describe('[REQ-2026-134] req:next main 배선 — 스냅샷 ≠ config', () => {
+  /**
+   * 승인이 살아 있는 LOW phase 상태를 만든다: `commit_allowed` + staged 변경 + `approved_diff_hash`.
+   * `snapshot`이 `null`이면 `policy_snapshot`을 아예 넣지 않는다(legacy).
+   */
+  const setupCross = (snapshot: string | null, configStopGate: string): string => {
+    const repo = mkdtempSync(join(tmpdir(), 'reqnext-cross-'))
+    const g = (args: string[]): string => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).replace(/\s+$/, '')
+    g(['init', '-q'])
+    g(['config', 'user.email', 't@t.t'])
+    g(['config', 'user.name', 't'])
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ ...SETUP_OK, packageManager: 'npm', stopGate: configStopGate }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(ticket, { recursive: true })
+    for (const f of ['00-requirement.md', '01-design.md', '02-plan.md']) writeFileSync(join(ticket, f), '# doc\n')
+    writeFileSync(join(ticket, 'state.json'), '{}\n')
+    writeFileSync(join(repo, 'src.txt'), 'base\n')
+    g(['add', '-A'])
+    g(['commit', '-qm', 'baseline'])
+
+    const designHash = captureDesignBinding('workflow/REQ-2026-001', g).designHash
+    // staged 변경을 만들고 그 tree 를 승인 해시로 삼는다 — D9(staged == approved)를 만족시켜야
+    // "승인이 살아 있다" 분기에 도달한다.
+    writeFileSync(join(repo, 'src.txt'), 'changed\n')
+    g(['add', '-A'])
+    const stagedTree = g(['write-tree'])
+    const state: Record<string, unknown> = {
+      id: 'REQ-2026-001',
+      risk_level: 'LOW',
+      commit_allowed: true,
+      approved_diff_hash: stagedTree,
+      design_approved: true,
+      design_approved_hash: designHash,
+      current_phase: 'p1',
+      phases: [{ id: 'p1', approved: true }],
+      approval_evidence_required: true,
+      review_series_model_version: 1,
+      ...(snapshot === null ? {} : { policy_snapshot: { stop_gate: snapshot } }),
+    }
+    writeFileSync(join(ticket, 'state.json'), JSON.stringify(state, null, 2) + '\n')
+    return repo
+  }
+
+  const runNext = (repo: string): string => {
+    const r = spawn.sync('npx', ['tsx', join(PACKAGE_ROOT, 'scripts', 'req', 'req-next.ts'), '2026-001', '--root', repo], {
+      cwd: PACKAGE_ROOT,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    })
+    return `${r.stdout ?? ''}${r.stderr ?? ''}`
+  }
+
+  const check = (snapshot: string | null, configStopGate: string, expected: 'RUN' | 'AWAIT_HUMAN'): void => {
+    const repo = setupCross(snapshot, configStopGate)
+    try {
+      const out = runNext(repo)
+      expect(out, `snapshot=${snapshot ?? '(없음)'} config=${configStopGate}\n${out}`).toContain(expected)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }
+
+  /** 🔴 이 REQ의 헤드라인 — 설정을 바꿔도 티켓은 만들어질 때의 정책으로 계속 자율 진행한다. */
+  it('🔴 snapshot=merge · config=phase → RUN(자동 커밋)', () => {
+    check('merge', 'phase', 'RUN')
+  })
+
+  /** 🔴 반대 방향 — 스냅샷이 좁으면 config 가 넓어도 멈춘다(설정 변경으로 확인을 건너뛸 수 없다). */
+  it('🔴 snapshot=phase · config=merge → AWAIT_HUMAN', () => {
+    check('phase', 'merge', 'AWAIT_HUMAN')
+  })
+
+  /**
+   * legacy 두 방향을 **함께** 둔다 — 한쪽만이면 "config 를 따른다"가 상수 고정과 구별되지 않는다.
+   */
+  it('legacy(스냅샷 없음) + config=phase → AWAIT_HUMAN', () => {
+    check(null, 'phase', 'AWAIT_HUMAN')
+  })
+
+  it('legacy(스냅샷 없음) + config=merge → RUN', () => {
+    check(null, 'merge', 'RUN')
+  })
+})
+
+/**
  * REQ-2026-066 DEC-10 — `stopGate: "merge"` 종단은 **묶음**을 본다.
  *
  * 🔴 이 그룹의 헤드라인: 손상된 묶음 레코드가 "묶음 없음"으로 흡수되면 `DONE`이 나오고
