@@ -344,6 +344,46 @@ npx commitgate req:review-exception <REQ> --close-stale <series_id> --reason "<�
 - 🔴 이 명령 자체가 중간에 죽어도 **다시 실행하면 수렴합니다.** 이미 기록된 행을 다시 만들지 않고
   남은 부분만 맞춥니다.
 
+## 리뷰가 상한(hardCap)에 닿아 멈췄다면 — `--resolve replace`
+
+`hardCap` 에 닿으면 도구는 더 이상 리뷰를 부르지 않습니다. 이때 선택은 둘입니다.
+
+**갈래 A — 이 REQ 를 버린다**
+
+```sh
+npx commitgate req:close REQ-2026-001 --abandon --reason "왜 버리는가" --confirm "승인 문장" --run
+```
+
+**갈래 B — 범위를 나눠 대체 REQ 로 잇는다** (순서대로 두 줄)
+
+```sh
+npx commitgate req:review-exception REQ-2026-001 --resolve replace --series "design:-#1" --reason "왜 대체하는가" --confirm "승인 문장" --run
+npx commitgate req:new parent-slug-successor --successor-of REQ-2026-001 --run
+```
+
+- 🔴 **첫 줄이 없으면 둘째 줄이 막힙니다.** `req:new --successor-of` 는 부모에 **사람의 대체 결정**이
+  기록돼 있어야 진행합니다. 그 기록을 남기는 것이 `--resolve replace` 입니다.
+- `--series` 는 **짐작하지 않습니다.** 한 티켓에 design·phase series 가 동시에 열려 있을 수 있어
+  대상을 명시로 받습니다. 잘못된 값을 주면 **그 티켓의 열린 series 목록**을 실제 값으로 알려 줍니다.
+- `--reason`·`--confirm` 은 **필수이고 내용이 있어야** 합니다(공백만 주면 거부). 사유는 `note` 에,
+  승인 문장은 `method` 에 각각 남습니다.
+- 🔴 이 명령은 **`hardCap` 을 열지 않습니다.** 회차를 되돌리지도, 늘리지도 않습니다.
+  대체 REQ 는 **새 티켓**이고 새 예산이며, 부모 이력은 lineage 로 보존됩니다.
+
+### 실행했는데 `req:new` 가 여전히 막힌다면
+
+`req:new` 는 워킹트리가 깨끗해야 진행합니다. `--resolve` 는 **자기가 바꾼 `state.json` 만** 커밋하고
+나머지는 건드리지 않습니다 — 무엇이 staged 인지 모르는 채 커밋하면 코드나 비밀이 딸려 들어가기 때문입니다.
+
+대신 **무엇이 막는지 실제 경로로 알려 줍니다.**
+
+```text
+⚠️ 아직 워킹트리에 남은 변경이 있어 req:new 가 거부합니다:
+     workflow/REQ-2026-001/01-design.md
+   먼저 정리하십시오(예: 파킹 커밋):
+     git commit -m "chore(REQ-2026-001): 설계 파킹 — 대체 REQ 로 이어감"
+```
+
 ## 커밋이 증거 기록 도중 죽었다면 — `req:commit --finalize`
 
 `req:commit --run` 은 두 단계입니다: **소스 커밋** → **증거 기록**(아카이브·`approvals.jsonl`·소비 상태).
