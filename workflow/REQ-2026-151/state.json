@@ -2,15 +2,27 @@
   "id": "REQ-2026-151",
   "branch": "feat/req-2026-151-terminal-reentry-and-state-commitment",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00035-f084-75c3-89cd-09eadf4934fe",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00043-64a5-7301-85ee-b764a1fd4edc",
+  "review_base_sha": "b37ea01778461c777cbdfabf9f20f627e8904821",
+  "review_diff_hash": "3390269695d81235ae857ecc20cf3e599071d675",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "f8f48b6e0231a52b7440b13ac00b3de452003c300f42eda531ab833a19b8e21a",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-terminal-reentry-guard",
+  "phases": [
+    {
+      "id": "phase-1-terminal-reentry-guard",
+      "title": "종결 재진입 차단",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-consumed-state-commitment",
+      "title": "소비 state 결속",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +36,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-terminal-reentry-guard#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-terminal-reentry-guard",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-terminal-reentry-guard",
     "outcome": "approved",
-    "compare_hash": "07d089ef5a431b1cf0d9befe4d0f1789b8e2612f20be98c8876ac5a8bbe82516",
+    "compare_hash": "1b94c537018cf7e3d6380bdbd40b3bc09b0363490d40191a9cbb01e7b3b9a963",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T12:19:22.353Z",
+    "at": "2026-08-14T12:35:53.878Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,5 +93,14 @@
       "source_response_path": "workflow/REQ-2026-151/responses/design-r03-approved.json"
     },
     "design_hash": "f8f48b6e0231a52b7440b13ac00b3de452003c300f42eda531ab833a19b8e21a"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3390269695d81235ae857ecc20cf3e599071d675",
+      "phase_id": "phase-1-terminal-reentry-guard",
+      "consumed_by_commit_sha": "735d74c877027a19cebe98a5b0b48d5c33acc08f",
+      "approval_consumed_at": "2026-08-14T12:36:24.025Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
