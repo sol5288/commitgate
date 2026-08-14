@@ -1,0 +1,32 @@
+{
+  "id": "REQ-2026-147",
+  "branch": "feat/req-2026-147-hardcap-nonconvergence-report-successor",
+  "risk_level": "LOW",
+  "codex_thread_id": null,
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": false,
+  "design_approved_hash": null,
+  "current_phase": null,
+  "phases": [],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "successor_of": {
+    "req_id": "REQ-2026-144",
+    "parent_attempts_total": 7,
+    "parent_replace_resolution": {
+      "decision": "replace",
+      "method": "REQ-2026-144 대체 승인 — 설계 6라운드 비수렴으로 범위를 나눠 다시 만든다",
+      "decided_at": "2026-08-14T07:01:37.800Z",
+      "note": "설계 6라운드 비수렴 — 탈출구 개설(B)과 비수렴 보고(A) 두 가지를 한 REQ 가 하려다 계속 커졌다. B 는 REQ-2026-145 로 완료했고 A 를 대체 REQ 로 다시 만든다"
+    },
+    "recorded_at": "2026-08-14T07:01:45.688Z",
+    "parent_series_id": "design:-#1"
+  },
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  }
+}
