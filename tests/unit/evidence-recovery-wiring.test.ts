@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { buildPinnedInventory } from '../../scripts/req/lib/evidence'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { packageRoot } from '../../scripts/req/lib/config'
@@ -666,4 +667,208 @@ describe('[REQ-2026-151] 🔴 배선·계약 가드', () => {
   it('🔴 매니페스트 새 키는 선택이다 — 검증기 키 목록에 등록돼 있다', () => {
     expect(read('scripts/req/lib/evidence.ts')).toMatch(/'consumed_state_sha256',/)
   })
+})
+
+/**
+ * 🔴 REQ-2026-152 DEC-4 — **`resumeFrom: 'consume'` 실 CLI e2e.**
+ *
+ * 지금까지의 e2e 는 승인 핀이 없어(`ev === null`) 전부 checkpoint 분기로 갔고, 그 분기는
+ * `finalizeEvidenceAndConsume` 을 **아예 부르지 않는다**. 그래서 `consumedAtOfRow` 를 `new Date()` 로
+ * 되돌리는 변이가 잡히지 않았다(REQ-2026-151 이 "도달 불가일 수 있다"고 잘못 판단한 이유다).
+ *
+ * 여기서는 **핀이 살아 있고 HEAD 에 소비 행이 이미 있는** 창을 만든다 = evidence 커밋 직후·
+ * `writeState` 전에 죽은 상태. 그 경로가 `already` 분기를 지나며 `consumedAtOfRow` 를 쓴다.
+ */
+describe('[REQ-2026-152] 🔴 실 CLI e2e — resumeFrom: consume', () => {
+  const g = (repo: string) => (args: string[]): string =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+  const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
+
+  const consumeWindow = (): { repo: string; ticket: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req152c-'))
+    const git = g(repo)
+    git(['init', '-q'])
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
+    const tsx = join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs').split('\\').join('/')
+    const doctorTs = join(packageRoot(), 'scripts', 'req', 'req-doctor.ts').split('\\').join('/')
+    writeFileSync(
+      join(repo, 'package.json'),
+      JSON.stringify({ name: 'x', version: '0.0.0', scripts: { 'req:doctor': `node ${tsx} ${doctorTs}` } }),
+    )
+    mkdirSync(join(repo, 'workflow', 'REQ-2026-001', 'responses'), { recursive: true })
+    writeFileSync(
+      join(repo, 'workflow', 'machine.schema.json'),
+      readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'),
+    )
+    writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n/.doctor-runs.jsonl\n')
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+
+    // 승인 응답 아카이브 — 인벤토리가 이 바이트에 결속된다.
+    // 🔴 아카이브 이름은 `<phaseId>-rNN-approved.json` 이다(매니페스트 검증이 강제).
+    const respRel = 'workflow/REQ-2026-001/responses/phase-1-x-r01-approved.json'
+    // 🔴 D6 이 commit_allowed=true 를 **응답으로 재검증**한다 — 유효한 verdict 여야 한다.
+    const reviewBase = 'b'.repeat(40)
+    const respBody = JSON.stringify({
+      machine_schema_version: '1.1',
+      review_base_sha: reviewBase,
+      status: 'COMPLETE',
+      commit_approved: 'yes',
+      merge_ready: 'no',
+      risk_level: 'LOW',
+      review_kind: 'phase',
+      findings: [],
+      next_action: '',
+    })
+    writeFileSync(join(repo, respRel), respBody)
+    const respSha = sha256(respBody)
+    writeFileSync(join(ticket, 'codex-response.json'), respBody) // 🔴 티켓 루트다(responses/ 아님)
+    const inv = buildPinnedInventory([{ response_path: respRel, sha256: respSha }], 'phase', 'phase-1-x', respRel, sha256)
+
+    const skeleton = {
+      id: 'REQ-2026-001',
+      branch: 'feat/req-2026-001-x',
+      current_phase: 'phase-1-x',
+      phases: [{ id: 'phase-1-x', title: 'x', status: 'pending' }],
+      consumed_approvals: [],
+    }
+    writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(skeleton, null, 2)}\n`)
+    writeFileSync(join(repo, 'code.ts'), 'export const a = 1\n')
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    git(['checkout', '-qb', 'feat/req-2026-001-x'])
+    // source 커밋 — 승인 tree 가 이것이어야 한다.
+    writeFileSync(join(repo, 'code.ts'), 'export const a = 2\n')
+    git(['add', '--', 'code.ts'])
+    git(['commit', '-qm', 'feat: x'])
+    const sourceSha = git(['rev-parse', 'HEAD']).trim()
+    const sourceTree = git(['rev-parse', `${sourceSha}^{tree}`]).trim()
+
+    /**
+     * 🔴 **핀이 살아 있는** state — `consumeState` 가 아직 돌지 않았다는 뜻이고, 그래서 복구가
+     *    checkpoint 가 아니라 `consume` 으로 간다.
+     */
+    const pinned = {
+      ...skeleton,
+      commit_allowed: true,
+      approved_diff_hash: sourceTree,
+      review_base_sha: reviewBase,
+      review_diff_hash: sourceTree,
+      pending_evidence_for: { source_commit_sha: sourceSha },
+      approval_evidence: {
+        response_path: respRel,
+        response_sha256: respSha,
+        review_kind: 'phase',
+        phase_id: 'phase-1-x',
+        review_base_sha: reviewBase,
+        approved_tree: sourceTree,
+        codex_thread_id: 't',
+        machine_schema_version: '1',
+        status: 'APPROVED',
+        commit_approved: 'yes',
+        approved_at: '2026-08-14T00:00:00Z',
+        archive_inventory: inv,
+      },
+    }
+    writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(pinned, null, 2)}\n`)
+
+    // evidence-finalize 커밋: 소비 행 + 결속. state.json 은 **커밋하지 않는다**(여기서 죽었다).
+    const consumedAt = '2026-08-14T00:01:00Z'
+    const consumedState = `${JSON.stringify(
+      {
+        ...skeleton,
+        commit_allowed: false,
+        approved_diff_hash: null,
+        consumed_approvals: [
+          {
+            approved_tree: sourceTree,
+            phase_id: 'phase-1-x',
+            consumed_by_commit_sha: sourceSha,
+            approval_consumed_at: consumedAt,
+          },
+        ],
+        user_commit_confirmed: null,
+      },
+      null,
+      2,
+    )}\n`
+    writeFileSync(
+      join(ticket, 'responses', 'approvals.jsonl'),
+      `${JSON.stringify({
+        kind: 'phase',
+        phase_id: 'phase-1-x',
+        response_path: respRel,
+        response_sha256: respSha,
+        review_base_sha: reviewBase,
+        approved_tree: sourceTree,
+        approved_at: '2026-08-14T00:00:00Z',
+        consumed_at: consumedAt,
+        consumed_by_commit_sha: sourceSha,
+        user_commit_confirmed: null,
+        archive_inventory: inv.items,
+        consumed_state_sha256: sha256(consumedState),
+      })}\n`,
+    )
+    git(['add', '--', 'workflow/REQ-2026-001/responses/approvals.jsonl'])
+    git(['commit', '-qm', 'chore(REQ-2026-001): evidence-finalize'])
+    return { repo, ticket }
+  }
+
+  const finalize = (repo: string) =>
+    spawnSync(
+      process.execPath,
+      [
+        join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+        join(packageRoot(), 'scripts', 'req', 'req-commit.ts'),
+        '2026-001', '--finalize', '--run', '--root', repo,
+      ],
+      { cwd: repo, encoding: 'utf8' },
+    )
+
+  it('🔴 consume 창이 한 번에 수렴하고, 소비 시각을 HEAD 행에서 재사용한다', () => {
+    const { repo } = consumeWindow()
+    const git = g(repo)
+
+    const res = finalize(repo)
+
+    expect(res.status, `${res.stdout}${res.stderr}`).toBe(0)
+    expect(git(['status', '--porcelain']).trim()).toBe('')
+
+    /**
+     * 🔴 **이것이 `consumedAtOfRow` 의 진짜 오라클이다.** 멱등 skip 경로가 `new Date()` 를 쓰면 소비
+     *    시각이 **지금**이 되어 아래 리터럴과 달라진다. 그러면 복구가 결속과 다른 바이트를 커밋하고,
+     *    이후 모든 복구가 `state-mismatch` 로 영구 차단된다.
+     *
+     * 🔴 기대값은 **테스트 안의 리터럴**이다 — SUT 로 만들면 동어반복이 된다(이 저장소가 REQ-B 에서
+     *    실제로 저지른 실수).
+     */
+    const committed = JSON.parse(git(['show', 'HEAD:workflow/REQ-2026-001/state.json'])) as {
+      consumed_approvals: { approval_consumed_at: string }[]
+    }
+    expect(committed.consumed_approvals).toHaveLength(1)
+    expect(committed.consumed_approvals[0]!.approval_consumed_at).toBe('2026-08-14T00:01:00Z')
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
+
+  /**
+   * 🔴 이 e2e 가 발화시키는 것은 **DEC-2**(매니페스트 형식 검증)다 — `finalizeEvidenceAndConsume` 이
+   *    HEAD 매니페스트를 읽을 때 무결성 검사가 먼저 잡는다. DEC-3 의 `malformed` 분기는 승인 핀이
+   *    없는 checkpoint 창에서 발화하며, `evidence-recovery.test.ts` 가 직접 구동한다.
+   */
+  it('🔴 형식 불량 결속은 실 CLI 에서 거부된다 — 레거시로 강등되지 않는다(DEC-2 경로)', () => {
+    const { repo, ticket } = consumeWindow()
+    const git = g(repo)
+    const mf = join(ticket, 'responses', 'approvals.jsonl')
+    const row = JSON.parse(readFileSync(mf, 'utf8').trim()) as Record<string, unknown>
+    row.consumed_state_sha256 = null
+    writeFileSync(mf, `${JSON.stringify(row)}\n`)
+    git(['add', '--', 'workflow/REQ-2026-001/responses/approvals.jsonl'])
+    git(['commit', '-qm', 'chore(REQ-2026-001): tamper'])
+
+    const res = finalize(repo)
+
+    expect(res.status).not.toBe(0)
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
 })

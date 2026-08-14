@@ -4,6 +4,40 @@
 
 ## Unreleased
 
+- **fix: 종결 안내가 그 상황에서 실행되지 않던 문제** — 바로 위 항목이 낸 안내(`git stash push` →
+  `req:new` → `git stash pop`)가 **두 경우에 두 번째 줄에서 거부**됐습니다. `req:new` 는 clean tree 를
+  요구하는데 stash 가 그것을 만들어 내지 못했기 때문입니다.
+  - **일반 untracked 파일**: `--include-untracked` 를 쓰지 않아 그대로 남았습니다.
+    🔴 이전 판단(“untracked 는 브랜치 전환을 따라오니 `-u` 는 불필요”)을 **뒤집었습니다** — 유실은
+    없지만 `req:new` 가 untracked 자체를 거부한다는 점을 보지 못했습니다.
+  - **미커밋 `.gitignore`**: stash 가 **ignore 규칙 자체를 되돌려** 감춰져 있던 파일(`node_modules/` 등)이
+    드러났습니다. 이제 그런 `.gitignore` 를 먼저 커밋하는 두 줄을 **조건부로** 앞에 냅니다.
+    루트뿐 아니라 **중첩** `.gitignore` 도 대상입니다. 🔴 그 커밋은 REQ 워크플로 밖이라
+    `verify-range --strict` 에서 **미입증**으로 잡힙니다 — 통합 때 `commitgate attest` 로 사유를 남기십시오.
+  - 🔴 경로가 셸 안전하지 않으면(공백 등) **명령열 전체를 내지 않고** 목록만 보여 줍니다. 일부만
+    숨기면 남은 명령을 실행했을 때 같은 노출이 그대로 일어납니다.
+  - 두 상황 모두 **실 CLI e2e** 로 고정했습니다(안내에서 인자를 뽑아 그대로 실행합니다).
+
+  확인할 파일: `scripts/req/req-commit.ts`(`terminalReentryProblem`) · `tests/unit/terminal-reentry.test.ts`
+
+- **fix: `consumed_state_sha256` 의 형식 불량이 "결속 없음"으로 강등되던 문제** — 새 키를 허용 목록에만
+  등록하고 형식을 보지 않아, `{"consumed_state_sha256": null}` 인 행이 **레거시로 읽혀 결속 대조를
+  통째로 건너뛰었습니다.**
+  - 이제 **키의 부재만** 레거시입니다. 키가 있는데 64hex 가 아니면 `validateManifest` 와 복구 판정이
+    **둘 다** 거부합니다(대소문자는 기존 `SHA256_RE` 계약을 따릅니다 — 새 규칙을 만들지 않습니다).
+  - 조회 결과를 `absent`·`bound`·`malformed` **세 갈래 타입**으로 바꿔, 호출부가 다시 "없으면
+    건너뛴다"로 뭉갤 수 없게 했습니다.
+  - 🔴 **하위호환은 그대로입니다** — 이 변경 이전 행에는 키 자체가 없습니다.
+
+- **fix: 소비 시각 재사용 경로에 오라클이 없던 문제** — `resumeFrom: 'consume'` 창(evidence 커밋 직후·
+  소비 state 쓰기 전 중단)의 CLI 테스트가 없어, 그 경로가 소비 시각을 새로 잡아도 아무 테스트가 red
+  되지 않았습니다. 🔴 이전에 "도달 불가일 수 있다"고 적은 판단은 **틀렸습니다** — 승인 핀이 살아 있어
+  checkpoint 분기를 지나지 않고 이 경로로 옵니다. 이제 승인 핀·인벤토리·approved tree 를 갖춘 실 CLI
+  e2e 가 그 창을 돌고, 시각을 새로 잡는 변이가 red 입니다.
+
+  확인할 파일: `scripts/req/lib/evidence.ts` · `scripts/req/lib/evidence-recovery.ts` ·
+  `tests/unit/evidence-recovery.test.ts` · `tests/unit/evidence-recovery-wiring.test.ts`
+
 - **fix: 완료된 티켓에 새 phase 를 커밋하면 되돌릴 수 없는 교착으로 끝나던 문제** — `dev-complete`
   티켓에서 `req:commit --run` 을 하면 **source 커밋을 먼저 만들고** 그 뒤 종결 증거 충돌로 실패했고,
   그때 `approvals.jsonl` 이 더러워져 이후 모든 `req:commit`·`--finalize` 가 D10 에 막혔습니다.
