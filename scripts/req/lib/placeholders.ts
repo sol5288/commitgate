@@ -59,7 +59,8 @@ export function isReservedPlaceholder(v: string): boolean {
  *    받는 쪽마다 따로 쓰면 한 곳이 빠진다 — 이 REQ 가 실제로 세 번 겪은 일이다.
  */
 export function humanDecisionProblem(flag: string, v: string | null | undefined): string | null {
-  if (typeof v !== 'string' || v.trim() === '') return `${flag} 가 비어 있습니다 — 무엇을 근거로 결정했는지가 기록의 내용입니다.`
+  if (typeof v !== 'string' || v.trim() === '')
+    return `${flag} 가 비어 있습니다 — 무엇을 근거로 결정했는지(사유·승인 문장)가 기록의 내용입니다.`
   if (isReservedPlaceholder(v))
     return (
       `${flag} 값이 도구가 안내에 넣은 **자리표시자**입니다(${JSON.stringify(v.trim())}).\n` +
