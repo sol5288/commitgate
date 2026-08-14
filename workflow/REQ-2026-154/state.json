@@ -2,19 +2,20 @@
   "id": "REQ-2026-154",
   "branch": "feat/req-2026-154-req-2026-154-binding-and-path-fidelity",
   "risk_level": "LOW",
-  "codex_thread_id": "01a0010f-1cc1-7071-93a5-f07f72492259",
-  "review_base_sha": "cf31e9868f76bdba3ccf6b5f17ab0baa4c4cffb0",
-  "review_diff_hash": "b9292918fed9dd7a0f78cba61e0de94e05292b37",
+  "codex_thread_id": "01a00114-51d7-73a2-8fd4-8e525ee6eb56",
+  "review_base_sha": "45e6fc818ab0850742f6b9679ff22add4b715ca0",
+  "review_diff_hash": "0d08251b8bb1da4e39abb1019a6bf72d2dce0ae6",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "103c84c4f4b57452184fac6a8ce764e4427a1ef6791bceebfb631dbbf4d2f999",
-  "current_phase": null,
+  "current_phase": "phase-1-consume-binding",
   "phases": [
     {
       "id": "phase-1-consume-binding",
       "title": "consume 결속",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     },
     {
       "id": "phase-2-gitignore-relaxation",
@@ -52,8 +53,9 @@
       "series_id": "phase:phase-1-consume-binding#1",
       "review_kind": "phase",
       "phase_id": "phase-1-consume-binding",
-      "attempts": 1,
-      "closed_reason": null
+      "attempts": 3,
+      "closed_reason": "approved",
+      "void_attempts": 1
     },
     {
       "series_id": "design:-#3",
@@ -64,13 +66,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-consume-binding",
     "outcome": "approved",
-    "compare_hash": "998c907a10a028d460864b885bbea80372660a31830e66bc6d32da61257fd7a3",
-    "count": 1,
+    "compare_hash": "6712c311d5d676061a3c4643b69df3fe94f10ca4f6a3a4660df7157253409106",
+    "count": 2,
     "errors": [],
-    "at": "2026-08-14T16:17:29.603Z",
+    "at": "2026-08-14T16:23:40.323Z",
     "findings": [],
     "elided_count": 0
   },
@@ -119,5 +121,14 @@
       "source_response_path": "workflow/REQ-2026-154/responses/design-r05-approved.json"
     },
     "design_hash": "103c84c4f4b57452184fac6a8ce764e4427a1ef6791bceebfb631dbbf4d2f999"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "0d08251b8bb1da4e39abb1019a6bf72d2dce0ae6",
+      "phase_id": "phase-1-consume-binding",
+      "consumed_by_commit_sha": "71b5ec344f223b0399924f2cff0b72c307d4ee3c",
+      "approval_consumed_at": "2026-08-14T16:23:52.931Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
