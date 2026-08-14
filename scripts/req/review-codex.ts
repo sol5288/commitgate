@@ -1274,6 +1274,33 @@ export function isValidHumanResolution(r: unknown): r is HumanResolution {
  * `closed_reason='human-resolution'`+`human_resolution`으로 닫는다. 열린 게 없으면 throw(종결 대상이 없음).
  * resolution 형식이 무효면 throw(fail-closed).
  */
+/**
+ * 사람 종결로 series 닫기 — **지정한 `series_id` 만**(REQ-2026-149 DEC-5).
+ *
+ * 🔴 `closeSeriesHumanResolution` 은 `(kind, phaseId)` 의 **첫 열린 record** 를 닫는다. 같은 키에
+ *    열린 series 가 둘이면 **사용자가 지정하지 않은 것이 닫히고**, CLI 는 지정한 것을 닫았다고
+ *    보고한다. 이후 successor lineage 도 엉뚱한 series 에서 만들어진다.
+ *
+ * 🔴 조용한 첫 항목 선택을 하지 않는다 — 없거나 이미 닫혔으면 **명시적으로 throw** 한다.
+ */
+export function closeSeriesHumanResolutionById(
+  state: WorkflowState,
+  seriesId: string,
+  resolution: HumanResolution,
+): WorkflowState {
+  if (!isValidHumanResolution(resolution)) throw new Error('human_resolution 형식 무효(decision·method·decided_at)')
+  const series = readSeries(state)
+  const idx = series.findIndex((r) => r.series_id === seriesId)
+  if (idx < 0) throw new Error(`human-resolution 종결 대상이 없다: series_id=${seriesId}`)
+  const target = series[idx]!
+  if (target.closed_reason !== null)
+    throw new Error(`human-resolution 종결 대상이 이미 닫혔다: series_id=${seriesId} (${String(target.closed_reason)})`)
+  const next = series.map((r, i) =>
+    i === idx ? { ...r, closed_reason: 'human-resolution' as const, human_resolution: resolution } : r,
+  )
+  return { ...state, review_series: next }
+}
+
 export function closeSeriesHumanResolution(
   state: WorkflowState,
   kind: ReviewKind,

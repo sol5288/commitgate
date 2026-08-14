@@ -186,7 +186,10 @@ export function nextChoices(input: NonConvergenceInput): { pre: CommandLine[]; a
     if (needsPark)
       replace.push(
         { kind: 'shell', text: `git add -- ${quoteArg(input.ticketRel)}` },
-        { kind: 'shell', text: `git commit -m "chore(${id}): 설계 파킹"` },
+        // 🔴 REQ-2026-149 DEC-2: **pathspec 이 필수다.** `git add -- <티켓>` 만으로는 부족하다 —
+        //    이미 staged 인 **티켓 밖** 파일은 인덱스에 그대로 있고 pathspec 없는 `git commit` 이
+        //    전부 싣는다. `git add -A` 를 피한 것이 소용없어지고 비밀 파일이 딸려 들어간다.
+        { kind: 'shell', text: `git commit -m "chore(${id}): 설계 파킹" -- ${quoteArg(input.ticketRel)}` },
       )
     replace.push({ kind: 'commitgate', text: `npx commitgate req:new ${input.successorSlug} --successor-of ${id} --run` })
   } else {

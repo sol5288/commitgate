@@ -31,7 +31,7 @@ import {
   budgetCounts,
   checkReviewBudget,
   isSeriesKeyTerminal,
-  closeSeriesHumanResolution,
+  closeSeriesHumanResolutionById,
   type WorkflowState,
   type ReviewKind,
   type ReviewExceptionConfirmed,
@@ -461,7 +461,7 @@ function runResolve(o: Opts): void {
   }
 
   // 🔴 `decided_at` 은 **실제 시계**다. 지어내지 않는다(REQ-2026-019 가 타임스탬프 날조로 폐기됐다).
-  const next = closeSeriesHumanResolution(state, plan.kind, plan.phaseId, {
+  const next = closeSeriesHumanResolutionById(state, plan.seriesId, {
     decision: 'replace',
     method: (o.confirm as string).trim(), // 받은 승인 문장 그대로
     decided_at: new Date().toISOString(),
@@ -496,7 +496,8 @@ function runResolve(o: Opts): void {
     if (allShellSafe(ticketRel)) {
       console.log('   먼저 정리하십시오(티켓만 담는 파킹 커밋):')
       console.log(`     git add -- ${quoteArg(ticketRel)}`)
-      console.log(`     git commit -m "chore(${reqId}): 설계 파킹 — 대체 REQ 로 이어감"`)
+      // 🔴 pathspec 이 필수다 — 이미 staged 인 티켓 밖 파일이 이 커밋에 실리면 안 된다.
+      console.log(`     git commit -m "chore(${reqId}): 설계 파킹 — 대체 REQ 로 이어감" -- ${quoteArg(ticketRel)}`)
     } else {
       console.log(`   먼저 ${ticketRel} 만 담는 파킹 커밋을 만드십시오(경로에 셸 특수문자가 있어 명령을 만들지 않았습니다).`)
     }
