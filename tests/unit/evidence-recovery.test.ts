@@ -11,6 +11,8 @@ import {
   RECOVERY_BLOCKED_REASONS,
   RECOVERY_GUIDANCE,
   type RecoveryFacts,
+  consumedKeysAddedByHead,
+  consumedKeysInState,
 } from '../../scripts/req/lib/evidence-recovery'
 import { buildPinnedInventory, canonicalInventoryForm } from '../../scripts/req/lib/evidence'
 import type { ApprovalEvidence, PinnedInventoryItem } from '../../scripts/req/lib/review-types'
@@ -68,6 +70,8 @@ const facts = (over: Partial<RecoveryFacts> = {}): RecoveryFacts => ({
   approvalEvidence: EV,
   source: { sha: SRC, tree: TREE },
   headManifest: '',
+  parentManifest: '',
+  headStateText: null,
   dirtyPaths: [R02, `${T}/responses/approvals.jsonl`],
   archiveSha: (p) => ITEMS.find((i) => i.response_path === p)?.sha256 ?? null,
   hashUtf8,
@@ -255,5 +259,77 @@ describe('허용 목록의 모양', () => {
     if (p.kind !== 'ready') return
     expect(p.allowlist).toContain(R01)
     expect(canonicalInventoryForm(ITEMS)).toBe(canonicalInventoryForm([...ITEMS].reverse()))
+  })
+})
+
+describe('[REQ-2026-150] 🔴 checkpoint 복구는 "이 소비의 증거"를 요구한다', () => {
+  const T2 = 'workflow/REQ-2026-142'
+  const stateRel = `${T2}/state.json`
+  const consumed = (sha = SRC, phase = 'phase-1-x') =>
+    JSON.stringify({ consumed_approvals: [{ consumed_by_commit_sha: sha, phase_id: phase, approval_consumed_at: '2026-08-14T00:01:00Z' }] })
+  const cp = (over: Partial<RecoveryFacts> = {}) =>
+    planEvidenceRecovery(facts({ approvalEvidence: null, commitAllowed: false, dirtyPaths: [stateRel], ...over }))
+
+  it('🔴 정상 crash window — HEAD 가 방금 추가한 소비 행 + HEAD state 미기록 → Ready', () => {
+    const p = cp({ headManifest: manifestLine(), parentManifest: '', headStateText: null })
+    expect(p.kind).toBe('ready')
+    if (p.kind === 'ready') expect(p.resumeFrom).toBe('checkpoint')
+  })
+
+  it('🔴 완료된 티켓 — HEAD^ 에도 같은 행이 있으면 거부(HEAD 가 추가한 것이 아니다)', () => {
+    const p = cp({ headManifest: manifestLine(), parentManifest: manifestLine(), headStateText: consumed() })
+    expect(p.kind === 'blocked' && p.reason).toBe('not-a-recovery')
+    if (p.kind === 'blocked') expect(p.detail).toContain('evidence-finalize')
+  })
+
+  it('🔴 `approval_consumed_at` 만 변조해도 거부 — 시각은 동일성 키가 아니다', () => {
+    const tampered = JSON.stringify({
+      consumed_approvals: [{ consumed_by_commit_sha: SRC, phase_id: 'phase-1-x', approval_consumed_at: '2099-01-01T00:00:00Z' }],
+    })
+    const p = cp({ headManifest: manifestLine(), parentManifest: manifestLine(), headStateText: tampered })
+    expect(p.kind === 'blocked' && p.reason).toBe('not-a-recovery')
+  })
+
+  it('🔴 legacy 티켓 — HEAD state 에 consumed_approvals 가 없어도 A 가 막는다', () => {
+    // 옛 행만 있고 HEAD 가 추가한 것이 없다.
+    const p = cp({ headManifest: manifestLine(), parentManifest: manifestLine(), headStateText: '{}' })
+    expect(p.kind === 'blocked' && p.reason).toBe('not-a-recovery')
+  })
+
+  it('🔴 첫 phase 의 첫 소비는 통과한다(consumed_approvals 부재 = 빈 배열)', () => {
+    const p = cp({ headManifest: manifestLine(), parentManifest: '', headStateText: '{"id":"REQ-2026-142"}' })
+    expect(p.kind).toBe('ready')
+  })
+
+  it('HEAD state 에 이미 기록됐으면 거부(checkpoint 는 끝났다)', () => {
+    const p = cp({ headManifest: manifestLine(), parentManifest: '', headStateText: consumed() })
+    expect(p.kind === 'blocked' && p.reason).toBe('not-a-recovery')
+    if (p.kind === 'blocked') expect(p.detail).toContain('이미 기록')
+  })
+
+  it('파손된 HEAD state 는 "기록 없음"으로 보고 A 가 판정의 무게를 진다', () => {
+    expect(cp({ headManifest: manifestLine(), parentManifest: '', headStateText: '{ not json' }).kind).toBe('ready')
+    expect(cp({ headManifest: manifestLine(), parentManifest: manifestLine(), headStateText: '{ not json' }).kind).toBe('blocked')
+  })
+})
+
+describe('[REQ-2026-150] 판별자 헬퍼', () => {
+  it('consumedKeysAddedByHead — HEAD 가 추가한 것만', () => {
+    const a = JSON.stringify({ kind: 'phase', phase_id: 'p1', consumed_by_commit_sha: 'aaa' })
+    const b = JSON.stringify({ kind: 'phase', phase_id: 'p2', consumed_by_commit_sha: 'bbb' })
+    expect(consumedKeysAddedByHead(`${a}\n${b}\n`, `${a}\n`)).toEqual(['bbb#p2'])
+    expect(consumedKeysAddedByHead(`${a}\n`, `${a}\n`)).toEqual([])
+  })
+
+  it('🔴 동일성 키에 시각이 없다', () => {
+    const mk = (at: string) => JSON.stringify({ phase_id: 'p1', consumed_by_commit_sha: 'aaa', approval_consumed_at: at })
+    expect(consumedKeysAddedByHead(`${mk('A')}\n`, `${mk('B')}\n`)).toEqual([])
+  })
+
+  it('consumedKeysInState — 부재·파손을 빈 배열로', () => {
+    expect(consumedKeysInState(null)).toEqual([])
+    expect(consumedKeysInState('{}')).toEqual([])
+    expect(consumedKeysInState('{ bad')).toEqual([])
+    expect(consumedKeysInState(JSON.stringify({ consumed_approvals: [{ consumed_by_commit_sha: 'x', phase_id: 'p' }] }))).toEqual(['x#p'])
   })
 })

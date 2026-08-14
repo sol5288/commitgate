@@ -88,6 +88,15 @@ export interface RecoveryFacts {
   source: { sha: string; tree: string } | null
   /** **HEAD 의** `approvals.jsonl` 내용(없으면 빈 문자열). 🔴 워킹 파일이 아니다(DEC-3a). */
   headManifest: string
+  /**
+   * 🔴 REQ-2026-150: **`HEAD^` 의** `approvals.jsonl`(없거나 부모가 없으면 빈 문자열).
+   *
+   * checkpoint 복구의 판별자 A — "HEAD 가 그 소비 행을 **방금 추가했는가**". 이것이 없으면
+   * 완료된 티켓의 옛 승인 행으로도 복구가 열린다(외부 리뷰 결함 3).
+   */
+  parentManifest: string
+  /** 🔴 **HEAD 의** `state.json` 텍스트(없으면 null). 워킹 state 는 판정 입력이 **아니다**. */
+  headStateText: string | null
   /** 작업 트리에서 더러운(staged·unstaged·untracked) repo-상대 경로 전부. */
   dirtyPaths: readonly string[]
   /** repo-상대 경로 → 현재 파일 바이트의 sha256(hex). 파일이 없으면 null. */
@@ -112,6 +121,8 @@ export interface RecoveryIo {
   }
   /** HEAD 의 blob 텍스트(없으면 null). */
   headText: (repoRelPath: string) => string | null
+  /** 🔴 `HEAD^` 의 blob 텍스트(없거나 부모가 없으면 null) — 판별자 A(REQ-2026-150). */
+  parentText: (repoRelPath: string) => string | null
   /** 작업 트리에서 더러운 repo-상대 경로 전부(rename 은 src·dest 둘 다). */
   dirtyPaths: () => string[]
   /** `git rev-parse <rev>` — 실패하면 null. */
@@ -137,6 +148,8 @@ export function buildRecoveryFacts(io: RecoveryIo): RecoveryFacts {
     approvalEvidence: (io.state.approval_evidence as ApprovalEvidence | undefined) ?? null,
     source: sha && tree ? { sha, tree } : null,
     headManifest: io.headText(`${ticketRel}/responses/approvals.jsonl`) ?? '',
+    parentManifest: io.parentText(`${ticketRel}/responses/approvals.jsonl`) ?? '',
+    headStateText: io.headText(`${ticketRel}/state.json`),
     dirtyPaths: io.dirtyPaths(),
     archiveSha: io.fileSha,
     hashUtf8: io.hashUtf8,
@@ -191,6 +204,50 @@ export function executeEvidenceRecovery(
 
 const norm = (p: string): string => p.replace(/\\/g, '/')
 
+/**
+ * 소비 행의 동일성 키 — `(consumed_by_commit_sha, phase_id)`.
+ *
+ * 🔴 **시각을 넣지 않는다**(REQ-2026-148 r03). `approval_consumed_at` 을 키에 넣으면 그 필드 하나만
+ *    바꿔도 "새 소비"로 보여 판정이 뒤집힌다. 변조 가능한 값을 동일성 키로 쓰지 않는다.
+ */
+function consumedKey(e: { consumed_by_commit_sha?: unknown; phase_id?: unknown }): string | null {
+  const sha = typeof e.consumed_by_commit_sha === 'string' && e.consumed_by_commit_sha ? e.consumed_by_commit_sha : null
+  return sha === null ? null : `${sha}#${typeof e.phase_id === 'string' ? e.phase_id : ''}`
+}
+
+/** 두 매니페스트를 대조해 **HEAD 가 추가한** 소비 키를 낸다(판별자 A). */
+export function consumedKeysAddedByHead(headManifest: string, parentManifest: string): string[] {
+  const keysOf = (content: string): Set<string> => {
+    const out = new Set<string>()
+    for (const e of parseManifestEntries(content)) {
+      const k = consumedKey(e as { consumed_by_commit_sha?: unknown; phase_id?: unknown })
+      if (k) out.add(k)
+    }
+    return out
+  }
+  const parent = keysOf(parentManifest)
+  return [...keysOf(headManifest)].filter((k) => !parent.has(k)).sort()
+}
+
+/**
+ * HEAD `state.json` 이 기록한 소비 키(판별자 B).
+ *
+ * 🔴 **키 부재를 빈 배열로 본다** — 새 티켓의 첫 소비에는 `consumed_approvals` 가 아예 없다.
+ *    legacy 티켓이 이것만으로 통과하지 않는 이유는 **A 가 따로 막기 때문**이다(REQ-2026-148 r06).
+ */
+export function consumedKeysInState(stateText: string | null): string[] {
+  if (stateText === null || stateText.trim() === '') return []
+  try {
+    const raw = (JSON.parse(stateText) as { consumed_approvals?: unknown }).consumed_approvals
+    if (!Array.isArray(raw)) return []
+    return raw
+      .map((e) => (e && typeof e === 'object' ? consumedKey(e as Record<string, unknown>) : null))
+      .filter((k): k is string => k !== null)
+  } catch {
+    return [] // 파손된 state 는 "기록 없음"으로 본다 — A 가 판정의 무게를 진다.
+  }
+}
+
 /** 매니페스트에서 이 승인 identity 의 행이 담고 있는 인벤토리(없으면 null). */
 function headRowInventory(headManifest: string, ev: ApprovalEvidence): ArchiveInventoryItem[] | null {
   for (const e of parseManifestEntries(headManifest)) {
@@ -225,11 +282,37 @@ export function planEvidenceRecovery(facts: RecoveryFacts): RecoveryPlan {
     if (!dirty.length) return { kind: 'blocked', reason: 'not-a-recovery', detail: '복구할 변경이 없습니다(이미 완료)' }
     if (!facts.headManifest.trim())
       return { kind: 'blocked', reason: 'not-a-recovery', detail: 'HEAD 에 커밋된 승인 증거가 없습니다 — 소비 후 상태가 아닙니다' }
+    /**
+     * 🔴 REQ-2026-150 DEC-1: "매니페스트가 비어 있지 않다"는 **너무 약하다** — 완료된 티켓에는 옛
+     *    승인 행이 당연히 있으므로 `state.json` 의 아무 필드나 고쳐도 복구로 오판됐다(외부 리뷰 결함 3).
+     *
+     * 판별자 A: **HEAD 가 그 소비 행을 방금 추가했는가**(`HEAD` 에 있고 `HEAD^` 에 없다).
+     *   위조하려면 **커밋해야** 하고, 커밋이 곧 이 게이트가 통제하는 대상이다.
+     * 판별자 B: HEAD `state.json` 의 `consumed_approvals` 에 그 행이 **없다**(checkpoint 미도래).
+     *
+     * 🔴 기각된 판별자(REQ-2026-148 8라운드): 워킹 state 대비 비교(위조 가능) · HEAD 의
+     *    `commit_allowed=true`(HEAD 에 그 상태가 없다) · 키에 시각 포함(변조 가능).
+     */
+    const added = consumedKeysAddedByHead(facts.headManifest, facts.parentManifest)
+    if (added.length === 0)
+      return {
+        kind: 'blocked',
+        reason: 'not-a-recovery',
+        detail: 'HEAD 가 소비 행을 추가한 evidence-finalize 커밋이 아닙니다 — 복구할 checkpoint 창이 아닙니다',
+      }
+    const recorded = new Set(consumedKeysInState(facts.headStateText))
+    const pending = added.filter((k) => !recorded.has(k))
+    if (pending.length === 0)
+      return {
+        kind: 'blocked',
+        reason: 'not-a-recovery',
+        detail: 'HEAD state 에 그 소비가 이미 기록돼 있습니다 — checkpoint 는 끝났습니다',
+      }
     return {
       kind: 'ready',
       resumeFrom: 'checkpoint',
       allowlist: [stateRel],
-      detail: '증거는 HEAD 에 있고 소비 state 만 미커밋 — checkpoint 만 재개',
+      detail: `증거는 HEAD 에 있고 소비 state 만 미커밋 — checkpoint 만 재개(${pending.join(', ')})`,
     }
   }
 
