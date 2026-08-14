@@ -2,19 +2,20 @@
   "id": "REQ-2026-149",
   "branch": "feat/req-2026-149-guidance-safety-and-attribution-successor",
   "risk_level": "LOW",
-  "codex_thread_id": "019fffa1-4709-7772-ab38-52c0f65ee65c",
-  "review_base_sha": "76c2394bd7db13bf44db4317f171fffaa7133ec0",
-  "review_diff_hash": "a644592596ce19c3c37b9286dacc3773d213d86a",
+  "codex_thread_id": "019fffae-6a37-7352-9872-6b1ee903cb5a",
+  "review_base_sha": "17321c44bef9f5c40cd4b4e7aafa5843781adbf0",
+  "review_diff_hash": "ffd316ec0743334893896aa5294c7540a393d6a8",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "e8dc65715d97d540eb2825d6dc6aa09d56de470850e80d481e019ea806164586",
-  "current_phase": null,
+  "current_phase": "phase-1-placeholder-and-shell-safe",
   "phases": [
     {
       "id": "phase-1-placeholder-and-shell-safe",
       "title": "예약 placeholder + 셸 안전",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     },
     {
       "id": "phase-2-pathspec-and-series-binding",
@@ -52,8 +53,8 @@
       "series_id": "phase:phase-1-placeholder-and-shell-safe#1",
       "review_kind": "phase",
       "phase_id": "phase-1-placeholder-and-shell-safe",
-      "attempts": 1,
-      "closed_reason": null
+      "attempts": 5,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#2",
@@ -64,13 +65,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-placeholder-and-shell-safe",
     "outcome": "approved",
-    "compare_hash": "00bc1054abc40c5e05a2c9fda26197d19e6ab65f07bebb200635240d10cd7d3b",
+    "compare_hash": "00e6d6a5a0bef2bf4f9a9aacdfd72decefc7d354420070e11f2932253ba48013",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T09:37:31.951Z",
+    "at": "2026-08-14T09:54:33.211Z",
     "findings": [],
     "elided_count": 0
   },
@@ -111,5 +112,14 @@
       "source_response_path": "workflow/REQ-2026-149/responses/design-r03-approved.json"
     },
     "design_hash": "e8dc65715d97d540eb2825d6dc6aa09d56de470850e80d481e019ea806164586"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "ffd316ec0743334893896aa5294c7540a393d6a8",
+      "phase_id": "phase-1-placeholder-and-shell-safe",
+      "consumed_by_commit_sha": "16e91235aeae8a7297f1cc230187d50e2180cd3c",
+      "approval_consumed_at": "2026-08-14T09:55:06.193Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
