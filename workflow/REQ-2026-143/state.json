@@ -2,13 +2,13 @@
   "id": "REQ-2026-143",
   "branch": "feat/req-2026-143-req-142-errata-and-auto-dogfood",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "019ffdb9-b1bf-7f52-bc0b-8a9c19804be9",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "88158f1afa8fec1e83f209363ec212f32c069c7654a18e000a77110f3b445149",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,59 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "merge"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "b4f6dfa789261dbb7069af0b53efca474fe6844a3268c31f226261bbb235b7ee",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T00:45:15.189Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "9a7223277f9edefa04674d26fd1235fad11e79f6",
+    "design": "cfa282cfa5519c961e138ebb0296202833b5a8e4",
+    "plan": "4b944af36734bb3a678d87caad73e0d9eeedd3d3"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-143/responses/design-r02-approved.json",
+    "response_sha256": "5a0197bf562383550315a8b4c185bb49e9e1530cfc7e77ed4df3dcde1209c45a",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "aa837c57947daf863b759898641ec9497c8d07a9",
+    "codex_thread_id": "019ffdb9-b1bf-7f52-bc0b-8a9c19804be9",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T00:45:15.189Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-143/responses/design-r01-needs-fix.json",
+          "sha256": "ff8f6c4cd37bed58ddc11e468a2c991a256a700acb0fd40ff7dc69d92e46db3b"
+        },
+        {
+          "response_path": "workflow/REQ-2026-143/responses/design-r02-approved.json",
+          "sha256": "5a0197bf562383550315a8b4c185bb49e9e1530cfc7e77ed4df3dcde1209c45a"
+        }
+      ],
+      "inventory_sha256": "b593a0966fd01d4901bf3a47e834b41f19cf51091869a6619cc7ae7742c09837",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-143/responses/design-r02-approved.json"
+    },
+    "design_hash": "88158f1afa8fec1e83f209363ec212f32c069c7654a18e000a77110f3b445149"
   }
 }
