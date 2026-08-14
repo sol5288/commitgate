@@ -1,0 +1,32 @@
+{
+  "id": "REQ-2026-149",
+  "branch": "feat/req-2026-149-guidance-safety-and-attribution-successor",
+  "risk_level": "LOW",
+  "codex_thread_id": null,
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": false,
+  "design_approved_hash": null,
+  "current_phase": null,
+  "phases": [],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "successor_of": {
+    "req_id": "REQ-2026-148",
+    "parent_attempts_total": 8,
+    "parent_replace_resolution": {
+      "decision": "replace",
+      "method": "REQ-2026-148 대체 승인 — 설계 8라운드 예산 소진, 완성된 설계를 새 티켓으로 이어간다",
+      "decided_at": "2026-08-14T08:59:45.969Z",
+      "note": "설계 8라운드 예산 소진 — r02~r05 P1 이 전부 DEC-3(checkpoint 귀속) 하나에서 나와 이미 분리했고, r07 의 마지막 P1(req:confirm --method)까지 문서에 반영을 마쳤다. 완성된 설계를 새 예산의 티켓으로 이어간다"
+    },
+    "recorded_at": "2026-08-14T09:00:17.458Z",
+    "parent_series_id": "design:-#1"
+  },
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  }
+}
