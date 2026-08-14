@@ -2,19 +2,20 @@
   "id": "REQ-2026-143",
   "branch": "feat/req-2026-143-req-142-errata-and-auto-dogfood",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffdb9-b1bf-7f52-bc0b-8a9c19804be9",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019ffddf-660d-7863-ba35-6ac1432f8a19",
+  "review_base_sha": "e893882cb15f29efab1043670f12e540c051c20a",
+  "review_diff_hash": "324a6bd96d20f0cfd12b5fe8c89b7e242f9c59fe",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "88158f1afa8fec1e83f209363ec212f32c069c7654a18e000a77110f3b445149",
-  "current_phase": null,
+  "current_phase": "phase-1-errata-and-auto",
   "phases": [
     {
       "id": "phase-1-errata-and-auto",
       "title": "REQ-142 정오표 + stopGate auto 전환",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -37,16 +38,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-errata-and-auto#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-errata-and-auto",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-errata-and-auto",
     "outcome": "approved",
-    "compare_hash": "b4f6dfa789261dbb7069af0b53efca474fe6844a3268c31f226261bbb235b7ee",
+    "compare_hash": "f8dc7e054eea4a7d3c2f1862c158a6202e12ed4a5d95277eb6cc8765d7699136",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T00:45:15.189Z",
+    "at": "2026-08-14T01:27:33.774Z",
     "findings": [],
     "elided_count": 0
   },
@@ -83,5 +91,14 @@
       "source_response_path": "workflow/REQ-2026-143/responses/design-r02-approved.json"
     },
     "design_hash": "88158f1afa8fec1e83f209363ec212f32c069c7654a18e000a77110f3b445149"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "324a6bd96d20f0cfd12b5fe8c89b7e242f9c59fe",
+      "phase_id": "phase-1-errata-and-auto",
+      "consumed_by_commit_sha": "ba16f77f9a1a80f0e1da700e2b86b69ea4bc3c49",
+      "approval_consumed_at": "2026-08-14T01:28:07.998Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
