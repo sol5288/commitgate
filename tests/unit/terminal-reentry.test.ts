@@ -167,7 +167,7 @@ describe('[REQ-2026-152] 🔴 배선 가드 — 호출부가 사실을 실제로
   const src = readFileSync(join(process.cwd(), 'scripts/req/req-commit.ts'), 'utf8')
 
   it('terminalReentryProblem 이 3번째 인자를 받는다(계산만 하고 안 넘기는 끊김 방지)', () => {
-    expect(src).toMatch(/terminalReentryProblem\(String\(state\.id \?\? ''\), baseState, dirtyGitignores\)/)
+    expect(src).toMatch(/terminalReentryProblem\(String\(state\.id \?\? ''\), baseState, dirtyGitignores, narrowing\)/)
   })
 
   it('🔴 목록이 모든 깊이의 .gitignore 를 본다 — 루트만 보면 중첩을 놓친다', () => {
@@ -186,7 +186,7 @@ describe('[REQ-2026-151] 🔴 실 CLI e2e — 차단이 source 커밋 前에 일
     execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
 
   /** 종결(abandoned) 티켓 + staged 코드 변경. */
-  const terminalTicket = (): { repo: string } => {
+  const terminalTicket = (opts: { gitignore?: string } = {}): { repo: string } => {
     const repo = mkdtempSync(join(tmpdir(), 'req151-'))
     const git = gitOf(repo)
     git(['init', '-q'])
@@ -234,6 +234,8 @@ describe('[REQ-2026-151] 🔴 실 CLI e2e — 차단이 source 커밋 前에 일
       })}\n`,
     )
     writeFileSync(join(repo, 'code.ts'), 'export const a = 1\n')
+    // 🔴 REQ-2026-154: HEAD 에 루트 `.gitignore` 를 둘 수 있다(완화 판정의 기준선).
+    if (opts.gitignore !== undefined) writeFileSync(join(repo, '.gitignore'), opts.gitignore)
     git(['add', '-A'])
     git(['commit', '-qm', 'baseline'])
     git(['checkout', '-qb', 'feat/req-2026-001-x'])
@@ -364,4 +366,48 @@ describe('[REQ-2026-151] 🔴 실 CLI e2e — 차단이 source 커밋 前에 일
       rmSync(repo, { recursive: true, force: true })
     }, 90_000)
   }
+
+  /**
+   * 🔴 REQ-2026-154 DEC-3 — ignore 범위가 **좁아질 수 있는** 변경에는 자동 명령을 내지 않는다.
+   *
+   * REQ-2026-152 의 안내는 종류를 구분하지 않아, 완화를 커밋시켜 새 티켓 브랜치에 영구히 남겼다
+   * (실측: pop 뒤 `?? node_modules/` 가 남아 다음 리뷰가 D10 에서 막힌다).
+   */
+  for (const [label, headIgnore, workIgnore] of [
+    ['규칙 삭제', 'node_modules/\n', '\n'],
+    ['파일 삭제', 'node_modules/\n', null],
+    ['`!` 삽입', '*.log\n', '*.log\n!keep.log\n'],
+    // 🔴 줄 집합은 같고 **순서만** 뒤집혔다 — 집합 비교로는 못 잡는다(설계 r02 P1).
+    ['순서 재배치', '!keep.log\n*.log\n', '*.log\n!keep.log\n'],
+  ] as [string, string, string | null][]) {
+    it(`🔴 ${label} 은 자동 명령을 내지 않고 사람에게 넘긴다`, () => {
+      const { repo } = terminalTicket({ gitignore: headIgnore })
+      const git = gitOf(repo)
+      if (workIgnore === null) rmSync(join(repo, '.gitignore'))
+      else writeFileSync(join(repo, '.gitignore'), workIgnore)
+
+      const res = runCommit(repo)
+      const msg = `${res.stdout}${res.stderr}`
+
+      expect(res.status).not.toBe(0)
+      expect(msg).toContain('ignore 범위를 **좁힐 수 있습니다**')
+      expect(msg).toContain('.gitignore')
+      expect(msg).toContain('직접')
+      // 🔴 명령열 **전체**를 내지 않는다 — 남은 셋만 실행해도 같은 노출이 일어난다.
+      for (const line of msg.split('\n')) expect(line.trim(), line).not.toMatch(/^(git|npx|npm|pnpm|yarn)\s/)
+      expect(msg).toContain('아무것도 쓰지 않았습니다')
+      // 🔴 그리고 실제로 아무것도 쓰지 않았다.
+      expect(git(['status', '--porcelain']).trim()).not.toBe('')
+      rmSync(repo, { recursive: true, force: true })
+    }, 60_000)
+  }
+
+  it('🔴 비-부정 줄만 추가하면 종전대로 자동 명령을 낸다(무회귀)', () => {
+    const { repo } = terminalTicket({ gitignore: '*.log\n' })
+    writeFileSync(join(repo, '.gitignore'), '*.log\nnode_modules/\n')
+    const msg = `${runCommit(repo).stdout}${runCommit(repo).stderr}`
+    expect(msg).toContain('git add -- ".gitignore"')
+    expect(msg).toContain('git stash push --include-untracked')
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
 })

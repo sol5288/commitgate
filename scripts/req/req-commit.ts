@@ -33,6 +33,7 @@ import { bookkeepingMessage } from './lib/bookkeeping'
 // REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { allShellSafe, quoteArg } from './lib/shell-safe'
+import { narrowingPaths } from './lib/gitignore-coverage'
 import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { scanTicketIntake } from './lib/intake'
 import { PLACEHOLDER_APPROVAL_ANGLED } from './lib/placeholders'
@@ -508,10 +509,36 @@ export function terminalReentryProblem(
   reqId: string,
   baseState: string | null,
   dirtyGitignores: readonly string[] = [],
+  narrowing: readonly string[] = [],
 ): string | null {
   // 🔴 `series-terminal` 은 차단하지 않는다 — series 종결이지 티켓 완료가 아니고, 대체 REQ 흐름이 그 상태를 지난다.
   if (baseState !== 'dev-complete' && baseState !== 'migrated-complete' && baseState !== 'abandoned') return null
   const slug = `${reqId.toLowerCase()}-followup`
+  /**
+   * 🔴 REQ-2026-154 DEC-3: ignore 범위가 **좁아질 수 있으면** 자동 명령을 내지 않는다.
+   *
+   * REQ-2026-152 의 안내는 미커밋 `.gitignore` 를 종류 구분 없이 먼저 커밋하게 했다. 규칙을
+   * **삭제·완화**하는 변경이면 그 커밋이 완화를 새 티켓 브랜치에 **영구히** 남기고, 감춰져 있던
+   * 파일이 드러나 다음 리뷰가 D10 에서 막힌다(실측 재현). 도구가 사람의 미커밋 결정을 대신
+   * 확정하는 셈이다.
+   *
+   * 🔴 **명령열 전체를 내지 않는다** — 위험한 두 줄만 숨기고 stash·req:new·pop 을 그대로 내면
+   *    그 셋만 실행했을 때 같은 노출이 일어난다(REQ-2026-152 phase-1 r03 과 같은 계약).
+   */
+  if (narrowing.length > 0)
+    return (
+      `${reqId} 는 이미 ${baseState} 입니다 — 완료된 티켓에는 새 작업을 붙이지 않습니다.
+` +
+      `  🔴 미커밋 .gitignore 가 ignore 범위를 **좁힐 수 있습니다** — 이 결정을 도구가 대신 커밋하지 않습니다:
+${narrowing.map((p) => `       ${p}`).join('\n')}
+` +
+      `  그대로 커밋하면 그 완화가 새 티켓 브랜치에 영구히 남고, 감춰져 있던 파일이 드러나
+     다음 리뷰가 D10 에서 막힙니다. 규칙을 되돌릴지, 드러난 파일을 정리할지 **직접** 정하십시오.
+` +
+      `  정한 뒤 방금 실행한 req:commit 명령을 다시 실행하면 이어지는 절차를 안내합니다.
+` +
+      `  🔴 이 티켓에는 아무것도 쓰지 않았습니다 — staged 변경은 그대로 있습니다.`
+    )
   /**
    * 🔴 REQ-2026-152 DEC-1a: **stash 는 ignore 규칙 자체를 되돌린다.** 미커밋 `.gitignore` 가 stash 로
    *    들어가면 그 규칙에만 의존해 감춰져 있던 파일이 `??` 로 드러나고, 다음 줄의 `req:new` 가
@@ -1274,7 +1301,36 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     } catch {
       dirtyGitignores = []
     }
-    const reentry = terminalReentryProblem(String(state.id ?? ''), baseState, dirtyGitignores)
+    /**
+     * 🔴 REQ-2026-154 DEC-3: 그 중 **ignore 범위를 좁힐 수 있는** 것을 가려낸다. HEAD blob 과 워킹
+     *    내용을 읽어 순수 판정에 넘긴다 — 판정 자체는 fs·git 을 모른다.
+     *    읽기 실패는 **좁아질 수 있다고 본다**(애매하면 멈춘다).
+     */
+    let narrowing: string[] = []
+    try {
+      narrowing = narrowingPaths(
+        dirtyGitignores.map((p) => ({
+          path: p,
+          head: (() => {
+            try {
+              return git(['show', `HEAD:${p}`])
+            } catch {
+              return null // HEAD 에 없다 = 신규 파일.
+            }
+          })(),
+          work: (() => {
+            try {
+              return readFileSync(resolve(cfg.root, p), 'utf8')
+            } catch {
+              return null // 워킹에 없다 = 삭제.
+            }
+          })(),
+        })),
+      )
+    } catch {
+      narrowing = [...dirtyGitignores]
+    }
+    const reentry = terminalReentryProblem(String(state.id ?? ''), baseState, dirtyGitignores, narrowing)
     if (reentry) throw new Error(reentry)
   }
   runDoctor(doctorArgs)
