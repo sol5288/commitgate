@@ -10,12 +10,25 @@
   "design_approved": true,
   "design_approved_hash": "88158f1afa8fec1e83f209363ec212f32c069c7654a18e000a77110f3b445149",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-errata-and-auto",
+      "title": "REQ-142 정오표 + stopGate auto 전환",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
   "policy_snapshot": {
-    "stop_gate": "merge"
+    "stop_gate": "auto",
+    "adopted": [
+      {
+        "from": "merge",
+        "to": "auto",
+        "at": "2026-08-14T00:45:49.639Z"
+      }
+    ]
   },
   "review_series": [
     {
