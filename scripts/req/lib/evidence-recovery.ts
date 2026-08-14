@@ -23,7 +23,7 @@
  * 🔴 여기서 중요한 것은 **이 복구 경로가 그 신뢰 수준을 더 낮추지 않는다**는 것이다 — 증거 커밋이 이미 있는
  * 상태에서는 `pin-divergent` 가 커밋된 매니페스트를 상위 근거로 삼아 state 위조를 잡아낸다.
  */
-import { canonicalInventoryForm, manifestHasConsumed, parseManifestEntries } from './evidence'
+import { canonicalInventoryForm, manifestHasConsumed, parseManifestEntries, SHA256_RE } from './evidence'
 import type { ArchiveInventoryItem } from './evidence'
 import type { ApprovalEvidence, PinnedArchiveInventory, PinnedInventoryItem } from './review-types'
 
@@ -234,17 +234,32 @@ export function consumedKeysAddedByHead(headManifest: string, parentManifest: st
 }
 
 
-/** `pending` 소비 키에 대응하는 행의 `consumed_state_sha256`(없으면 null — 결속 없음). */
-export function consumedStateShaFor(headManifest: string, pendingKeys: readonly string[]): string | null {
+/**
+ * 결속 조회 결과(REQ-2026-152 DEC-3).
+ *
+ * 🔴 **세 갈래를 타입으로 강제한다.** `string | null` 로 두면 호출부가 "없으면 건너뛴다"로 다시
+ *    뭉갤 수 있고, 그때 형식 불량 값이 **레거시로 강등**돼 판별자 D 를 통째로 우회한다 —
+ *    그것이 이 REQ 가 고치는 결함의 본체다.
+ */
+export type BindingLookup =
+  | { kind: 'absent' } // 키 자체가 없다 — 이 REQ 이전 증거. D 를 건너뛴다(하위호환).
+  | { kind: 'bound'; sha: string }
+  | { kind: 'malformed'; detail: string }
+
+/** `pending` 소비 키에 대응하는 행의 `consumed_state_sha256` 를 세 갈래로 판정한다. */
+export function consumedStateShaFor(headManifest: string, pendingKeys: readonly string[]): BindingLookup {
   const want = new Set(pendingKeys)
   for (const e of parseManifestEntries(headManifest)) {
     const k = consumedKey(e as { consumed_by_commit_sha?: unknown; phase_id?: unknown })
-    if (k !== null && want.has(k)) {
-      const v = (e as { consumed_state_sha256?: unknown }).consumed_state_sha256
-      if (typeof v === 'string' && v !== '') return v
-    }
+    if (k === null || !want.has(k)) continue
+    const row = e as Record<string, unknown>
+    // 🔴 `in` 으로 본다 — `undefined` 를 명시한 행과 키가 없는 행을 같게 취급하지 않는다.
+    if (!('consumed_state_sha256' in row)) continue
+    const v = row.consumed_state_sha256
+    if (typeof v === 'string' && SHA256_RE.test(v)) return { kind: 'bound', sha: v }
+    return { kind: 'malformed', detail: `consumed_state_sha256 가 64hex 문자열이 아닙니다: ${JSON.stringify(v)}` }
   }
-  return null
+  return { kind: 'absent' }
 }
 
 /**
@@ -336,16 +351,19 @@ export function planEvidenceRecovery(facts: RecoveryFacts): RecoveryPlan {
      * 🔴 **키가 없으면 건너뛴다** — 이 REQ 이전 증거에는 없다. 그때 남는 위험은 이전과 같고,
      *    새로 열지 않는다(옛 crash window 를 막으면 그것이 새 교착이다).
      */
-    const expected = consumedStateShaFor(facts.headManifest, pending)
-    if (expected !== null) {
+    const binding = consumedStateShaFor(facts.headManifest, pending)
+    // 🔴 REQ-2026-152: 형식 불량은 **레거시가 아니다** — 잘못된 증거이므로 fail-closed 한다.
+    if (binding.kind === 'malformed')
+      return { kind: 'blocked', reason: 'state-mismatch', detail: binding.detail }
+    if (binding.kind === 'bound') {
       const actual = facts.archiveSha(stateRel)
       if (actual === null)
         return { kind: 'blocked', reason: 'state-mismatch', detail: `${stateRel} 를 읽을 수 없습니다` }
-      if (actual !== expected)
+      if (actual !== binding.sha)
         return {
           kind: 'blocked',
           reason: 'state-mismatch',
-          detail: `워킹 state.json 해시(${actual.slice(0, 12)}…)가 증거의 결속(${expected.slice(0, 12)}…)과 다릅니다`,
+          detail: `워킹 state.json 해시(${actual.slice(0, 12)}…)가 증거의 결속(${binding.sha.slice(0, 12)}…)과 다릅니다`,
         }
     }
     return {

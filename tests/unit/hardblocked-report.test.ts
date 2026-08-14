@@ -6,12 +6,12 @@
  */
 import { describe, it, expect } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { gateAndRecordAttempt, __setGitAdapterForTest } from '../../scripts/req/review-codex'
 import { createGitAdapter } from '../../scripts/req/lib/adapters'
-import { collectRounds, splitDirty, hardBlockedInput } from '../../scripts/req/lib/hardblocked-facts'
+import { collectRounds, splitDirty, hardBlockedInput, toTicketRel } from '../../scripts/req/lib/hardblocked-facts'
 import { nextChoices } from '../../scripts/req/lib/nonconvergence'
 import type { WorkflowState } from '../../scripts/req/review-codex'
 
@@ -218,5 +218,104 @@ describe('[REQ-2026-147] 사실 수집(순수 경계)', () => {
     })
     expect(inp.hasOpenAttempt).toBe(false)
     rmSync(repo, { recursive: true, force: true })
+  })
+})
+
+/**
+ * 🔴 REQ-2026-153 — 경로 정규화. **두 층으로 둔다.**
+ *
+ * ① 순수 함수(`toTicketRel`)는 **항상** 돈다.
+ * ② 링크 재현 e2e 는 실제 junction/심볼릭 링크를 만들어 CI 가 실패한 배치를 그대로 만든다.
+ *    링크를 만들 수 없는 환경이면 **사유를 출력하며** skip 한다 — 조용한 skip 은 이 결함을 다시 숨긴다.
+ */
+describe('[REQ-2026-153] toTicketRel (순수)', () => {
+  const abs = (p: string): string => resolve(p)
+
+  it('같은 수준의 두 절대경로에서 POSIX 상대경로를 낸다', () => {
+    expect(toTicketRel(abs('/r'), abs('/r/workflow/REQ-2026-001'))).toBe('workflow/REQ-2026-001')
+  })
+
+  it('🔴 win32 구분자를 `/` 로 바꾼다 — splitDirty 의 접두사가 POSIX 다', () => {
+    const rel = toTicketRel(abs('/r'), abs('/r/workflow/REQ-2026-001'))
+    expect(rel).not.toContain('\\')
+  })
+
+  it('🔴 티켓이 root 밖이면 `..` 를 감추지 않는다 — 조용히 안으로 만들면 더 나쁜 거짓말이다', () => {
+    expect(toTicketRel(abs('/r/a'), abs('/r/b/workflow/REQ-2026-001'))).toContain('..')
+  })
+
+  /**
+   * 🔴 이것이 결함의 정확한 모양이다: 한쪽은 realpath, 한쪽은 링크 경유.
+   *    이 경우 `..` 가 남고 `splitDirty` 의 접두사가 **한 번도** 맞지 않는다.
+   */
+  it('🔴 정규화 수준이 갈리면 접두사 매칭이 깨진다(결함 재현 — 순수 수준)', () => {
+    const bad = toTicketRel(abs('/real'), abs('/link/workflow/REQ-2026-001'))
+    expect(bad).toContain('..')
+    expect(splitDirty(`?? workflow/REQ-2026-001/responses/x.json\0`, bad).outsideDirty).toHaveLength(1)
+    // 같은 수준이면 티켓 안으로 잡힌다.
+    const good = toTicketRel(abs('/real'), abs('/real/workflow/REQ-2026-001'))
+    expect(splitDirty(`?? workflow/REQ-2026-001/responses/x.json\0`, good).outsideDirty).toHaveLength(0)
+  })
+})
+
+describe('[REQ-2026-153] 🔴 링크 경유 경로 재현', () => {
+  /** junction 은 Windows 에서 관리자 권한 없이 만들어지고, 비-Windows 에서는 dir 심볼릭 링크가 된다. */
+  const tryLink = (target: string, link: string): string | null => {
+    try {
+      symlinkSync(target, link, 'junction')
+      return null
+    } catch (e) {
+      return (e as Error).message
+    }
+  }
+
+  it('🔴 링크 경유 티켓 경로에서도 파손 아카이브가 티켓 밖으로 분류되지 않는다', () => {
+    const { repo, ticket, state } = setup({
+      archives: [
+        [1, 'needs-fix', { findings: [{ file: 'a.ts' }] }],
+        [2, 'needs-fix', { findings: [{ file: 'a.ts' }] }],
+      ],
+    })
+    writeFileSync(join(ticket, 'responses', 'design-r03-needs-fix.json'), '{ not json')
+
+    const link = `${repo}-link`
+    const err = tryLink(repo, link)
+    if (err !== null) {
+      // 🔴 조용히 넘어가지 않는다 — 왜 못 돌았는지 남긴다.
+      console.warn(`[REQ-2026-153] 링크 생성 불가로 이 재현을 건너뜁니다: ${err}`)
+      rmSync(repo, { recursive: true, force: true })
+      return
+    }
+
+    // 🔴 **링크 경유 티켓 경로**로 부른다 — git 은 실경로를 주므로 정규화 수준이 갈린다.
+    const linkedTicket = join(link, 'workflow', 'REQ-2026-001')
+    const msg = blockMessage(link, linkedTicket, state)
+
+    expect(msg).toContain('review 예산 소진')
+    expect(msg).toContain('r01')
+    // 🔴 정규화가 빠지면 파손 아카이브가 "티켓 밖 변경"으로 실린다(macOS·Windows CI 의 실패 형태).
+    expect(msg).not.toContain('r03')
+
+    rmSync(link, { recursive: true, force: true })
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
+})
+
+describe('[REQ-2026-153] 🔴 배선 가드', () => {
+  const src = readFileSync(join(process.cwd(), 'scripts/req/review-codex.ts'), 'utf8')
+
+  it('호출부가 양쪽을 정규화한다(한쪽만 고치면 반대 방향에서 같은 붕괴가 난다)', () => {
+    expect(src).toMatch(/const root = resolveReal\(git\(\['rev-parse', '--show-toplevel'\]\)\)/)
+    expect(src).toMatch(/ticketRel: toTicketRel\(root, resolveReal\(ctx\.ticketDir\)\)/)
+  })
+
+  it('🔴 정규화 실패가 던지지 않는다 — 보고가 차단을 흔들면 안 된다', () => {
+    const i = src.indexOf('export function resolveReal')
+    const j = src.indexOf('\n}', i)
+    expect(src.slice(i, j)).toMatch(/catch \{\s*\n\s*return resolve\(p\)/)
+  })
+
+  it('🔴 인라인 relative 계산이 남아 있지 않다', () => {
+    expect(src).not.toMatch(/ticketRel: relative\(root, ctx\.ticketDir\)/)
   })
 })

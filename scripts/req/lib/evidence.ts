@@ -20,7 +20,8 @@ import type { StopGate } from './config'
 
 // ─────────────────────────────────────────────────────── 공통 형식 술어 ──
 
-const SHA256_RE = /^[0-9a-f]{64}$/i
+/** 🔴 sha256 형식의 **정본**. 대소문자를 모두 받는다 — 새 필드가 다른 규칙을 만들지 않도록 공유한다. */
+export const SHA256_RE = /^[0-9a-f]{64}$/i
 const GIT_OID_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i // git OID: 40(SHA-1) 또는 64(SHA-256)
 const REVIEW_ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/
 
@@ -500,6 +501,22 @@ export function validateManifest(content: string, opts: { ticketRel: string; val
       // REQ-2026-052 DEC-B5: kind 격리 — design 행에는 phase_design_ref 금지.
       if ('phase_design_ref' in e) problems.push(`line ${ln}: design entry에 phase_design_ref 금지`)
     }
+    /**
+     * 🔴 REQ-2026-152 DEC-2: `consumed_state_sha256` 는 **선택**이지만, **있으면 형식을 본다.**
+     *
+     * 등록만 하고 검증하지 않으면 `{"consumed_state_sha256": null}` 같은 행이 복구 판정에서
+     * "결속 없음(레거시)"으로 **강등**돼 판별자 D 를 통째로 건너뛴다 — "키가 있으면 정확히
+     * 결속한다"는 계약의 우회로다.
+     *
+     * 🔴 하위호환과 충돌하지 않는다: 이 REQ 이전 행에는 **키 자체가 없고**, 키가 있는데 형식이
+     *    틀린 행은 정상 코드가 만들지 않는다. 대소문자는 `SHA256_RE` 의 기존 계약을 따른다
+     *    (`response_sha256`·`design_hash`·`phase_design_ref` 와 같은 규칙 — 두 규칙을 만들지 않는다).
+     */
+    if (
+      'consumed_state_sha256' in e &&
+      (typeof e.consumed_state_sha256 !== 'string' || !SHA256_RE.test(e.consumed_state_sha256))
+    )
+      problems.push(`line ${ln}: consumed_state_sha256 비-64hex`)
     // archive_inventory(REQ-2026-048 DEC-2): **선택** — 부재는 정상(기존 행 무회귀). 있으면 형식 검증.
     if ('archive_inventory' in e) {
       for (const p of archiveInventoryProblems(e.archive_inventory, opts.ticketRel)) problems.push(`line ${ln}: ${p}`)

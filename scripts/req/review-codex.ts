@@ -72,7 +72,7 @@ import { createReviewerProbes, type ReviewerProbes } from './lib/adapters'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 import type { ReviewKind, ApprovalEvidence, PinnedArchiveInventory } from './lib/review-types'
 import { nonConvergenceReport } from './lib/nonconvergence'
-import { hardBlockedInput } from './lib/hardblocked-facts'
+import { hardBlockedInput, toTicketRel } from './lib/hardblocked-facts'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -1897,6 +1897,22 @@ export interface AttemptInfo {
  * 🔴 여기서 **판정을 하지 않는다**. 차단은 이미 `checkReviewBudget` 이 정했고, 이 함수는 그 사실에
  *    설명을 붙일 뿐이다. `null` 을 돌려줘도 차단은 그대로다.
  */
+
+/**
+ * 해소되면 실경로, 아니면 입력을 절대화만 한다(REQ-2026-153 DEC-2).
+ *
+ * 🔴 **던지지 않는다.** 경로가 없다고 보고를 통째로 버릴 이유가 없다 — 그때는 이 REQ 이전과
+ *    **정확히 같은 동작**(`resolve` 만)으로 떨어지고, 차단은 어느 쪽이든 그대로다.
+ *    (`티켓 디렉터리가 아예 없어도 차단한다` 회귀가 이 경우를 돈다.)
+ */
+export function resolveReal(p: string): string {
+  try {
+    return resolve(realpathSync(p))
+  } catch {
+    return resolve(p)
+  }
+}
+
 function hardBlockedReport(
   ctx: { ticketDir: string; state: WorkflowState; kind: ReviewKind; phaseId: string | null; budget: ReviewBudget },
   attempt: number,
@@ -1905,11 +1921,19 @@ function hardBlockedReport(
   if (!reqId) return null
   const open = openSeriesRecord(ctx.state, ctx.kind, ctx.phaseId)
   // 🔴 repo 루트는 git 에게 묻는다 — 이 모듈에 루트를 담은 변수가 없고, 추측하면 티켓 경로가 어긋난다.
-  const root = git(['rev-parse', '--show-toplevel'])
+  /**
+   * 🔴 REQ-2026-153: **양쪽을 같은 수준으로 정규화한다.** git 은 실경로를 주는데 `ctx.ticketDir` 는
+   *    호출자가 준 값 그대로라, 링크 경유 경로(macOS `/var`→`/private/var`, Windows 8.3 단축 경로,
+   *    junction)에서 `relative()` 가 `../…` 를 내고 티켓 안/밖 분류가 통째로 뒤집혔다.
+   *    같은 교훈이 `loadReviewPersona` 에 이미 적혀 있었다 — 그 규칙을 root 쪽에만 적용하고 있었다.
+   *
+   * 🔴 git 쪽도 다시 정규화한다: 이미 실경로면 항등이라 비용이 없고, 가정이 하나 줄어든다.
+   */
+  const root = resolveReal(git(['rev-parse', '--show-toplevel']))
   return nonConvergenceReport(
     hardBlockedInput({
       root,
-      ticketRel: relative(root, ctx.ticketDir).replace(/\\/g, '/'),
+      ticketRel: toTicketRel(root, resolveReal(ctx.ticketDir)),
       ticketDir: ctx.ticketDir,
       reqId,
       branch: ctx.state.branch,

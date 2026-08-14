@@ -386,10 +386,73 @@ describe('[REQ-2026-151] 🔴 판별자 D — 소비 state 결속', () => {
     expect(p.kind).toBe('ready')
   })
 
+  /**
+   * 🔴 REQ-2026-152 DEC-3: **형식 불량은 레거시가 아니다.** 강등하면 워킹 state 를 대조하지 않고
+   *    `ready` 를 돌려줘 판별자 D 가 통째로 우회된다 — 이 분기가 그것을 막는다.
+   *
+   * 🔴 `validateManifest`(DEC-2)가 이미 막는데도 여기서 또 보는 이유: 이 판정은 `req:doctor` 에서도
+   *    불리고, 그 경로가 매니페스트 검증을 거쳤다고 **가정하지 않는다**(REQ-2026-094 교훈).
+   */
+  it('🔴 형식 불량 결속은 state-mismatch — absent 로 강등돼 통과하지 않는다', () => {
+    for (const bad of ['null', '0', '""', `"${'e'.repeat(63)}"`, `"g${'e'.repeat(63)}"`]) {
+      const line = boundLine(STATE_SHA).replace(`"${STATE_SHA}"`, bad)
+      // 워킹 state 가 무엇이든(일치해도) 거부한다 — 근거 자체가 잘못됐다.
+      const p = cp({ headManifest: line, archiveSha: () => STATE_SHA })
+      expect(p.kind === 'blocked' && p.reason, bad).toBe('state-mismatch')
+    }
+  })
+
   it('consumedStateShaFor — 대응하는 행에서만 읽는다', () => {
-    expect(consumedStateShaFor(boundLine(STATE_SHA), [`${SRC}#phase-1-x`])).toBe(STATE_SHA)
-    expect(consumedStateShaFor(boundLine(STATE_SHA), ['other#p'])).toBeNull()
-    expect(consumedStateShaFor(boundLine(null), [`${SRC}#phase-1-x`])).toBeNull()
+    expect(consumedStateShaFor(boundLine(STATE_SHA), [`${SRC}#phase-1-x`])).toEqual({ kind: 'bound', sha: STATE_SHA })
+    expect(consumedStateShaFor(boundLine(STATE_SHA), ['other#p'])).toEqual({ kind: 'absent' })
+    expect(consumedStateShaFor(boundLine(null), [`${SRC}#phase-1-x`])).toEqual({ kind: 'absent' })
+  })
+})
+
+/**
+ * 🔴 REQ-2026-152 DEC-3 — 형식 불량을 **레거시로 강등하지 않는다**.
+ *
+ * 등록만 하고 검증하지 않으면 `{"consumed_state_sha256": null}` 이 "결속 없음"으로 읽혀 판별자 D 를
+ * 통째로 우회한다. 키의 **부재만** 레거시다.
+ */
+describe('[REQ-2026-152] consumedStateShaFor — 세 갈래', () => {
+  const T4 = 'workflow/REQ-2026-142'
+  const line = (v: unknown, omit = false) => {
+    const row: Record<string, unknown> = {
+      kind: 'phase',
+      phase_id: 'phase-1-x',
+      response_path: `${T4}/responses/phase-phase-1-x-r02-approved.json`,
+      response_sha256: H(2),
+      review_base_sha: 'c'.repeat(40),
+      approved_tree: TREE,
+      approved_at: '2026-08-14T00:00:00Z',
+      consumed_at: '2026-08-14T00:01:00Z',
+      consumed_by_commit_sha: SRC,
+      user_commit_confirmed: null,
+    }
+    if (!omit) row.consumed_state_sha256 = v
+    return `${JSON.stringify(row)}\n`
+  }
+  const keys = [`${SRC}#phase-1-x`]
+
+  it('🔴 키 부재만 absent 다 — 레거시 무회귀', () => {
+    expect(consumedStateShaFor(line(null, true), keys)).toEqual({ kind: 'absent' })
+  })
+
+  it('🔴 64hex 는 bound(대문자도 — SHA256_RE 의 기존 계약을 따른다)', () => {
+    expect(consumedStateShaFor(line('e'.repeat(64)), keys)).toEqual({ kind: 'bound', sha: 'e'.repeat(64) })
+    expect(consumedStateShaFor(line('E'.repeat(64)), keys)).toEqual({ kind: 'bound', sha: 'E'.repeat(64) })
+  })
+
+  it('🔴 형식 불량은 전부 malformed — absent 로 강등되지 않는다', () => {
+    for (const bad of [null, 0, 123, '', 'e'.repeat(63), 'e'.repeat(65), `g${'e'.repeat(63)}`, true, ['e'.repeat(64)], {}])
+      expect(consumedStateShaFor(line(bad), keys), JSON.stringify(bad)).toMatchObject({ kind: 'malformed' })
+  })
+
+  it('🔴 `undefined` 를 명시한 행도 malformed 다 — 키가 있으면 값을 요구한다', () => {
+    // JSON 에는 undefined 가 없으므로 직접 만든 줄로 확인한다(JSON.stringify 는 키를 지운다).
+    const raw = line('e'.repeat(64)).replace(`"${'e'.repeat(64)}"`, 'null')
+    expect(consumedStateShaFor(raw, keys)).toMatchObject({ kind: 'malformed' })
   })
 })
 

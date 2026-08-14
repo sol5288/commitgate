@@ -32,6 +32,7 @@ import { isArchiveFileName, sourceCommitForbiddenStaged } from './lib/scratch'
 import { bookkeepingMessage } from './lib/bookkeeping'
 // REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
+import { allShellSafe, quoteArg } from './lib/shell-safe'
 import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { scanTicketIntake } from './lib/intake'
 import { PLACEHOLDER_APPROVAL_ANGLED } from './lib/placeholders'
@@ -502,16 +503,78 @@ function git(args: string[]): string {
  * @param baseState `scanTicketIntake(...).baseState` — 🔴 술어뿐 아니라 **입력 획득까지** doctor 와
  *   같아야 한다(REQ-2026-094: 같은 술어를 쓰고도 입력이 달라 판독이 갈렸다). 판독 실패는 `null`.
  */
-export function terminalReentryProblem(reqId: string, baseState: string | null): string | null {
+export function terminalReentryProblem(
+  reqId: string,
+  baseState: string | null,
+  dirtyGitignores: readonly string[] = [],
+): string | null {
   // 🔴 `series-terminal` 은 차단하지 않는다 — series 종결이지 티켓 완료가 아니고, 대체 REQ 흐름이 그 상태를 지난다.
   if (baseState !== 'dev-complete' && baseState !== 'migrated-complete' && baseState !== 'abandoned') return null
   const slug = `${reqId.toLowerCase()}-followup`
+  /**
+   * 🔴 REQ-2026-152 DEC-1a: **stash 는 ignore 규칙 자체를 되돌린다.** 미커밋 `.gitignore` 가 stash 로
+   *    들어가면 그 규칙에만 의존해 감춰져 있던 파일이 `??` 로 드러나고, 다음 줄의 `req:new` 가
+   *    clean-tree 로 거부한다(실측 재현). 루트뿐 아니라 **중첩** `.gitignore` 도 같다.
+   *
+   * 🔴 미커밋 `.gitignore` 가 **없으면 이 줄을 내지 않는다** — 내면 "커밋할 것이 없다"로 실패해
+   *    "안내가 순서대로 성공한다"는 이 REQ 의 계약을 스스로 깬다.
+   *
+   * 🔴 경로가 하나라도 셸 안전하지 않으면 **그 갈래 전체를 명령 대신 데이터로** 낸다
+   *    (REQ-2026-149: 반쪽 명령열 금지).
+   *
+   * 🔴 안전 판정을 통과해도 **반드시 인용한다**(phase-1 r02 P1). `SAFE_ARG_RE` 는 `#` 를 허용하지만
+   *    그것은 **큰따옴표 안에서** 안전하다는 뜻이다 — 맨몸으로 내면 bash·PowerShell 이 `#…` 를
+   *    주석으로 읽어 `git add --` 가 pathspec 없이 실행되고, 이어지는 `commit` 이 staged 전체를
+   *    커밋할 위험이 있다.
+   */
+  const ig = [...dirtyGitignores]
+  const header = `${reqId} 는 이미 ${baseState} 입니다 — 완료된 티켓에는 새 작업을 붙이지 않습니다.
+`
+  /**
+   * 🔴 phase-1 r03 P1: 안전하지 않은 경로가 있으면 **명령열 전체**를 내지 않는다. add·commit 만
+   *    숨기고 stash·req:new·pop 을 그대로 내면, 그 세 줄만 실행했을 때 stash 가 규칙을 되돌려
+   *    이 절이 막으려던 노출이 그대로 일어난다 — 반쪽 명령열의 정확한 정의다.
+   *
+   * 🔴 대신 **되돌아오는 길**을 준다: 그 파일들을 커밋하고 같은 명령을 다시 실행하면 목록이 비어
+   *    실행 가능한 안내가 나온다. 새 명령을 지어내지 않는다.
+   */
+  if (ig.length > 0 && !allShellSafe(...ig))
+    return (
+      header +
+      `  🔴 먼저 아래 **미커밋 .gitignore 를 커밋**하십시오. 커밋하지 않으면 이어지는 stash 가 이 규칙을
+     되돌려 감춰져 있던 파일이 드러나고 req:new 가 거부됩니다:
+${ig.map((p) => `       ${p}`).join('\n')}
+` +
+      `  경로에 셸 특수문자가 있어 **명령을 만들지 않았습니다** — 그대로 실행하면 다른 파일이 커밋됩니다.
+` +
+      `  커밋한 뒤 방금 실행한 req:commit 명령을 다시 실행하면 이어지는 절차를 안내합니다.
+` +
+      `  🔴 이 티켓에는 아무것도 쓰지 않았습니다 — staged 변경은 그대로 있습니다.`
+    )
+  const igLines =
+    ig.length === 0
+      ? ''
+      : `    git add -- ${ig.map(quoteArg).join(' ')}
+    git commit -m "chore: .gitignore" -- ${ig.map(quoteArg).join(' ')}
+`
   return (
-    `${reqId} 는 이미 ${baseState} 입니다 — 완료된 티켓에는 새 작업을 붙이지 않습니다.
+    header +
+    `  사후 정정은 **단일 phase micro-REQ** 로 만드십시오(이 저장소 규범). 순서대로 실행하고, 실패하면 멈추십시오:
 ` +
-    `  사후 정정은 **단일 phase micro-REQ** 로 만드십시오(이 저장소 규범). 순서대로:
-` +
-    `    git stash push -m "${reqId} follow-up"
+    igLines +
+    /**
+     * 🔴 REQ-2026-152 DEC-1: **`--include-untracked` 가 필수다.** `req:new` 는 기존 티켓 직계의
+     *    도구 산출물만 예외로 두고 그 밖의 untracked 를 clean-tree 위반으로 거부한다
+     *    (`req-new.ts` `findReqNewDirtyEntries`). 보관하지 않으면 **다음 줄이 그 자리에서 거부된다.**
+     *
+     * 🔴 REQ-2026-151 은 "옛 티켓의 응답 아카이브까지 옮겨 다닌다"를 이유로 `-u` 를 뺐다. 그 부작용은
+     *    실재하지만 **안내가 아예 실행되지 않는 것보다 작다** — 아카이브는 `stash pop` 으로 같은 경로에
+     *    복원되고, 유실은 없다. 실행 가능성이 먼저다.
+     *
+     * 🔴 **`--all` 은 쓰지 않는다.** gitignore 대상까지 보관하면 `node_modules`·`.env` 가 stash 로
+     *    들어간다. `req:new` 도 ignored 는 위반으로 보지 않으므로 필요가 없다.
+     */
+    `    git stash push --include-untracked -m "${reqId} follow-up"
 ` +
     `    npx commitgate req:new ${slug} --run
 ` +
@@ -1142,7 +1205,27 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     } catch {
       baseState = null
     }
-    const reentry = terminalReentryProblem(String(state.id ?? ''), baseState)
+    /**
+     * 🔴 REQ-2026-152 DEC-1a: 미커밋 `.gitignore` 목록을 **사실로** 넘긴다(판정은 순수하게 유지).
+     *    루트만이 아니라 **모든 깊이**를 본다 — 중첩 `.gitignore` 도 stash 가 되돌리면 같은 노출을
+     *    만든다(설계 r02 P1). 읽지 못하면 빈 목록 = 그 줄을 내지 않는다(차단하지 않는다).
+     */
+    let dirtyGitignores: string[] = []
+    try {
+      dirtyGitignores = [
+        ...new Set(
+          parseStatusZ(git([...STATUS_Z_ARGS]))
+            .flatMap((e) => (e.origPath === undefined ? [e.path] : [e.origPath, e.path]))
+            // 🔴 phase-1 r02 P1: **정규화하지 않는다.** `-z` porcelain 이 준 경로가 정본이고,
+            //    Unix 에서 역슬래시는 파일명의 일부다(`a\b/.gitignore`). 바꾸면 없는 경로를 안내한다.
+            //    git 은 플랫폼과 무관하게 `/` 로 보고하므로 Windows 를 위한 변환도 필요 없다.
+            .filter((p) => p === '.gitignore' || p.endsWith('/.gitignore')),
+        ),
+      ].sort()
+    } catch {
+      dirtyGitignores = []
+    }
+    const reentry = terminalReentryProblem(String(state.id ?? ''), baseState, dirtyGitignores)
     if (reentry) throw new Error(reentry)
   }
   runDoctor(doctorArgs)

@@ -125,6 +125,46 @@ describe('[REQ-2026-048] 이동한 술어 — 새 경로에서 동작 동일', (
     expect(validateManifest(`${JSON.stringify(entry)}\n`, { ticketRel: t, validPhaseIds: [] })).toEqual([])
   })
 
+  /**
+   * 🔴 REQ-2026-152 DEC-2: `consumed_state_sha256` 는 **선택**이지만 **있으면 형식을 본다.**
+   *    등록만 하고 검증하지 않으면 `{"…": null}` 이 복구 판정에서 "결속 없음"으로 강등돼
+   *    판별자 D 를 통째로 우회한다.
+   */
+  describe('[REQ-2026-152] consumed_state_sha256 형식', () => {
+    const t = 'workflow/REQ-2026-001'
+    const row = (v: unknown, omit = false): string => {
+      const e: Record<string, unknown> = {
+        kind: 'design',
+        phase_id: null,
+        response_path: `${t}/responses/design-r01-approved.json`,
+        response_sha256: 'a'.repeat(64),
+        review_base_sha: 'b'.repeat(40),
+        design_hash: 'a'.repeat(64),
+        approved_at: '2026-07-22T00:00:00.000Z',
+        consumed_at: '2026-07-22T00:00:01.000Z',
+        consumed_by_commit_sha: 'b'.repeat(40),
+        user_commit_confirmed: null,
+      }
+      if (!omit) e.consumed_state_sha256 = v
+      return `${JSON.stringify(e)}\n`
+    }
+    const check = (s: string): string[] => validateManifest(s, { ticketRel: t, validPhaseIds: [] })
+
+    it('🔴 키 부재는 통과한다 — 이 REQ 이전 행 무회귀', () => {
+      expect(check(row(null, true))).toEqual([])
+    })
+
+    it('🔴 64hex 는 통과한다(대문자 포함 — SHA256_RE 의 기존 계약)', () => {
+      expect(check(row('c'.repeat(64)))).toEqual([])
+      expect(check(row('C'.repeat(64)))).toEqual([])
+    })
+
+    it('🔴 형식 불량은 전부 거부한다', () => {
+      for (const bad of [null, 0, 123, '', 'c'.repeat(63), 'c'.repeat(65), `g${'c'.repeat(63)}`, true])
+        expect(check(row(bad)), JSON.stringify(bad)).toEqual([expect.stringContaining('consumed_state_sha256 비-64hex')])
+    })
+  })
+
   // ── REQ-2026-052 DEC-B5(phase-3a2): phase_design_ref 스키마 ──
   const t = 'workflow/REQ-2026-001'
   const sha = 'a'.repeat(64)
