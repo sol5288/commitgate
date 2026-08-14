@@ -23,7 +23,13 @@
       "review_kind": "design",
       "phase_id": null,
       "attempts": 7,
-      "closed_reason": null
+      "closed_reason": "human-resolution",
+      "human_resolution": {
+        "decision": "replace",
+        "method": "REQ-2026-144 대체 승인 — 설계 6라운드 비수렴으로 범위를 나눠 다시 만든다",
+        "decided_at": "2026-08-14T07:01:37.800Z",
+        "note": "설계 6라운드 비수렴 — 탈출구 개설(B)과 비수렴 보고(A) 두 가지를 한 REQ 가 하려다 계속 커졌다. B 는 REQ-2026-145 로 완료했고 A 를 대체 REQ 로 다시 만든다"
+      }
     }
   ],
   "last_review": {
