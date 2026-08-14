@@ -2,15 +2,22 @@
   "id": "REQ-2026-150",
   "branch": "feat/req-2026-150-checkpoint-recovery-attribution",
   "risk_level": "LOW",
-  "codex_thread_id": "019fffe1-76c6-70b2-b591-918ed01cc765",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a0001b-a306-75c3-8fa2-4e121f6fe7d3",
+  "review_base_sha": "0c96816c2d83d011ae97fd6e37068686f879f667",
+  "review_diff_hash": "06ef25507c00b1f6cd8571614505545b0547d154",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "4d1469536e619c42f23dcd25c76cb20eecdbf7596ff9ed65613e461e0e355a85",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-checkpoint-attribution",
+  "phases": [
+    {
+      "id": "phase-1-checkpoint-attribution",
+      "title": "checkpoint 증거 귀속",
+      "status": "pending",
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -23,6 +30,13 @@
       "review_kind": "design",
       "phase_id": null,
       "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-checkpoint-attribution#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-checkpoint-attribution",
+      "attempts": 4,
       "closed_reason": "approved"
     }
   ],
@@ -57,14 +71,23 @@
     "design_hash": "4d1469536e619c42f23dcd25c76cb20eecdbf7596ff9ed65613e461e0e355a85"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-checkpoint-attribution",
     "outcome": "approved",
-    "compare_hash": "51a80e43247a759f7b42013fdea59e71be9e49aae70e290e48fb357f756e91a3",
+    "compare_hash": "96ff344ba29b9c640ce129a06949d566a1a87592bdfb60455f9729339555c162",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T10:47:05.833Z",
+    "at": "2026-08-14T11:53:41.278Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "06ef25507c00b1f6cd8571614505545b0547d154",
+      "phase_id": "phase-1-checkpoint-attribution",
+      "consumed_by_commit_sha": "262aa65d14499646926804adc57a22a66faa7ee0",
+      "approval_consumed_at": "2026-08-14T11:54:08.524Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
