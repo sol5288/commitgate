@@ -31,6 +31,8 @@ import { reviewScratchPaths, ARCHIVE_BASE_RE } from './lib/scratch'
 import { readDeliveryGate } from './lib/delivery'
 import { requiredConfirmScope, userConfirmProblem, effectiveConfirmScope, type UserCommitConfirmed } from './lib/evidence'
 import { integrationPathGuidance } from './lib/control-points'
+import { PLACEHOLDER_APPROVAL_ANGLED, PLACEHOLDER_DELEGATE_SENTENCE } from './lib/placeholders'
+import { shellSafeArg as sharedShellSafeArg } from './lib/shell-safe'
 import { wouldCompleteReq } from './req-commit'
 import { computeReviewSemanticIdentity } from './lib/review-target'
 import {
@@ -752,7 +754,7 @@ function resolveNextCore(input: NextInput): NextAction {
             ? 'HIGH 위험 phase 승인이 살아 있다. 이 커밋에 대한 사람 확인이 필요하다.'
             : `HIGH 위험 티켓이다. stopGate="${input.stopGate}" 는 scope="${scope}" 확인을 요구한다 — ` +
               '🔴 그 범위의 **아직 작성되지 않은 변경까지 미리 승인**하는 것이다.',
-        command: buildScriptInvocation(pm, 'req:confirm', [reqArg, '--scope', scope, '--method', '"<승인 문장>"', '--run']).join(' '),
+        command: buildScriptInvocation(pm, 'req:confirm', [reqArg, '--scope', scope, '--method', `"${PLACEHOLDER_APPROVAL_ANGLED}"`, '--run']).join(' '),
         controlPoint: `HIGH 사람 확인(scope=${scope})`,
         approvalSentence: `req:confirm --scope ${scope} 승인`,
       }
@@ -1056,7 +1058,7 @@ export function terminalIntegrationAction(input: NextInput, opts: { prefix?: str
           '--scope',
           scope,
           '--method',
-          '"<승인 문장>"',
+          `"${PLACEHOLDER_APPROVAL_ANGLED}"`,
           '--run',
         ]).join(' '),
         controlPoint: `HIGH 사람 확인(scope=${scope})`,
@@ -1087,7 +1089,9 @@ export function terminalIntegrationAction(input: NextInput, opts: { prefix?: str
  *    그런 값은 **명령으로 만들지 않는다** — 안전하게 못 만들면 만들지 않는다.
  */
 export function shellSafeArg(v: string): boolean {
-  return v.length > 0 && !/["`$\\\r\n]/.test(v)
+  // 🔴 REQ-2026-149: 판정을 `lib/shell-safe` 로 내렸다. 여기 있던 **금지 목록**은 `%`·`!` 를 허용해
+  //    cmd.exe 에서 `%VAR%` 가 큰따옴표 안에서도 확장됐다. 재-export 로 기존 호출부·테스트를 유지한다.
+  return sharedShellSafeArg(v)
 }
 
 /**
@@ -1105,7 +1109,7 @@ function delegateCommand(input: NextInput, high: boolean): string | undefined {
     '--source',
     `"${branch}"`,
     '--sentence',
-    '"사람이 말한 승인 문장"',
+    `"${PLACEHOLDER_DELEGATE_SENTENCE}"`,
     ...(high ? ['--high-risk'] : []),
     '--run',
   ]).join(' ')

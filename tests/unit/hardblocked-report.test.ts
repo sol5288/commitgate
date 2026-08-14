@@ -153,7 +153,12 @@ describe('[REQ-2026-147] 사실 수집(순수 경계)', () => {
     expect(r.outsideDirty).toEqual([])
   })
 
-  it('🔴 파킹 명령의 경로는 따옴표로 감싸진다(공백 티켓 루트)', () => {
+  /**
+   * 🔴 REQ-2026-149 로 계약이 **강화**됐다. 예전에는 공백 경로를 따옴표로 감싸 명령을 냈는데,
+   *    인용 규칙이 셸마다 갈려 안전을 보장할 수 없다. 이제 허용 목록이라 공백은 거부되고,
+   *    **그 갈래의 명령을 통째로 내지 않는다**(반쪽 명령열 금지).
+   */
+  it('🔴 공백 티켓 루트에서는 갈래 전체가 명령이 아니라 데이터가 된다', () => {
     const { replace } = nextChoices({
       reqId: 'REQ-2026-001',
       seriesId: 'design:-#1',
@@ -166,7 +171,7 @@ describe('[REQ-2026-147] 사실 수집(순수 경계)', () => {
       hardCap: 8,
       attempt: 9,
     })
-    expect(replace[1]!.text).toContain('git add -- "work flow/REQ-2026-001"')
+    expect(replace).toHaveLength(0)
   })
 
   it('splitDirty — 깨끗하면 둘 다 비어 있다', () => {

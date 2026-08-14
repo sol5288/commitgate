@@ -22,6 +22,7 @@ import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { requiredConfirmScope, userConfirmProblem, type ConfirmScope, type UserCommitConfirmed } from './lib/evidence'
 import { readDeliveryGate } from './lib/delivery'
 import { loadState, writeState, type WorkflowState } from './review-codex'
+import { humanDecisionProblem } from './lib/placeholders'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
 
 export const CONFIRM_SCOPES: readonly ConfirmScope[] = ['phase', 'req', 'delivery']
@@ -128,8 +129,13 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
   assertSetupComplete({ root: o.root })
   if (!o.reqId) throw new Error('REQ 필요 (예: req:confirm 2026-071 --scope req --method "<승인 문장>" --run)')
   if (!o.scope) throw new Error(`--scope ${CONFIRM_SCOPES.join('|')} 필요`)
-  if (!o.method || o.method.trim() === '')
-    throw new Error('--method "<승인 문장>" 필요 — 무엇을 근거로 승인했는지가 감사 기록의 내용입니다.')
+  // 🔴 REQ-2026-149: `req:next`·`req:commit` 안내가 `--method "<승인 문장>"` 을 실행 가능한 형태로
+  //    낸다. 그 원문을 그대로 실행하면 무엇을 근거로 승인했는지가 기록에 남지 않는다.
+  {
+    const p = humanDecisionProblem('--method', o.method)
+    if (p) throw new Error(`${p}
+  무엇을 근거로 승인했는지가 감사 기록의 내용입니다.`)
+  }
 
   const cfg = loadConfig({ root: o.root })
   const reqId = o.reqId.startsWith('REQ-') ? o.reqId : `REQ-${o.reqId}`
@@ -174,7 +180,7 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
   }
 
   // 🔴 시각은 **실제 시계**. 손기록을 대체하는 것이 이 명령의 존재 이유다(REQ-2026-019 폐기 사유).
-  const confirm = buildConfirm({ scope: o.scope, method: o.method, note: o.note, nowIso: deps.now() })
+  const confirm = buildConfirm({ scope: o.scope, method: o.method as string, note: o.note, nowIso: deps.now() })
   const problem = userConfirmProblem(confirm)
   if (problem) throw new Error(`확인 기록 형식 오류(내부): ${problem}`)
 

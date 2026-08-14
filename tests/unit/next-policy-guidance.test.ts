@@ -122,9 +122,23 @@ describe('[REQ-2026-146] 안전 렌더링', () => {
     expect(g.detail).toContain('직접 넣어')
   })
 
-  it('🔴 `;` 나 공백은 따옴표로 감싸 무해하게 렌더링한다(명령은 그대로 나온다)', () => {
-    const cmd = guidance('auto', { branch: 'feat/req-;whoami x' }).command ?? ''
-    expect(cmd).toContain('"feat/req-;whoami x"')
+  /**
+   * 🔴 REQ-2026-149 로 계약이 **강화**됐다. 예전에는 `;`·공백을 큰따옴표로 감싸 명령을 그대로 냈는데,
+   *    인용으로 안전해지지 않는 문자가 있고(cmd.exe 는 큰따옴표 안에서도 `%VAR%` 를 확장한다)
+   *    금지 목록은 계속 뚫린다. 이제 **허용 목록**이라 모르는 문자는 기본 거부다.
+   */
+  it('🔴 `;` 나 공백이 든 branch 는 명령을 만들지 않고 데이터로 보여 준다', () => {
+    const g = guidance('auto', { branch: 'feat/req-;whoami x' })
+    expect(g.command).toBeUndefined()
+    expect(g.detail).toContain('feat/req-;whoami x')
+  })
+
+  it('🔴 cmd.exe 확장 문자(%·!)도 명령을 만들지 않는다', () => {
+    for (const b of ['feat/req-2026-149-%PATH%', 'feat/req-2026-149-!VAR!']) {
+      const g = guidance('auto', { branch: b })
+      expect(g.command, b).toBeUndefined()
+      expect(g.detail).toContain(b)
+    }
   })
 })
 

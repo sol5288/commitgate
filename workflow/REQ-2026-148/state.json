@@ -1,0 +1,52 @@
+{
+  "id": "REQ-2026-148",
+  "branch": "feat/req-2026-148-guidance-safety-and-attribution",
+  "risk_level": "LOW",
+  "codex_thread_id": "019fff79-d574-70b3-82f6-491eb664477c",
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": false,
+  "design_approved_hash": null,
+  "current_phase": null,
+  "phases": [],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 8,
+      "closed_reason": "human-resolution",
+      "human_resolution": {
+        "decision": "replace",
+        "method": "REQ-2026-148 대체 승인 — 설계 8라운드 예산 소진, 완성된 설계를 새 티켓으로 이어간다",
+        "decided_at": "2026-08-14T08:59:45.969Z",
+        "note": "설계 8라운드 예산 소진 — r02~r05 P1 이 전부 DEC-3(checkpoint 귀속) 하나에서 나와 이미 분리했고, r07 의 마지막 P1(req:confirm --method)까지 문서에 반영을 마쳤다. 완성된 설계를 새 예산의 티켓으로 이어간다"
+      }
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "needs-fix",
+    "compare_hash": "11c0bd3c9737840ca55045378300e0e8a93d165cd98e36b666ab38022dbcc6cf",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T08:55:43.470Z",
+    "findings": [
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-148/01-design.md",
+        "detail": "DEC-1의 적용표가 실제 보고가 만드는 사람-결정 인자를 전부 덮지 못합니다. 정상 HIGH-risk 경로에서 `req:next`는 `req:confirm … --method \"<승인 문장>\" --run`을 안내하고, `req:confirm`은 비어 있지 않은 값만 허용하므로 사용자가 그 원문을"
+      }
+    ],
+    "elided_count": 0
+  }
+}
