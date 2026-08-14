@@ -141,11 +141,17 @@ describe('[REQ-2026-147] 선택지는 상태에서 계산된다', () => {
 
   it('🔴 티켓이 더러우면 파킹 줄이 들어가 세 줄 — git commit 만으로는 untracked 가 남는다', () => {
     const replace = nextChoices(input({ ticketDirty: true })).replace
-    expect(replace).toHaveLength(3)
-    const park = replace[1]!
-    expect(park.kind).toBe('shell')
-    expect(park.text).toContain(`git add -- ${TICKET}`)
-    expect(park.text).not.toContain('git add -A')
+    // 🔴 파킹은 **두 줄**이다 — 한 줄로 잇는 구분자가 모든 셸에 없다(PowerShell 5.1 은 && 미지원,
+    //    cmd.exe 는 ; 미지원). 그래서 갈래 B 는 네 줄이 된다.
+    expect(replace).toHaveLength(4)
+    expect(replace[1]!.kind).toBe('shell')
+    expect(replace[2]!.kind).toBe('shell')
+    expect(replace[1]!.text).toBe(`git add -- "${TICKET}"`)
+    expect(replace[2]!.text).toContain('git commit -m')
+    for (const c of replace) {
+      expect(c.text).not.toContain('git add -A')
+      expect(c.text).not.toContain('&&')
+    }
   })
 
   it('abandon 은 필수 인자를 전부 담는다', () => {

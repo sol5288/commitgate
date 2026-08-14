@@ -30,11 +30,17 @@ Exit:
   🔴 `git commit` 같은 비-CommitGate 정리 명령은 이 검사에서 **제외**한다(REQ-2026-145 r02 P1).
 - 🔴 출력에 **`<` 가 없다**(PowerShell 리디렉션으로 명령이 죽는다). slug 는 `successorSlug` 로 산출.
 - 🔴 선택지에 **hardCap 증액이 없다**(고정 문자열 부재 검사).
-- 🔴 상한 준수: 라운드 요약 1줄 · 반복 축 3개 · **명령 5줄 이하**(선행 1 + A 1 + B 3).
+- 🔴 상한 준수: 라운드 요약 1줄 · 반복 축 3개 · **명령 6줄 이하**(선행 1 + A 1 + B 4 — 파킹 두 줄).
+- 🔴 **파킹은 두 줄**이고 경로는 따옴표로 감싼다. `&&`·`;` 로 잇지 않는다 — 모든 셸에서 되는
+  구분자가 없다(PowerShell 5.1 은 `&&` 미지원, cmd.exe 는 `;` 미지원).
+- 🔴 워킹트리 판독은 **`-z`**(`parseStatusZ`). 공백·한글 티켓 경로 회귀 테스트를 둔다.
 - 🔴 **갈래 B 는 티켓이 더러우면 파킹 줄을 포함**한다(설계 r01·r02 P1 — 없으면 `req:new` 가
   clean-worktree 검사에 막혀 갈래 B 가 실행 불가). 깨끗하면 그 줄을 내지 않는다.
-- 🔴 파킹 줄은 **`git add -- <티켓 디렉터리> && git commit …`** 이다. `git commit -m` 만으로는
-  untracked needs-fix 아카이브가 남아 `req:new` 가 실패한다(r02 P1). `git add -A` 는 쓰지 않는다.
+- 🔴 파킹은 **`git add -- "<티켓 디렉터리>"` 와 `git commit …` 두 줄**이다. `git commit -m` 만으로는
+  untracked needs-fix 아카이브가 남아 `req:new` 가 실패한다(설계 r02 P1). `git add -A` 는 쓰지 않는다.
+
+  ⚠️ **phase-1 은 이 계약 이전에 커밋됐다**(한 줄 `&&`). 분석기 출력의 정정은 **phase-2 의 변경분에
+  들어 있다** — 계획 문구만 고치고 끝내지 않는다. phase-2 리뷰가 그 diff 를 본다.
 - 🔴 **티켓 밖 더러운 경로는 데이터로 열거**하고 명령으로 만들지 않는다(도구가 그 파일이 뭔지 모른다).
 - 계약 스위트: `npx vitest run tests/unit/nonconvergence.test.ts tests/unit/dispatch.test.ts`
 - Codex 승인.

@@ -512,6 +512,26 @@ npx commitgate req:review-exception <REQ> --close-stale <series_id> --reason "<w
   already recorded; it only finishes what is left.
 
 ## When a review stops at the cap (`hardCap`) — `--resolve replace`
+### What the tool tells you when it stops
+
+At the cap you also get **why it did not converge** and **commands that succeed from this state**.
+
+```text
+review 예산 소진 — 9회차는 어떤 경로로도 실행하지 않는다(hardCap=8).
+
+── 왜 수렴하지 않았나 (조언 — 감사 증거 아님) ──
+  라운드: r01 needs-fix · r02 needs-fix · … · r08 needs-fix
+  서로 다른 축 2개가 반복해서 걸렸다: scripts/req/req-next.ts(r01·r03·r07) · …
+```
+
+- 🔴 **It is advice, not evidence.** No approval, commit, or merge decision reads it.
+- 🔴 **No new review is dispatched.** It only reads round records that already exist.
+- 🔴 **Raising `hardCap` is not offered.** Putting it on the list would make it the default answer.
+- If nothing repeats, it says the findings differed every round — that means the **scope is wide**,
+  not that one thing is stuck. With no round records at all it offers **no decomposition** (no
+  observation, no recommendation).
+
+
 
 At `hardCap` the tool stops calling reviews. You have two ways forward.
 
