@@ -2,14 +2,14 @@
   "id": "REQ-2026-142",
   "branch": "feat/req-2026-142-evidence-finalization-recovery",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffd88-8be9-79f2-837b-740122b0bbfc",
-  "review_base_sha": "7fe8a773d82d701c50ad034ac504bf69c8b282b5",
-  "review_diff_hash": "5c5c2d0fb076b3816639c3899157a70a0dfac07a",
+  "codex_thread_id": "019ffd8f-98eb-7123-b379-9a6756655d02",
+  "review_base_sha": "95753e81d11a8c7ed89ba65a1182978e385d7766",
+  "review_diff_hash": "420c6fd853e1c5df9e594a082189f70b69f99bdf",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "bd13b368803b51f2c510fe9b8646c0a372d327c73426cb20b44db697d07aae14",
-  "current_phase": "phase-1-pin-archive-inventory",
+  "current_phase": "phase-2-recovery-plan",
   "phases": [
     {
       "id": "phase-1-pin-archive-inventory",
@@ -20,7 +20,8 @@
     {
       "id": "phase-2-recovery-plan",
       "title": "복구 판정(순수)",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     },
     {
       "id": "phase-3-d10-allowlist-and-execute",
@@ -48,16 +49,23 @@
       "phase_id": "phase-1-pin-archive-inventory",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-recovery-plan#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-recovery-plan",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-pin-archive-inventory",
+    "phase_id": "phase-2-recovery-plan",
     "outcome": "approved",
-    "compare_hash": "7443568d6657c408517a9d6680bb7ea8533203e1f236967b7272940786240f4d",
+    "compare_hash": "ab4a68a11bdeaf044a17b84a2d31acfd1fb92207e2c9d8d8e6fd9eb2aacc47dd",
     "count": 1,
     "errors": [],
-    "at": "2026-08-13T23:52:32.432Z",
+    "at": "2026-08-14T00:00:01.591Z",
     "findings": [],
     "elided_count": 0
   },
@@ -85,6 +93,12 @@
       "phase_id": "phase-1-pin-archive-inventory",
       "consumed_by_commit_sha": "d97c376dfb45a27e14b31d9b6fb9f8a0e1cb7dbf",
       "approval_consumed_at": "2026-08-13T23:53:04.514Z"
+    },
+    {
+      "approved_tree": "420c6fd853e1c5df9e594a082189f70b69f99bdf",
+      "phase_id": "phase-2-recovery-plan",
+      "consumed_by_commit_sha": "4efa4a749f8f666f1ec376d602a99fda357270f0",
+      "approval_consumed_at": "2026-08-14T00:00:22.570Z"
     }
   ],
   "user_commit_confirmed": null
