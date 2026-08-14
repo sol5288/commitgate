@@ -2,14 +2,14 @@
   "id": "REQ-2026-151",
   "branch": "feat/req-2026-151-terminal-reentry-and-state-commitment",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00043-64a5-7301-85ee-b764a1fd4edc",
-  "review_base_sha": "b37ea01778461c777cbdfabf9f20f627e8904821",
-  "review_diff_hash": "3390269695d81235ae857ecc20cf3e599071d675",
+  "codex_thread_id": "01a00057-51a6-7b63-b8d4-45f597ee5989",
+  "review_base_sha": "7b58aaacd4e1db0f2e50b0066ec14687655900bb",
+  "review_diff_hash": "1ef68616de82632b0954a68c8f79afe858430184",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "f8f48b6e0231a52b7440b13ac00b3de452003c300f42eda531ab833a19b8e21a",
-  "current_phase": "phase-1-terminal-reentry-guard",
+  "current_phase": "phase-2-consumed-state-commitment",
   "phases": [
     {
       "id": "phase-1-terminal-reentry-guard",
@@ -20,7 +20,8 @@
     {
       "id": "phase-2-consumed-state-commitment",
       "title": "소비 state 결속",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -43,16 +44,23 @@
       "phase_id": "phase-1-terminal-reentry-guard",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-consumed-state-commitment#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-consumed-state-commitment",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-terminal-reentry-guard",
+    "phase_id": "phase-2-consumed-state-commitment",
     "outcome": "approved",
-    "compare_hash": "1b94c537018cf7e3d6380bdbd40b3bc09b0363490d40191a9cbb01e7b3b9a963",
+    "compare_hash": "cc3a8ee98f8ca63a5714f7045a8fca8f1cdd9ab34f91959d083f365f2655bd20",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T12:35:53.878Z",
+    "at": "2026-08-14T12:57:30.655Z",
     "findings": [],
     "elided_count": 0
   },
@@ -100,6 +108,12 @@
       "phase_id": "phase-1-terminal-reentry-guard",
       "consumed_by_commit_sha": "735d74c877027a19cebe98a5b0b48d5c33acc08f",
       "approval_consumed_at": "2026-08-14T12:36:24.025Z"
+    },
+    {
+      "approved_tree": "1ef68616de82632b0954a68c8f79afe858430184",
+      "phase_id": "phase-2-consumed-state-commitment",
+      "consumed_by_commit_sha": "21595690db62aa02f2755a054d7e1aef4996d4ed",
+      "approval_consumed_at": "2026-08-14T12:57:48.031Z"
     }
   ],
   "user_commit_confirmed": null
