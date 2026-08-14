@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+- **docs: 이 저장소의 `stopGate` 를 `"auto"` 로 전환(도그푸딩)** — `auto` 는 **명시 opt-in** 이고,
+  사전 위임(`req:delegate`)이 없으면 통합은 종전대로 막힙니다. 이 전환은 **이 저장소의 설정**이며
+  도구 기본값이나 소비자 동작을 바꾸지 않습니다.
+  - 전환 경로 실측: `req:new` 는 clean tree 를 요구하므로 config 를 먼저 바꿔도 티켓이 안 열립니다.
+    티켓 안에서 config 를 바꾸고 **`req:repolicy <REQ> --run`** 으로 재채택하면 그 티켓부터 새 정책이
+    적용됩니다(D32 드리프트는 WARN 이지 FAIL 이 아닙니다).
+- **docs: REQ-2026-142 설계문서 정오표** — 완결 티켓의 본문은 고치지 않고 정오표 절만 덧붙였습니다.
+  `PinnedInventoryItem` 필드명 · `resumeFrom` 값 3종 · 🔴 **없는 테스트 경로**(vitest 는 매칭 0건이어도
+  exit 0 이라 초록이 거짓말을 합니다).
+
 - **fix: 커밋이 증거 기록 도중 죽으면 안내하는 복구 명령 자체가 실행될 수 없던 문제** — `req:next`가
   `req:commit --finalize --run`을 안내하는데, 그 상황에서는 `approvals.jsonl`이 더러워 `D10`이
   그 명령을 막았습니다. **staged로 바꿔도 같았습니다**(`responses/`는 인덱스 여부와 무관하게 flag).

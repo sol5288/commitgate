@@ -166,3 +166,22 @@ REQ-2026-141 이 `--close-stale` 에서 얻은 교훈과 같다(그때 커밋을
 - **정상 경로 무회귀**가 최우선 오라클이다: D10 은 `recoveryAllowlist === undefined` 에서 지금과 완전히 동일.
 - 🔴 **이 REQ 자신이 그 중단을 다시 밟을 수 있다.** 그때 phase-3 이 아직 없으면 복구할 수 없으므로,
   phase 마다 커밋 직후 `git status` 로 확인하고 중단 흔적이 보이면 즉시 보고한다.
+
+## 정오표 (REQ-2026-143)
+
+🔴 **본문은 승인 시점 그대로 두고 여기에만 정정을 적는다.** 본문을 고치면 "승인받은 것"이 사후에 달라져
+감사 기록으로서 거짓이 된다.
+
+| # | 어디 | 이 문서가 말하는 것 | 실제 구현 |
+|---|---|---|---|
+| 1 | DEC-2 코드 예시 | `items: { path: string; sha256: string }[]` | `items: PinnedInventoryItem[]` = `{ response_path; sha256 }` |
+| 2 | DEC-5 `resumeFrom` | `'stage' │ 'evidence-commit' │ 'reverify' │ 'checkpoint'` | `'evidence' │ 'consume' │ 'checkpoint'` |
+
+**#1** — 필드명을 `response_path` 로 둔 이유는 매니페스트 행의 `archive_inventory` 와 **같은 모양**이어야
+DEC-3a 의 교차 대조(HEAD 행 vs 워킹 핀)가 필드 단위로 성립하기 때문이다. `lib/review-types.ts` 의
+`PinnedInventoryItem` 이 정본이고 `evidence.ts` 의 `ArchiveInventoryItem` 은 그 별칭이다.
+
+**#2** — `finalizeEvidenceAndConsume` 이 stage·커밋·재검증을 **이미 HEAD 기준 멱등**으로 처리하므로
+(REQ-2026-052 phase-3a P1) 그 안을 다시 쪼개면 **진행 지점이라는 개념이 두 벌**이 되고 둘이 갈라진다.
+DEC-5 의 4단계 실행 순서는 그대로이며, 표의 6개 중단 지점과 3개 값의 대응표는
+`scripts/req/lib/evidence-recovery.ts` 의 `RecoveryResumeStage` 주석에 있다.
