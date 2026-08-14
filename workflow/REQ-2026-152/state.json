@@ -2,19 +2,20 @@
   "id": "REQ-2026-152",
   "branch": "feat/req-2026-152-req-2026-152-binding-integrity-and-untracked-guidance",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00087-09f4-7b50-80f9-09c36061a306",
-  "review_base_sha": "cae17ac3ac4f2175fc7637be7837d6189b9699cd",
-  "review_diff_hash": "dbecaaa12ce2cc59b3fdda69b95da5a5f01b79dc",
+  "codex_thread_id": "01a0009b-eb39-7e42-9f72-3aaa08f0e95a",
+  "review_base_sha": "8a71858b585b0b471b3bcbf0498ea37eb1320e1f",
+  "review_diff_hash": "610b968856018e0b46a76ef807be56f1744e642c",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "50e7e815071931ddcbe780a854a59cf97f40014641af309e0df1407565888a12",
-  "current_phase": null,
+  "current_phase": "phase-1-untracked-stash-guidance",
   "phases": [
     {
       "id": "phase-1-untracked-stash-guidance",
       "title": "untracked stash 안내",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     },
     {
       "id": "phase-2-binding-integrity",
@@ -40,8 +41,9 @@
       "series_id": "phase:phase-1-untracked-stash-guidance#1",
       "review_kind": "phase",
       "phase_id": "phase-1-untracked-stash-guidance",
-      "attempts": 1,
-      "closed_reason": null
+      "attempts": 5,
+      "closed_reason": "approved",
+      "void_attempts": 1
     },
     {
       "series_id": "design:-#2",
@@ -57,13 +59,13 @@
     "plan": "d81d0c4d54b5000e1b7c2214255059a9fb95897c"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-untracked-stash-guidance",
     "outcome": "approved",
-    "compare_hash": "a3f44097cc5570c827ffc9faedd711cb746747967bc964e595f9d45e19c8f095",
-    "count": 1,
+    "compare_hash": "abea56d0d6ec6757ffa19287f24aef6463a40394d4e50049def5bd6b2fd48143",
+    "count": 2,
     "errors": [],
-    "at": "2026-08-14T13:48:50.941Z",
+    "at": "2026-08-14T14:12:41.332Z",
     "findings": [],
     "elided_count": 0
   },
@@ -103,5 +105,14 @@
       "source_response_path": "workflow/REQ-2026-152/responses/design-r04-approved.json"
     },
     "design_hash": "50e7e815071931ddcbe780a854a59cf97f40014641af309e0df1407565888a12"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "610b968856018e0b46a76ef807be56f1744e642c",
+      "phase_id": "phase-1-untracked-stash-guidance",
+      "consumed_by_commit_sha": "5a1af865ed5d0bd64e44e3b07617a5fa41a3f7fc",
+      "approval_consumed_at": "2026-08-14T14:13:22.147Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
