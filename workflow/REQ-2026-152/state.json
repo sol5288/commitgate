@@ -2,14 +2,14 @@
   "id": "REQ-2026-152",
   "branch": "feat/req-2026-152-req-2026-152-binding-integrity-and-untracked-guidance",
   "risk_level": "LOW",
-  "codex_thread_id": "01a0009b-eb39-7e42-9f72-3aaa08f0e95a",
-  "review_base_sha": "8a71858b585b0b471b3bcbf0498ea37eb1320e1f",
-  "review_diff_hash": "610b968856018e0b46a76ef807be56f1744e642c",
+  "codex_thread_id": "01a000b4-51f3-7a51-a587-0f555e7507b6",
+  "review_base_sha": "e0a6435c7a2c8d4bcb3ddf2d89de8d00b3ad2872",
+  "review_diff_hash": "43d37d2cc3a183ffcef4aefc93f4b65166436f3b",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "50e7e815071931ddcbe780a854a59cf97f40014641af309e0df1407565888a12",
-  "current_phase": "phase-1-untracked-stash-guidance",
+  "current_phase": "phase-2-binding-integrity",
   "phases": [
     {
       "id": "phase-1-untracked-stash-guidance",
@@ -20,7 +20,8 @@
     {
       "id": "phase-2-binding-integrity",
       "title": "결속 무결성",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -51,6 +52,13 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-binding-integrity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-binding-integrity",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -60,12 +68,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-untracked-stash-guidance",
+    "phase_id": "phase-2-binding-integrity",
     "outcome": "approved",
-    "compare_hash": "abea56d0d6ec6757ffa19287f24aef6463a40394d4e50049def5bd6b2fd48143",
-    "count": 2,
+    "compare_hash": "4dd10cafeb6cffabdfcd254ab6fe095c2bc8d77d40c8833f0f9fb4da6cf0379e",
+    "count": 1,
     "errors": [],
-    "at": "2026-08-14T14:12:41.332Z",
+    "at": "2026-08-14T14:38:41.235Z",
     "findings": [],
     "elided_count": 0
   },
@@ -112,6 +120,12 @@
       "phase_id": "phase-1-untracked-stash-guidance",
       "consumed_by_commit_sha": "5a1af865ed5d0bd64e44e3b07617a5fa41a3f7fc",
       "approval_consumed_at": "2026-08-14T14:13:22.147Z"
+    },
+    {
+      "approved_tree": "43d37d2cc3a183ffcef4aefc93f4b65166436f3b",
+      "phase_id": "phase-2-binding-integrity",
+      "consumed_by_commit_sha": "ba9d0abc2cff963a04069ac32d67bed94cdbdfb3",
+      "approval_consumed_at": "2026-08-14T14:38:54.829Z"
     }
   ],
   "user_commit_confirmed": null
