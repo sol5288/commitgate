@@ -901,7 +901,10 @@ function resolveNextCore(input: NextInput): NextAction {
        *    오히려 정지를 잃었다. 묶음이 없으면 이 REQ 다음에 올 것은 다음 REQ 가 아니라 통합이다.
        */
       return terminalIntegrationAction(input, {
-        prefix: 'stopGate=merge 인데 이 feature 가 속한 delivery 묶음이 없다 — 이 REQ 의 통합이 다음 지점이다. ',
+        // 🔴 REQ-2026-146: 정책명을 **박지 않는다**. 이 분기는 `defersToIntegration`(= merge 또는 auto)
+        //    이라 `auto` 티켓도 여기로 오는데, 예전엔 `merge` 가 하드코딩돼 **다른 정책 이름을 말했다**
+        //    (같은 순간 D32 는 `auto` 라고 했다). 값이 하나 늘 때 문자열을 갱신하지 않으면 재발한다.
+        prefix: `stopGate=${input.stopGate ?? 'merge'} 인데 이 feature 가 속한 delivery 묶음이 없다 — 이 REQ 의 통합이 다음 지점이다. `,
         requireHighConfirm: true,
       })
     }
@@ -1026,7 +1029,7 @@ export function softLimitUpgradeHint(input: NextInput, hardBlocked: boolean): st
  *    확인을 받았고, 승인 소비(`consumeApproval`)가 `user_commit_confirmed` 를 비웠기 때문에 종단에서는
  *    항상 "확인 없음"으로 보인다. 확인이 사라진 것이 아니라 **이미 쓰였다**.
  */
-function terminalIntegrationAction(input: NextInput, opts: { prefix?: string; requireHighConfirm?: boolean } = {}): NextAction {
+export function terminalIntegrationAction(input: NextInput, opts: { prefix?: string; requireHighConfirm?: boolean } = {}): NextAction {
   if (opts.requireHighConfirm && input.state.risk_level === 'HIGH') {
     const scope = requiredConfirmScope(input.stopGate ?? 'phase', { inDeliverySet: input.deliveryGate != null })
     const problem = userConfirmProblem(input.state.user_commit_confirmed)
@@ -1039,7 +1042,15 @@ function terminalIntegrationAction(input: NextInput, opts: { prefix?: string; re
         detail:
           `HIGH 위험 티켓이고 이 REQ 의 통합이 다음 지점이다. stopGate="${input.stopGate}" 는 scope="${scope}" 확인을 요구한다 — ` +
           '🔴 그 범위의 **아직 작성되지 않은 변경까지 미리 승인**하는 것이다. ' +
-          '커밋에서 멈추지 않는 설정이므로 이 확인이 이 티켓의 **유일한** 사람 확인이다.',
+          (input.stopGate === 'auto'
+            ? // 🔴 REQ-2026-146 (phase r01 P1): `auto` 는 이 확인 **뒤에** 사전 위임이 하나 더 필요하다.
+              //    확인을 건너뛰고 위임 안내를 먼저 내지 **않는다** — HIGH 확인은 안전 중단이고, 자동화가
+              //    넘어도 되는 것이 아니다. 대신 **두 단계임을 여기서 미리 말한다**. 다음 단계가 있다는 것을
+              //    모른 채 확인만 하면, 그 다음에 integrate 가 `absent` 로 막혀 또 멈춘다.
+              '이 확인 **뒤에** 사전 위임이 하나 더 필요하다 — ' +
+              `\`${delegateCommand(input, true) ?? 'commitgate req:delegate … --high-risk --run'}\` ` +
+              '(HIGH 라 `--high-risk` 가 없으면 통합이 `high-risk-unacked` 로 막힌다).'
+            : '커밋에서 멈추지 않는 설정이므로 이 확인이 이 티켓의 **유일한** 사람 확인이다.'),
         command: buildScriptInvocation(input.packageManager, 'req:confirm', [
           reqArg,
           '--scope',
@@ -1053,6 +1064,10 @@ function terminalIntegrationAction(input: NextInput, opts: { prefix?: string; re
       }
     }
   }
+  // 🔴 REQ-2026-146: `auto` 는 **다음 명령이 다르다**. 사전 위임이 없으면 `integrate` 가
+  //    `denied(absent)` 로 exit 1 하므로, I1/I2/B1 승인 문장을 받아도 그 다음이 막힌다 —
+  //    안내대로 해도 안 되는, 이 저장소가 반복해 온 결함이다.
+  if (input.stopGate === 'auto') return autoDelegationAction(input, opts.prefix ?? '')
   return {
     kind: 'AWAIT_HUMAN',
     detail:
@@ -1060,6 +1075,70 @@ function terminalIntegrationAction(input: NextInput, opts: { prefix?: string; re
       '모든 phase가 자동 커밋됐다. feature→main 통합은 사람 승인이 필요하다 — 경로(PR 또는 direct push)와 승인 문장은 AGENTS.md 통제점표(I1/I2/B1)를 따른다. 승인 전에 `npx commitgate verify-range` 로 이 범위의 승인 증거를 로컬에서 확인할 수 있다(GitHub CI는 opt-in — 기본 생략).',
     controlPoint: '통합(feature→main)',
     approvalSentence: `통합 경로를 택하고 그 통제점의 정본 승인 문장을 받는다 — ${integrationPathGuidance()}`,
+  }
+}
+
+/**
+ * 셸 인수로 **안전하게 렌더링할 수 있는 값인가**(순수·REQ-2026-146 DEC-2b).
+ *
+ * 🔴 `branchPrefix` 는 임의 문자열이고 git ref 는 `;` 를 허용한다. 값을 무인용으로 보간하면
+ *    `feat/req-;whoami-…` 같은 branch 가 **붙여넣는 순간 별도 명령으로 실행**된다. 큰따옴표로 감싸면
+ *    `;`·공백은 무해해지지만, PowerShell 은 큰따옴표 안에서 `$`·`` ` `` 를 해석하고 `"` 는 인용을 닫는다.
+ *    그런 값은 **명령으로 만들지 않는다** — 안전하게 못 만들면 만들지 않는다.
+ */
+export function shellSafeArg(v: string): boolean {
+  return v.length > 0 && !/["`$\\\r\n]/.test(v)
+}
+
+/**
+ * 사전 위임 발급 명령(순수). 안전하게 렌더링할 수 없으면 `undefined` — 그때는 **명령을 만들지 않는다**.
+ * 🔴 HIGH 확인 분기와 `auto` 종단 분기가 **같은 함수**를 쓴다. 두 곳이 갈라지면 앞 단계가 알려 준
+ *    명령과 뒤 단계가 실제로 주는 명령이 달라진다.
+ */
+function delegateCommand(input: NextInput, high: boolean): string | undefined {
+  const reqId = String(input.state.id ?? '')
+  const branch = typeof input.state.branch === 'string' ? input.state.branch : ''
+  if (!shellSafeArg(reqId) || !shellSafeArg(branch)) return undefined
+  return buildScriptInvocation(input.packageManager, 'req:delegate', [
+    '--scope',
+    `ticket:${reqId}`,
+    '--source',
+    `"${branch}"`,
+    '--sentence',
+    '"사람이 말한 승인 문장"',
+    ...(high ? ['--high-risk'] : []),
+    '--run',
+  ]).join(' ')
+}
+
+/** `auto` 정책의 통합 안내 — 다음 지점은 통합이 아니라 **사전 위임 발급**이다. */
+function autoDelegationAction(input: NextInput, prefix: string): NextAction {
+  const reqId = String(input.state.id ?? '')
+  const branch = typeof input.state.branch === 'string' ? input.state.branch : ''
+  const high = input.state.risk_level === 'HIGH'
+  const why =
+    '모든 phase가 자동 커밋됐다. stopGate="auto" 는 **사전 위임이 있을 때만** 자동 통합한다 — ' +
+    '위임이 없으면 `commitgate integrate` 가 `absent` 로 멈춘다(설정이나 대화 문장으로는 열리지 않는다). ' +
+    '발급 문장은 **사람이 말한 그대로**여야 한다. ' +
+    (high
+      ? '🔴 이 티켓은 HIGH 위험이라 `--high-risk` 가 **필수**다 — 없으면 통합이 `high-risk-unacked` 로 막힌다. '
+      : '') +
+    '원격 push·branch protection bypass 는 **기본 불허**이고 필요하면 별도로 위임한다. ' +
+    '승인 전에 `npx commitgate verify-range` 로 이 범위의 승인 증거를 로컬에서 확인할 수 있다.'
+  // 🔴 안전하게 렌더링할 수 없는 값이면 **명령을 만들지 않는다**. 값은 데이터로 보여 준다.
+  const command = delegateCommand(input, high)
+  const renderable = command !== undefined
+  return {
+    kind: 'AWAIT_HUMAN',
+    detail:
+      prefix +
+      why +
+      (renderable
+        ? ''
+        : ` ⚠️ branch 값에 셸이 해석하는 문자가 있어 실행 가능한 명령으로 만들지 않았다 — scope=ticket:${reqId} · source=${branch} 를 직접 넣어 \`req:delegate\` 를 실행한다.`),
+    command,
+    controlPoint: '사전 위임 발급(stopGate=auto)',
+    approvalSentence: `사전 위임을 발급할지 사람이 정하고 그 승인 문장을 그대로 --sentence 에 넘긴다${high ? ' (HIGH 이므로 --high-risk 포함)' : ''}`,
   }
 }
 
