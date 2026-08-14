@@ -2,14 +2,14 @@
   "id": "REQ-2026-154",
   "branch": "feat/req-2026-154-req-2026-154-binding-and-path-fidelity",
   "risk_level": "LOW",
-  "codex_thread_id": "01a0011d-0672-7170-8ca9-95e9ef2cdfe7",
-  "review_base_sha": "b8e73da8281ad84b69e9910f8af47109b727e9da",
-  "review_diff_hash": "c967b2b9137704991aa1e384f5fd1b23174de220",
+  "codex_thread_id": "01a00124-4137-7750-84fd-47fb350dcd5f",
+  "review_base_sha": "a30f01350c4bbe248842430b66edacd4de95a5f3",
+  "review_diff_hash": "97108cfda85af3454a8dc058ca9618d35623962a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "103c84c4f4b57452184fac6a8ce764e4427a1ef6791bceebfb631dbbf4d2f999",
-  "current_phase": "phase-2-gitignore-relaxation",
+  "current_phase": "phase-3-porcelain-path-fidelity",
   "phases": [
     {
       "id": "phase-1-consume-binding",
@@ -26,7 +26,8 @@
     {
       "id": "phase-3-porcelain-path-fidelity",
       "title": "porcelain 경로 충실도",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -71,16 +72,23 @@
       "phase_id": "phase-2-gitignore-relaxation",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-porcelain-path-fidelity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-porcelain-path-fidelity",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-gitignore-relaxation",
+    "phase_id": "phase-3-porcelain-path-fidelity",
     "outcome": "approved",
-    "compare_hash": "10cc25bb8c3764ae8ec3aeb53a676dc7ee9c50a7db17f2af755738f4c9a0fb45",
+    "compare_hash": "9ddc75a80badca4e6f618efac1d3148f9ab64e60e4a1957c37b28007913e9d39",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T16:33:55.566Z",
+    "at": "2026-08-14T16:40:43.889Z",
     "findings": [],
     "elided_count": 0
   },
@@ -142,6 +150,12 @@
       "phase_id": "phase-2-gitignore-relaxation",
       "consumed_by_commit_sha": "c04673297b1081a178830fd78e08d95dc687a80e",
       "approval_consumed_at": "2026-08-14T16:34:07.627Z"
+    },
+    {
+      "approved_tree": "97108cfda85af3454a8dc058ca9618d35623962a",
+      "phase_id": "phase-3-porcelain-path-fidelity",
+      "consumed_by_commit_sha": "3a42dea7174e09a99672dd413503b7634c1792af",
+      "approval_consumed_at": "2026-08-14T16:41:23.096Z"
     }
   ],
   "user_commit_confirmed": null
