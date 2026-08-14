@@ -2,14 +2,14 @@
   "id": "REQ-2026-149",
   "branch": "feat/req-2026-149-guidance-safety-and-attribution-successor",
   "risk_level": "LOW",
-  "codex_thread_id": "019fffae-6a37-7352-9872-6b1ee903cb5a",
-  "review_base_sha": "17321c44bef9f5c40cd4b4e7aafa5843781adbf0",
-  "review_diff_hash": "ffd316ec0743334893896aa5294c7540a393d6a8",
+  "codex_thread_id": "019fffb6-1b3c-7da1-8f9c-be3c4a344838",
+  "review_base_sha": "ea5f3bee751148379227c7686df00147fb833db6",
+  "review_diff_hash": "0575f667025a89963800e19ffd72619e3e7a9b61",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "e8dc65715d97d540eb2825d6dc6aa09d56de470850e80d481e019ea806164586",
-  "current_phase": "phase-1-placeholder-and-shell-safe",
+  "current_phase": "phase-2-pathspec-and-series-binding",
   "phases": [
     {
       "id": "phase-1-placeholder-and-shell-safe",
@@ -20,7 +20,8 @@
     {
       "id": "phase-2-pathspec-and-series-binding",
       "title": "파킹 pathspec + series 결속",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -62,16 +63,23 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-pathspec-and-series-binding#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-pathspec-and-series-binding",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-placeholder-and-shell-safe",
+    "phase_id": "phase-2-pathspec-and-series-binding",
     "outcome": "approved",
-    "compare_hash": "00e6d6a5a0bef2bf4f9a9aacdfd72decefc7d354420070e11f2932253ba48013",
+    "compare_hash": "b8ab8dacd92dc36a3204ec20699e3cabd5cba2345565e4ab49a9ead8c1fd7ab3",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T09:54:33.211Z",
+    "at": "2026-08-14T10:00:20.300Z",
     "findings": [],
     "elided_count": 0
   },
@@ -119,6 +127,12 @@
       "phase_id": "phase-1-placeholder-and-shell-safe",
       "consumed_by_commit_sha": "16e91235aeae8a7297f1cc230187d50e2180cd3c",
       "approval_consumed_at": "2026-08-14T09:55:06.193Z"
+    },
+    {
+      "approved_tree": "0575f667025a89963800e19ffd72619e3e7a9b61",
+      "phase_id": "phase-2-pathspec-and-series-binding",
+      "consumed_by_commit_sha": "60e480188b6379ad977938aabd171541a60a72b2",
+      "approval_consumed_at": "2026-08-14T10:00:47.436Z"
     }
   ],
   "user_commit_confirmed": null
