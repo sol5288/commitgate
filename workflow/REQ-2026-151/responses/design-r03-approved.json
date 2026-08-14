@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"919a3c0da50d08c82c96e5331daba92bd824977c","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"Phase 1을 구현하고, 선언된 계약 스위트와 실제 CLI e2e를 실행한 뒤 phase 리뷰를 요청하세요.","observations":[]}

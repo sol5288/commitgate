@@ -159,6 +159,11 @@ export interface ManifestEntry {
    * 형식 검증은 kind와 무관하게 동일하게 적용된다.
    */
   archive_inventory?: ArchiveInventoryItem[]
+  /**
+   * REQ-2026-151 DEC-2: `sha256(serializeState(consumeState 산출))`. **선택 키**다 — 이 REQ 이전
+   * 행에는 없고, 부재는 "결속 없음"이라 checkpoint 판정이 판별자 D 를 건너뛴다(하위호환).
+   */
+  consumed_state_sha256?: string
 }
 
 /** approvals.jsonl 엔트리 허용 top-level 키(이 외 = 주입/오염 → fail). */
@@ -176,6 +181,9 @@ const MANIFEST_KEYS = new Set([
   'consumed_by_commit_sha',
   'user_commit_confirmed',
   'archive_inventory', // REQ-2026-048 DEC-2(선택 — 부재해도 유효)
+  // 🔴 REQ-2026-151 DEC-2(선택 — 옛 행에는 없다): 이 소비가 만든 state 바이트의 sha256.
+  //    checkpoint 복구가 "정확히 도구가 만든 state"만 커밋하도록 결속한다.
+  'consumed_state_sha256',
   // REQ-2026-069 DEC-7: rebind 행 전용. 🔴 design/phase 행에 나타나면 아래 kind 격리 검사가 거부한다 —
   //    여기 추가하는 것은 '어느 행에서든 허용'이 아니라 '매니페스트 어휘에 존재'라는 뜻이다.
   'from_design_ref',

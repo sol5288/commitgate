@@ -1847,6 +1847,15 @@ export function main(argv: string[] = process.argv.slice(2)): void {
         ticketRel,
         state,
         headText: (rel) => createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(rel),
+        // 🔴 REQ-2026-150 판별자 A: `HEAD^` 를 함께 읽는다. 두 호출부가 같은 조립 함수를 쓰므로
+        //    한쪽만 주면 doctor 통과·commit 거부 교착이 생긴다.
+        parentText: (rel) => {
+          try {
+            return git(['show', `HEAD^:${rel}`])
+          } catch {
+            return null
+          }
+        },
         dirtyPaths: () => statusEntries.flatMap((e) => (e.origPath === undefined ? [e.path] : [e.origPath, e.path])),
         revParse: (rev) => {
           try {

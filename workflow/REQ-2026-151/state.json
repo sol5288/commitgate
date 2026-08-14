@@ -1,0 +1,120 @@
+{
+  "id": "REQ-2026-151",
+  "branch": "feat/req-2026-151-terminal-reentry-and-state-commitment",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a00057-51a6-7b63-b8d4-45f597ee5989",
+  "review_base_sha": "7b58aaacd4e1db0f2e50b0066ec14687655900bb",
+  "review_diff_hash": "1ef68616de82632b0954a68c8f79afe858430184",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "f8f48b6e0231a52b7440b13ac00b3de452003c300f42eda531ab833a19b8e21a",
+  "current_phase": "phase-2-consumed-state-commitment",
+  "phases": [
+    {
+      "id": "phase-1-terminal-reentry-guard",
+      "title": "종결 재진입 차단",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-consumed-state-commitment",
+      "title": "소비 state 결속",
+      "status": "pending",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-terminal-reentry-guard#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-terminal-reentry-guard",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-consumed-state-commitment#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-consumed-state-commitment",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-consumed-state-commitment",
+    "outcome": "approved",
+    "compare_hash": "cc3a8ee98f8ca63a5714f7045a8fca8f1cdd9ab34f91959d083f365f2655bd20",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T12:57:30.655Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "e90319cee72307fe2c8cec6a47ed623a95c24efd",
+    "design": "000d10dcb66423a3c334212ad619ec327d1b54e3",
+    "plan": "031f2be35417edea95df8229f0b927845a05361c"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-151/responses/design-r03-approved.json",
+    "response_sha256": "e92e813bb130013ac2f89f3c43e303c82909d645c8aef11675ba67ad4d6f0441",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "919a3c0da50d08c82c96e5331daba92bd824977c",
+    "codex_thread_id": "01a00035-f084-75c3-89cd-09eadf4934fe",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T12:19:22.353Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-151/responses/design-r01-needs-fix.json",
+          "sha256": "1cb2f2aadd3fc20c8190bcd9982b447d499823b39c8c531e45d6aa14d4cb072f"
+        },
+        {
+          "response_path": "workflow/REQ-2026-151/responses/design-r02-needs-fix.json",
+          "sha256": "d9b0d2ec9c30c62a3a18800425286c2dca0813f4672aa225b9553ff50e30c426"
+        },
+        {
+          "response_path": "workflow/REQ-2026-151/responses/design-r03-approved.json",
+          "sha256": "e92e813bb130013ac2f89f3c43e303c82909d645c8aef11675ba67ad4d6f0441"
+        }
+      ],
+      "inventory_sha256": "e046d93c6d1503d5dea1105294921c51f7b6c3c9037b17a4e2e341f764a2c0f0",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-151/responses/design-r03-approved.json"
+    },
+    "design_hash": "f8f48b6e0231a52b7440b13ac00b3de452003c300f42eda531ab833a19b8e21a"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3390269695d81235ae857ecc20cf3e599071d675",
+      "phase_id": "phase-1-terminal-reentry-guard",
+      "consumed_by_commit_sha": "735d74c877027a19cebe98a5b0b48d5c33acc08f",
+      "approval_consumed_at": "2026-08-14T12:36:24.025Z"
+    },
+    {
+      "approved_tree": "1ef68616de82632b0954a68c8f79afe858430184",
+      "phase_id": "phase-2-consumed-state-commitment",
+      "consumed_by_commit_sha": "21595690db62aa02f2755a054d7e1aef4996d4ed",
+      "approval_consumed_at": "2026-08-14T12:57:48.031Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

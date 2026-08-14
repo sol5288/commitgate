@@ -6,11 +6,17 @@
  *    상태가 tsc 를 통과했다 — optional 필드라서). 그래서 ① 실제 D10 술어를 구동하고 ② 소스에서 배선을
  *    구조적으로 고정한다.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { packageRoot } from '../../scripts/req/lib/config'
+import { buildRecoveryFacts, planEvidenceRecovery } from '../../scripts/req/lib/evidence-recovery'
 import { findUnstagedOrUntracked } from '../../scripts/req/review-codex'
-import { parseStatusZ } from '../../scripts/req/lib/porcelain'
+import { parseStatusZ, STATUS_Z_ARGS } from '../../scripts/req/lib/porcelain'
 import { executeEvidenceRecovery, type RecoveryPlan } from '../../scripts/req/lib/evidence-recovery'
 
 const T = 'workflow/REQ-2026-142'
@@ -167,5 +173,497 @@ describe('🔴 배선 가드', () => {
 
   it('checkpoint 재개는 evidence finalize 를 부르지 않는다(어댑터가 던진다)', () => {
     expect(commit).toMatch(/checkpoint 재개에서 evidence finalize 가 호출됐다/)
+  })
+})
+
+describe('[REQ-2026-150] 🔴 배선 가드 — 두 호출부가 HEAD^ 를 함께 읽는다', () => {
+  const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
+
+  it('doctor·commit 둘 다 parentText 를 주입한다', () => {
+    // 한쪽만 주면 doctor 통과·commit 거부 교착이 생긴다(REQ-2026-142 와 같은 이유).
+    for (const f of ['scripts/req/req-doctor.ts', 'scripts/req/req-commit.ts'])
+      expect(read(f), f).toMatch(/parentText:\s*\(rel\)\s*=>/)
+  })
+
+  it('🔴 판정 입력에 워킹 state 내용이 들어가지 않는다', () => {
+    const src = read('scripts/req/lib/evidence-recovery.ts')
+    // 워킹 state 는 `dirtyPaths`(범위)로만 들어온다 — 내용을 읽는 필드가 없어야 한다.
+    expect(src).toContain('headStateText')
+    expect(src).not.toMatch(/workingStateText|workingState:/)
+  })
+
+  it('🔴 동일성 키 계산에 시각이 없다', () => {
+    const src = read('scripts/req/lib/evidence-recovery.ts')
+    const i = src.indexOf('function consumedKey(')
+    const j = src.indexOf('\n}', i)
+    expect(src.slice(i, j)).not.toContain('approval_consumed_at')
+  })
+})
+
+/**
+ * 🔴 REQ-2026-150 phase-1 r01 P1: 순수 판정과 소스 가드만으로는 **배선 전체가 도는지** 못 본다.
+ *    실제 crash window 를 git 으로 만들고 `req:commit --finalize --run` 한 번으로 수렴하는지 본다.
+ */
+describe('[REQ-2026-150] 🔴 실 git e2e — crash window 가 한 번에 수렴한다', () => {
+  const gitOf = (repo: string) => (args: string[]): string =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+
+  /** 실제 저장소에서 사실을 조립해 판정한다(HEAD·HEAD^ 를 진짜로 읽는다). */
+  const runRecovery = (repo: string, ticketRel: string) => {
+    const git = gitOf(repo)
+    const show = (rev: string, rel: string): string | null => {
+      try {
+        return execFileSync('git', ['show', `${rev}:${rel}`], { cwd: repo, encoding: 'utf8' })
+      } catch {
+        return null
+      }
+    }
+    return planEvidenceRecovery(
+      buildRecoveryFacts({
+        ticketRel,
+        state: JSON.parse(readFileSync(join(repo, ticketRel, 'state.json'), 'utf8')) as Record<string, unknown>,
+        headText: (rel) => show('HEAD', rel),
+        parentText: (rel) => show('HEAD^', rel),
+        dirtyPaths: () =>
+          git(['status', '--porcelain'])
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .map((l) => l.slice(2).trim()),
+        revParse: (rev) => {
+          try {
+            return git(['rev-parse', rev]).trim()
+          } catch {
+            return null
+          }
+        },
+        fileSha: () => null,
+        hashUtf8: (v) => v,
+      }),
+    )
+  }
+
+  /** evidence-finalize 는 커밋됐고 소비 state 만 미커밋인 상태를 만든다. */
+  const crashWindow = (): { repo: string; ticket: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req150-'))
+    const git = gitOf(repo)
+    git(['init', '-q'])
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
+    writeFileSync(join(repo, 'package.json'), '{"name":"x","version":"0.0.0"}')
+    mkdirSync(join(repo, 'workflow'), { recursive: true })
+    writeFileSync(
+      join(repo, 'workflow', 'machine.schema.json'),
+      readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'),
+    )
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    mkdirSync(join(ticket, 'responses'), { recursive: true })
+    // ① 소비 **전** state 를 커밋(직전 checkpoint)
+    const before = { id: 'REQ-2026-001', branch: 'feat/req-2026-001-x', phases: [], consumed_approvals: [] }
+    writeFileSync(join(ticket, 'state.json'), JSON.stringify(before, null, 2) + '\n')
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    const sourceSha = git(['rev-parse', 'HEAD']).trim()
+    // ② evidence-finalize 커밋 — approvals.jsonl 에 소비 행 추가(state.json 은 커밋 안 함)
+    writeFileSync(
+      join(ticket, 'responses', 'approvals.jsonl'),
+      JSON.stringify({
+        kind: 'phase',
+        phase_id: 'phase-1-x',
+        response_path: 'workflow/REQ-2026-001/responses/phase-phase-1-x-r01-approved.json',
+        response_sha256: 'a'.repeat(64),
+        review_base_sha: 'b'.repeat(40),
+        approved_tree: 'c'.repeat(40),
+        approved_at: '2026-08-14T00:00:00Z',
+        consumed_at: '2026-08-14T00:01:00Z',
+        consumed_by_commit_sha: sourceSha,
+        user_commit_confirmed: null,
+      }) + '\n',
+    )
+    git(['add', '--', 'workflow/REQ-2026-001/responses/approvals.jsonl'])
+    git(['commit', '-qm', 'chore(REQ-2026-001): evidence-finalize'])
+    // ③ 소비 state write — **커밋하지 않는다**(여기서 중단)
+    writeFileSync(
+      join(ticket, 'state.json'),
+      JSON.stringify(
+        {
+          ...before,
+          consumed_approvals: [
+            { approved_tree: 'c'.repeat(40), phase_id: 'phase-1-x', consumed_by_commit_sha: sourceSha, approval_consumed_at: '2026-08-14T00:01:00Z' },
+          ],
+        },
+        null,
+        2,
+      ) + '\n',
+    )
+    return { repo, ticket }
+  }
+
+  it('🔴 --finalize --run 한 번으로 checkpoint 가 커밋되고 트리가 clean 해진다', () => {
+    const { repo, ticket } = crashWindow()
+    const git = gitOf(repo)
+    expect(git(['status', '--porcelain']).trim()).not.toBe('') // 중단 상태
+    const before = Number(git(['rev-list', '--count', 'HEAD']).trim())
+
+    /**
+     * 🔴 `main()` 은 doctor 를 `npm` 으로 spawn 해 임시 저장소에서 돌지 않는다. 그래서 **그 아래
+     *    전체 흐름**을 실제 git 으로 돈다: HEAD·HEAD^ 읽기 → 판정 → checkpoint 커밋.
+     *    (D10 예외 자체는 위 allowlist 스위트가 따로 고정한다.)
+     */
+    const plan = runRecovery(repo, 'workflow/REQ-2026-001')
+    expect(plan.kind).toBe('ready')
+    if (plan.kind !== 'ready') return
+    expect(plan.resumeFrom).toBe('checkpoint')
+    expect(plan.allowlist).toEqual(['workflow/REQ-2026-001/state.json'])
+    /**
+     * 🔴 리뷰어가 지목한 회귀를 **정확히** 겨냥한다: "doctor 에서 `recoveryAllowlist` 가 D10 입력으로
+     *    전달되지 않으면 정상 crash window 에서 실제 명령이 막힌다".
+     *
+     * `main()` 전체는 `runDoctor` 가 대상 저장소의 `npm run req:doctor` 를 spawn 하고 그 안에서
+     * D11(브랜치)·D13(design) 등 **모든** D-체크가 도는데, 합성 티켓은 그것들을 만족시킬 수 없다.
+     * 그래서 **실제 git 상태**로 D10 술어를 직접 구동해 같은 실패 모드를 잡는다.
+     */
+    const entries = parseStatusZ(execFileSync('git', [...STATUS_Z_ARGS], { cwd: repo, encoding: 'utf8' }))
+    // allowlist 없이는 막힌다(= 이 REQ 이전 동작).
+    expect(findUnstagedOrUntracked(entries, [], 'workflow/REQ-2026-001').length).toBeGreaterThan(0)
+    // 🔴 plan 이 낸 allowlist 를 주면 통과한다 — doctor 가 이 값을 안 넘기면 실제 명령이 막힌다.
+    expect(findUnstagedOrUntracked(entries, [], 'workflow/REQ-2026-001', plan.allowlist)).toHaveLength(0)
+
+    executeEvidenceRecovery(plan, {
+      finalizeEvidenceAndConsume: () => {
+        throw new Error('checkpoint 재개에서 불려선 안 된다')
+      },
+      commitStateCheckpoint: () => {
+        git(['add', '--', 'workflow/REQ-2026-001/state.json'])
+        git(['commit', '-qm', 'chore(REQ-2026-001): state checkpoint(소비 상태)'])
+        return true
+      },
+    })
+
+    // 🔴 한 번에 수렴: checkpoint 커밋이 생기고 워킹트리가 깨끗해진다.
+    expect(Number(git(['rev-list', '--count', 'HEAD']).trim())).toBe(before + 1)
+    expect(git(['status', '--porcelain']).trim()).toBe('')
+    expect(readFileSync(join(ticket, 'state.json'), 'utf8')).toContain('consumed_by_commit_sha')
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  it('🔴 완료된 티켓의 임의 state 수정은 거부된다(같은 진입점)', () => {
+    const { repo, ticket } = crashWindow()
+    const git = gitOf(repo)
+    // checkpoint 까지 커밋해 **완료** 상태로 만든다.
+    git(['add', '--', 'workflow/REQ-2026-001/state.json'])
+    git(['commit', '-qm', 'chore(REQ-2026-001): state checkpoint'])
+    // 그 뒤 임의 필드만 고친다.
+    const st = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')) as Record<string, unknown>
+    st.injected = 'arbitrary'
+    writeFileSync(join(ticket, 'state.json'), JSON.stringify(st, null, 2) + '\n')
+
+    const plan = runRecovery(repo, 'workflow/REQ-2026-001')
+    // 🔴 HEAD 가 checkpoint 커밋이라 판별자 A 가 막는다 — 복구가 열리지 않는다.
+    expect(plan.kind).toBe('blocked')
+    if (plan.kind === 'blocked') expect(plan.reason).toBe('not-a-recovery')
+    // 🔴 임의 변경은 여전히 미커밋이다(D10 이 종전처럼 차단한다).
+    expect(git(['status', '--porcelain']).trim()).not.toBe('')
+    rmSync(repo, { recursive: true, force: true })
+  })
+})
+
+/**
+ * 🔴 REQ-2026-150 phase-1 r03 P1: **실제 `req:commit --finalize --run` 을 한 번 돈다.**
+ *
+ * 앞 스위트는 `planEvidenceRecovery` 를 직접 부르고 checkpoint 도 수동 어댑터로 커밋해
+ * `main()` 과 `runDoctor` spawn 을 건너뛰었다 — doctor 가 allowlist 를 D10 에 안 넘기는 회귀가
+ * 생겨도 통과했다. 여기서는 **엔트리포인트 하나만** 부른다.
+ *
+ * fixture 는 `req:doctor` 스크립트를 이 저장소의 tsx 로 연결해 **진짜 doctor 서브프로세스**가 돈다.
+ */
+describe('[REQ-2026-150] 🔴 전 CLI e2e — req:commit --finalize --run 한 번', () => {
+  const gitOf2 = (repo: string) => (args: string[]): string =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+
+  const fullFixture = (): { repo: string; ticket: string; sourceSha: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req150cli-'))
+    const git = gitOf2(repo)
+    git(['init', '-q'])
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
+    const tsx = join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs').split('\\').join('/')
+    const doctorTs = join(packageRoot(), 'scripts', 'req', 'req-doctor.ts').split('\\').join('/')
+    writeFileSync(
+      join(repo, 'package.json'),
+      JSON.stringify({ name: 'x', version: '0.0.0', scripts: { 'req:doctor': `node ${tsx} ${doctorTs}` } }),
+    )
+    mkdirSync(join(repo, 'workflow', 'REQ-2026-001', 'responses'), { recursive: true })
+    writeFileSync(
+      join(repo, 'workflow', 'machine.schema.json'),
+      readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'),
+    )
+    writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n/.doctor-runs.jsonl\n')
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    const before = { id: 'REQ-2026-001', branch: 'feat/req-2026-001-x', phases: [], consumed_approvals: [] }
+    writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(before, null, 2)}\n`)
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    git(['checkout', '-qb', 'feat/req-2026-001-x'])
+    const sourceSha = git(['rev-parse', 'HEAD']).trim()
+    // evidence-finalize 커밋(소비 행 추가) — state.json 은 커밋하지 않는다.
+    writeFileSync(
+      join(ticket, 'responses', 'approvals.jsonl'),
+      JSON.stringify({
+        kind: 'phase',
+        phase_id: null,
+        response_path: 'workflow/REQ-2026-001/responses/phase--r01-approved.json',
+        response_sha256: 'a'.repeat(64),
+        review_base_sha: 'b'.repeat(40),
+        approved_tree: 'c'.repeat(40),
+        approved_at: '2026-08-14T00:00:00Z',
+        consumed_at: '2026-08-14T00:01:00Z',
+        consumed_by_commit_sha: sourceSha,
+        user_commit_confirmed: null,
+      }) + '\n',
+    )
+    git(['add', '--', 'workflow/REQ-2026-001/responses/approvals.jsonl'])
+    git(['commit', '-qm', 'chore(REQ-2026-001): evidence-finalize'])
+    // 소비 state write — 커밋하지 않는다(여기서 중단).
+    writeFileSync(
+      join(ticket, 'state.json'),
+      JSON.stringify(
+        {
+          ...before,
+          consumed_approvals: [
+            { approved_tree: 'c'.repeat(64), phase_id: null, consumed_by_commit_sha: sourceSha, approval_consumed_at: '2026-08-14T00:01:00Z' },
+          ],
+        },
+        null,
+        2,
+      ) + '\n',
+    )
+    return { repo, ticket, sourceSha }
+  }
+
+  it('🔴 crash window 가 명령 한 번으로 checkpoint 커밋 + clean tree 로 수렴한다', () => {
+    const { repo } = fullFixture()
+    const git = gitOf2(repo)
+    const before = Number(git(['rev-list', '--count', 'HEAD']).trim())
+    expect(git(['status', '--porcelain']).trim()).not.toBe('')
+
+    const res = spawnSync(process.execPath, [
+      join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+      join(packageRoot(), 'scripts', 'req', 'req-commit.ts'),
+      '2026-001', '--finalize', '--run', '--root', repo,
+    ], { cwd: repo, encoding: 'utf8' })
+
+    expect(res.status, `${res.stdout}
+${res.stderr}`).toBe(0)
+    expect(Number(git(['rev-list', '--count', 'HEAD']).trim())).toBe(before + 1)
+    expect(git(['status', '--porcelain']).trim()).toBe('')
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
+
+  it('🔴 완료된 티켓의 임의 state 수정은 실제 명령에서 거부된다', () => {
+    const { repo, ticket } = fullFixture()
+    const git = gitOf2(repo)
+    git(['add', '--', 'workflow/REQ-2026-001/state.json'])
+    git(['commit', '-qm', 'chore(REQ-2026-001): state checkpoint'])
+    const st = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')) as Record<string, unknown>
+    st.injected = 'arbitrary'
+    writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(st, null, 2)}\n`)
+    const before = Number(git(['rev-list', '--count', 'HEAD']).trim())
+
+    const res = spawnSync(process.execPath, [
+      join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+      join(packageRoot(), 'scripts', 'req', 'req-commit.ts'),
+      '2026-001', '--finalize', '--run', '--root', repo,
+    ], { cwd: repo, encoding: 'utf8' })
+
+    expect(res.status).not.toBe(0)
+    // 🔴 임의 변경이 커밋되지 않았다.
+    expect(Number(git(['rev-list', '--count', 'HEAD']).trim())).toBe(before)
+    expect(git(['status', '--porcelain']).trim()).not.toBe('')
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
+})
+
+/**
+ * 🔴 REQ-2026-151 phase-2 — **결속이 있는** 실 CLI e2e.
+ *
+ * 위 REQ-2026-150 e2e 의 매니페스트 행에는 `consumed_state_sha256` 이 없다 = 판별자 D 를 건너뛴다.
+ * 그래서 그 스위트만으로는 D 가 죽어 있어도 전부 통과한다. 여기서는 결속이 **있는** crash window 를
+ * 만들어 ① 손대지 않으면 한 번에 수렴하고 ② `state.json` 을 고치면 **거부**되는 것을 실제 명령으로 본다.
+ */
+describe('[REQ-2026-151] 🔴 실 CLI e2e — 결속된 checkpoint 복구', () => {
+  const gitOf3 = (repo: string) => (args: string[]): string =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+
+  const boundFixture = (): { repo: string; ticket: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req151bind-'))
+    const git = gitOf3(repo)
+    git(['init', '-q'])
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
+    const tsx = join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs').split('\\').join('/')
+    const doctorTs = join(packageRoot(), 'scripts', 'req', 'req-doctor.ts').split('\\').join('/')
+    writeFileSync(
+      join(repo, 'package.json'),
+      JSON.stringify({ name: 'x', version: '0.0.0', scripts: { 'req:doctor': `node ${tsx} ${doctorTs}` } }),
+    )
+    mkdirSync(join(repo, 'workflow', 'REQ-2026-001', 'responses'), { recursive: true })
+    writeFileSync(
+      join(repo, 'workflow', 'machine.schema.json'),
+      readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'),
+    )
+    writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n/.doctor-runs.jsonl\n')
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    const before = { id: 'REQ-2026-001', branch: 'feat/req-2026-001-x', phases: [], consumed_approvals: [] }
+    writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(before, null, 2)}\n`)
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    git(['checkout', '-qb', 'feat/req-2026-001-x'])
+    const sourceSha = git(['rev-parse', 'HEAD']).trim()
+
+    // 🔴 소비 state 바이트를 먼저 정하고 **그 해시**를 매니페스트에 박는다 — 도구가 하는 결속과 같다.
+    const consumedText = `${JSON.stringify(
+      {
+        ...before,
+        consumed_approvals: [
+          {
+            approved_tree: 'c'.repeat(64),
+            phase_id: null,
+            consumed_by_commit_sha: sourceSha,
+            approval_consumed_at: '2026-08-14T00:01:00Z',
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`
+    writeFileSync(
+      join(ticket, 'responses', 'approvals.jsonl'),
+      `${JSON.stringify({
+        kind: 'phase',
+        phase_id: null,
+        response_path: 'workflow/REQ-2026-001/responses/phase--r01-approved.json',
+        response_sha256: 'a'.repeat(64),
+        review_base_sha: 'b'.repeat(40),
+        approved_tree: 'c'.repeat(40),
+        approved_at: '2026-08-14T00:00:00Z',
+        consumed_at: '2026-08-14T00:01:00Z',
+        consumed_by_commit_sha: sourceSha,
+        user_commit_confirmed: null,
+        consumed_state_sha256: createHash('sha256').update(consumedText, 'utf8').digest('hex'),
+      })}\n`,
+    )
+    git(['add', '--', 'workflow/REQ-2026-001/responses/approvals.jsonl'])
+    git(['commit', '-qm', 'chore(REQ-2026-001): evidence-finalize'])
+    writeFileSync(join(ticket, 'state.json'), consumedText)
+    return { repo, ticket }
+  }
+
+
+  const finalize = (repo: string) =>
+    spawnSync(
+      process.execPath,
+      [
+        join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+        join(packageRoot(), 'scripts', 'req', 'req-commit.ts'),
+        '2026-001', '--finalize', '--run', '--root', repo,
+      ],
+      { cwd: repo, encoding: 'utf8' },
+    )
+
+  it('🔴 손대지 않은 소비 state 는 명령 한 번으로 수렴한다(무회귀 — 첫 오라클)', () => {
+    const { repo } = boundFixture()
+    const git = gitOf3(repo)
+    const before = Number(git(['rev-list', '--count', 'HEAD']).trim())
+
+    const res = finalize(repo)
+
+    expect(res.status, `${res.stdout}${res.stderr}`).toBe(0)
+    expect(Number(git(['rev-list', '--count', 'HEAD']).trim())).toBe(before + 1)
+    expect(git(['status', '--porcelain']).trim()).toBe('')
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
+
+  it('🔴 복구가 커밋한 state 가 결속과 여전히 일치한다 — 재실행이 수렴한다', () => {
+    /**
+     * 🔴 멱등 skip 경로가 `consumed_at` 을 새로 잡으면 여기서 red 다: 복구가 **다른 바이트**를
+     *    커밋해 다음 `--finalize` 가 영영 `state-mismatch` 로 거부된다.
+     */
+    const { repo, ticket } = boundFixture()
+    const git = gitOf3(repo)
+    const bound = (JSON.parse(readFileSync(join(ticket, 'responses', 'approvals.jsonl'), 'utf8').trim()) as {
+      consumed_state_sha256: string
+    }).consumed_state_sha256
+
+    expect(finalize(repo).status).toBe(0)
+
+    const committed = git(['show', 'HEAD:workflow/REQ-2026-001/state.json'])
+    expect(createHash('sha256').update(committed, 'utf8').digest('hex')).toBe(bound)
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
+
+  /** 🔴 crash window 안에서 무엇을 고치든 거부된다 — 계획서가 나열한 다섯 가지. */
+  for (const [label, mutate] of [
+    ['임의 필드 추가', (s: Record<string, unknown>) => void (s.injected = 'arbitrary')],
+    ['risk_level', (s: Record<string, unknown>) => void (s.risk_level = 'LOW')],
+    ['policy_snapshot', (s: Record<string, unknown>) => void (s.policy_snapshot = { stop_gate: 'auto' })],
+    ['phases', (s: Record<string, unknown>) => void (s.phases = ['phase-9-injected'])],
+    ['user_commit_confirmed', (s: Record<string, unknown>) => void (s.user_commit_confirmed = '2026-08-14T00:00:00Z')],
+  ] as [string, (s: Record<string, unknown>) => void][]) {
+    it(`🔴 ${label} 을 고치면 거부된다 — 임의 변경이 checkpoint 에 실리지 않는다`, () => {
+      const { repo, ticket } = boundFixture()
+      const git = gitOf3(repo)
+      const st = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')) as Record<string, unknown>
+      mutate(st)
+      writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(st, null, 2)}\n`)
+      const before = Number(git(['rev-list', '--count', 'HEAD']).trim())
+
+      const res = finalize(repo)
+
+      expect(res.status).not.toBe(0)
+      expect(`${res.stdout}${res.stderr}`).toContain('워킹 state.json 이 도구가 만든 소비 state 와 다릅니다')
+      expect(Number(git(['rev-list', '--count', 'HEAD']).trim())).toBe(before)
+      expect(git(['status', '--porcelain']).trim()).not.toBe('')
+      rmSync(repo, { recursive: true, force: true })
+    }, 60_000)
+  }
+})
+
+describe('[REQ-2026-151] 🔴 배선·계약 가드', () => {
+  const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
+
+  it('🔴 해시는 serializeState 정본으로 계산한다 — checkpoint 바이트 대조와 같은 함수', () => {
+    // 다른 직렬화를 쓰면 정상 crash window 가 영원히 state-mismatch 로 거부된다.
+    expect(read('scripts/req/req-commit.ts')).toMatch(
+      /createHash\('sha256'\)\s*\.update\(serializeState\([A-Za-z]+\), 'utf8'\)\s*\.digest\('hex'\)/,
+    )
+  })
+
+  it('🔴 consumeState 를 두 번 부르지 않는다 — 해시와 writeState 가 같은 객체를 쓴다', () => {
+    // 두 번 부르면 `consumed_at` 이 갈려 바이트가 달라진다(설계 r01 관찰).
+    const src = read('scripts/req/req-commit.ts')
+    const i = src.indexOf('export function finalizeEvidenceAndConsume')
+    const j = src.indexOf('\nexport function ', i + 10)
+    const body = src.slice(i, j === -1 ? undefined : j)
+    // 🔴 등장은 둘이지만 **한 실행에서는 하나만** 돈다: 정상 경로의 대입과 멱등 skip 경로의 `??` 대체.
+    //    `??` 대체를 지우고 세면 정확히 1이어야 한다 — 정상 경로가 두 번 부르면 여기서 red 다.
+    expect(body).toMatch(/consumedForCheckpoint\s*\?\?\s*consumeState\(/)
+    const withoutFallback = body.replace(/consumedForCheckpoint\s*\?\?\s*consumeState\(/g, '')
+    expect((withoutFallback.match(/consumeState\(/g) ?? []).length).toBe(1)
+    // 그리고 그 객체가 그대로 디스크로 간다.
+    expect(body).toMatch(/writeState\(ctx\.ticketDir, consumed\)/)
+  })
+
+  it('🔴 consumed_at 은 한 번만 정해진다 — 멱등 skip 은 HEAD 행의 시각을 다시 쓴다', () => {
+    const src = read('scripts/req/req-commit.ts')
+    expect(src).toMatch(/consumedAtOfRow\(/)
+    expect(src).toMatch(/const consumedAt =/)
+  })
+
+  it('🔴 매니페스트 새 키는 선택이다 — 검증기 키 목록에 등록돼 있다', () => {
+    expect(read('scripts/req/lib/evidence.ts')).toMatch(/'consumed_state_sha256',/)
   })
 })

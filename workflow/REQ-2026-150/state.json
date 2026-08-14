@@ -1,0 +1,93 @@
+{
+  "id": "REQ-2026-150",
+  "branch": "feat/req-2026-150-checkpoint-recovery-attribution",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a0001b-a306-75c3-8fa2-4e121f6fe7d3",
+  "review_base_sha": "0c96816c2d83d011ae97fd6e37068686f879f667",
+  "review_diff_hash": "06ef25507c00b1f6cd8571614505545b0547d154",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "4d1469536e619c42f23dcd25c76cb20eecdbf7596ff9ed65613e461e0e355a85",
+  "current_phase": "phase-1-checkpoint-attribution",
+  "phases": [
+    {
+      "id": "phase-1-checkpoint-attribution",
+      "title": "checkpoint 증거 귀속",
+      "status": "pending",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-checkpoint-attribution#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-checkpoint-attribution",
+      "attempts": 4,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "ae697f7f5aa990957b0c5edc241527a0980a76f7",
+    "design": "ed13d6167f8ec93d6a35c0d69e6b613c0ef15fca",
+    "plan": "0ee62a7e1f13b80bbd011a938c8726f843da4e19"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-150/responses/design-r01-approved.json",
+    "response_sha256": "56208c32a17f0953a819bd0f003f5d3cac0ebaa3f982e93677fbc18388234f40",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "f53318276e637601ef4a46aef3af9ccb252af767",
+    "codex_thread_id": "019fffe1-76c6-70b2-b591-918ed01cc765",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T10:47:05.833Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-150/responses/design-r01-approved.json",
+          "sha256": "56208c32a17f0953a819bd0f003f5d3cac0ebaa3f982e93677fbc18388234f40"
+        }
+      ],
+      "inventory_sha256": "1b2ed3f0e8c0595a3e7c3aa18f6426cd18fd36db84dc0641f1b0e89e914324cc",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-150/responses/design-r01-approved.json"
+    },
+    "design_hash": "4d1469536e619c42f23dcd25c76cb20eecdbf7596ff9ed65613e461e0e355a85"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-checkpoint-attribution",
+    "outcome": "approved",
+    "compare_hash": "96ff344ba29b9c640ce129a06949d566a1a87592bdfb60455f9729339555c162",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T11:53:41.278Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "06ef25507c00b1f6cd8571614505545b0547d154",
+      "phase_id": "phase-1-checkpoint-attribution",
+      "consumed_by_commit_sha": "262aa65d14499646926804adc57a22a66faa7ee0",
+      "approval_consumed_at": "2026-08-14T11:54:08.524Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}
