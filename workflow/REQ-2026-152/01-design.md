@@ -14,8 +14,63 @@
   이미 예외로 두므로 다음 티켓 생성도 막지 않는다. **유실은 없고, 위치도 되돌아온다.**
 - 축약형 `-u` 가 아니라 **`--include-untracked`** 를 쓴다. 안내는 읽는 사람이 무엇을 하는지 알아야
   한다(이 저장소가 `-z`·`--message-file` 에서 반복 확인한 원칙).
-- 🔴 **`--all` 은 쓰지 않는다.** gitignore 대상까지 보관하면 `node_modules`·`.env` 가 stash 로 들어간다.
-  `req:new` 도 ignored 는 위반으로 보지 않으므로 필요도 없다.
+- 🔴 **`--all` 은 쓰지 않는다.** gitignore 대상까지 보관하면 `node_modules`·`.env` 가 stash 로 들어간다
+  (그리고 `stash pop` 이 그것을 되돌린다). `req:new` 도 ignored 는 위반으로 보지 않으므로 필요도 없다.
+
+### DEC-1a — 🔴 `.gitignore` 가 미커밋이면 그것부터 커밋한다 (phase-1 r01 P1)
+
+`--include-untracked` 만으로는 부족하다. **실측 재현**:
+
+```
+.gitignore(미커밋, `node_modules/` 규칙) + node_modules/ 존재
+  → git stash push --include-untracked
+  → .gitignore 가 stash 로 들어가 규칙이 사라진다
+  → `?? node_modules/` 가 드러난다 → req:new 거부
+```
+
+stash 는 **ignore 규칙 자체를 되돌린다**. 그 규칙에만 의존해 감춰져 있던 파일이 노출된다.
+
+🔴 **루트 `.gitignore` 만 다루면 안 된다**(설계 r02 P1). 중첩 `.gitignore` 도 같은 일을 한다 —
+`packages/app/.gitignore` 가 미커밋이면 루트는 깨끗해도 `packages/app/node_modules/` 가 드러난다.
+
+**그러므로 대상은 "미커밋 `.gitignore` **전부**"다.** 그런 파일이 하나라도 있을 때만 한 줄을 앞에 더한다:
+
+```text
+    git add -- .gitignore packages/app/.gitignore
+    git commit -m "chore: .gitignore" -- .gitignore packages/app/.gitignore
+```
+
+🔴 **두 줄이어야 한다**(설계 r03 P1). 실측:
+
+| 명령 | 결과 |
+|---|---|
+| `git commit -- <untracked>` | ❌ `pathspec … did not match any file(s) known to git` |
+| `git commit -i -- <untracked>` | ❌ 같은 오류 — 리뷰어 제안(`--include`)도 untracked 를 만들지 못한다 |
+| `git add -- <paths>` → `git commit -- <paths>` | ✅ 그 경로만 커밋되고 **이미 staged 인 코드 변경은 그대로 남는다** |
+
+- 🔴 **`-i`/`--include` 를 쓰지 않는다.** untracked 를 못 만들 뿐 아니라, 되더라도 **인덱스 전체를
+  함께 커밋**해 사용자의 staged 코드 변경을 쓸어간다(REQ-2026-149 파킹 결함과 같은 부류).
+  pathspec 만 준 기본형은 `--only` 의미라 그 범위를 지킨다 — 실측으로 확인했다.
+- 🔴 **실패 시 인덱스 계약**: `git add` 뒤 `git commit` 이 실패하면 그 `.gitignore` 경로들이
+  **staged 로 남는다**. 그 상태에서 다시 실행해도 결과는 같다(`git add` 는 멱등, `commit` 이 이어받는다).
+  🔴 **그 상태로 다음 줄(stash)로 넘어가면 안 된다** — staged `.gitignore` 는 stash 로 들어가
+  이 절이 고치려는 노출을 그대로 만든다. 안내는 **순서대로 실행하고 실패하면 멈춘다**고 말한다.
+
+- 🔴 **glob 이 아니라 실제 경로 목록을 낸다.** `'**/.gitignore'` 같은 pathspec 은 셸·git 버전에 따라
+  전개가 갈린다. 도구는 이미 그 목록을 알고 있다 — 그대로 적는다.
+- 🔴 **조건부여야 한다.** 미커밋 `.gitignore` 가 없는데 이 줄을 내면 "커밋할 것이 없다"로 **실패**하고,
+  "안내가 순서대로 성공한다"는 이 REQ 의 계약을 스스로 깬다. 그래서 `terminalReentryProblem` 에
+  **사실 하나**(`dirtyGitignores: string[]`)를 넘긴다 — 판정은 여전히 순수하다.
+- 🔴 **왜 커밋인가**: `.gitignore` 가 더러운 채로 남으면 `req:new` 가 그것 때문에 거부한다. 옮길
+  곳은 stash 아니면 커밋뿐이고, stash 는 방금 본 노출을 만든다. **커밋만 남는다.**
+- 🔴 **경로가 셸 안전하지 않으면 명령을 내지 않는다**(REQ-2026-149 계약). 공백·따옴표가 든
+  `.gitignore` 경로가 있으면 **그 갈래 전체를 명령 대신 데이터로** 보여 준다 — 반쪽 명령열 금지.
+- 🔴 **대가를 감추지 않는다**: 이 커밋은 REQ 워크플로 밖이라 `verify-range --strict` 에서
+  **미입증**으로 잡힌다. 통합 때 `commitgate attest` 로 사유를 남겨야 한다. 이 저장소는 "설치분
+  일반 git commit 은 규정 절차"를 이미 규범으로 두고 있고, `req:new` 의 자체 안내도 같은 말을 한다.
+- 🔴 **범위 고지**: 이것은 **stash 가 되돌리는** ignore 원천만 덮는다. `.git/info/exclude` 와
+  전역 `core.excludesFile` 은 stash 대상이 아니므로 규칙이 사라지지 않는다 — 손댈 이유가 없다.
+- 🔴 이 상황을 **e2e 로 재현한다** — 루트와 **중첩** 둘 다. 안내는 실행돼야 안내다.
 
 ### 회귀 테스트의 방향을 뒤집는다
 
