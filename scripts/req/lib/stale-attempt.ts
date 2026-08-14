@@ -9,6 +9,7 @@
  * 🔴 **이 모듈은 순수하다** — 파일도 git 도 만지지 않는다. 원장 행과 state 를 받아 "무엇을 해야 하는가"만
  *    돌려준다. 그래서 부분 실패 재실행의 수렴을 배선 없이 테스트할 수 있다.
  */
+import { humanDecisionProblem } from './placeholders'
 import type { LedgerRow } from './review-ledger'
 
 /** 이 명령이 실제로 할 일. 🔴 **둘은 독립이다** — 부분 실패 복구에서 한쪽만 필요할 수 있다. */
@@ -54,8 +55,12 @@ export interface StaleCloseInput {
  *    무결성 가드가 던진다.
  */
 export function planStaleClose(input: StaleCloseInput): StaleCloseVerdict {
-  if (input.reason.trim() === '')
-    return { ok: false, reason: '사유가 비어 있다', hint: '--reason "<왜 이 회차를 버리는가>" 를 지정하세요 — 근거 없는 종결은 기록이 아닙니다' }
+  // 🔴 REQ-2026-149: 내용 존재 **와** 자리표시자 아님. 도구가 낸 안내를 그대로 실행하면 근거가
+  //    "왜 버리는가" 로 원장에 남는다 — 기록이 아니라 라벨이다.
+  {
+    const p = humanDecisionProblem('--reason', input.reason)
+    if (p) return { ok: false, reason: p, hint: '--reason 에 왜 이 회차를 버리는지 적으세요 — 근거 없는 종결은 기록이 아닙니다' }
+  }
   if (input.seriesAttempts === null)
     return { ok: false, reason: `state 에 series 가 없다: ${input.seriesId}`, hint: 'req:next 로 현재 series 를 확인하세요' }
   if (!input.seriesOpen)

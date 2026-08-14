@@ -33,6 +33,7 @@ import { bookkeepingMessage } from './lib/bookkeeping'
 // REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
+import { PLACEHOLDER_APPROVAL_ANGLED } from './lib/placeholders'
 import {
   planEvidenceRecovery,
   executeEvidenceRecovery,
@@ -153,7 +154,7 @@ export function userConfirmGate(
       blocked: true,
       reason:
         `HIGH risk: user_commit_confirmed ${problem} — req:commit 차단(감사 기록이며 위조불가 증명 아님; 가장 강한 보장=사용자가 직접 실행). ` +
-        `기록: npx commitgate req:confirm <REQ> --scope ${required} --method "<승인 문장>" --run`,
+        `기록: npx commitgate req:confirm <REQ> --scope ${required} --method "${PLACEHOLDER_APPROVAL_ANGLED}" --run (따옴표 안은 자리표시자다 — 실제 값으로 바꿔서 실행한다)`,
     }
   /**
    * 🔴 scope는 **크기 순서가 아니라 진술**이다(DEC-4b) — 정확히 일치해야 한다.
@@ -168,7 +169,7 @@ export function userConfirmGate(
       reason:
         `HIGH risk: 확인 범위 불일치 — stopGate="${stopGate}"는 scope="${required}" 확인을 요구하는데 기록된 것은 "${got}"입니다. ` +
         `범위는 크기 순서가 아니라 무엇을 승인했는지에 대한 진술이라 정확히 일치해야 합니다. ` +
-        `기록: npx commitgate req:confirm <REQ> --scope ${required} --method "<승인 문장>" --run`,
+        `기록: npx commitgate req:confirm <REQ> --scope ${required} --method "${PLACEHOLDER_APPROVAL_ANGLED}" --run (따옴표 안은 자리표시자다 — 실제 값으로 바꿔서 실행한다)`,
     }
   return { blocked: false }
 }

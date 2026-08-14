@@ -15,6 +15,7 @@ import { isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
 import { effectiveRiskHits, DEFAULT_RISK_PATTERNS, type RiskHit } from './lib/effective-risk'
 // REQ-2026-048 phase-1: confinement 술어는 leaf `lib/evidence.ts`가 정본 — 여기서 재수출(기존 경로 보존).
 import { isConfinedArchivePath } from './lib/evidence'
+import { PLACEHOLDER_APPROVAL_ANGLED, PLACEHOLDER_REASON } from './lib/placeholders'
 import { planEvidenceRecovery, buildRecoveryFacts, RECOVERY_GUIDANCE } from './lib/evidence-recovery'
 export { isConfinedArchivePath } from './lib/evidence'
 import {
@@ -1002,7 +1003,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
         '   되살릴 근거가 없습니다. 값을 지어내는 복원은 제공하지 않습니다.',
         '가능한 경로는 둘입니다.',
         '  1) 그 phase를 게이트를 통해 **다시 수행**한다 — 진짜 증거가 새로 생깁니다.',
-        `  2) 끝낼 수 없으면 종결한다: npx commitgate req:close ${id} --abandon --reason "<사유>" --confirm "<승인 문장>" --run`,
+        `  2) 끝낼 수 없으면 종결한다: npx commitgate req:close ${id} --abandon --reason "${PLACEHOLDER_REASON}" --confirm "${PLACEHOLDER_APPROVAL_ANGLED}" --run (따옴표 안은 자리표시자다 — 실제 값으로 바꿔서 실행한다)`,
       ].join('\n   '),
     })
   }

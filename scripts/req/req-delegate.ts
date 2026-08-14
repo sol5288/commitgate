@@ -23,6 +23,7 @@ import { loadConfig } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { bookkeepingMessage } from './lib/bookkeeping'
+import { humanDecisionProblem, PLACEHOLDER_REASON } from './lib/placeholders'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
 import {
   DELEGATION_LEDGER_REL,
@@ -147,12 +148,18 @@ export function parseArgs(argv: string[]): Opts {
  *
  * 🔴 **사유는 필수다**(phase-3 리뷰 r01 P1). 발급에 근거를 요구하면서 철회는 비워 두면, 원장에
  *    "누가 왜 권한을 거둬들였는지 알 수 없는 행"이 남는다 — 철회도 감사 대상이다. help 가 이미
- *    `--reason "<사유>"` 를 필수로 적고 있었는데 코드가 강제하지 않았다(문서와 동작의 어긋남).
+ *    `--reason` 을 필수로 적고 있었는데 코드가 강제하지 않았다(문서와 동작의 어긋남).
  */
 export function revokeProblem(o: Opts): string | null {
   if (o.revokeId === null || o.revokeId.trim() === '') return '--revoke <id> 가 필요합니다'
-  if (o.reason === null || o.reason.trim() === '')
-    return '--reason 에 철회 사유가 필요합니다 — 근거 없는 철회는 기록하지 않습니다'
+  // 🔴 REQ-2026-149: 발급 성공 안내가 `--revoke <id> --reason "…" --run` 을 실행 가능한 형태로
+  //    낸다. 그 원문을 그대로 실행하면 사유가 `"<사유>"` 인 철회 행이 원장에 남는다 — 도구가 자기
+  //    출력을 소비해 감사 기록을 훼손한다.
+  {
+    const p = humanDecisionProblem('--reason', o.reason)
+    if (p) return `${p}
+  근거 없는 철회는 기록하지 않습니다.`
+  }
   return null
 }
 
@@ -160,8 +167,15 @@ export function revokeProblem(o: Opts): string | null {
 export function issueProblem(o: Opts): string | null {
   if (o.scope === null) return '--scope 가 필요합니다 (ticket:<REQ> 또는 delivery:<slug>)'
   if (o.source === null) return '--source <branch> 가 필요합니다 — 어느 브랜치에서 통합할지 고정해야 합니다'
-  if (o.sentence === null || o.sentence.trim() === '')
-    return '--sentence 에 사람이 말한 승인 문장이 필요합니다 — 근거 없는 위임은 발급하지 않습니다'
+  // 🔴 REQ-2026-149: **가장 중대한 자리다.** `req:next` 가 `--sentence` 자리에 등록부 자리표시자를
+  //    실행 가능한 형태로 내는데, 그 값이 여는 것은 **main 병합 권한**이다. 도구가 만든 범용
+  //    문자열로 위임이 발급되면 REQ-2026-140 의 "임의의 문장으로 병합 권한이 생기면 안 된다"를
+  //    도구가 스스로 어긴다.
+  {
+    const p = humanDecisionProblem('--sentence', o.sentence)
+    if (p) return `${p}
+  근거 없는 위임은 발급하지 않습니다.`
+  }
   return null
 }
 
@@ -259,7 +273,7 @@ function runIssue(o: Opts, deps: RunDeps): number {
   appendAndCommit(deps, row, `delegate — ${row.id.slice(0, 8)} 사전 위임 발급`)
   deps.log(`✅ 위임 발급: ${row.id}`)
   deps.log(`   기록: ${DELEGATION_LEDGER_REL} (부기 커밋됨)`)
-  deps.log(`   철회: npx commitgate req:delegate --revoke ${row.id} --reason "<사유>" --run`)
+  deps.log(`   철회: npx commitgate req:delegate --revoke ${row.id} --reason "${PLACEHOLDER_REASON}" --run`)
   return 0
 }
 
@@ -330,7 +344,7 @@ export function printHelp(): void {
 사용법:
   npx commitgate req:delegate --scope ticket:<REQ> --source <branch> --sentence "<승인 문장>" \\
       [--allow-push] [--allow-bypass] [--high-risk] [--ttl-hours N] [--run]
-  npx commitgate req:delegate --revoke <id> --reason "<사유>" [--run]
+  npx commitgate req:delegate --revoke <id> --reason "${PLACEHOLDER_REASON}" [--run]
   npx commitgate req:delegate --status [--scope ticket:<REQ>]
 
 옵션:

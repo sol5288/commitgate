@@ -12,6 +12,9 @@
  * 🔴 **leaf 다.** fs·git 을 모른다 — 라운드 자료는 호출부가 읽어 넣는다.
  */
 
+import { PLACEHOLDER_APPROVAL, PLACEHOLDER_WHY_ABANDON, PLACEHOLDER_WHY_REPLACE } from './placeholders'
+import { allShellSafe, quoteArg } from './shell-safe'
+
 /** 한 라운드의 관측(호출부가 아카이브를 읽어 만든다). 파손된 라운드는 아예 넣지 않는다. */
 export interface RoundObservation {
   round: number
@@ -147,27 +150,49 @@ export interface CommandLine {
 export function nextChoices(input: NonConvergenceInput): { pre: CommandLine[]; abandon: CommandLine[]; replace: CommandLine[] } {
   const id = input.reqId
   const series = input.seriesId ?? ''
+  // 🔴 REQ-2026-149: 자리표시자는 **등록부를 참조**한다. 문자열을 두 벌 두면 받는 쪽 검증과
+  //    갈라지는 순간 고리가 다시 열린다.
+  const R = PLACEHOLDER_WHY_ABANDON
+  const RR = PLACEHOLDER_WHY_REPLACE
+  const C = PLACEHOLDER_APPROVAL
+  // 🔴 명령에 박히는 **모든 값**을 렌더링 직전에 검사한다 — 하나라도 안전하지 않으면 그 줄을 내지 않는다.
   const pre: CommandLine[] =
-    input.hasOpenAttempt && series
-      ? [{ kind: 'commitgate', text: `npx commitgate req:review-exception ${id} --close-stale "${series}" --reason "왜 버리는가" --run` }]
+    input.hasOpenAttempt && series && allShellSafe(id, series)
+      ? [{ kind: 'commitgate', text: `npx commitgate req:review-exception ${id} --close-stale ${quoteArg(series)} --reason "${R}" --run` }]
       : []
-  const abandon: CommandLine[] = [
-    { kind: 'commitgate', text: `npx commitgate req:close ${id} --abandon --reason "왜 버리는가" --confirm "승인 문장" --run` },
-  ]
+  const abandon: CommandLine[] = allShellSafe(id)
+    ? [{ kind: 'commitgate', text: `npx commitgate req:close ${id} --abandon --reason "${R}" --confirm "${C}" --run` }]
+    : []
   const replace: CommandLine[] = []
-  if (series)
+  if (series && allShellSafe(id, series))
     replace.push({
       kind: 'commitgate',
-      text: `npx commitgate req:review-exception ${id} --resolve replace --series "${series}" --reason "왜 대체하는가" --confirm "승인 문장" --run`,
+      text: `npx commitgate req:review-exception ${id} --resolve replace --series ${quoteArg(series)} --reason "${RR}" --confirm "${C}" --run`,
     })
-  // 🔴 `git add -A` 가 **아니다** — 무엇이 더러운지 모르는 채 전부 담으면 코드·비밀이 딸려 들어간다.
-  //    `git commit -m` 만으로도 부족하다: needs-fix 아카이브는 untracked 라 staged 가 아니다(r02 P1).
-  if (input.ticketDirty)
-    replace.push(
-      { kind: 'shell', text: `git add -- "${input.ticketRel}"` },
-      { kind: 'shell', text: `git commit -m "chore(${id}): 설계 파킹"` },
-    )
-  replace.push({ kind: 'commitgate', text: `npx commitgate req:new ${input.successorSlug} --successor-of ${id} --run` })
+  /**
+   * 🔴 **갈래는 전부 나오거나 하나도 안 나온다**(phase-1 r02 P1).
+   *
+   * 파킹만 빼고 `req:new` 를 남기면 **반쪽 명령열**이 된다 — 사용자가 순서대로 실행하면 아직 남은
+   * 티켓 변경 때문에 마지막 줄이 거부된다. "지금 이 상태에서 성공하는 명령"이 아니게 된다.
+   *
+   * 🔴 `git add -A` 가 아니다 — 무엇이 더러운지 모르는 채 전부 담으면 코드·비밀이 딸려 들어간다.
+   *    `git commit -m` 만으로도 부족하다: needs-fix 아카이브는 untracked 라 staged 가 아니다.
+   * 🔴 `successorSlug` 는 branch **파생값**이라 함께 검사한다(`feat/…-%PATH%` → `%PATH%-successor`).
+   */
+  const needsPark = input.ticketDirty
+  const parkRenderable = !needsPark || allShellSafe(input.ticketRel)
+  const branchRenderable = allShellSafe(input.successorSlug, id)
+  if (parkRenderable && branchRenderable) {
+    if (needsPark)
+      replace.push(
+        { kind: 'shell', text: `git add -- ${quoteArg(input.ticketRel)}` },
+        { kind: 'shell', text: `git commit -m "chore(${id}): 설계 파킹"` },
+      )
+    replace.push({ kind: 'commitgate', text: `npx commitgate req:new ${input.successorSlug} --successor-of ${id} --run` })
+  } else {
+    // 안전하게 만들 수 없으면 **아무 줄도 내지 않는다.** 값은 보고 본문이 데이터로 보여 준다.
+    replace.length = 0
+  }
   return { pre, abandon, replace }
 }
 
@@ -185,6 +210,9 @@ export function nonConvergenceReport(input: NonConvergenceInput): string {
     `  ${decompositionAdvice(input.rounds, axes)}`,
     '',
     '── 다음 선택 ──',
+    // 🔴 REQ-2026-149 DEC-1: 아래 명령의 따옴표 안 값은 **도구가 만든 자리표시자**다. 그대로 실행하면
+    //    거부된다 — 사람이 무엇을 근거로 결정했는지가 기록의 내용이기 때문이다.
+    '  ⚠️ 따옴표 안의 값은 자리표시자다 — 실제 사유·승인 문장으로 **바꿔서** 실행한다(그대로면 거부된다).',
   )
   if (pre.length) {
     out.push('  [선행] 열린 회차를 먼저 정리한다')

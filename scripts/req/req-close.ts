@@ -43,6 +43,7 @@ import { planMigrationClose, type MigrationFacts } from './lib/close-migrate'
 import { assertSetupComplete } from './lib/setup-gate'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
+import { humanDecisionProblem } from './lib/placeholders'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 function git(args: string[]): string {
@@ -137,8 +138,16 @@ function runAbandon(args: {
   const { o, cfg, reqId, ticketRel, manifestRel } = args
   const reason = (o.reason ?? '').trim()
   const confirm = (o.confirm ?? '').trim()
-  if (!reason) throw new Error('--reason 이 필요합니다(포기 사유는 감사 기록의 핵심입니다) — 예: --reason "요구가 철회됨"')
-  if (!confirm) throw new Error('--confirm 이 필요합니다(누가 어떻게 승인했는지) — 예: --confirm "PM 승인 2026-08-01"')
+  // 🔴 REQ-2026-149: hardCap 보고의 `[A]` 갈래가 `--reason "왜 버리는가" --confirm "승인 문장"` 을
+  //    실행 가능한 형태로 낸다. 그 원문을 그대로 실행하면 사람 결정 없이 티켓이 종결된다.
+  {
+    const rp = humanDecisionProblem('--reason', reason)
+    if (rp) throw new Error(`${rp}
+  포기 사유는 감사 기록의 핵심입니다 — 예: --reason "요구가 철회됨"`)
+    const cp = humanDecisionProblem('--confirm', confirm)
+    if (cp) throw new Error(`${cp}
+  누가 어떻게 승인했는지 — 예: --confirm "PM 승인 2026-08-01"`)
+  }
 
   const ports = createEvidencePorts(cfg.root, `${ticketRel}/responses`)
   const stateText = ports.headText(`${ticketRel}/state.json`)

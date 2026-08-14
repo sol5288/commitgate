@@ -17,6 +17,8 @@ import { loadConfig, packageRoot, type ReviewBudget } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { bookkeepingMessage } from './lib/bookkeeping'
+import { humanDecisionProblem } from './lib/placeholders'
+import { allShellSafe, quoteArg } from './lib/shell-safe'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
 // 🔴 REQ-2026-147: `successorSlug` 는 leaf(`lib/nonconvergence`)로 내려갔다 — `review-codex` 가
 //    써야 하는데 여기서 가져가면 런타임 순환이 된다. re-export 로 기존 호출부·테스트를 유지한다.
@@ -402,10 +404,12 @@ export function planResolveReplace(state: WorkflowState, input: { resolve: strin
     }
   // 🔴 "필수"는 인자 존재가 아니라 **내용 존재**다. `note` 는 선택 필드이고 `isValidHumanResolution`
   //    도 검사하지 않으므로, 여기서 막지 않으면 **빈 근거를 가진 replace 결정이 그대로 커밋된다**.
-  if (input.reason.trim() === '')
-    return { ok: false, reason: '--reason 이 비어 있습니다', hint: '왜 대체하는지 한 문장으로 적으십시오 — 근거 없는 종결은 기록이 아닙니다.' }
-  if (input.confirm.trim() === '')
-    return { ok: false, reason: '--confirm 이 비어 있습니다', hint: '사람이 말한 승인 문장을 그대로 넘기십시오.' }
+  // 🔴 REQ-2026-149: 내용 존재 **와** 자리표시자 아님을 한 자리에서 본다. 도구가 안내에 박은
+  //    `"왜 대체하는가"`·`"승인 문장"` 을 그대로 실행하면 사람 결정 없이 replace 가 커밋된다.
+  const reasonProblem = humanDecisionProblem('--reason', input.reason)
+  if (reasonProblem) return { ok: false, reason: reasonProblem, hint: '왜 대체하는지 한 문장으로 적으십시오 — 근거 없는 종결은 기록이 아닙니다.' }
+  const confirmProblem = humanDecisionProblem('--confirm', input.confirm)
+  if (confirmProblem) return { ok: false, reason: confirmProblem, hint: '사람이 말한 승인 문장을 그대로 넘기십시오.' }
 
   const rec = ((state.review_series ?? []) as { series_id: string; review_kind: ReviewKind; phase_id: string | null; closed_reason: unknown }[]).find(
     (r) => r.series_id === input.seriesId,
@@ -487,11 +491,25 @@ function runResolve(o: Opts): void {
     console.log('')
     console.log('⚠️  아직 워킹트리에 남은 변경이 있어 req:new 가 거부합니다:')
     for (const d of dirty) console.log(`     ${d}`)
-    console.log('   먼저 정리하십시오(예: 파킹 커밋):')
-    console.log(`     git commit -m "chore(${reqId}): 설계 파킹 — 대체 REQ 로 이어감"`)
+    // 🔴 REQ-2026-149 결함 2: `git commit` 만 내면 **이미 staged 인 티켓 밖 파일까지** 실린다.
+    //    `git add` 로 untracked 를 올리고, `-- <pathspec>` 으로 커밋 범위를 티켓에 가둔다.
+    if (allShellSafe(ticketRel)) {
+      console.log('   먼저 정리하십시오(티켓만 담는 파킹 커밋):')
+      console.log(`     git add -- ${quoteArg(ticketRel)}`)
+      console.log(`     git commit -m "chore(${reqId}): 설계 파킹 — 대체 REQ 로 이어감"`)
+    } else {
+      console.log(`   먼저 ${ticketRel} 만 담는 파킹 커밋을 만드십시오(경로에 셸 특수문자가 있어 명령을 만들지 않았습니다).`)
+    }
     console.log('   그 다음:')
   }
-  console.log(`     npx commitgate req:new ${slug} --successor-of ${reqId} --run`)
+  /**
+   * 🔴 **반쪽 명령열을 내지 않는다**(phase-1 r02 P1). 파킹을 명령으로 못 냈는데 `req:new` 만 내면
+   *    사용자가 그것을 실행했다가 남은 변경 때문에 거부된다.
+   */
+  const parkRenderable = dirty.length === 0 || allShellSafe(ticketRel)
+  if (parkRenderable && allShellSafe(slug, reqId))
+    console.log(`     npx commitgate req:new ${slug} --successor-of ${reqId} --run`)
+  else console.log(`     정리 후 req:new 로 대체 REQ 를 만드십시오 — slug=${slug} · --successor-of ${reqId}`)
 }
 
 /** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). */
