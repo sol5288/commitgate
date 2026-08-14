@@ -33,6 +33,7 @@ import { bookkeepingMessage } from './lib/bookkeeping'
 // REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
+import { scanTicketIntake } from './lib/intake'
 import { PLACEHOLDER_APPROVAL_ANGLED } from './lib/placeholders'
 import {
   planEvidenceRecovery,
@@ -484,6 +485,40 @@ export function resolveCommitTarget(opts: CommitArgs, cfg: ResolvedConfig): { ti
 /** git 실행(GitAdapter 경유, config.root 기준). 실패 시 throw(fail-closed). */
 function git(args: string[]): string {
   return gitAdapter.exec(args)
+}
+
+
+/**
+ * 종결 티켓 재진입 차단(REQ-2026-151 DEC-1, 순수).
+ *
+ * 🔴 **source 커밋 前에** 판정해야 한다. 지금까지는 커밋을 만든 **뒤** `emitDevCompleteIfLastPhase`
+ *    가 close-proof 자연키 충돌로 throw 했고, 그때는 이미 되돌릴 수 없는 커밋이 생긴 뒤라
+ *    `approvals.jsonl` 이 더러워져 D10 이 이후 모든 `req:commit`·`--finalize` 를 막았다.
+ *    (이 저장소가 실제로 밟았다 — REQ-2026-149 회귀 수정을 완결 티켓에 덧붙이다가.)
+ *
+ * 🔴 **`emitDevCompleteIfLastPhase` 를 조용히 멱등으로 만들지 않는다.** 완료된 티켓에 새 작업이
+ *    소리 없이 붙어 lifecycle 의미가 흐려진다. 막고, 다음 단계를 알려 준다.
+ *
+ * @param baseState `scanTicketIntake(...).baseState` — 🔴 술어뿐 아니라 **입력 획득까지** doctor 와
+ *   같아야 한다(REQ-2026-094: 같은 술어를 쓰고도 입력이 달라 판독이 갈렸다). 판독 실패는 `null`.
+ */
+export function terminalReentryProblem(reqId: string, baseState: string | null): string | null {
+  // 🔴 `series-terminal` 은 차단하지 않는다 — series 종결이지 티켓 완료가 아니고, 대체 REQ 흐름이 그 상태를 지난다.
+  if (baseState !== 'dev-complete' && baseState !== 'migrated-complete' && baseState !== 'abandoned') return null
+  const slug = `${reqId.toLowerCase()}-followup`
+  return (
+    `${reqId} 는 이미 ${baseState} 입니다 — 완료된 티켓에는 새 작업을 붙이지 않습니다.
+` +
+    `  사후 정정은 **단일 phase micro-REQ** 로 만드십시오(이 저장소 규범). 순서대로:
+` +
+    `    git stash push -m "${reqId} follow-up"
+` +
+    `    npx commitgate req:new ${slug} --run
+` +
+    `    git stash pop
+` +
+    `  🔴 이 티켓에는 아무것도 쓰지 않았습니다 — staged 변경은 그대로 있습니다.`
+  )
 }
 
 /** req:doctor 게이트 — 별도 프로세스로 실행, exit≠0이면 throw(통과 못 하면 커밋 진입 불가). 패키지매니저별 argv는 buildScriptInvocation(npm은 `run --`). */
@@ -1043,6 +1078,20 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   const responsePathExists = !!ev && typeof ev.response_path === 'string' && existsSync(resolve(cfg.root, ev.response_path))
 
   // 1) doctor 게이트(fail-closed)
+  /**
+   * 🔴 REQ-2026-151: **어떤 write 보다 앞**이다. 판정 실패(예외)는 **차단하지 않는다** —
+   *    이 검사는 추가 안전장치이고, 못 읽었다고 정상 커밋을 막으면 새 교착을 만든다.
+   */
+  {
+    let baseState: string | null = null
+    try {
+      baseState = scanTicketIntake(cfg.root, ticketRel, String(state.id ?? '')).baseState
+    } catch {
+      baseState = null
+    }
+    const reentry = terminalReentryProblem(String(state.id ?? ''), baseState)
+    if (reentry) throw new Error(reentry)
+  }
   runDoctor(doctorArgs)
   // 2) HIGH 사람확인 게이트 — 차단 지점은 `stopGate`가 정한다(REQ-2026-071 DEC-1·DEC-2).
   //    🔴 `req`는 **이 커밋이 REQ를 완성시킬 때만** 막는다. 중간 phase를 막으면 REQ 종료 지점에
