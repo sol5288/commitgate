@@ -2,13 +2,13 @@
   "id": "REQ-2026-149",
   "branch": "feat/req-2026-149-guidance-safety-and-attribution-successor",
   "risk_level": "LOW",
-  "codex_thread_id": "019fff85-a04b-7510-9b6d-fa057ca2ad8d",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fffa1-4709-7772-ab38-52c0f65ee65c",
+  "review_base_sha": "76c2394bd7db13bf44db4317f171fffaa7133ec0",
+  "review_diff_hash": "a644592596ce19c3c37b9286dacc3773d213d86a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "1f4eaf95182f83837a701b225911e1a6a697130662012a8e93d72d2f80521461",
+  "design_approved_hash": "e8dc65715d97d540eb2825d6dc6aa09d56de470850e80d481e019ea806164586",
   "current_phase": null,
   "phases": [
     {
@@ -47,35 +47,49 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-placeholder-and-shell-safe#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-placeholder-and-shell-safe",
+      "attempts": 1,
+      "closed_reason": null
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "1c7bbda94fd89f22daa91d5ce84d5104ca50fbd7ecb91c1c97a608d601a5c315",
+    "compare_hash": "00bc1054abc40c5e05a2c9fda26197d19e6ab65f07bebb200635240d10cd7d3b",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T09:08:28.832Z",
+    "at": "2026-08-14T09:37:31.951Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "8b80d46700de7b8286c9b6aa8e5f37e1413e8a50",
     "design": "b27d03d73d33b1679eb098c94ca8dfa0a44154e7",
-    "plan": "10ba25c539337c9466c44ff30c48b21dd7ce889c"
+    "plan": "a3e1a08b42e6385019c6d1b6826730abd56e63b2"
   },
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-149/responses/design-r02-approved.json",
-    "response_sha256": "e51f8ecde76ad2510ff3312297bace0f40be970cef4d6602540c7036e63e6456",
+    "response_path": "workflow/REQ-2026-149/responses/design-r03-approved.json",
+    "response_sha256": "8fd16e30b5d171cb42b3fc3a6e33acdb36d44a9102370170fa7a1d7e609351a2",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "e0d9d22b4f4833a97b3b44f89b00633d249ad389",
-    "codex_thread_id": "019fff85-a04b-7510-9b6d-fa057ca2ad8d",
+    "review_base_sha": "e352a98e2230f99c2f032537a397a51130ebdda9",
+    "codex_thread_id": "019fffa1-4709-7772-ab38-52c0f65ee65c",
     "machine_schema_version": "1.1",
     "status": "COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-08-14T09:08:28.832Z",
+    "approved_at": "2026-08-14T09:37:31.951Z",
     "archive_inventory": {
       "items": [
         {
@@ -85,13 +99,17 @@
         {
           "response_path": "workflow/REQ-2026-149/responses/design-r02-approved.json",
           "sha256": "e51f8ecde76ad2510ff3312297bace0f40be970cef4d6602540c7036e63e6456"
+        },
+        {
+          "response_path": "workflow/REQ-2026-149/responses/design-r03-approved.json",
+          "sha256": "8fd16e30b5d171cb42b3fc3a6e33acdb36d44a9102370170fa7a1d7e609351a2"
         }
       ],
-      "inventory_sha256": "7b7c4eb34f7139fde56cccd1b43868bf43618f0dab49313cde41bd5bb055ad9d",
+      "inventory_sha256": "ed228fe782936718cd7092dc90898088e4030e151d4f6e0b26df49a27f100a5f",
       "review_kind": "design",
       "phase_id": null,
-      "source_response_path": "workflow/REQ-2026-149/responses/design-r02-approved.json"
+      "source_response_path": "workflow/REQ-2026-149/responses/design-r03-approved.json"
     },
-    "design_hash": "1f4eaf95182f83837a701b225911e1a6a697130662012a8e93d72d2f80521461"
+    "design_hash": "e8dc65715d97d540eb2825d6dc6aa09d56de470850e80d481e019ea806164586"
   }
 }
