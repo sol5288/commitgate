@@ -2,14 +2,14 @@
   "id": "REQ-2026-142",
   "branch": "feat/req-2026-142-evidence-finalization-recovery",
   "risk_level": "LOW",
-  "codex_thread_id": "019ffd8f-98eb-7123-b379-9a6756655d02",
-  "review_base_sha": "95753e81d11a8c7ed89ba65a1182978e385d7766",
-  "review_diff_hash": "420c6fd853e1c5df9e594a082189f70b69f99bdf",
+  "codex_thread_id": "019ffda1-62fe-7792-a607-54875ddc95f8",
+  "review_base_sha": "a71bdf65273ca3bcdd45bdcc19ddb37485c983fa",
+  "review_diff_hash": "cadcf3877c12c5a44512cd49872f7abd6da67991",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "bd13b368803b51f2c510fe9b8646c0a372d327c73426cb20b44db697d07aae14",
-  "current_phase": "phase-2-recovery-plan",
+  "current_phase": "phase-3-d10-allowlist-and-execute",
   "phases": [
     {
       "id": "phase-1-pin-archive-inventory",
@@ -26,7 +26,8 @@
     {
       "id": "phase-3-d10-allowlist-and-execute",
       "title": "D10 allowlist 배선 + 멱등 실행",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -56,16 +57,23 @@
       "phase_id": "phase-2-recovery-plan",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-d10-allowlist-and-execute#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-d10-allowlist-and-execute",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-recovery-plan",
+    "phase_id": "phase-3-d10-allowlist-and-execute",
     "outcome": "approved",
-    "compare_hash": "ab4a68a11bdeaf044a17b84a2d31acfd1fb92207e2c9d8d8e6fd9eb2aacc47dd",
+    "compare_hash": "5ebf5e59533d30548866eccbc9ed367d10139b9dc696c0c1bc09d494290b0f4b",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T00:00:01.591Z",
+    "at": "2026-08-14T00:19:27.572Z",
     "findings": [],
     "elided_count": 0
   },
@@ -99,6 +107,12 @@
       "phase_id": "phase-2-recovery-plan",
       "consumed_by_commit_sha": "4efa4a749f8f666f1ec376d602a99fda357270f0",
       "approval_consumed_at": "2026-08-14T00:00:22.570Z"
+    },
+    {
+      "approved_tree": "cadcf3877c12c5a44512cd49872f7abd6da67991",
+      "phase_id": "phase-3-d10-allowlist-and-execute",
+      "consumed_by_commit_sha": "5200731ca531a8756cc3afeea2b99fbec90e25b8",
+      "approval_consumed_at": "2026-08-14T00:19:51.154Z"
     }
   ],
   "user_commit_confirmed": null
