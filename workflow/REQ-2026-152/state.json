@@ -2,15 +2,26 @@
   "id": "REQ-2026-152",
   "branch": "feat/req-2026-152-req-2026-152-binding-integrity-and-untracked-guidance",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00076-aa6b-7b12-8620-4fe749a9ed13",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00087-09f4-7b50-80f9-09c36061a306",
+  "review_base_sha": "cae17ac3ac4f2175fc7637be7837d6189b9699cd",
+  "review_diff_hash": "dbecaaa12ce2cc59b3fdda69b95da5a5f01b79dc",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "1ead2dcf4d87a2f4e97a43c8a929ae67555711c4cdf3342aff3cd6e75db2fa07",
+  "design_approved_hash": "50e7e815071931ddcbe780a854a59cf97f40014641af309e0df1407565888a12",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-untracked-stash-guidance",
+      "title": "untracked stash 안내",
+      "status": "pending"
+    },
+    {
+      "id": "phase-2-binding-integrity",
+      "title": "결속 무결성",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,47 +35,73 @@
       "phase_id": null,
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-untracked-stash-guidance#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-untracked-stash-guidance",
+      "attempts": 1,
+      "closed_reason": null
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
     "requirement": "25b0602099af3225d06535d0b2866a759e4038b3",
-    "design": "671acff1418a08bb18ceba69301e776151ec4d84",
-    "plan": "f88e719357a7d655045f45694818ba869e121501"
-  },
-  "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-152/responses/design-r01-approved.json",
-    "response_sha256": "20ef5dda6c184f0fdaa96bc301233daade4227fb724f6a524368c524573e2d3f",
-    "review_kind": "design",
-    "phase_id": null,
-    "review_base_sha": "d90badb368b9915d20d219c1ef6a2864aa09a227",
-    "codex_thread_id": "01a00076-aa6b-7b12-8620-4fe749a9ed13",
-    "machine_schema_version": "1.1",
-    "status": "COMPLETE",
-    "commit_approved": "yes",
-    "approved_at": "2026-08-14T13:32:11.360Z",
-    "archive_inventory": {
-      "items": [
-        {
-          "response_path": "workflow/REQ-2026-152/responses/design-r01-approved.json",
-          "sha256": "20ef5dda6c184f0fdaa96bc301233daade4227fb724f6a524368c524573e2d3f"
-        }
-      ],
-      "inventory_sha256": "9fe85797adf1e90412cc6426130994cfc26a03e6160cfaeddc635cbdd1c058e4",
-      "review_kind": "design",
-      "phase_id": null,
-      "source_response_path": "workflow/REQ-2026-152/responses/design-r01-approved.json"
-    },
-    "design_hash": "1ead2dcf4d87a2f4e97a43c8a929ae67555711c4cdf3342aff3cd6e75db2fa07"
+    "design": "91c84738297a716589881086f27600e5bb6397a0",
+    "plan": "d81d0c4d54b5000e1b7c2214255059a9fb95897c"
   },
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "d03b127cb6f1499818afceefca53cec806f8c274156f1edf08a3da39deaf1bc0",
+    "compare_hash": "a3f44097cc5570c827ffc9faedd711cb746747967bc964e595f9d45e19c8f095",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T13:32:11.360Z",
+    "at": "2026-08-14T13:48:50.941Z",
     "findings": [],
     "elided_count": 0
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-152/responses/design-r04-approved.json",
+    "response_sha256": "b1e728cbd912a7cd2285b0448adff3d5131a56599410c4b9768409ff8df01b2f",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "6b068183f6e091eae3262053f38baf2ede88c2a7",
+    "codex_thread_id": "01a00087-09f4-7b50-80f9-09c36061a306",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T13:48:50.941Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-152/responses/design-r01-approved.json",
+          "sha256": "20ef5dda6c184f0fdaa96bc301233daade4227fb724f6a524368c524573e2d3f"
+        },
+        {
+          "response_path": "workflow/REQ-2026-152/responses/design-r02-needs-fix.json",
+          "sha256": "759557b937bcf1ad9818a4afd9d07c4999dd0c4ba175c4d8c397813632b5e4e3"
+        },
+        {
+          "response_path": "workflow/REQ-2026-152/responses/design-r03-needs-fix.json",
+          "sha256": "8a07c0456a0832547a004abadcf47a345856a30ffd715f614464ab17c944b883"
+        },
+        {
+          "response_path": "workflow/REQ-2026-152/responses/design-r04-approved.json",
+          "sha256": "b1e728cbd912a7cd2285b0448adff3d5131a56599410c4b9768409ff8df01b2f"
+        }
+      ],
+      "inventory_sha256": "db9c4b7608ca1fcc15f0d13beeb6936f580f6f5512a24b680bde756765c514a1",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-152/responses/design-r04-approved.json"
+    },
+    "design_hash": "50e7e815071931ddcbe780a854a59cf97f40014641af309e0df1407565888a12"
   }
 }
