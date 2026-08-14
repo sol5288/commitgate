@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"f53318276e637601ef4a46aef3af9ccb252af767","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계 승인 후 Phase 1을 진행하고, 계획에 명시한 crash-window 실 git 오라클·변이 검사·계약 스위트를 실행해 staged diff를 리뷰에 제출하세요.","observations":[]}
