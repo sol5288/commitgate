@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+- **fix: `hard-blocked` 보고가 티켓 안의 변경을 "티켓 밖"으로 적던 문제** — repo 루트는 git 에게
+  물어(=실경로) 얻고 티켓 경로는 받은 값 그대로 써서, 그 둘의 **정규화 수준이 갈리면** 상대경로가
+  `../…` 가 되고 티켓 안/밖 분류가 통째로 뒤집혔습니다.
+  - 링크를 거치는 경로에서 발생합니다: macOS(`/var` → `/private/var`), Windows 8.3 단축 경로,
+    junction 으로 연결한 개발 디렉터리.
+  - 🔴 **게이트 차단은 정상이었습니다.** `hard-blocked` 는 계속 막았고, 틀린 것은 **보고 내용**뿐입니다.
+    그래도 사람을 잘못 안내하므로 고칩니다.
+  - 이제 양쪽을 `realpath` 로 맞춘 뒤 상대경로를 구합니다. 해소에 실패하면 이전과 **정확히 같은
+    동작**으로 떨어집니다 — 보고가 차단을 흔들지 않습니다.
+  - 실제 링크를 만들어 재현하는 회귀 테스트를 두었습니다(REQ-2026-147 부터 있던 결함이며, 이
+    저장소 CI 가 수동 전용이라 그동안 관측되지 않았습니다).
+
+  확인할 파일: `scripts/req/review-codex.ts`(`resolveReal`) ·
+  `scripts/req/lib/hardblocked-facts.ts`(`toTicketRel`) · `tests/unit/hardblocked-report.test.ts`
+
 - **fix: 종결 안내가 그 상황에서 실행되지 않던 문제** — 바로 위 항목이 낸 안내(`git stash push` →
   `req:new` → `git stash pop`)가 **두 경우에 두 번째 줄에서 거부**됐습니다. `req:new` 는 clean tree 를
   요구하는데 stash 가 그것을 만들어 내지 못했기 때문입니다.

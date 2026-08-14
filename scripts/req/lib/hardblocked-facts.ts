@@ -9,7 +9,7 @@
  *    (REQ-2026-144 r04 실측). 이것이 허용되는 이유는 보고가 **아무것도 게이트하지 않기 때문**이다.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { archiveBaseName } from './evidence'
 import { parseLedger, ledgerPath } from './review-ledger'
 import { successorSlug, type NonConvergenceInput, type RoundObservation } from './nonconvergence'
@@ -78,12 +78,34 @@ export function collectRounds(io: HardBlockedIo): RoundObservation[] {
 }
 
 /**
+ * repo 루트 기준 티켓 상대경로(POSIX). **둘 다 같은 수준으로 정규화된 절대경로**여야 한다.
+ *
+ * 🔴 REQ-2026-153: 정규화 수준이 갈리면(한쪽은 realpath, 한쪽은 링크 경유) `relative()` 가 `../…` 를
+ *    내고 `splitDirty` 의 접두사 매칭이 **한 번도 맞지 않는다** — 티켓 안의 변경이 전부 "티켓 밖"으로
+ *    분류된다. macOS(`/var`→`/private/var`)·Windows(8.3 단축 경로) CI 에서 실제로 그랬다.
+ *
+ * 🔴 이 함수를 꺼낸 이유는 **테스트 가능성**이다. 인라인이었을 때는 특정 플랫폼에서 실 CLI 를
+ *    돌려야만 드러났고, 그래서 오래 살아남았다.
+ *
+ * 🔴 `..` 가 남으면 **감추지 않는다.** 정규화 후에도 티켓이 root 밖이면 진짜 이상 상태다 —
+ *    조용히 티켓 안으로 만들어 주면 그게 더 나쁜 거짓말이다.
+ */
+export function toTicketRel(rootReal: string, ticketDirReal: string): string {
+  // 🔴 여기서의 `\` → `/` 는 **경로 구분자** 변환이다(win32 `relative()` 산출물). git 이 준 경로를
+  //    바꾸는 것이 아니다 — 그쪽은 파일명의 일부일 수 있어 정규화가 금지돼 있다(REQ-2026-152).
+  return relative(rootReal, ticketDirReal).replace(/\\/g, '/')
+}
+
+/**
  * `git status --porcelain -z` 원문 → 티켓 안/밖 더러움 분리.
  *
  * 🔴 **직접 파싱하지 않는다.** `parseStatusZ` 가 정본이다 — `--porcelain` 단독은 공백·비ASCII 경로를
  *    **C-quote** 하므로(`"workflow/\355\213\260…"`) 손으로 자르면 티켓 경로를 티켓 **밖**으로
  *    오분류하고, 그러면 파킹 줄이 빠져 다음 `req:new` 가 막힌다(phase-2 r01 P1).
  *    `-z` 는 인용을 하지 않고, rename 의 src·dest 를 `entryPaths` 가 둘 다 준다.
+ *
+ * 🔴 `ticketRel` 은 **`toTicketRel` 이 만든 값**이어야 한다(REQ-2026-153). 정규화 수준이 갈린
+ *    경로로 만들면 접두사가 한 번도 맞지 않아 티켓 안의 변경이 전부 밖으로 분류된다.
  */
 export function splitDirty(statusZRaw: string, ticketRel: string): { ticketDirty: boolean; outsideDirty: string[] } {
   const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/`
