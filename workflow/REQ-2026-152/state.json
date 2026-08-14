@@ -2,13 +2,13 @@
   "id": "REQ-2026-152",
   "branch": "feat/req-2026-152-req-2026-152-binding-integrity-and-untracked-guidance",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "01a00076-aa6b-7b12-8620-4fe749a9ed13",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "1ead2dcf4d87a2f4e97a43c8a929ae67555711c4cdf3342aff3cd6e75db2fa07",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,55 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "25b0602099af3225d06535d0b2866a759e4038b3",
+    "design": "671acff1418a08bb18ceba69301e776151ec4d84",
+    "plan": "f88e719357a7d655045f45694818ba869e121501"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-152/responses/design-r01-approved.json",
+    "response_sha256": "20ef5dda6c184f0fdaa96bc301233daade4227fb724f6a524368c524573e2d3f",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "d90badb368b9915d20d219c1ef6a2864aa09a227",
+    "codex_thread_id": "01a00076-aa6b-7b12-8620-4fe749a9ed13",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T13:32:11.360Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-152/responses/design-r01-approved.json",
+          "sha256": "20ef5dda6c184f0fdaa96bc301233daade4227fb724f6a524368c524573e2d3f"
+        }
+      ],
+      "inventory_sha256": "9fe85797adf1e90412cc6426130994cfc26a03e6160cfaeddc635cbdd1c058e4",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-152/responses/design-r01-approved.json"
+    },
+    "design_hash": "1ead2dcf4d87a2f4e97a43c8a929ae67555711c4cdf3342aff3cd6e75db2fa07"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "d03b127cb6f1499818afceefca53cec806f8c274156f1edf08a3da39deaf1bc0",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T13:32:11.360Z",
+    "findings": [],
+    "elided_count": 0
   }
 }
