@@ -2,15 +2,27 @@
   "id": "REQ-2026-147",
   "branch": "feat/req-2026-147-hardcap-nonconvergence-report-successor",
   "risk_level": "LOW",
-  "codex_thread_id": "019fff1a-04f4-7740-843c-63651f7a7e1e",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "019fff23-3768-76f3-9951-f4600f969d9e",
+  "review_base_sha": "dea199d677db473d6dd325c90234b8c8573debb9",
+  "review_diff_hash": "3ef4f09e66db8a1b73226de05e11ceddc8d9a0db",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "1bf5aa7de4a17f0af51319e0b5cdc3797e6d2a9bfe25c3bb01b1f04661d4b1c4",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-nonconvergence-analyzer",
+  "phases": [
+    {
+      "id": "phase-1-nonconvergence-analyzer",
+      "title": "비수렴 분석기",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-hardcap-report-wiring",
+      "title": "hardCap 보고 배선",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -36,16 +48,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-nonconvergence-analyzer#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-nonconvergence-analyzer",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-nonconvergence-analyzer",
     "outcome": "approved",
-    "compare_hash": "a8a60a5f365c11adbd4d5c1d0693418171877c5f4fcf20fc3e4164d38266ed29",
+    "compare_hash": "3c3971747406418287e87c36f753cb37c006ad6a18dc274c8907fa5caf86d4dd",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T07:10:38.547Z",
+    "at": "2026-08-14T07:21:20.785Z",
     "findings": [],
     "elided_count": 0
   },
@@ -86,5 +105,14 @@
       "source_response_path": "workflow/REQ-2026-147/responses/design-r03-approved.json"
     },
     "design_hash": "1bf5aa7de4a17f0af51319e0b5cdc3797e6d2a9bfe25c3bb01b1f04661d4b1c4"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3ef4f09e66db8a1b73226de05e11ceddc8d9a0db",
+      "phase_id": "phase-1-nonconvergence-analyzer",
+      "consumed_by_commit_sha": "a79f2b4bcb98fcb051b72f6931fe6e70937070e8",
+      "approval_consumed_at": "2026-08-14T07:21:48.939Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
