@@ -22,6 +22,7 @@ import { loadConfig, effectiveStopGate, isStopGate, type PolicyAdoption, type Po
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
+import { inRecoveryWindow } from './lib/evidence-recovery'
 import { loadState, writeState, type WorkflowState } from './review-codex'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
 
@@ -140,6 +141,22 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
     deps.log('[req:repolicy] DRY-RUN — write 없음(--run 시 기록).')
     return
   }
+  /**
+   * 🔴 REQ-2026-154 DEC-2: **복구 창에서는 쓰지 않는다.**
+   *
+   * evidence 커밋 뒤·소비 checkpoint 전에 이 명령이 state 를 바꿔 checkpoint 커밋하면, 커밋된
+   * 증거의 `consumed_state_sha256` 결속이 깨지고 이후 `--finalize` 가 영구 차단된다(실측 재현).
+   *
+   * 🔴 **dry-run 은 막지 않는다** — 무엇이 바뀔지 보는 것은 안전하고, 막으면 판단 근거를 잃는다.
+   *    그래서 이 검사는 `--run` 게이트 **뒤**에 있다.
+   */
+  if (inRecoveryWindow(state))
+    throw new Error(
+      `${reqId} 는 증거 복구가 끝나지 않은 상태입니다 — 이 창에서 정책을 바꾸면 커밋된 증거와의 결속이 깨집니다.\n` +
+        `  먼저 복구를 끝내십시오:\n` +
+        `    npx commitgate req:commit ${reqId} --finalize --run\n` +
+        `  🔴 아무것도 쓰지 않았습니다 — 복구 뒤 이 명령을 다시 실행하면 채택됩니다.`,
+    )
 
   // 🔴 시각은 **실제 시계**. 채택 이력은 append-only 다.
   const snapshot = nextSnapshot(state, plan, deps.now(), o.reason)

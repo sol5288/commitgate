@@ -189,3 +189,95 @@ describe('[req:repolicy] main() — 실행 경로', () => {
     expect(run(root)).toContain('고정합니다')
   })
 })
+
+/**
+ * 🔴 REQ-2026-154 DEC-2 — **복구 창에서는 정책을 바꾸지 않는다.**
+ *
+ * evidence 커밋 뒤·소비 checkpoint 전에 이 명령이 state 를 바꿔 checkpoint 커밋하면, 커밋된 증거의
+ * `consumed_state_sha256` 결속이 깨지고 이후 `--finalize` 가 영구 차단된다(실측 재현).
+ */
+describe('[REQ-2026-154] req:repolicy — 복구 창 차단', () => {
+  const roots: string[] = []
+  afterEach(() => {
+    while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
+  })
+
+  const setup = (extraState: Record<string, unknown>) => {
+    const root = mkdtempSync(join(tmpdir(), 'cg-repolicy154-'))
+    roots.push(root)
+    writeFileSync(
+      join(root, 'req.config.json'),
+      JSON.stringify({ stopGate: 'merge', setup: { completedVersion: '0.22.0', completedAt: '2026-08-13T00:00:00.000Z' } }),
+    )
+    const ticket = join(root, 'workflow', 'REQ-2026-999')
+    mkdirSync(ticket, { recursive: true })
+    writeFileSync(
+      join(ticket, 'state.json'),
+      JSON.stringify({ id: 'REQ-2026-999', risk_level: 'LOW', policy_snapshot: { stop_gate: 'phase' }, ...extraState }),
+    )
+    return { root, ticket, before: readFileSync(join(ticket, 'state.json'), 'utf8') }
+  }
+  const run = (root: string, extra: string[] = []): string => {
+    const lines: string[] = []
+    main(['2026-999', '--root', root, ...extra], { now: () => '2026-08-13T00:00:00.000Z', log: (m) => lines.push(m) })
+    return lines.join('\n')
+  }
+
+  it('🔴 pending_evidence_for 가 살아 있으면 --run 이 거부하고 state 를 쓰지 않는다', () => {
+    const { root, ticket, before } = setup({ pending_evidence_for: { source_commit_sha: 'a'.repeat(40) } })
+    expect(() => run(root, ['--run'])).toThrow(/증거 복구가 끝나지 않은/)
+    expect(readFileSync(join(ticket, 'state.json'), 'utf8')).toBe(before)
+  })
+
+  /**
+   * 🔴 phase-1 r01 P1: **승인 핀만으로는 막지 않는다.** `approval_evidence` 는 승인 직후부터 소비까지
+   *    살아 있는 정상 상태이고, 그 구간에는 아직 source 커밋도 결속도 없다. 여기서 막으면 정책 채택이
+   *    통째로 봉쇄되고, 안내하는 `--finalize` 는 복구할 evidence 가 없어 **완료할 수도 없다**.
+   */
+  it('🔴 승인 직후(approval_evidence 만)에는 막지 않는다 — 새 교착을 만들지 않는다', () => {
+    const { root } = setup({ approval_evidence: { response_path: 'x', response_sha256: 'b'.repeat(64) } })
+    try {
+      run(root, ['--run'])
+    } catch (e) {
+      // git 저장소가 아니라 checkpoint 커밋이 실패하는 것은 허용 — 복구 창 거부는 아니어야 한다.
+      expect((e as Error).message).not.toMatch(/증거 복구가 끝나지 않은/)
+    }
+    const after = JSON.parse(readFileSync(join(root, 'workflow', 'REQ-2026-999', 'state.json'), 'utf8')) as {
+      policy_snapshot: { stop_gate: string }
+    }
+    expect(after.policy_snapshot.stop_gate).toBe('merge')
+  })
+
+  it('🔴 안내가 실행 가능한 다음 명령을 준다 — 복구를 끝내는 길', () => {
+    const { root } = setup({ pending_evidence_for: { source_commit_sha: 'a'.repeat(40) } })
+    try {
+      run(root, ['--run'])
+      throw new Error('거부되지 않았다')
+    } catch (e) {
+      const m = (e as Error).message
+      expect(m).toContain('npx commitgate req:commit REQ-2026-999 --finalize --run')
+      expect(m).toContain('아무것도 쓰지 않았습니다')
+    }
+  })
+
+  it('🔴 DRY-RUN 은 막지 않는다 — 무엇이 바뀔지 보는 것은 안전하다', () => {
+    const { root, ticket, before } = setup({ pending_evidence_for: { source_commit_sha: 'a'.repeat(40) } })
+    const out = run(root)
+    expect(out).toContain('DRY-RUN')
+    expect(readFileSync(join(ticket, 'state.json'), 'utf8')).toBe(before)
+  })
+
+  it('🔴 복구 창이 아니면 종전대로 동작한다(무회귀)', () => {
+    const { root } = setup({})
+    // checkpoint 커밋은 git 저장소가 아니라 실패하지만 **state write 는 그 前**이다.
+    try {
+      run(root, ['--run'])
+    } catch {
+      /* git 없음 — 무시 */
+    }
+    const after = JSON.parse(readFileSync(join(root, 'workflow', 'REQ-2026-999', 'state.json'), 'utf8')) as {
+      policy_snapshot: { stop_gate: string }
+    }
+    expect(after.policy_snapshot.stop_gate).toBe('merge')
+  })
+})

@@ -108,8 +108,17 @@ export function toTicketRel(rootReal: string, ticketDirReal: string): string {
  *    경로로 만들면 접두사가 한 번도 맞지 않아 티켓 안의 변경이 전부 밖으로 분류된다.
  */
 export function splitDirty(statusZRaw: string, ticketRel: string): { ticketDirty: boolean; outsideDirty: string[] } {
-  const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/`
-  const paths = parseStatusZ(statusZRaw).flatMap((e) => entryPaths(e).map((p) => p.replace(/\\/g, '/')))
+  /**
+   * 🔴 REQ-2026-154 DEC-4: **git 이 준 경로를 바꾸지 않는다.** POSIX 에서 역슬래시는 파일명의
+   *    일부라, `\` → `/` 로 바꾸면 티켓 **밖**의 `workflow\REQ-…/x` 가 티켓 **안**으로 오분류된다.
+   *    그러면 보고가 실제 티켓만 park 하는 명령을 내고, 남은 파일이 `req:new` 를 막는다.
+   *
+   * 🔴 `ticketRel` 쪽 변환도 뺀다 — 입력은 `toTicketRel` 이 만든 POSIX 값이라는 것이 계약이고
+   *    (바로 위 함수), 방어적 변환을 남기면 그 계약이 흐려진다.
+   *    git 은 플랫폼과 무관하게 `/` 로 보고하므로 Windows 를 위한 변환도 필요 없다.
+   */
+  const prefix = `${ticketRel.replace(/\/+$/, '')}/`
+  const paths = parseStatusZ(statusZRaw).flatMap((e) => entryPaths(e))
   return {
     ticketDirty: paths.some((p) => p.startsWith(prefix)),
     outsideDirty: [...new Set(paths.filter((p) => !p.startsWith(prefix)))].sort(),

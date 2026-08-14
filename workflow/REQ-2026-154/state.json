@@ -1,0 +1,162 @@
+{
+  "id": "REQ-2026-154",
+  "branch": "feat/req-2026-154-req-2026-154-binding-and-path-fidelity",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a00124-4137-7750-84fd-47fb350dcd5f",
+  "review_base_sha": "a30f01350c4bbe248842430b66edacd4de95a5f3",
+  "review_diff_hash": "97108cfda85af3454a8dc058ca9618d35623962a",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "103c84c4f4b57452184fac6a8ce764e4427a1ef6791bceebfb631dbbf4d2f999",
+  "current_phase": "phase-3-porcelain-path-fidelity",
+  "phases": [
+    {
+      "id": "phase-1-consume-binding",
+      "title": "consume 결속",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-gitignore-relaxation",
+      "title": "gitignore 완화 판정",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-3-porcelain-path-fidelity",
+      "title": "porcelain 경로 충실도",
+      "status": "pending",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-consume-binding#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-consume-binding",
+      "attempts": 3,
+      "closed_reason": "approved",
+      "void_attempts": 1
+    },
+    {
+      "series_id": "design:-#3",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-gitignore-relaxation#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-gitignore-relaxation",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-porcelain-path-fidelity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-porcelain-path-fidelity",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-porcelain-path-fidelity",
+    "outcome": "approved",
+    "compare_hash": "9ddc75a80badca4e6f618efac1d3148f9ab64e60e4a1957c37b28007913e9d39",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T16:40:43.889Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "a8dc99ad94997458777e66dd51f0480ed0b595af",
+    "design": "ca0f0cb5ea6787e51273b7eb7cf2e586d6f06d75",
+    "plan": "c6c2bd610e810d1e5984627f0145acb47f079f8f"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-154/responses/design-r05-approved.json",
+    "response_sha256": "16d000f574290c1c9ed07669cd0738369aaa853f2a5474557ba069e1a7a2ba8f",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "8ebe74992e8d6bd8309dfeaf5004f96fb3389a6a",
+    "codex_thread_id": "01a0010f-1cc1-7071-93a5-f07f72492259",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T16:17:29.603Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-154/responses/design-r01-needs-fix.json",
+          "sha256": "ab30ba01b146a345800477131b499af28035add8e2c2f037ad84c6d2e4d6c226"
+        },
+        {
+          "response_path": "workflow/REQ-2026-154/responses/design-r02-needs-fix.json",
+          "sha256": "50f51dea5f8405ae704954112129d85ec14eea9ea7f8ff308d5630a7e2b05488"
+        },
+        {
+          "response_path": "workflow/REQ-2026-154/responses/design-r03-approved.json",
+          "sha256": "69d35c070672ad266321820e0450d27f343b1ff3dd0a87530b02d07da54fea3b"
+        },
+        {
+          "response_path": "workflow/REQ-2026-154/responses/design-r04-approved.json",
+          "sha256": "79f52ccc13b8b5318ba60c471b38cd953292539bf2324364adc8aff83757a6dd"
+        },
+        {
+          "response_path": "workflow/REQ-2026-154/responses/design-r05-approved.json",
+          "sha256": "16d000f574290c1c9ed07669cd0738369aaa853f2a5474557ba069e1a7a2ba8f"
+        }
+      ],
+      "inventory_sha256": "93314dc9af9ebaddbe8e25ef0201cf1b9f9e66581b133f17996524359c5987db",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-154/responses/design-r05-approved.json"
+    },
+    "design_hash": "103c84c4f4b57452184fac6a8ce764e4427a1ef6791bceebfb631dbbf4d2f999"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "0d08251b8bb1da4e39abb1019a6bf72d2dce0ae6",
+      "phase_id": "phase-1-consume-binding",
+      "consumed_by_commit_sha": "71b5ec344f223b0399924f2cff0b72c307d4ee3c",
+      "approval_consumed_at": "2026-08-14T16:23:52.931Z"
+    },
+    {
+      "approved_tree": "c967b2b9137704991aa1e384f5fd1b23174de220",
+      "phase_id": "phase-2-gitignore-relaxation",
+      "consumed_by_commit_sha": "c04673297b1081a178830fd78e08d95dc687a80e",
+      "approval_consumed_at": "2026-08-14T16:34:07.627Z"
+    },
+    {
+      "approved_tree": "97108cfda85af3454a8dc058ca9618d35623962a",
+      "phase_id": "phase-3-porcelain-path-fidelity",
+      "consumed_by_commit_sha": "3a42dea7174e09a99672dd413503b7634c1792af",
+      "approval_consumed_at": "2026-08-14T16:41:23.096Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}
