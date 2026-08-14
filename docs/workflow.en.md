@@ -511,6 +511,46 @@ npx commitgate req:review-exception <REQ> --close-stale <series_id> --reason "<w
 - 🔴 **Re-running converges even if this command itself dies midway.** It never re-creates a row that is
   already recorded; it only finishes what is left.
 
+## When a review stops at the cap (`hardCap`) — `--resolve replace`
+
+At `hardCap` the tool stops calling reviews. You have two ways forward.
+
+**Path A — abandon this REQ**
+
+```sh
+npx commitgate req:close REQ-2026-001 --abandon --reason "why" --confirm "approval sentence" --run
+```
+
+**Path B — split the scope and continue in a successor REQ** (two lines, in order)
+
+```sh
+npx commitgate req:review-exception REQ-2026-001 --resolve replace --series "design:-#1" --reason "why" --confirm "approval sentence" --run
+npx commitgate req:new parent-slug-successor --successor-of REQ-2026-001 --run
+```
+
+- 🔴 **Without the first line the second is blocked.** `req:new --successor-of` requires a recorded
+  **human decision to replace** on the parent. `--resolve replace` is what records it.
+- `--series` is **never guessed.** A ticket can have design and phase series open at once, so the
+  target is explicit. Give a wrong value and you get that ticket's **open series ids** verbatim.
+- `--reason` and `--confirm` are **required and must have content** (whitespace alone is refused).
+  The reason lands in `note`, the approval sentence in `method`.
+- 🔴 This command **does not open `hardCap`.** It neither refunds nor adds rounds. The successor is a
+  **new ticket** with a fresh budget; the parent's history is preserved through lineage.
+
+### If `req:new` is still blocked afterwards
+
+`req:new` requires a clean working tree. `--resolve` commits **only the `state.json` it changed** and
+touches nothing else — committing files it cannot account for would sweep in code or secrets.
+
+Instead it tells you exactly what is in the way, by path.
+
+```text
+⚠️ 아직 워킹트리에 남은 변경이 있어 req:new 가 거부합니다:
+     workflow/REQ-2026-001/01-design.md
+   먼저 정리하십시오(예: 파킹 커밋):
+     git commit -m "chore(REQ-2026-001): 설계 파킹 — 대체 REQ 로 이어감"
+```
+
 ## If the commit died while recording evidence — `req:commit --finalize`
 
 `req:commit --run` has two stages: the **source commit**, then **evidence recording** (archives,

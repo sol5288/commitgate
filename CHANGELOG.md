@@ -4,6 +4,23 @@
 
 ## Unreleased
 
+- **fix: `hardCap` 이 안내하는 탈출구가 실행 불가였던 문제** — 상한에 닿으면 도구가 "종료하거나 정합한
+  대체 REQ를 작성한다"고 안내하는데, `req:new --successor-of` 는 부모에 **사람의 대체 결정**이 기록돼
+  있어야 진행합니다. 그 기록을 남기는 CLI 표면이 **없었습니다**(로직은 있었고 배선만 없었습니다).
+  - `req:review-exception <REQ> --resolve replace --series "<id>" --reason "…" --confirm "…" --run` 신설.
+    실행 직후 `req:new --successor-of` 가 다른 조작 없이 성공합니다.
+  - 🔴 **`hardCap` 을 열지 않습니다.** 회차를 되돌리지도 늘리지도 않습니다 — 대체 REQ 는 새 티켓이고
+    새 예산이며, 부모 이력은 lineage 로 보존됩니다.
+  - `--series` 는 짐작하지 않습니다(한 티켓에 design·phase 가 동시에 열릴 수 있음). 잘못된 값에는
+    **그 티켓의 열린 series 목록을 실제 값으로** 돌려줍니다.
+  - `--reason`·`--confirm` 은 필수이며 **공백만이면 거부**합니다. 사유는 `note`, 승인 문장은 `method` 에
+    각각 남습니다. 결정 시각은 **실제 시계**입니다.
+  - 🔴 **남의 staged 파일은 커밋하지 않습니다.** 자기가 바꾼 `state.json` 만 커밋하고, 남은 것이 있으면
+    **막는 경로를 실제 값으로 열거**하고 다음 명령을 줍니다.
+
+  확인할 파일: `scripts/req/req-review-exception.ts` · `tests/unit/resolve-replace.test.ts` ·
+  `docs/workflow.md`
+
 - **docs: 이 저장소의 `stopGate` 를 `"auto"` 로 전환(도그푸딩)** — `auto` 는 **명시 opt-in** 이고,
   사전 위임(`req:delegate`)이 없으면 통합은 종전대로 막힙니다. 이 전환은 **이 저장소의 설정**이며
   도구 기본값이나 소비자 동작을 바꾸지 않습니다.
