@@ -1,0 +1,97 @@
+{
+  "id": "REQ-2026-146",
+  "branch": "feat/req-2026-146-stopgate-message-drift",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ffeab-668b-7a03-bf6e-395154d87fbc",
+  "review_base_sha": "db7d1c33e8389a9cc59aa1621145ece069dc6569",
+  "review_diff_hash": "7347a16615cbbe65985a29f2a874fca8e7044a4a",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "96335bdafe623cce1cc220423f27a130bf6bd8de55c11740ecb2d6f2cd28a6fc",
+  "current_phase": "phase-1-policy-aware-guidance",
+  "phases": [
+    {
+      "id": "phase-1-policy-aware-guidance",
+      "title": "정책 인지 통합 안내",
+      "status": "pending",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-policy-aware-guidance#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-policy-aware-guidance",
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-policy-aware-guidance",
+    "outcome": "approved",
+    "compare_hash": "fab2395dc82b84e9ae394dd5d77a6b89456d08a59104a6dd04b210853df72598",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T05:10:15.493Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "6ca9e49d82725d8cde79202324c20e4426b2c9e0",
+    "design": "b70f630b2371423fb7be8e139bb9e5bf1a4ab596",
+    "plan": "1bf62ebe373b3c984e056102edce9e3886d8806a"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-146/responses/design-r02-approved.json",
+    "response_sha256": "442e65f2e933d970a10b9ce9b1b872ceb62242c3210b2e6c8a711958e4ddb2cf",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "9343be5d1a5173d1f7e51375667b64ad6dd2f3f2",
+    "codex_thread_id": "019ffea0-1ef1-7af1-ae8d-d15cac391677",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T04:55:56.488Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-146/responses/design-r01-needs-fix.json",
+          "sha256": "f0395c743feab65bd3f10c23a4bf8df4061b0e0ed934be939a420ff8fe630bf9"
+        },
+        {
+          "response_path": "workflow/REQ-2026-146/responses/design-r02-approved.json",
+          "sha256": "442e65f2e933d970a10b9ce9b1b872ceb62242c3210b2e6c8a711958e4ddb2cf"
+        }
+      ],
+      "inventory_sha256": "78c12b940cdd6f2319a715feac1067f89a3266ca9f90cec847f8729e57e1e954",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-146/responses/design-r02-approved.json"
+    },
+    "design_hash": "96335bdafe623cce1cc220423f27a130bf6bd8de55c11740ecb2d6f2cd28a6fc"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "7347a16615cbbe65985a29f2a874fca8e7044a4a",
+      "phase_id": "phase-1-policy-aware-guidance",
+      "consumed_by_commit_sha": "71d452cad00b7af84a37c5e6b497c7145bbe7e67",
+      "approval_consumed_at": "2026-08-14T05:10:41.498Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

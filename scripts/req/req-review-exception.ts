@@ -17,6 +17,7 @@ import { loadConfig, packageRoot, type ReviewBudget } from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { bookkeepingMessage } from './lib/bookkeeping'
+import { commitStateCheckpoint } from './lib/state-checkpoint'
 import {
   loadState,
   writeState,
@@ -24,6 +25,7 @@ import {
   budgetCounts,
   checkReviewBudget,
   isSeriesKeyTerminal,
+  closeSeriesHumanResolution,
   type WorkflowState,
   type ReviewKind,
   type ReviewExceptionConfirmed,
@@ -60,6 +62,16 @@ export interface Opts {
    */
   closeStale: string | null
   reason: string | null
+  /**
+   * REQ-2026-145: 사람의 **대체(replace) 결정** 기록 모드. 값은 `replace` 만 받는다.
+   * 🔴 이 모드는 예외 부여·해소와 겹치지 않는다 — 예외 부여는 "한 번 더 돌린다", 해소는 "이 회차를
+   *    버린다", 이쪽은 **"이 REQ 를 대체한다"** 다.
+   */
+  resolve: string | null
+  /** `--resolve` 의 대상 series_id(원문 대조). */
+  series: string | null
+  /** 사람이 말한 승인 문장 그대로 → `HumanResolution.method`. */
+  confirm: string | null
 }
 
 /** 인자 파싱(fail-closed): 값 누락·알 수 없는 옵션은 즉시 throw. */
@@ -74,6 +86,9 @@ export function parseArgs(argv: string[]): Opts {
     root: null,
     closeStale: null,
     reason: null,
+    resolve: null,
+    series: null,
+    confirm: null,
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -101,6 +116,19 @@ export function parseArgs(argv: string[]): Opts {
       const v = argv[++i]
       if (v === undefined) throw new Error('--reason 값 필요')
       o.reason = v
+    } else if (a === '--resolve') {
+      const v = argv[++i]
+      if (v === undefined || v.startsWith('-')) throw new Error(`--resolve 에 값이 필요합니다 (받음: ${v ?? '(없음)'})`)
+      o.resolve = v
+    } else if (a === '--series') {
+      const v = argv[++i]
+      if (v === undefined || v.startsWith('-')) throw new Error(`--series 에 series_id 가 필요합니다 (받음: ${v ?? '(없음)'})`)
+      o.series = v
+    } else if (a === '--confirm') {
+      // 승인 문장은 `-`로 시작할 수 있어 접두 검사를 하지 않되, 값 누락은 거부한다(--reason 과 동형).
+      const v = argv[++i]
+      if (v === undefined) throw new Error('--confirm 값 필요')
+      o.confirm = v
     } else if (a === '--rationale-file') {
       const v = argv[++i]
       if (v === undefined) throw new Error('--rationale-file 값 필요')
@@ -156,6 +184,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   if (!o.reqId) throw new Error('REQ 필요 (예: req:review-exception 2026-001 --kind design --method "…" --rationale-file r.md)')
   // 🔴 해소 모드는 예외 부여와 **완전히 다른 경로**다 — `--kind`·rationale 을 요구하지 않는다.
   if (o.closeStale !== null) return runCloseStale(o)
+  // 🔴 REQ-2026-145: 대체 결정 기록도 **완전히 다른 경로**다 — `--kind`·rationale 을 요구하지 않는다.
+  if (o.resolve !== null) return runResolve(o)
   if (!o.kind) throw new Error('--kind design|phase 필요')
   if (o.kind === 'phase' && !o.phase) throw new Error('--kind phase는 --phase <id> 필요')
   if (!o.method || o.method.trim() === '') throw new Error('--method "<승인문장>" 필요')
@@ -338,6 +368,140 @@ function runCloseStale(o: Opts): void {
     `[req:review-exception --close-stale] ✅ ${reqId} ${seriesId} #${plan.attempt} 해소 — ` +
       `${plan.appendRow ? '원장 기록 + ' : '원장은 이미 기록됨 · '}state 정합화. 이제 req:review-codex 를 다시 실행할 수 있습니다.`,
   )
+}
+
+
+// ───────────────────────────── REQ-2026-145: 대체(replace) 결정 기록 ──
+
+/**
+ * 대체 REQ 로 잇는 slug 산출(순수·결정론).
+ *
+ * 🔴 **자리표시자를 내지 않는다.** slug 는 사람의 창의가 필요한 값이 아니라 식별자이고, 안내에
+ *    `<slug>` 를 적으면 PowerShell 에서 `<` 가 리디렉션 토큰이라 **명령이 파싱 오류로 죽는다**.
+ *    부모 branch 에서 벗겨 내고, 벗길 수 없으면 REQ 번호로 떨어진다 — 어느 경우에도 값이 나온다.
+ */
+export function successorSlug(branch: unknown, reqId: string): string {
+  const b = typeof branch === 'string' ? branch : ''
+  const m = /^feat\/req-\d{4}-\d{3,}-(.+)$/.exec(b)
+  if (m && m[1]) return `${m[1]}-successor`
+  return `${reqId.toLowerCase().replace(/^req-/, 'req-')}-successor`
+}
+
+export type ResolvePlan =
+  | { ok: true; seriesId: string; kind: ReviewKind; phaseId: string | null }
+  | { ok: false; reason: string; hint: string }
+
+/**
+ * 대체 결정 자격 판정(순수). write 前 모든 거부 조건이 여기 있다.
+ *
+ * 🔴 **`series_id` 를 파싱하지 않는다.** 형식은 `` `${kind}:${phaseId ?? '-'}#${seq}` `` 인데 phase id 에
+ *    `#` 이 들어가면(`phase#alpha`) 쪼개기가 깨진다. `state.review_series` 에서 **원문 대조**로 찾아
+ *    그 레코드의 `review_kind`·`phase_id` 를 그대로 쓴다.
+ */
+export function planResolveReplace(state: WorkflowState, input: { resolve: string; seriesId: string; reason: string; confirm: string }): ResolvePlan {
+  const openList = (): string =>
+    ((state.review_series ?? []) as { series_id: string; closed_reason: unknown }[])
+      .filter((r) => r.closed_reason === null)
+      .map((r) => r.series_id)
+      .join(' · ') || '(열린 series 없음)'
+  if (input.resolve !== 'replace')
+    return {
+      ok: false,
+      reason: `--resolve 값은 replace 만 지원합니다 (받음: ${input.resolve})`,
+      hint: '지금 소비처가 있는 결정은 replace 뿐입니다 — 다른 값은 기록해도 쓰이지 않습니다.',
+    }
+  // 🔴 "필수"는 인자 존재가 아니라 **내용 존재**다. `note` 는 선택 필드이고 `isValidHumanResolution`
+  //    도 검사하지 않으므로, 여기서 막지 않으면 **빈 근거를 가진 replace 결정이 그대로 커밋된다**.
+  if (input.reason.trim() === '')
+    return { ok: false, reason: '--reason 이 비어 있습니다', hint: '왜 대체하는지 한 문장으로 적으십시오 — 근거 없는 종결은 기록이 아닙니다.' }
+  if (input.confirm.trim() === '')
+    return { ok: false, reason: '--confirm 이 비어 있습니다', hint: '사람이 말한 승인 문장을 그대로 넘기십시오.' }
+
+  const rec = ((state.review_series ?? []) as { series_id: string; review_kind: ReviewKind; phase_id: string | null; closed_reason: unknown }[]).find(
+    (r) => r.series_id === input.seriesId,
+  )
+  if (!rec)
+    return { ok: false, reason: `series ${input.seriesId} 를 찾을 수 없습니다`, hint: `이 티켓의 열린 series: ${openList()}` }
+  if (rec.closed_reason !== null)
+    return {
+      ok: false,
+      reason: `series ${input.seriesId} 는 이미 종결됐습니다(${String(rec.closed_reason)})`,
+      hint: `같은 결정을 두 번 기록하지 않습니다. 이 티켓의 열린 series: ${openList()}`,
+    }
+  return { ok: true, seriesId: rec.series_id, kind: rec.review_kind, phaseId: rec.phase_id ?? null }
+}
+
+/**
+ * 대체 결정 기록 실행.
+ *
+ * 🔴 **이 verb 가 만든 더러움(`state.json`)은 스스로 0 으로 만든다.** 안 그러면 바로 다음
+ *    `req:new --successor-of` 가 clean-worktree 검사에 막힌다 — 두 단계로 안내해 놓고 1단계가 2단계를
+ *    막으면 그건 이 REQ 가 고치려는 결함과 **같은 모양**이다.
+ *
+ * 🔴 **남의 staged 파일은 건드리지 않는다.** 실제 hardCap 상태에는 리뷰에 올린 설계 문서가 staged 로
+ *    남아 있는데, 무엇인지 모르는 채 커밋하면 코드·비밀이 딸려 들어간다(`git add -A` 금지와 같은 이유).
+ *    대신 **막는 경로를 실제 값으로 열거**하고 다음 명령을 준다.
+ */
+function runResolve(o: Opts): void {
+  const cfg = loadConfig({ root: o.root })
+  gitAdapter = createGitAdapter(cfg.root)
+  const reqId = (o.reqId as string).startsWith('REQ-') ? (o.reqId as string) : `REQ-${o.reqId}`
+  const ticketDir = join(cfg.workflowDirAbs, reqId)
+  const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
+  const state = loadState(ticketDir)
+
+  if (!o.series) throw new Error('--resolve 는 --series 로 대상 series_id 를 받아야 합니다 — 짐작하지 않습니다')
+  const plan = planResolveReplace(state, {
+    resolve: o.resolve as string,
+    seriesId: o.series,
+    reason: o.reason ?? '',
+    confirm: o.confirm ?? '',
+  })
+  if (!plan.ok) throw new Error(`${reqId}: ${plan.reason}
+  → ${plan.hint}`)
+
+  console.log(`[req:review-exception --resolve] ${reqId} ${plan.seriesId} 를 대체(replace) 결정으로 종결합니다.`)
+  if (!o.run) {
+    console.log('[req:review-exception --resolve] DRY-RUN — write 없음(--run 시 실행).')
+    return
+  }
+
+  // 🔴 `decided_at` 은 **실제 시계**다. 지어내지 않는다(REQ-2026-019 가 타임스탬프 날조로 폐기됐다).
+  const next = closeSeriesHumanResolution(state, plan.kind, plan.phaseId, {
+    decision: 'replace',
+    method: (o.confirm as string).trim(), // 받은 승인 문장 그대로
+    decided_at: new Date().toISOString(),
+    note: (o.reason as string).trim(),
+  })
+  writeState(ticketDir, next)
+
+  // 🔴 checkpoint 를 **명시적으로** 커밋한다. `--close-stale` 이 이미 그렇게 한다고 가정하지 않는다 —
+  //    그 경로는 state 를 쓴 뒤 checkpoint 를 부르지 않는다(복제할 기존 동작이 없다).
+  commitStateCheckpoint({
+    root: cfg.root,
+    ticketRel,
+    ticketId: reqId,
+    state: next,
+    reason: `${plan.seriesId} 대체 결정`,
+    gitFn: git,
+  })
+
+  const slug = successorSlug(state.branch, reqId)
+  console.log(`[req:review-exception --resolve] ✅ ${reqId} ${plan.seriesId} 대체 결정 기록·커밋 완료.`)
+  const dirty = git(['status', '--porcelain'])
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => l.slice(2).trim())
+  if (dirty.length) {
+    console.log('')
+    console.log('⚠️  아직 워킹트리에 남은 변경이 있어 req:new 가 거부합니다:')
+    for (const d of dirty) console.log(`     ${d}`)
+    console.log('   먼저 정리하십시오(예: 파킹 커밋):')
+    console.log(`     git commit -m "chore(${reqId}): 설계 파킹 — 대체 REQ 로 이어감"`)
+    console.log('   그 다음:')
+  }
+  console.log(`     npx commitgate req:new ${slug} --successor-of ${reqId} --run`)
 }
 
 /** bin dispatch 진입점(친절한 1줄 오류 + exit 1 경계). */

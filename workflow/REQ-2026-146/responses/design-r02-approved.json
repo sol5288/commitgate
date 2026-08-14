@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"9343be5d1a5173d1f7e51375667b64ad6dd2f3f2","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"Implement phase-1-policy-aware-guidance as planned, then request a phase review of the staged diff.","observations":[]}
