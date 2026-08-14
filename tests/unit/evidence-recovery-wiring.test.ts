@@ -775,11 +775,23 @@ describe('[REQ-2026-152] 🔴 실 CLI e2e — resumeFrom: consume', () => {
 
     // evidence-finalize 커밋: 소비 행 + 결속. state.json 은 **커밋하지 않는다**(여기서 죽었다).
     const consumedAt = '2026-08-14T00:01:00Z'
+    /**
+     * 🔴 REQ-2026-154(결함 5): **기대 state 를 손으로, 키 순서까지 정확히** 만든다.
+     *
+     * 전에는 `skeleton` 기반이라 `review_base_sha`·`review_diff_hash` 가 빠졌고, fixture 의 결속값이
+     * **실제 커밋되는 state 와 달랐다**(실측 `bc4eacbc…` ≠ `521ee556…`). 그런데도 e2e 는
+     * `approval_consumed_at` 만 봐서 green 이었다 — 경로는 타지만 결속을 증명하지 못했다.
+     *
+     * 🔴 `consumeState` 를 불러 만들지 않는다 — SUT 로 기대값을 만들면 동어반복이다.
+     *    키 순서는 JS 스프레드 규칙(기존 키는 자리 유지·새 키는 뒤)에서 나오고,
+     *    `serializeState` 는 `JSON.stringify(…, null, 2)` 라 **삽입 순서를 그대로 쓴다**.
+     */
     const consumedState = `${JSON.stringify(
       {
-        ...skeleton,
-        commit_allowed: false,
-        approved_diff_hash: null,
+        id: 'REQ-2026-001',
+        branch: 'feat/req-2026-001-x',
+        current_phase: 'phase-1-x',
+        phases: [{ id: 'phase-1-x', title: 'x', status: 'pending' }],
         consumed_approvals: [
           {
             approved_tree: sourceTree,
@@ -788,6 +800,10 @@ describe('[REQ-2026-152] 🔴 실 CLI e2e — resumeFrom: consume', () => {
             approval_consumed_at: consumedAt,
           },
         ],
+        commit_allowed: false,
+        approved_diff_hash: null,
+        review_base_sha: reviewBase,
+        review_diff_hash: sourceTree,
         user_commit_confirmed: null,
       },
       null,
@@ -848,6 +864,18 @@ describe('[REQ-2026-152] 🔴 실 CLI e2e — resumeFrom: consume', () => {
     }
     expect(committed.consumed_approvals).toHaveLength(1)
     expect(committed.consumed_approvals[0]!.approval_consumed_at).toBe('2026-08-14T00:01:00Z')
+
+    /**
+     * 🔴 REQ-2026-154(결함 5): **커밋된 state 가 매니페스트 결속과 바이트로 같다.**
+     *    이 assert 가 없어서 결속값이 틀린 fixture 로도 green 이었다 — 테스트가 통과했다는 사실이
+     *    증명이 아니었다.
+     */
+    const bound = (
+      JSON.parse(readFileSync(join(repo, 'workflow/REQ-2026-001/responses/approvals.jsonl'), 'utf8').trim()) as {
+        consumed_state_sha256: string
+      }
+    ).consumed_state_sha256
+    expect(sha256(git(['show', 'HEAD:workflow/REQ-2026-001/state.json']))).toBe(bound)
     rmSync(repo, { recursive: true, force: true })
   }, 60_000)
 
@@ -871,4 +899,128 @@ describe('[REQ-2026-152] 🔴 실 CLI e2e — resumeFrom: consume', () => {
     expect(res.status).not.toBe(0)
     rmSync(repo, { recursive: true, force: true })
   }, 60_000)
+
+  /**
+   * 🔴 REQ-2026-154 phase-1 — consume 경로의 결속 대조.
+   *
+   * 판별자 D 는 checkpoint 분기에만 있었다. `resumeFrom: 'consume'` 은 그 판정을 지나지 않으므로,
+   * 복구 창 안에서 state 가 바뀌면(구버전 `req:repolicy --run` 이 checkpoint 커밋) 대조 없이 다른
+   * 바이트를 쓰고, 그 결과가 다음 복구를 `state-mismatch` 로 **영구 차단**했다.
+   */
+  describe('[REQ-2026-154] 🔴 실 CLI e2e — consume 경로의 결속 대조', () => {
+    const g2 = (repo: string) => (args: string[]): string =>
+      execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+    const h = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
+
+    /** consumeWindow 위에 "복구 창 안에서 state 를 바꿔 checkpoint 커밋"을 얹는다(= 구버전 repolicy). */
+    const divergedWindow = (): { repo: string; ticket: string; goodSha: string } => {
+      const { repo, ticket } = consumeWindow()
+      const git = g2(repo)
+      const goodSha = git(['rev-parse', 'HEAD']).trim()
+      const st = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')) as Record<string, unknown>
+      st.policy_snapshot = { stop_gate: 'auto', adopted: [] }
+      writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(st, null, 2)}\n`)
+      git(['add', '--', 'workflow/REQ-2026-001/state.json'])
+      git(['commit', '-qm', 'chore(REQ-2026-001): state checkpoint — 정지 정책 채택'])
+      return { repo, ticket, goodSha }
+    }
+
+    it('🔴 결속이 깨진 채로 write 하지 않는다 — 거부하고 워킹 state 를 바꾸지 않는다', () => {
+      const { repo, ticket } = divergedWindow()
+      const git = g2(repo)
+      const before = readFileSync(join(ticket, 'state.json'), 'utf8')
+      const count = Number(git(['rev-list', '--count', 'HEAD']).trim())
+
+      const res = finalize(repo)
+
+      expect(res.status).not.toBe(0)
+      expect(`${res.stdout}${res.stderr}`).toContain('소비 state 가 커밋된 증거의 결속과 다릅니다')
+      // 🔴 write 전에 막았다 — 워킹 state 도 커밋도 그대로다.
+      expect(readFileSync(join(ticket, 'state.json'), 'utf8')).toBe(before)
+      expect(Number(git(['rev-list', '--count', 'HEAD']).trim())).toBe(count)
+      rmSync(repo, { recursive: true, force: true })
+    }, 60_000)
+
+    /**
+     * 🔴 **되돌릴 명령을 지어내지 않는다**(설계 r01 P1 → 실측으로 재기각).
+     *
+     * 승인 시점 state 는 커밋되지 않는다 — `git log -- <ticket>/state.json` 에는 티켓 생성·
+     * design-finalize·**소비** checkpoint 만 있다(이 저장소 실측). 그러므로 도구는 되돌릴 바이트를
+     * 알 수 없고, 후보를 훑는 코드를 넣었다면 **죽은 코드**였다.
+     */
+    it('🔴 되돌릴 명령을 지어내지 않고, 왜 못 만드는지 말한다', () => {
+      const { repo } = divergedWindow()
+      const res = finalize(repo)
+      const msg = `${res.stdout}${res.stderr}`
+
+      expect(msg).not.toContain('git checkout')
+      expect(msg).toContain('아무것도 쓰지 않았습니다')
+      expect(msg).toContain('되돌린 뒤')
+      // 🔴 못 만드는 **이유**를 말한다 — 사람이 다음 판단을 할 수 있어야 한다.
+      expect(msg).toContain('승인 시점 state 는 커밋되지 않아')
+      rmSync(repo, { recursive: true, force: true })
+    }, 60_000)
+
+    it('🔴 사람이 그 변경을 되돌리면 다음 finalize 가 성공한다 — 교착이 아니다', () => {
+      const { repo, ticket } = divergedWindow()
+      const git = g2(repo)
+      expect(finalize(repo).status).not.toBe(0)
+
+      // 사람이 한 일(정책 채택)을 되돌린다 — 무엇을 했는지 아는 것은 사람뿐이다.
+      const st = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')) as Record<string, unknown>
+      delete st.policy_snapshot
+      writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(st, null, 2)}\n`)
+
+      const res = finalize(repo)
+      expect(res.status, `${res.stdout}${res.stderr}`).toBe(0)
+      expect(git(['status', '--porcelain']).trim()).toBe('')
+      const bound = (
+        JSON.parse(readFileSync(join(ticket, 'responses', 'approvals.jsonl'), 'utf8').trim()) as {
+          consumed_state_sha256: string
+        }
+      ).consumed_state_sha256
+      expect(h(git(['show', 'HEAD:workflow/REQ-2026-001/state.json']))).toBe(bound)
+      rmSync(repo, { recursive: true, force: true })
+    }, 90_000)
+
+    it('🔴 대문자 결속도 정상 복구된다 — 받아 놓고 비교에서 막지 않는다', () => {
+      const { repo, ticket } = consumeWindow()
+      const git = g2(repo)
+      const mf = join(ticket, 'responses', 'approvals.jsonl')
+      const row = JSON.parse(readFileSync(mf, 'utf8').trim()) as { consumed_state_sha256: string }
+      const upper = row.consumed_state_sha256.toUpperCase()
+      writeFileSync(mf, `${JSON.stringify({ ...row, consumed_state_sha256: upper })}\n`)
+      git(['add', '--', 'workflow/REQ-2026-001/responses/approvals.jsonl'])
+      git(['commit', '-qm', 'chore(REQ-2026-001): uppercase'])
+
+      const res = finalize(repo)
+
+      expect(res.status, `${res.stdout}${res.stderr}`).toBe(0)
+      expect(git(['status', '--porcelain']).trim()).toBe('')
+      rmSync(repo, { recursive: true, force: true })
+    }, 60_000)
+  })
+
+  describe('[REQ-2026-154] 🔴 소스 가드 — 대조 위치', () => {
+    const src = readFileSync(join(process.cwd(), 'scripts/req/req-commit.ts'), 'utf8')
+
+    it('🔴 대조가 writeState **앞**에 있다 — 쓰고 나서 알면 워킹 state 가 이미 오염된다', () => {
+      const i = src.search(/if \(already\) \{\s*[\r\n]+\s*const binding = consumedStateShaFor\(/)
+      const j = src.indexOf('writeState(ctx.ticketDir, consumed)')
+      expect(i).toBeGreaterThan(0)
+      expect(i).toBeLessThan(j)
+    })
+
+    it('🔴 정상 경로(!already)에는 대조를 넣지 않는다 — 자기 자신을 비교하는 동어반복 금지', () => {
+      expect(src).toMatch(/if \(already\) \{\s*[\r\n]+\s*const binding = consumedStateShaFor\(/)
+    })
+
+    it('🔴 되돌릴 후보를 훑는 코드가 없다 — 실측으로 죽은 코드임을 확인했다', () => {
+      expect(src).not.toMatch(/BINDING_RECOVERY_SCAN/)
+      const i = src.indexOf('function stateBindingMismatchProblem')
+      const j = src.indexOf('\nexport function ', i)
+      expect(src.slice(i, j === -1 ? undefined : j)).not.toContain('git checkout')
+    })
+  })
+
 })

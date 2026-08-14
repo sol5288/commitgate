@@ -135,6 +135,26 @@ export interface RecoveryIo {
   hashUtf8: (s: string) => string
 }
 
+/**
+ * **복구 창인가** — source 커밋은 만들어졌고 증거 소비가 끝나지 않았다(REQ-2026-154 DEC-2).
+ *
+ * 🔴 이 창에서 state 를 바꿔 checkpoint 커밋하면, 커밋된 증거의 `consumed_state_sha256` 결속이
+ *    깨지고 이후 복구가 `state-mismatch` 로 영구 차단된다. `req:repolicy` 가 실제로 그랬다.
+ *
+ * 🔴 **`approval_evidence` 를 근거로 삼지 않는다**(phase-1 r01 P1). 승인 핀은 **승인 직후부터
+ *    소비까지** 살아 있는 **정상 상태**다 — 그것으로 판정하면 승인만 받아 둔 티켓의 정책 채택이
+ *    막히고, 안내하는 `--finalize` 는 source 커밋이 없어 **완료할 수도 없다**(새 교착).
+ *    위험한 창은 `pending_evidence_for` 가 가리키는 구간, 즉 **source 커밋 뒤·소비 전**뿐이다.
+ *
+ * 🔴 **술어를 공유 가능한 형태로 둔다.** 지금 막는 것은 `req:repolicy` 하나뿐이다 — "state 를 쓰는
+ *    모든 verb" 로 넓히면 `req:confirm`·`req:rebind` 까지 걸려 **새 교착**을 만든다. 다른 verb 가
+ *    같은 문제를 내면 그때 이 술어를 쓴다.
+ */
+export function inRecoveryWindow(state: { pending_evidence_for?: unknown; [k: string]: unknown }): boolean {
+  const pending = state.pending_evidence_for
+  return pending !== undefined && pending !== null
+}
+
 /** `RecoveryIo` → `RecoveryFacts`(단일 조립 지점). */
 export function buildRecoveryFacts(io: RecoveryIo): RecoveryFacts {
   const ticketRel = norm(io.ticketRel).replace(/\/+$/, '')
@@ -256,7 +276,10 @@ export function consumedStateShaFor(headManifest: string, pendingKeys: readonly 
     // 🔴 `in` 으로 본다 — `undefined` 를 명시한 행과 키가 없는 행을 같게 취급하지 않는다.
     if (!('consumed_state_sha256' in row)) continue
     const v = row.consumed_state_sha256
-    if (typeof v === 'string' && SHA256_RE.test(v)) return { kind: 'bound', sha: v }
+    // 🔴 REQ-2026-154(결함 4): **소문자로 정규화해 돌려준다.** `SHA256_RE` 는 대소문자를 받는데
+    //    비교 상대인 `createHash(...).digest('hex')` 는 항상 소문자다. 호출부마다
+    //    `toLowerCase()` 를 기억해야 하면 언젠가 빠진다 — 정본에서 한 번 맞춘다.
+    if (typeof v === 'string' && SHA256_RE.test(v)) return { kind: 'bound', sha: v.toLowerCase() }
     return { kind: 'malformed', detail: `consumed_state_sha256 가 64hex 문자열이 아닙니다: ${JSON.stringify(v)}` }
   }
   return { kind: 'absent' }

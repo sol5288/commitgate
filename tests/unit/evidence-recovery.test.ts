@@ -439,9 +439,34 @@ describe('[REQ-2026-152] consumedStateShaFor — 세 갈래', () => {
     expect(consumedStateShaFor(line(null, true), keys)).toEqual({ kind: 'absent' })
   })
 
-  it('🔴 64hex 는 bound(대문자도 — SHA256_RE 의 기존 계약을 따른다)', () => {
+  /**
+   * 🔴 REQ-2026-154(결함 4): **소문자로 정규화해 돌려준다.** `SHA256_RE` 는 대소문자를 받는데
+   *    비교 상대인 `createHash(...).digest('hex')` 는 항상 소문자다 — 그대로 돌려주면 "유효하다고
+   *    받아 놓고 비교에서 막는" 모순이 된다.
+   */
+  it('🔴 64hex 는 bound — 대문자도 받되 **소문자로 정규화**해 돌려준다', () => {
     expect(consumedStateShaFor(line('e'.repeat(64)), keys)).toEqual({ kind: 'bound', sha: 'e'.repeat(64) })
-    expect(consumedStateShaFor(line('E'.repeat(64)), keys)).toEqual({ kind: 'bound', sha: 'E'.repeat(64) })
+    expect(consumedStateShaFor(line('E'.repeat(64)), keys)).toEqual({ kind: 'bound', sha: 'e'.repeat(64) })
+    expect(consumedStateShaFor(line(`AbCd${'e'.repeat(60)}`), keys)).toEqual({
+      kind: 'bound',
+      sha: `abcd${'e'.repeat(60)}`,
+    })
+  })
+
+  it('🔴 대문자 결속이 정상 복구를 막지 않는다(checkpoint 판정)', () => {
+    const upper = 'E'.repeat(64)
+    const p = planEvidenceRecovery(
+      facts({
+        approvalEvidence: null,
+        commitAllowed: false,
+        dirtyPaths: ['workflow/REQ-2026-142/state.json'],
+        parentManifest: '',
+        headStateText: null,
+        headManifest: line(upper),
+        archiveSha: () => 'e'.repeat(64),
+      }),
+    )
+    expect(p.kind).toBe('ready')
   })
 
   it('🔴 형식 불량은 전부 malformed — absent 로 강등되지 않는다', () => {

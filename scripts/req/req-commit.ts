@@ -41,6 +41,7 @@ import {
   executeEvidenceRecovery,
   buildRecoveryFacts,
   RECOVERY_GUIDANCE,
+  consumedStateShaFor,
   type RecoveryIo,
 } from './lib/evidence-recovery'
 import { LEDGER_BASENAME } from './lib/review-ledger'
@@ -852,6 +853,34 @@ export function consumedAtOfRow(
   return null
 }
 
+/**
+ * 결속 불일치 안내(REQ-2026-154 DEC-1a).
+ *
+ * 🔴 **도구는 되돌릴 명령을 만들지 않는다 — 만들 수 없기 때문이다.**
+ *
+ * 설계 r01 은 `git checkout -- <path>`(HEAD 기준)를 냈는데 그것은 아무것도 되돌리지 못한다.
+ * 이 상태를 만드는 경로가 바뀐 state 를 **이미 checkpoint 커밋**했기 때문이다.
+ *
+ * 그 다음 안은 "state.json 을 건드린 커밋을 훑어 결속과 맞는 blob 을 찾자"였다. **실측으로 기각했다**:
+ * phase 승인 시점 state 는 **커밋되지 않는다**(`git log -- <ticket>/state.json` 에는 티켓 생성 ·
+ * design-finalize · 소비 checkpoint 만 있다). 그리고 design 승인은 state 를 커밋하지만 그 경로는
+ * 이 결속을 만들지 않는다(`absent` 라 대조 자체를 건너뛴다). **어느 쪽에서도 후보가 없다** —
+ * 넣었다면 죽은 코드였다.
+ *
+ * 그래서 **사실만 말하고, 사람이 아는 것을 되돌리게 한다.** 이 창에서 state 를 바꾼 것은 사람이
+ * 한 일이고(예: `req:repolicy --run`), 그것을 되돌릴 수 있는 것도 사람뿐이다.
+ */
+function stateBindingMismatchProblem(ctx: FinalizeCtx, actual: string, expected: string): string {
+  return (
+    `소비 state 가 커밋된 증거의 결속과 다릅니다 — 복구 창 안에서 state.json 이 바뀌었습니다.\n` +
+    `  결속=${expected.slice(0, 12)}… · 지금=${actual.slice(0, 12)}…\n` +
+    `  🔴 이 티켓에는 아무것도 쓰지 않았습니다 — 워킹 state 도 커밋도 그대로입니다.\n` +
+    `  이 창에서 state 를 바꾼 작업(예: 정책 채택)을 **되돌린 뒤** 다시 실행하십시오.\n` +
+    `  🔴 도구가 되돌릴 명령을 만들지 못합니다: 승인 시점 state 는 커밋되지 않아 그 바이트를 알 수 없습니다.\n` +
+    `  🔴 이 창에서는 정책 채택을 하지 마십시오 — ${String(ctx.state.id ?? '')} 의 복구를 먼저 끝내십시오.`
+  )
+}
+
 export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
   // 🔴 REQ-2026-052 phase-3a P1(리뷰 반영): finalize 멱등성을 **HEAD 기준**으로 판정한다 — 워킹 매니페스트가
   //    아니라. 이전엔 `ctx.existing`(워킹트리 파일)을 base·멱등 판정에 썼는데, evidence commit이 실패하면
@@ -955,6 +984,26 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
   const consumed =
     consumedForCheckpoint ??
     consumeState(ctx.state, { sourceCommitSha: ctx.sourceSha, consumedAt, completesReq: devCompleteEmitted })
+  /**
+   * 🔴 REQ-2026-154 DEC-1: **결속 대조를 쓰기 전에 한다**(멱등 skip 경로만).
+   *
+   * 판별자 D 는 `planEvidenceRecovery` 의 checkpoint 분기에만 있었다. `resumeFrom: 'consume'` 은 그
+   * 판정을 지나지 않으므로, 복구 창 안에서 state 가 바뀌면(예: 구버전 `req:repolicy --run` 이
+   * checkpoint 커밋) **대조 없이** 다른 바이트를 쓰고, 그 결과가 다음 복구를 `state-mismatch` 로
+   * **영구 차단**했다.
+   *
+   * 🔴 정상 경로(`!already`)에는 넣지 않는다 — 그쪽은 결속을 **지금 만들어** 넣으므로 자기 자신을
+   *    비교하는 동어반복이다. 🔴 결속이 없는 옛 행은 건너뛴다(하위호환).
+   * 🔴 **쓰기 전**이어야 한다. 쓰고 나서 알면 워킹 state 가 이미 오염됐고 그것이 다음 복구의 입력이 된다.
+   */
+  if (already) {
+    const binding = consumedStateShaFor(headManifest, [`${ctx.sourceSha}#${ctx.ev.phase_id ?? ''}`])
+    if (binding.kind === 'malformed') throw new Error(`증거의 결속이 손상됐습니다: ${binding.detail}`)
+    if (binding.kind === 'bound') {
+      const actual = createHash('sha256').update(serializeState(consumed), 'utf8').digest('hex')
+      if (actual !== binding.sha) throw new Error(stateBindingMismatchProblem(ctx, actual, binding.sha))
+    }
+  }
   writeState(ctx.ticketDir, consumed)
 
   // ── REQ-2026-057: 소비 상태 durable checkpoint ──
