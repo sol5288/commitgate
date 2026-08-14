@@ -2,15 +2,31 @@
   "id": "REQ-2026-154",
   "branch": "feat/req-2026-154-req-2026-154-binding-and-path-fidelity",
   "risk_level": "LOW",
-  "codex_thread_id": "01a000f7-224d-7143-800b-149a6a7fb682",
+  "codex_thread_id": "01a00101-e611-7d82-9278-31e1125f3132",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "b7fc074341913b3c7bfb75805cafcbe5cd20580548152536ece11bd1abf98b51",
+  "design_approved_hash": "d8883d0439f55b8658a0d610a4bb45f7260ddfe0b2bd345ab24a782d968c5a10",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-consume-binding",
+      "title": "consume 결속",
+      "status": "pending"
+    },
+    {
+      "id": "phase-2-gitignore-relaxation",
+      "title": "gitignore 완화 판정",
+      "status": "pending"
+    },
+    {
+      "id": "phase-3-porcelain-path-fidelity",
+      "title": "porcelain 경로 충실도",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,35 +40,42 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "c026c3218460e8f68472708139f14863e544ccc5656da41993fa2aa0864a307b",
+    "compare_hash": "60bf73a1411aec9d2acf42b27b0ea3d774219c1c0225a12c56b0a1babd356eab",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T15:51:23.709Z",
+    "at": "2026-08-14T16:03:48.637Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "a8dc99ad94997458777e66dd51f0480ed0b595af",
-    "design": "f3d5542225c291202639ac871b1e3631af341aa1",
-    "plan": "9a6c65f63e3fb1f8aefb0505d6d429c1c4b9d1d6"
+    "design": "0b48695ccbb1878ee75dd9048196aa3f42f1e540",
+    "plan": "7feb58cb1cfcc8d4fc86456997eb5c621cc68c61"
   },
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-154/responses/design-r03-approved.json",
-    "response_sha256": "69d35c070672ad266321820e0450d27f343b1ff3dd0a87530b02d07da54fea3b",
+    "response_path": "workflow/REQ-2026-154/responses/design-r04-approved.json",
+    "response_sha256": "79f52ccc13b8b5318ba60c471b38cd953292539bf2324364adc8aff83757a6dd",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "80e9e7dd7bbfe04c95a6f3f765a6c4f33b7c2902",
-    "codex_thread_id": "01a000f7-224d-7143-800b-149a6a7fb682",
+    "review_base_sha": "cf5b23d0b389aa893dcfd61e639d3edb0e48b71b",
+    "codex_thread_id": "01a00101-e611-7d82-9278-31e1125f3132",
     "machine_schema_version": "1.1",
     "status": "COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-08-14T15:51:23.709Z",
+    "approved_at": "2026-08-14T16:03:48.637Z",
     "archive_inventory": {
       "items": [
         {
@@ -66,13 +89,17 @@
         {
           "response_path": "workflow/REQ-2026-154/responses/design-r03-approved.json",
           "sha256": "69d35c070672ad266321820e0450d27f343b1ff3dd0a87530b02d07da54fea3b"
+        },
+        {
+          "response_path": "workflow/REQ-2026-154/responses/design-r04-approved.json",
+          "sha256": "79f52ccc13b8b5318ba60c471b38cd953292539bf2324364adc8aff83757a6dd"
         }
       ],
-      "inventory_sha256": "a92d9feedb4ac144e4cc9bf1ceabaf246bc6eb8007be9ade8c45937e35b1ec42",
+      "inventory_sha256": "d5afd2c237138a7fe9fd3e670840bb5ee6466e644eddb5df23858053d5d06062",
       "review_kind": "design",
       "phase_id": null,
-      "source_response_path": "workflow/REQ-2026-154/responses/design-r03-approved.json"
+      "source_response_path": "workflow/REQ-2026-154/responses/design-r04-approved.json"
     },
-    "design_hash": "b7fc074341913b3c7bfb75805cafcbe5cd20580548152536ece11bd1abf98b51"
+    "design_hash": "d8883d0439f55b8658a0d610a4bb45f7260ddfe0b2bd345ab24a782d968c5a10"
   }
 }
