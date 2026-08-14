@@ -4,6 +4,35 @@
 
 ## Unreleased
 
+- **fix: 완료된 티켓에 새 phase 를 커밋하면 되돌릴 수 없는 교착으로 끝나던 문제** — `dev-complete`
+  티켓에서 `req:commit --run` 을 하면 **source 커밋을 먼저 만들고** 그 뒤 종결 증거 충돌로 실패했고,
+  그때 `approvals.jsonl` 이 더러워져 이후 모든 `req:commit`·`--finalize` 가 D10 에 막혔습니다.
+  이 저장소가 실제로 밟았습니다.
+  - 이제 **어떤 write 보다도 앞**(`req:doctor` 보다도 먼저) HEAD 정본 lifecycle 을 판정하고,
+    `dev-complete`·`migrated-complete`·`abandoned` 이면 **아무것도 쓰지 않고** 멈춥니다.
+  - 안내는 그 상태에서 **실제로 성공하는** 세 줄입니다: `git stash push` → `req:new <id>-followup --run`
+    → `git stash pop`. (`req:new` 는 clean tree 를 요구하므로 한 줄만 내면 그 명령이 거부됩니다.)
+  - 🔴 `series-terminal` 은 **차단하지 않습니다** — 대체 REQ 흐름이 그 상태를 지납니다.
+  - 🔴 **판정에 실패하면 차단하지 않습니다.** 추가 안전장치가 새 교착을 만들면 안 됩니다.
+  - 🔴 **완료 티켓을 다시 여는 전이는 만들지 않았습니다.** 사후 정정은 단일 phase micro-REQ 입니다.
+
+  확인할 파일: `scripts/req/req-commit.ts`(`terminalReentryProblem`) · `tests/unit/terminal-reentry.test.ts`
+
+- **fix: checkpoint 복구 창에서 `state.json` 을 손으로 고쳐도 함께 커밋되던 문제** — 복구는 "이 소비를
+  HEAD 가 방금 추가했는가"만 봤고, **워킹 `state.json` 이 정말 도구가 만든 것인지**는 보지 않았습니다.
+  그 창 안에서 `risk_level`·`policy_snapshot`·`phases`·`user_commit_confirmed` 를 고치면 그대로 실렸습니다.
+  - evidence-finalize 가 매니페스트 소비 행에 **`consumed_state_sha256`**(= 소비 state 바이트의 sha256,
+    `serializeState` 정본)을 함께 커밋합니다. 복구는 워킹 파일 해시가 **정확히 일치**할 때만 열립니다.
+    불일치·읽기 실패는 `state-mismatch` 로 거부합니다.
+  - 🔴 **하위호환 구멍을 감추지 않습니다**: 이 변경 **이전에 커밋된 증거 행에는 이 결속이 없습니다.**
+    그런 행은 결속 대조를 **건너뛰고** 종전(REQ-2026-150) 판정만 받습니다 — 그 창에 남는 위험은
+    이전과 같습니다. 옛 crash window 를 막으면 그것이 곧 새 교착이기 때문입니다.
+  - 🔴 **정상 복구는 그대로입니다** — 손대지 않은 crash window 는 여전히 명령 한 번으로 수렴합니다
+    (실제 CLI 로 검증, 다섯 가지 변조는 각각 거부).
+
+  확인할 파일: `scripts/req/lib/evidence-recovery.ts`(판별자 D) · `scripts/req/lib/evidence.ts` ·
+  `scripts/req/req-commit.ts` · `tests/unit/evidence-recovery-wiring.test.ts`
+
 - **fix: 완료된 티켓에서 `state.json` 을 임의로 고쳐도 복구 예외가 열리던 문제** — checkpoint 복구가
   "커밋된 승인 증거가 있다"만 봤는데, 완료된 티켓에는 옛 승인 행이 당연히 있습니다.
   - 이제 **HEAD 가 그 소비 행을 방금 추가했을 때만**(HEAD 에 있고 `HEAD^` 에 없다) 복구가 열립니다.

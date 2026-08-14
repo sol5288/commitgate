@@ -37,6 +37,8 @@ export const RECOVERY_BLOCKED_REASONS = [
   'archive-mismatch',
   'inventory-unbound',
   'foreign-files',
+  // 🔴 REQ-2026-151: 워킹 state 가 도구가 만든 소비 state 와 바이트로 다르다.
+  'state-mismatch',
 ] as const
 export type RecoveryBlockedReason = (typeof RECOVERY_BLOCKED_REASONS)[number]
 
@@ -57,6 +59,8 @@ export const RECOVERY_GUIDANCE: Record<RecoveryBlockedReason, string> = {
     '승인 응답 아카이브가 인벤토리 목록 안에 없습니다 — 핀이 승인과 결속되지 않았습니다.',
   'foreign-files':
     '복구 허용 범위 밖의 변경이 작업 트리에 있습니다. 그 변경을 먼저 커밋하거나 되돌린 뒤 다시 실행하십시오(복구는 증거 파일만 만집니다).',
+  'state-mismatch':
+    '워킹 state.json 이 도구가 만든 소비 state 와 다릅니다 — 손으로 고친 내용은 복구로 커밋하지 않습니다. 그 변경을 되돌린 뒤 다시 실행하십시오.',
 }
 
 /**
@@ -229,6 +233,20 @@ export function consumedKeysAddedByHead(headManifest: string, parentManifest: st
   return [...keysOf(headManifest)].filter((k) => !parent.has(k)).sort()
 }
 
+
+/** `pending` 소비 키에 대응하는 행의 `consumed_state_sha256`(없으면 null — 결속 없음). */
+export function consumedStateShaFor(headManifest: string, pendingKeys: readonly string[]): string | null {
+  const want = new Set(pendingKeys)
+  for (const e of parseManifestEntries(headManifest)) {
+    const k = consumedKey(e as { consumed_by_commit_sha?: unknown; phase_id?: unknown })
+    if (k !== null && want.has(k)) {
+      const v = (e as { consumed_state_sha256?: unknown }).consumed_state_sha256
+      if (typeof v === 'string' && v !== '') return v
+    }
+  }
+  return null
+}
+
 /**
  * HEAD `state.json` 이 기록한 소비 키(판별자 B).
  *
@@ -308,6 +326,28 @@ export function planEvidenceRecovery(facts: RecoveryFacts): RecoveryPlan {
         reason: 'not-a-recovery',
         detail: 'HEAD state 에 그 소비가 이미 기록돼 있습니다 — checkpoint 는 끝났습니다',
       }
+    /**
+     * 판별자 D(REQ-2026-151 DEC-3): 워킹 `state.json` 이 **도구가 만든 소비 state** 와 바이트로 같은가.
+     *
+     * 🔴 A/B/C 는 전부 **HEAD 쪽** 사실이라, crash window 안에서 `state.json` 을 손으로 고쳐도
+     *    그대로 checkpoint 에 실렸다. 결속은 evidence-finalize 가 매니페스트에 박아 둔
+     *    `consumed_state_sha256` 이다.
+     *
+     * 🔴 **키가 없으면 건너뛴다** — 이 REQ 이전 증거에는 없다. 그때 남는 위험은 이전과 같고,
+     *    새로 열지 않는다(옛 crash window 를 막으면 그것이 새 교착이다).
+     */
+    const expected = consumedStateShaFor(facts.headManifest, pending)
+    if (expected !== null) {
+      const actual = facts.archiveSha(stateRel)
+      if (actual === null)
+        return { kind: 'blocked', reason: 'state-mismatch', detail: `${stateRel} 를 읽을 수 없습니다` }
+      if (actual !== expected)
+        return {
+          kind: 'blocked',
+          reason: 'state-mismatch',
+          detail: `워킹 state.json 해시(${actual.slice(0, 12)}…)가 증거의 결속(${expected.slice(0, 12)}…)과 다릅니다`,
+        }
+    }
     return {
       kind: 'ready',
       resumeFrom: 'checkpoint',

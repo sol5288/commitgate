@@ -10,6 +10,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { packageRoot } from '../../scripts/req/lib/config'
@@ -483,4 +484,186 @@ ${res.stderr}`).toBe(0)
     expect(git(['status', '--porcelain']).trim()).not.toBe('')
     rmSync(repo, { recursive: true, force: true })
   }, 60_000)
+})
+
+/**
+ * 🔴 REQ-2026-151 phase-2 — **결속이 있는** 실 CLI e2e.
+ *
+ * 위 REQ-2026-150 e2e 의 매니페스트 행에는 `consumed_state_sha256` 이 없다 = 판별자 D 를 건너뛴다.
+ * 그래서 그 스위트만으로는 D 가 죽어 있어도 전부 통과한다. 여기서는 결속이 **있는** crash window 를
+ * 만들어 ① 손대지 않으면 한 번에 수렴하고 ② `state.json` 을 고치면 **거부**되는 것을 실제 명령으로 본다.
+ */
+describe('[REQ-2026-151] 🔴 실 CLI e2e — 결속된 checkpoint 복구', () => {
+  const gitOf3 = (repo: string) => (args: string[]): string =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' })
+
+  const boundFixture = (): { repo: string; ticket: string } => {
+    const repo = mkdtempSync(join(tmpdir(), 'req151bind-'))
+    const git = gitOf3(repo)
+    git(['init', '-q'])
+    git(['config', 'user.email', 't@t.t'])
+    git(['config', 'user.name', 't'])
+    const tsx = join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs').split('\\').join('/')
+    const doctorTs = join(packageRoot(), 'scripts', 'req', 'req-doctor.ts').split('\\').join('/')
+    writeFileSync(
+      join(repo, 'package.json'),
+      JSON.stringify({ name: 'x', version: '0.0.0', scripts: { 'req:doctor': `node ${tsx} ${doctorTs}` } }),
+    )
+    mkdirSync(join(repo, 'workflow', 'REQ-2026-001', 'responses'), { recursive: true })
+    writeFileSync(
+      join(repo, 'workflow', 'machine.schema.json'),
+      readFileSync(join(packageRoot(), 'workflow', 'machine.schema.json'), 'utf8'),
+    )
+    writeFileSync(join(repo, 'workflow', '.gitignore'), '/.review-calls.jsonl\n/.doctor-runs.jsonl\n')
+    writeFileSync(join(repo, 'req.config.json'), JSON.stringify({ packageManager: 'npm', reviewPersonaPath: null }))
+    const ticket = join(repo, 'workflow', 'REQ-2026-001')
+    const before = { id: 'REQ-2026-001', branch: 'feat/req-2026-001-x', phases: [], consumed_approvals: [] }
+    writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(before, null, 2)}\n`)
+    git(['add', '-A'])
+    git(['commit', '-qm', 'baseline'])
+    git(['checkout', '-qb', 'feat/req-2026-001-x'])
+    const sourceSha = git(['rev-parse', 'HEAD']).trim()
+
+    // 🔴 소비 state 바이트를 먼저 정하고 **그 해시**를 매니페스트에 박는다 — 도구가 하는 결속과 같다.
+    const consumedText = `${JSON.stringify(
+      {
+        ...before,
+        consumed_approvals: [
+          {
+            approved_tree: 'c'.repeat(64),
+            phase_id: null,
+            consumed_by_commit_sha: sourceSha,
+            approval_consumed_at: '2026-08-14T00:01:00Z',
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`
+    writeFileSync(
+      join(ticket, 'responses', 'approvals.jsonl'),
+      `${JSON.stringify({
+        kind: 'phase',
+        phase_id: null,
+        response_path: 'workflow/REQ-2026-001/responses/phase--r01-approved.json',
+        response_sha256: 'a'.repeat(64),
+        review_base_sha: 'b'.repeat(40),
+        approved_tree: 'c'.repeat(40),
+        approved_at: '2026-08-14T00:00:00Z',
+        consumed_at: '2026-08-14T00:01:00Z',
+        consumed_by_commit_sha: sourceSha,
+        user_commit_confirmed: null,
+        consumed_state_sha256: createHash('sha256').update(consumedText, 'utf8').digest('hex'),
+      })}\n`,
+    )
+    git(['add', '--', 'workflow/REQ-2026-001/responses/approvals.jsonl'])
+    git(['commit', '-qm', 'chore(REQ-2026-001): evidence-finalize'])
+    writeFileSync(join(ticket, 'state.json'), consumedText)
+    return { repo, ticket }
+  }
+
+
+  const finalize = (repo: string) =>
+    spawnSync(
+      process.execPath,
+      [
+        join(packageRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'),
+        join(packageRoot(), 'scripts', 'req', 'req-commit.ts'),
+        '2026-001', '--finalize', '--run', '--root', repo,
+      ],
+      { cwd: repo, encoding: 'utf8' },
+    )
+
+  it('🔴 손대지 않은 소비 state 는 명령 한 번으로 수렴한다(무회귀 — 첫 오라클)', () => {
+    const { repo } = boundFixture()
+    const git = gitOf3(repo)
+    const before = Number(git(['rev-list', '--count', 'HEAD']).trim())
+
+    const res = finalize(repo)
+
+    expect(res.status, `${res.stdout}${res.stderr}`).toBe(0)
+    expect(Number(git(['rev-list', '--count', 'HEAD']).trim())).toBe(before + 1)
+    expect(git(['status', '--porcelain']).trim()).toBe('')
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
+
+  it('🔴 복구가 커밋한 state 가 결속과 여전히 일치한다 — 재실행이 수렴한다', () => {
+    /**
+     * 🔴 멱등 skip 경로가 `consumed_at` 을 새로 잡으면 여기서 red 다: 복구가 **다른 바이트**를
+     *    커밋해 다음 `--finalize` 가 영영 `state-mismatch` 로 거부된다.
+     */
+    const { repo, ticket } = boundFixture()
+    const git = gitOf3(repo)
+    const bound = (JSON.parse(readFileSync(join(ticket, 'responses', 'approvals.jsonl'), 'utf8').trim()) as {
+      consumed_state_sha256: string
+    }).consumed_state_sha256
+
+    expect(finalize(repo).status).toBe(0)
+
+    const committed = git(['show', 'HEAD:workflow/REQ-2026-001/state.json'])
+    expect(createHash('sha256').update(committed, 'utf8').digest('hex')).toBe(bound)
+    rmSync(repo, { recursive: true, force: true })
+  }, 60_000)
+
+  /** 🔴 crash window 안에서 무엇을 고치든 거부된다 — 계획서가 나열한 다섯 가지. */
+  for (const [label, mutate] of [
+    ['임의 필드 추가', (s: Record<string, unknown>) => void (s.injected = 'arbitrary')],
+    ['risk_level', (s: Record<string, unknown>) => void (s.risk_level = 'LOW')],
+    ['policy_snapshot', (s: Record<string, unknown>) => void (s.policy_snapshot = { stop_gate: 'auto' })],
+    ['phases', (s: Record<string, unknown>) => void (s.phases = ['phase-9-injected'])],
+    ['user_commit_confirmed', (s: Record<string, unknown>) => void (s.user_commit_confirmed = '2026-08-14T00:00:00Z')],
+  ] as [string, (s: Record<string, unknown>) => void][]) {
+    it(`🔴 ${label} 을 고치면 거부된다 — 임의 변경이 checkpoint 에 실리지 않는다`, () => {
+      const { repo, ticket } = boundFixture()
+      const git = gitOf3(repo)
+      const st = JSON.parse(readFileSync(join(ticket, 'state.json'), 'utf8')) as Record<string, unknown>
+      mutate(st)
+      writeFileSync(join(ticket, 'state.json'), `${JSON.stringify(st, null, 2)}\n`)
+      const before = Number(git(['rev-list', '--count', 'HEAD']).trim())
+
+      const res = finalize(repo)
+
+      expect(res.status).not.toBe(0)
+      expect(`${res.stdout}${res.stderr}`).toContain('워킹 state.json 이 도구가 만든 소비 state 와 다릅니다')
+      expect(Number(git(['rev-list', '--count', 'HEAD']).trim())).toBe(before)
+      expect(git(['status', '--porcelain']).trim()).not.toBe('')
+      rmSync(repo, { recursive: true, force: true })
+    }, 60_000)
+  }
+})
+
+describe('[REQ-2026-151] 🔴 배선·계약 가드', () => {
+  const read = (p: string): string => readFileSync(join(process.cwd(), p), 'utf8')
+
+  it('🔴 해시는 serializeState 정본으로 계산한다 — checkpoint 바이트 대조와 같은 함수', () => {
+    // 다른 직렬화를 쓰면 정상 crash window 가 영원히 state-mismatch 로 거부된다.
+    expect(read('scripts/req/req-commit.ts')).toMatch(
+      /createHash\('sha256'\)\s*\.update\(serializeState\([A-Za-z]+\), 'utf8'\)\s*\.digest\('hex'\)/,
+    )
+  })
+
+  it('🔴 consumeState 를 두 번 부르지 않는다 — 해시와 writeState 가 같은 객체를 쓴다', () => {
+    // 두 번 부르면 `consumed_at` 이 갈려 바이트가 달라진다(설계 r01 관찰).
+    const src = read('scripts/req/req-commit.ts')
+    const i = src.indexOf('export function finalizeEvidenceAndConsume')
+    const j = src.indexOf('\nexport function ', i + 10)
+    const body = src.slice(i, j === -1 ? undefined : j)
+    // 🔴 등장은 둘이지만 **한 실행에서는 하나만** 돈다: 정상 경로의 대입과 멱등 skip 경로의 `??` 대체.
+    //    `??` 대체를 지우고 세면 정확히 1이어야 한다 — 정상 경로가 두 번 부르면 여기서 red 다.
+    expect(body).toMatch(/consumedForCheckpoint\s*\?\?\s*consumeState\(/)
+    const withoutFallback = body.replace(/consumedForCheckpoint\s*\?\?\s*consumeState\(/g, '')
+    expect((withoutFallback.match(/consumeState\(/g) ?? []).length).toBe(1)
+    // 그리고 그 객체가 그대로 디스크로 간다.
+    expect(body).toMatch(/writeState\(ctx\.ticketDir, consumed\)/)
+  })
+
+  it('🔴 consumed_at 은 한 번만 정해진다 — 멱등 skip 은 HEAD 행의 시각을 다시 쓴다', () => {
+    const src = read('scripts/req/req-commit.ts')
+    expect(src).toMatch(/consumedAtOfRow\(/)
+    expect(src).toMatch(/const consumedAt =/)
+  })
+
+  it('🔴 매니페스트 새 키는 선택이다 — 검증기 키 목록에 등록돼 있다', () => {
+    expect(read('scripts/req/lib/evidence.ts')).toMatch(/'consumed_state_sha256',/)
+  })
 })

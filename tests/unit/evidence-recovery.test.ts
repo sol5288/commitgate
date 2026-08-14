@@ -13,7 +13,9 @@ import {
   type RecoveryFacts,
   consumedKeysAddedByHead,
   consumedKeysInState,
+  consumedStateShaFor,
 } from '../../scripts/req/lib/evidence-recovery'
+import { consumedAtOfRow } from '../../scripts/req/req-commit'
 import { buildPinnedInventory, canonicalInventoryForm } from '../../scripts/req/lib/evidence'
 import type { ApprovalEvidence, PinnedInventoryItem } from '../../scripts/req/lib/review-types'
 
@@ -331,5 +333,101 @@ describe('[REQ-2026-150] 판별자 헬퍼', () => {
     expect(consumedKeysInState('{}')).toEqual([])
     expect(consumedKeysInState('{ bad')).toEqual([])
     expect(consumedKeysInState(JSON.stringify({ consumed_approvals: [{ consumed_by_commit_sha: 'x', phase_id: 'p' }] }))).toEqual(['x#p'])
+  })
+})
+
+describe('[REQ-2026-151] 🔴 판별자 D — 소비 state 결속', () => {
+  const T3 = 'workflow/REQ-2026-142'
+  const stateRel3 = `${T3}/state.json`
+  const STATE_SHA = 'e'.repeat(64)
+  const boundLine = (sha: string | null) =>
+    `${JSON.stringify({
+      kind: 'phase',
+      phase_id: 'phase-1-x',
+      response_path: R02,
+      response_sha256: H(2),
+      review_base_sha: 'c'.repeat(40),
+      approved_tree: TREE,
+      approved_at: '2026-08-14T00:00:00Z',
+      consumed_at: '2026-08-14T00:01:00Z',
+      consumed_by_commit_sha: SRC,
+      user_commit_confirmed: null,
+      ...(sha === null ? {} : { consumed_state_sha256: sha }),
+    })}\n`
+  const cp = (over: Partial<RecoveryFacts> = {}) =>
+    planEvidenceRecovery(
+      facts({
+        approvalEvidence: null,
+        commitAllowed: false,
+        dirtyPaths: [stateRel3],
+        parentManifest: '',
+        headStateText: null,
+        ...over,
+      }),
+    )
+
+  it('🔴 결속이 있고 워킹 state 가 일치하면 Ready', () => {
+    const p = cp({ headManifest: boundLine(STATE_SHA), archiveSha: () => STATE_SHA })
+    expect(p.kind).toBe('ready')
+  })
+
+  it('🔴 워킹 state 를 고치면 거부된다 — 임의 변경이 checkpoint 에 실리지 않는다', () => {
+    const p = cp({ headManifest: boundLine(STATE_SHA), archiveSha: () => 'f'.repeat(64) })
+    expect(p.kind === 'blocked' && p.reason).toBe('state-mismatch')
+  })
+
+  it('🔴 state.json 을 읽을 수 없으면 거부', () => {
+    const p = cp({ headManifest: boundLine(STATE_SHA), archiveSha: () => null })
+    expect(p.kind === 'blocked' && p.reason).toBe('state-mismatch')
+  })
+
+  it('🔴 결속이 없는 옛 행은 D 를 건너뛴다(하위호환 — 옛 crash window 를 막지 않는다)', () => {
+    const p = cp({ headManifest: boundLine(null), archiveSha: () => 'f'.repeat(64) })
+    expect(p.kind).toBe('ready')
+  })
+
+  it('consumedStateShaFor — 대응하는 행에서만 읽는다', () => {
+    expect(consumedStateShaFor(boundLine(STATE_SHA), [`${SRC}#phase-1-x`])).toBe(STATE_SHA)
+    expect(consumedStateShaFor(boundLine(STATE_SHA), ['other#p'])).toBeNull()
+    expect(consumedStateShaFor(boundLine(null), [`${SRC}#phase-1-x`])).toBeNull()
+  })
+})
+
+describe('[REQ-2026-151] consumedAtOfRow — 멱등 skip 이 소비 시각을 다시 쓴다', () => {
+  /**
+   * 🔴 **범위 고지**: 이 헬퍼가 실제로 바이트를 좌우하는 창(`resumeFrom: 'consume'`)의 **CLI e2e 는
+   *    만들지 않았다** — 승인 핀·인벤토리·tree 일치까지 갖춘 fixture 가 필요하다. 여기서는 순수
+   *    동작만 고정하고, 호출부는 `evidence-recovery-wiring.test.ts` 의 소스 가드가 잡는다.
+   *    (checkpoint 창은 `finalizeEvidenceAndConsume` 을 아예 부르지 않아 이 헬퍼를 지나지 않는다.)
+   */
+  const ev = { review_kind: 'phase' as const, phase_id: 'p1', response_sha256: H(3) }
+  const row = (over: Record<string, unknown> = {}) =>
+    `${JSON.stringify({
+      kind: 'phase',
+      phase_id: 'p1',
+      response_path: R02,
+      response_sha256: H(3),
+      review_base_sha: 'c'.repeat(40),
+      approved_tree: TREE,
+      approved_at: '2026-08-14T00:00:00Z',
+      consumed_at: '2026-08-14T00:01:00Z',
+      consumed_by_commit_sha: SRC,
+      user_commit_confirmed: null,
+      ...over,
+    })}\n`
+
+  it('🔴 대응하는 행의 consumed_at 을 돌려준다', () => {
+    expect(consumedAtOfRow(row(), SRC, ev)).toBe('2026-08-14T00:01:00Z')
+  })
+
+  it('🔴 결속 요소가 하나라도 다르면 null — 남의 행 시각을 갖다 쓰지 않는다', () => {
+    expect(consumedAtOfRow(row(), 'f'.repeat(40), ev)).toBeNull()
+    expect(consumedAtOfRow(row({ phase_id: 'p2' }), SRC, ev)).toBeNull()
+    expect(consumedAtOfRow(row({ response_sha256: H(9) }), SRC, ev)).toBeNull()
+    expect(consumedAtOfRow(row({ kind: 'design', phase_id: null }), SRC, ev)).toBeNull()
+  })
+
+  it('빈 매니페스트는 null(정상 경로가 새 시각을 잡는다)', () => {
+    expect(consumedAtOfRow('', SRC, ev)).toBeNull()
   })
 })

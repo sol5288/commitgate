@@ -32,7 +32,7 @@ import { isArchiveFileName, sourceCommitForbiddenStaged } from './lib/scratch'
 import { bookkeepingMessage } from './lib/bookkeeping'
 // REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
 import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
-import { commitStateCheckpoint } from './lib/state-checkpoint'
+import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { scanTicketIntake } from './lib/intake'
 import { PLACEHOLDER_APPROVAL_ANGLED } from './lib/placeholders'
 import {
@@ -44,7 +44,7 @@ import {
 } from './lib/evidence-recovery'
 import { LEDGER_BASENAME } from './lib/review-ledger'
 import { CLOSE_PROOF_BASENAME, parseCloseProof, deriveBaseState } from './lib/close-proof'
-import { requiredConfirmScope, effectiveConfirmScope } from './lib/evidence'
+import { requiredConfirmScope, effectiveConfirmScope, parseManifestEntries } from './lib/evidence'
 import { defersToIntegration, type StopGate } from './lib/config'
 import { createEvidencePorts } from './lib/evidence-ports' // 아카이브 파일명 판정의 정본은 scratch(leaf)
 // REQ-2026-048 phase-1: 매니페스트 모델·검증과 그 보조 술어는 leaf `lib/evidence.ts`가 정본.
@@ -763,6 +763,32 @@ export function __setGitForTest(root: string): void {
   quietGitAdapter = createGitAdapter(root, quietGitRunner) // 같은 root를 따라가야 HEAD 조회가 엉뚱한 저장소를 보지 않는다
 }
 
+
+/**
+ * HEAD 매니페스트에서 이 승인의 **기존 소비 시각**을 읽는다(REQ-2026-151 DEC-2, 순수).
+ *
+ * 🔴 멱등 skip 경로에서 새 시각을 쓰면 재실행마다 다른 소비 state 바이트가 나와, 이미 기록된
+ *    `consumed_state_sha256` 과 영영 맞지 않는다 — 재실행이 수렴하지 않는다. 없으면 `null`.
+ */
+export function consumedAtOfRow(
+  manifestText: string,
+  sourceSha: string,
+  ev: { review_kind: ReviewKind; phase_id?: string | null; response_sha256: string },
+): string | null {
+  for (const e of parseManifestEntries(manifestText)) {
+    if (
+      e.consumed_by_commit_sha === sourceSha &&
+      e.kind === ev.review_kind &&
+      (e.phase_id ?? null) === (ev.phase_id ?? null) &&
+      e.response_sha256 === ev.response_sha256 &&
+      typeof e.consumed_at === 'string' &&
+      e.consumed_at !== ''
+    )
+      return e.consumed_at
+  }
+  return null
+}
+
 export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
   // 🔴 REQ-2026-052 phase-3a P1(리뷰 반영): finalize 멱등성을 **HEAD 기준**으로 판정한다 — 워킹 매니페스트가
   //    아니라. 이전엔 `ctx.existing`(워킹트리 파일)을 base·멱등 판정에 썼는데, evidence commit이 실패하면
@@ -786,19 +812,26 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
   // 🔴 이 커밋이 REQ 를 닫았는지 — `scope:'req'` 확인의 소비 시점(DEC-6). 멱등 skip 경로에서는 false 다
   //    (이미 finalize 된 커밋이 닫았다면 그때 소비됐다).
   let devCompleteEmitted = false
+  let consumedForCheckpoint: WorkflowState | null = null
+  /**
+   * 🔴 REQ-2026-151 DEC-2: 소비 시각은 **한 번만 정한다**. 매니페스트 행과 소비 state 가 각자
+   *    `new Date()` 를 부르면 바이트가 갈리고, 아래 `consumed_state_sha256` 결속이 처음부터 어긋난다.
+   *
+   * 🔴 멱등 skip(`already`) 경로에서는 **HEAD 행의 값을 재사용**한다. 새 시각을 쓰면 재실행마다
+   *    다른 state 바이트가 나와 이미 기록된 해시와 영영 맞지 않는다(재실행이 수렴하지 않는다).
+   */
+  const consumedAt = (already ? consumedAtOfRow(headManifest, ctx.sourceSha, ctx.ev) : null) ?? new Date().toISOString()
   if (!already) {
-    const entry = buildManifestEntry(ctx.ev, {
-      consumedAt: new Date().toISOString(),
+    const entry0 = buildManifestEntry(ctx.ev, {
+      consumedAt,
       consumedByCommitSha: ctx.sourceSha,
       userCommitConfirmed: (ctx.state.user_commit_confirmed as UserCommitConfirmed | null) ?? null,
     })
     // 🔴 base는 **HEAD 매니페스트** — 실패한 이전 쓰기가 남긴 디스크 엔트리를 이어붙여 중복시키지 않는다.
-    const newContent = headManifest + serializeManifestLine(entry)
-    const reproblems = validateManifest(newContent, { ticketRel: ctx.ticketRel, validPhaseIds: ctx.validPhaseIds })
+    const probeContent = headManifest + serializeManifestLine(entry0)
+    const reproblems = validateManifest(probeContent, { ticketRel: ctx.ticketRel, validPhaseIds: ctx.validPhaseIds })
     if (reproblems.length)
       throw new Error(`(예상외) 매니페스트 검증 실패: ${reproblems.join('; ')} — source=${ctx.sourceSha} 커밋됨, --finalize로 복구`)
-    mkdirSync(ctx.responsesDir, { recursive: true })
-    writeFileSync(ctx.manifestPath, newContent, 'utf8')
     const archivePaths = expectedArchivePaths(ctx.archiveNames, ctx.ev.review_kind, ctx.ev.phase_id ?? null, ctx.ticketRel)
     // REQ-2026-051 D7: 리뷰 원장이 있으면 phase 증거 커밋에 함께 싣는다. 없으면 넣지 않는다 —
     // 없는 pathspec으로 `git add`가 실패해 증거 커밋 전체가 무산되면 본말전도다(design 경로의 ledgerExists와 대칭).
@@ -806,10 +839,30 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     const ledgerAdd = existsSync(join(ctx.ticketDir, 'responses', LEDGER_BASENAME)) ? [ledgerRel] : []
     // 🔴 REQ-2026-052 phase-3a: 이 커밋이 **마지막 phase**를 완료시키면 self-verifying dev-complete proof를
     //    **같은 durable 커밋**에 발행한다(DEC-B3). 아니면 발행 안 함. newContent(이 phase 엔트리 포함)로 판정.
-    const devCompleteAdd = emitDevCompleteIfLastPhase(ctx, newContent)
+    const devCompleteAdd = emitDevCompleteIfLastPhase(ctx, probeContent)
     // 🔴 이 커밋이 REQ 를 닫았는가 — `scope:'req'` 확인의 소비 시점이다(DEC-6).
     //    발행 결과를 그대로 쓰므로 별도 판정이 생기지 않는다.
     devCompleteEmitted = devCompleteAdd.length > 0
+    /**
+     * 🔴 REQ-2026-151 DEC-2: **소비 state 를 지금 만들어 그 바이트 해시를 매니페스트에 박는다.**
+     *    checkpoint 복구가 "정확히 도구가 만든 state" 만 커밋하려면 그 바이트를 **커밋된 증거**가
+     *    알고 있어야 한다. `serializeState` 가 정본이다(checkpoint 커밋의 바이트 대조와 같은 함수).
+     *
+     * 🔴 `completesReq` 가 확정된 **뒤에야** 만들 수 있어 순서가 이렇다. 그리고 이 객체를 아래
+     *    `writeState` 에 **그대로** 넘긴다 — `consumeState` 를 두 번 부르면 `consumed_at` 이 갈린다.
+     */
+    consumedForCheckpoint = consumeState(ctx.state, {
+      sourceCommitSha: ctx.sourceSha,
+      consumedAt,
+      completesReq: devCompleteEmitted,
+    })
+    const entry = { ...entry0, consumed_state_sha256: createHash('sha256').update(serializeState(consumedForCheckpoint), 'utf8').digest('hex') }
+    const newContent = headManifest + serializeManifestLine(entry)
+    const bound = validateManifest(newContent, { ticketRel: ctx.ticketRel, validPhaseIds: ctx.validPhaseIds })
+    if (bound.length)
+      throw new Error(`(예상외) 매니페스트 검증 실패(결속 포함): ${bound.join('; ')} — source=${ctx.sourceSha} 커밋됨, --finalize로 복구`)
+    mkdirSync(ctx.responsesDir, { recursive: true })
+    writeFileSync(ctx.manifestPath, newContent, 'utf8')
     git(['add', ...archivePaths, `${ctx.ticketRel}/responses/approvals.jsonl`, ...ledgerAdd, ...devCompleteAdd])
     const choreLeak = stagedNames().filter((p) => !p.startsWith(`${ctx.ticketRel}/responses/`))
     if (choreLeak.length) throw new Error(`evidence 커밋에 responses 외 staged 금지(코드/state 누수): ${choreLeak.join(', ')}`)
@@ -834,11 +887,11 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
     }).complete
   }
   // 소비(마지막) — commit_allowed=false·approved_diff_hash=null·pending 마커 제거.
-  const consumed = consumeState(ctx.state, {
-    sourceCommitSha: ctx.sourceSha,
-    consumedAt: new Date().toISOString(),
-    completesReq: devCompleteEmitted,
-  })
+  // 🔴 위에서 만든 **같은 객체**를 쓴다(DEC-2). 멱등 skip 경로에서는 여기서 만들되 `consumedAt` 은
+  //    HEAD 행의 값이라 재실행이 같은 바이트로 수렴한다.
+  const consumed =
+    consumedForCheckpoint ??
+    consumeState(ctx.state, { sourceCommitSha: ctx.sourceSha, consumedAt, completesReq: devCompleteEmitted })
   writeState(ctx.ticketDir, consumed)
 
   // ── REQ-2026-057: 소비 상태 durable checkpoint ──
