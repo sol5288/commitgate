@@ -96,6 +96,53 @@ export interface RecoveryFacts {
   hashUtf8: (s: string) => string
 }
 
+/**
+ * 사실 조립에 필요한 바깥 세계(주입). fs·git 을 이 모듈에 들이지 않으면서, **조립 자체는 한 곳에** 둔다.
+ *
+ * 🔴 조립이 두 곳(D10 을 평가하는 `req:doctor` 와 실행하는 `req:commit`)에 복제되면 그 둘이 갈라지는
+ *    순간 "doctor 는 통과시키는데 commit 은 거부하는" 교착이 생긴다 — 이 REQ 가 고치려는 것과 같은 모양이다.
+ */
+export interface RecoveryIo {
+  ticketRel: string
+  state: {
+    commit_allowed?: unknown
+    approved_diff_hash?: unknown
+    approval_evidence?: unknown
+    pending_evidence_for?: unknown
+  }
+  /** HEAD 의 blob 텍스트(없으면 null). */
+  headText: (repoRelPath: string) => string | null
+  /** 작업 트리에서 더러운 repo-상대 경로 전부(rename 은 src·dest 둘 다). */
+  dirtyPaths: () => string[]
+  /** `git rev-parse <rev>` — 실패하면 null. */
+  revParse: (rev: string) => string | null
+  fileSha: (repoRelPath: string) => string | null
+  hashUtf8: (s: string) => string
+}
+
+/** `RecoveryIo` → `RecoveryFacts`(단일 조립 지점). */
+export function buildRecoveryFacts(io: RecoveryIo): RecoveryFacts {
+  const ticketRel = norm(io.ticketRel).replace(/\/+$/, '')
+  const pending = io.state.pending_evidence_for as { source_commit_sha?: unknown } | undefined
+  const pendingSha =
+    pending && typeof pending.source_commit_sha === 'string' && pending.source_commit_sha ? pending.source_commit_sha : null
+  // 🔴 마커가 없으면 HEAD 를 후보로 본다 — source 커밋 성공 직후·마커 기록 전에 죽은 창
+  //    (`resolveRecoverySource` 의 orphan 복구와 같은 취지). 승인 tree 대조를 통과해야만 쓰이므로 우회가 아니다.
+  const sha = pendingSha ?? io.revParse('HEAD')
+  const tree = sha ? io.revParse(`${sha}^{tree}`) : null
+  return {
+    ticketRel,
+    commitAllowed: io.state.commit_allowed === true,
+    approvedDiffHash: typeof io.state.approved_diff_hash === 'string' ? io.state.approved_diff_hash : null,
+    approvalEvidence: (io.state.approval_evidence as ApprovalEvidence | undefined) ?? null,
+    source: sha && tree ? { sha, tree } : null,
+    headManifest: io.headText(`${ticketRel}/responses/approvals.jsonl`) ?? '',
+    dirtyPaths: io.dirtyPaths(),
+    archiveSha: io.fileSha,
+    hashUtf8: io.hashUtf8,
+  }
+}
+
 export type RecoveryPlan =
   | {
       kind: 'ready'
@@ -105,6 +152,42 @@ export type RecoveryPlan =
       detail: string
     }
   | { kind: 'blocked'; reason: RecoveryBlockedReason; detail: string }
+
+/**
+ * 실행 어댑터 — 이 모듈은 fs·git 을 모른다. 호출부가 **이미 존재하는** 두 동작을 주입한다.
+ *
+ * 🔴 **여기서 finalize 를 다시 구현하지 않는다.** `finalizeEvidenceAndConsume` 이 DEC-5 ①~④ 를 이미
+ *    HEAD 기준 멱등으로 수행한다. 그걸 복제하면 진행 판정이 두 벌이 되고, 둘이 갈라지는 순간 복구가
+ *    복구를 못 하게 된다. 이 함수의 일은 **어느 것을 부를지 결정하는 것**뿐이다.
+ */
+export interface RecoveryAdapters {
+  /** 증거 stage·커밋·재검증·소비·checkpoint(멱등). `resumeFrom` 이 `evidence`·`consume` 일 때. */
+  finalizeEvidenceAndConsume: () => void
+  /** 소비 state 만 durable 하게 커밋. `resumeFrom` 이 `checkpoint` 일 때. 커밋했으면 true. */
+  commitStateCheckpoint: () => boolean
+}
+
+export interface RecoveryExecuteResult {
+  resumeFrom: RecoveryResumeStage
+  /** checkpoint 재개에서 실제로 커밋했는가(이미 되어 있었으면 false — 멱등 no-op). */
+  checkpointCommitted: boolean
+}
+
+/**
+ * 복구 실행(DEC-5). `plan` 이 `Ready` 를 낸 값만 받는다 — 판정과 실행을 한 함수에 섞지 않는다.
+ *
+ * 🔴 **재실행은 어느 지점에서든 이어붙는다.** `evidence`·`consume` 은 같은 멱등 함수로 수렴하고,
+ *    `checkpoint` 는 커밋할 것이 없으면 아무 일도 하지 않는다(no-op 성공).
+ */
+export function executeEvidenceRecovery(
+  ready: Extract<RecoveryPlan, { kind: 'ready' }>,
+  adapters: RecoveryAdapters,
+): RecoveryExecuteResult {
+  if (ready.resumeFrom === 'checkpoint')
+    return { resumeFrom: 'checkpoint', checkpointCommitted: adapters.commitStateCheckpoint() }
+  adapters.finalizeEvidenceAndConsume()
+  return { resumeFrom: ready.resumeFrom, checkpointCommitted: false }
+}
 
 const norm = (p: string): string => p.replace(/\\/g, '/')
 

@@ -2369,8 +2369,18 @@ export function findUnstagedOrUntracked(
   entries: StatusEntry[],
   allowedScratch: string[],
   ticketRel?: string,
+  /**
+   * 🔴 REQ-2026-142 DEC-4: **증거 복구 예외**. `planEvidenceRecovery`가 `Ready`를 낸 경우에만 채워진다.
+   *    그 밖의 모든 호출은 이 인자를 주지 않으므로(`undefined` → 빈 집합) 판정이 **한 글자도 바뀌지 않는다**.
+   *
+   * 🔴 `--finalize` **플래그만으로는 절대 채워지지 않는다.** 플래그는 plan을 계산할 자격일 뿐이고, 통과
+   *    근거는 승인 시점에 못 박은 인벤토리와의 바이트 일치다. 그래서 여기 들어오는 것은 "복구가 만질
+   *    정확한 경로 목록"이지 "`responses/`를 봐주자"가 아니다.
+   */
+  recoveryAllowlist?: readonly string[],
 ): StatusEntry[] {
   const allowed = new Set(allowedScratch.map((p) => p.replace(/\\/g, '/')))
+  const recovery = new Set((recoveryAllowlist ?? []).map((p) => p.replace(/\\/g, '/')))
   const respPrefix = ticketRel
     ? `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
     : null
@@ -2379,6 +2389,9 @@ export function findUnstagedOrUntracked(
     const paths = entryPaths(e)
     // 정확 경로 스크래치 허용은 **비-rename**에만 — rename은 아래 responses/·기본 규칙으로 판정한다.
     if (e.origPath === undefined && allowed.has(e.path)) return false
+    // 🔴 복구 예외: rename/copy는 **src·dest 둘 다** 목록에 있어야 통과한다(`every`) — 한쪽만 보면
+    //    허용 경로로의 rename이 임의 파일을 끌고 들어온다. 목록이 비면 아래 검사는 항상 false다.
+    if (recovery.size && paths.every((p) => recovery.has(p))) return false
     // REQ-016 A1/D-016-4: 현재 티켓 responses/ 하위(src 또는 dest)는 **untracked 단일 아카이브만** 스크래치 허용.
     // approvals.jsonl·tracked 수정/삭제/리네임/카피는 무조건 flag(커밋된 증거 변조/주입 차단).
     if (respPrefix && paths.some((p) => p.startsWith(respPrefix))) return !isAllowedResponsesScratch(e, ticketRel as string)
