@@ -18,6 +18,10 @@ import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
+// 🔴 REQ-2026-147: `successorSlug` 는 leaf(`lib/nonconvergence`)로 내려갔다 — `review-codex` 가
+//    써야 하는데 여기서 가져가면 런타임 순환이 된다. re-export 로 기존 호출부·테스트를 유지한다.
+import { successorSlug } from './lib/nonconvergence'
+export { successorSlug }
 import {
   loadState,
   writeState,
@@ -372,20 +376,6 @@ function runCloseStale(o: Opts): void {
 
 
 // ───────────────────────────── REQ-2026-145: 대체(replace) 결정 기록 ──
-
-/**
- * 대체 REQ 로 잇는 slug 산출(순수·결정론).
- *
- * 🔴 **자리표시자를 내지 않는다.** slug 는 사람의 창의가 필요한 값이 아니라 식별자이고, 안내에
- *    `<slug>` 를 적으면 PowerShell 에서 `<` 가 리디렉션 토큰이라 **명령이 파싱 오류로 죽는다**.
- *    부모 branch 에서 벗겨 내고, 벗길 수 없으면 REQ 번호로 떨어진다 — 어느 경우에도 값이 나온다.
- */
-export function successorSlug(branch: unknown, reqId: string): string {
-  const b = typeof branch === 'string' ? branch : ''
-  const m = /^feat\/req-\d{4}-\d{3,}-(.+)$/.exec(b)
-  if (m && m[1]) return `${m[1]}-successor`
-  return `${reqId.toLowerCase().replace(/^req-/, 'req-')}-successor`
-}
 
 export type ResolvePlan =
   | { ok: true; seriesId: string; kind: ReviewKind; phaseId: string | null }

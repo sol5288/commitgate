@@ -1,0 +1,147 @@
+{
+  "id": "REQ-2026-147",
+  "branch": "feat/req-2026-147-hardcap-nonconvergence-report-successor",
+  "risk_level": "LOW",
+  "codex_thread_id": "019fff3f-7c0a-7763-b03b-404c677174e2",
+  "review_base_sha": "9f9a342ac4a092b2ddc2454b63dce43c991011b5",
+  "review_diff_hash": "50b46d6c5cfc654f20a411ef460789ac3c353a64",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "f8ca21842f91397180d2e490b0170bc937bb054bcce5b7eb00539cb7939af7d0",
+  "current_phase": "phase-2-hardcap-report-wiring",
+  "phases": [
+    {
+      "id": "phase-1-nonconvergence-analyzer",
+      "title": "비수렴 분석기",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-hardcap-report-wiring",
+      "title": "hardCap 보고 배선",
+      "status": "pending",
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "successor_of": {
+    "req_id": "REQ-2026-144",
+    "parent_attempts_total": 7,
+    "parent_replace_resolution": {
+      "decision": "replace",
+      "method": "REQ-2026-144 대체 승인 — 설계 6라운드 비수렴으로 범위를 나눠 다시 만든다",
+      "decided_at": "2026-08-14T07:01:37.800Z",
+      "note": "설계 6라운드 비수렴 — 탈출구 개설(B)과 비수렴 보고(A) 두 가지를 한 REQ 가 하려다 계속 커졌다. B 는 REQ-2026-145 로 완료했고 A 를 대체 REQ 로 다시 만든다"
+    },
+    "recorded_at": "2026-08-14T07:01:45.688Z",
+    "parent_series_id": "design:-#1"
+  },
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-nonconvergence-analyzer#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-nonconvergence-analyzer",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-hardcap-report-wiring#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-hardcap-report-wiring",
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-hardcap-report-wiring",
+    "outcome": "approved",
+    "compare_hash": "54e19b8d16bf22e4fe5f1d0cb4de7b501f36ad318d0341950e32da4581883448",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T07:52:42.342Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "400d1fed125e57cb2f5d1f65cab2cf14becf09d9",
+    "design": "4a523e5b991190d66d96e8f21e729b31f24d656b",
+    "plan": "c6881d9b1cd93699ea3f2a58e65709307cac2c3f"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3ef4f09e66db8a1b73226de05e11ceddc8d9a0db",
+      "phase_id": "phase-1-nonconvergence-analyzer",
+      "consumed_by_commit_sha": "a79f2b4bcb98fcb051b72f6931fe6e70937070e8",
+      "approval_consumed_at": "2026-08-14T07:21:48.939Z"
+    },
+    {
+      "approved_tree": "50b46d6c5cfc654f20a411ef460789ac3c353a64",
+      "phase_id": "phase-2-hardcap-report-wiring",
+      "consumed_by_commit_sha": "1c3aeebbc86fd220dfabbec569ba74f2e9d7ead5",
+      "approval_consumed_at": "2026-08-14T07:53:08.984Z"
+    }
+  ],
+  "user_commit_confirmed": null,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-147/responses/design-r05-approved.json",
+    "response_sha256": "d89814448ebcd16988adecc12dd8fc1be7280e8f22e106d80ba80ce6fcf24488",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "22b528be70c313e6644d0a4a3e34b18354a4abc7",
+    "codex_thread_id": "019fff3c-a95e-7b01-92e3-49e6538a1482",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T07:48:28.250Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-147/responses/design-r01-needs-fix.json",
+          "sha256": "403d5608aca36da28b4569083544b8e8cb3bba5d38d25c30f646aadec5b357a6"
+        },
+        {
+          "response_path": "workflow/REQ-2026-147/responses/design-r02-needs-fix.json",
+          "sha256": "59d6f03bbc9777d3d576315b176a6b2eb6b4aab95368ab7c1368a1c7eab99703"
+        },
+        {
+          "response_path": "workflow/REQ-2026-147/responses/design-r03-approved.json",
+          "sha256": "6c340e3968cefad09b6abcbb8b941d47a7bffe331454af26fc1fb0d42fbac3f1"
+        },
+        {
+          "response_path": "workflow/REQ-2026-147/responses/design-r04-needs-fix.json",
+          "sha256": "d5bbd1042d85b3180937111902f2bd7a065a1f3884b4239dafcddcda63091fd0"
+        },
+        {
+          "response_path": "workflow/REQ-2026-147/responses/design-r05-approved.json",
+          "sha256": "d89814448ebcd16988adecc12dd8fc1be7280e8f22e106d80ba80ce6fcf24488"
+        }
+      ],
+      "inventory_sha256": "dbfcbd502731ec36a44845165985ff04f8f111da76e64100a6e1020ded80162d",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-147/responses/design-r05-approved.json"
+    },
+    "design_hash": "f8ca21842f91397180d2e490b0170bc937bb054bcce5b7eb00539cb7939af7d0"
+  }
+}

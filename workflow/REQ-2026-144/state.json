@@ -1,0 +1,62 @@
+{
+  "id": "REQ-2026-144",
+  "branch": "feat/req-2026-144-hardcap-nonconvergence-report",
+  "risk_level": "LOW",
+  "codex_thread_id": "019ffe1d-6387-7c42-8c45-2e1c7659ff57",
+  "review_base_sha": null,
+  "review_diff_hash": null,
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": false,
+  "design_approved_hash": null,
+  "current_phase": null,
+  "phases": [],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 7,
+      "closed_reason": "human-resolution",
+      "human_resolution": {
+        "decision": "replace",
+        "method": "REQ-2026-144 대체 승인 — 설계 6라운드 비수렴으로 범위를 나눠 다시 만든다",
+        "decided_at": "2026-08-14T07:01:37.800Z",
+        "note": "설계 6라운드 비수렴 — 탈출구 개설(B)과 비수렴 보고(A) 두 가지를 한 REQ 가 하려다 계속 커졌다. B 는 REQ-2026-145 로 완료했고 A 를 대체 REQ 로 다시 만든다"
+      }
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "needs-fix",
+    "compare_hash": "0c45508bde0abc1b9d62bf9ba23dd3fcebb3efb92ae685cb5be0cc619fd08ac2",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T02:34:57.707Z",
+    "findings": [
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-144/01-design.md",
+        "detail": "DEC-3의 ‘반복 축 0개’ 분기는 분석 가능한 findings가 전혀 없는 경우도 ‘매 라운드 지적이 달랐고 범위가 넓다’고 단정합니다. 정상 hardCap 상태에서 워킹트리 verdict 8개가 모두 없거나 파손되면(DEC-5가 명시적으로 허용한 입력)"
+      },
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-144/01-design.md",
+        "detail": "보고 예시의 실제 실행 명령이 design series ID를 `design#1`로 씁니다. 현 CLI의 series ID 형식은 `${kind}:${phaseId ?? '-'}#${seq}`이므로 design series는 `design:-#1`입니다. 정상 hardCap design series에서 이 안내를 그대로 복사하면 `--resolve`/`--close-stale`"
+      },
+      {
+        "severity": "P1",
+        "file": "workflow/REQ-2026-144/01-design.md",
+        "detail": "DEC-4a는 `--resolve` 실행 자체가 사람 결정을 원장에 남긴다고 요구하지만, Phase 2는 순수 함수 `closeSeriesHumanResolution` 호출과 state checkpoint만 선언합니다. 현재 review ledger는 `attempt-opened`/`attempt-closed`만 허용하며, hardCap의 모든 attempt가"
+      }
+    ],
+    "elided_count": 0
+  }
+}

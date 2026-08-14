@@ -71,6 +71,8 @@ import { assertSetupComplete } from './lib/setup-gate'
 import { createReviewerProbes, type ReviewerProbes } from './lib/adapters'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 import type { ReviewKind, ApprovalEvidence, PinnedArchiveInventory } from './lib/review-types'
+import { nonConvergenceReport } from './lib/nonconvergence'
+import { hardBlockedInput } from './lib/hardblocked-facts'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -95,6 +97,15 @@ export function __getReviewerForTest(): ReviewerAdapter {
  */
 export function __getGitAdapterForTest(): GitAdapter {
   return gitAdapter
+}
+
+/**
+ * 테스트 전용: gitAdapter 주입(REQ-2026-147). `req-commit`의 `__setGitForTest`와 같은 seam —
+ * `main()`을 거치지 않고 `gateAndRecordAttempt` 같은 경계 함수를 **실제 저장소**에 대고 구동한다.
+ * 🔴 프로덕션 경로는 이 함수를 쓰지 않는다(정상 진입점은 `main()`이 `cfg.root`로 재할당한다).
+ */
+export function __setGitAdapterForTest(a: GitAdapter): void {
+  gitAdapter = a
 }
 
 /**
@@ -1853,6 +1864,44 @@ export interface AttemptInfo {
  * 막을 거면 `recordAttempt` 전에 막는다(REQ-2026-028 R5) — throw 시 state는 바뀌지 않는다(예외 소비 성공 시에만 쓰기).
  * **반환 `state`가 후처리의 유일한 base다**(R9).
  */
+/**
+ * `hard-blocked` 보고 문자열(REQ-2026-147). 만들 수 없으면 `null` — 호출부가 원래 한 줄로 떨어진다.
+ *
+ * 🔴 여기서 **판정을 하지 않는다**. 차단은 이미 `checkReviewBudget` 이 정했고, 이 함수는 그 사실에
+ *    설명을 붙일 뿐이다. `null` 을 돌려줘도 차단은 그대로다.
+ */
+function hardBlockedReport(
+  ctx: { ticketDir: string; state: WorkflowState; kind: ReviewKind; phaseId: string | null; budget: ReviewBudget },
+  attempt: number,
+): string | null {
+  const reqId = String(ctx.state.id ?? '')
+  if (!reqId) return null
+  const open = openSeriesRecord(ctx.state, ctx.kind, ctx.phaseId)
+  // 🔴 repo 루트는 git 에게 묻는다 — 이 모듈에 루트를 담은 변수가 없고, 추측하면 티켓 경로가 어긋난다.
+  const root = git(['rev-parse', '--show-toplevel'])
+  return nonConvergenceReport(
+    hardBlockedInput({
+      root,
+      ticketRel: relative(root, ctx.ticketDir).replace(/\\/g, '/'),
+      ticketDir: ctx.ticketDir,
+      reqId,
+      branch: ctx.state.branch,
+      kind: ctx.kind,
+      phaseId: ctx.phaseId,
+      openSeries: open ? { series_id: open.series_id, attempts: open.attempts } : null,
+      hardCap: ctx.budget.hardCap,
+      attempt,
+      statusZ: () => {
+        try {
+          return git([...STATUS_Z_ARGS])
+        } catch {
+          return ''
+        }
+      },
+    }),
+  )
+}
+
 export function gateAndRecordAttempt(ctx: {
   ticketDir: string
   state: WorkflowState
@@ -1871,10 +1920,22 @@ export function gateAndRecordAttempt(ctx: {
   // 예외를 받아놓고 소비에서 거부되는 교착이 생기지 않는다.
   const decision = checkReviewBudget(budgetCounts(ctx.state, ctx.kind, ctx.phaseId), ctx.budget)
   let gated = ctx.state
-  if (decision.kind === 'hard-blocked')
-    throw new Error(
-      `review 예산 소진 — ${decision.attempt}회차는 어떤 경로로도 실행하지 않는다(hardCap=${ctx.budget.hardCap}). 종료하거나 정합한 대체 REQ를 작성한다.`,
-    )
+  if (decision.kind === 'hard-blocked') {
+    const fallback = `review 예산 소진 — ${decision.attempt}회차는 어떤 경로로도 실행하지 않는다(hardCap=${ctx.budget.hardCap}). 종료하거나 정합한 대체 REQ를 작성한다.`
+    /**
+     * 🔴 REQ-2026-147: 왜 수렴하지 않았는지·다음에 뭘 할지를 함께 낸다.
+     *
+     * 🔴 **보고가 차단을 흔들 수 없다.** 전체를 `try` 로 감싸고 실패하면 **원래 한 줄**로 떨어진다 —
+     *    부수 기능이 주 기능을 이길 수 없다. 보고를 만들다 죽어서 차단이 사라지면 그건 게이트 붕괴다.
+     */
+    let msg = fallback
+    try {
+      msg = hardBlockedReport(ctx, decision.attempt) ?? fallback
+    } catch {
+      msg = fallback
+    }
+    throw new Error(msg)
+  }
   if (decision.kind === 'needs-exception') {
     // 🔴 열린 record의 series_id를 **직접** 쓴다(design-r01 P1). 재구성(`split('#')`)은 phase id에 `#`가
     // 들어가면 깨진다(`phase#alpha` → `NaN`). needs-exception이면 productive>=autoBudget≥1이고
