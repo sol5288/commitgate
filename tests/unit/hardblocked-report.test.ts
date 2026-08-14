@@ -319,3 +319,48 @@ describe('[REQ-2026-153] 🔴 배선 가드', () => {
     expect(src).not.toMatch(/ticketRel: relative\(root, ctx\.ticketDir\)/)
   })
 })
+
+/**
+ * 🔴 REQ-2026-154 DEC-4 — `splitDirty` 는 **git 이 준 경로를 그대로** 쓴다.
+ *
+ * `-z` porcelain 이 준 경로가 정본이다. POSIX 에서 역슬래시는 파일명의 일부인데, `\` → `/` 로
+ * 바꾸면 티켓 **밖**의 경로가 티켓 **안**으로 오분류돼 보고가 그 파일을 park 명령에서 빠뜨린다.
+ * 🔴 바로 위 `toTicketRel`(REQ-2026-153)의 주석이 금지한 그 변환이 같은 파일에 남아 있었다.
+ */
+describe('[REQ-2026-154] splitDirty — porcelain 경로 충실도', () => {
+  const T = 'workflow/REQ-2026-001'
+  const z = (...paths: string[]): string => paths.map((p) => `?? ${p}`).join('\0') + '\0'
+
+  // 🔴 `String.fromCharCode(92)` 로 만든다 — 소스에 `\` 를 직접 쓰면 편집·전송 과정에서 삼켜져
+  //    **백슬래시 없는 경로**가 되고, 그러면 이 테스트가 아무것도 검사하지 않는다(실제로 그랬다).
+  const BS = String.fromCharCode(92)
+
+  it('🔴 티켓 밖의 리터럴 역슬래시 경로는 밖으로 남는다', () => {
+    const outside = `workflow${BS}REQ-2026-001/x`
+    const r = splitDirty(z(outside), T)
+    expect(r.outsideDirty).toEqual([outside])
+    expect(r.ticketDirty).toBe(false)
+  })
+
+  it('🔴 티켓 안의 역슬래시 파일명은 안으로 잡힌다', () => {
+    const r = splitDirty(z(`${T}/responses/a${BS}b.json`), T)
+    expect(r.ticketDirty).toBe(true)
+    expect(r.outsideDirty).toEqual([])
+  })
+
+  it('정상 경로 무회귀 — 안/밖이 종전대로 갈린다', () => {
+    const r = splitDirty(z(`${T}/state.json`, 'code.ts'), T)
+    expect(r.ticketDirty).toBe(true)
+    expect(r.outsideDirty).toEqual(['code.ts'])
+  })
+
+  it('🔴 소스 가드: splitDirty 안에 역슬래시 치환이 없다(toTicketRel 의 것은 남는다)', () => {
+    const src = readFileSync(join(process.cwd(), 'scripts/req/lib/hardblocked-facts.ts'), 'utf8')
+    const i = src.indexOf('export function splitDirty')
+    const j = src.indexOf('\nexport function ', i + 10)
+    expect(src.slice(i, j === -1 ? undefined : j)).not.toContain("replace(/\\\\/g, '/')")
+    // toTicketRel 의 변환은 **경로 구분자** 변환이라 남아야 한다.
+    const k = src.indexOf('export function toTicketRel')
+    expect(src.slice(k, src.indexOf('\nexport function ', k + 10))).toContain("replace(/\\\\/g, '/')")
+  })
+})
