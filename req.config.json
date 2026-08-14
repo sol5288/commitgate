@@ -2,7 +2,7 @@
   "packageManager": "npm",
   "handoffPath": null,
   "reviewReasoningEffort": "high",
-  "stopGate": "merge",
+  "stopGate": "auto",
   "reviewBudget": {
     "autoBudget": 5,
     "hardCap": 8,
