@@ -2,14 +2,14 @@
   "id": "REQ-2026-147",
   "branch": "feat/req-2026-147-hardcap-nonconvergence-report-successor",
   "risk_level": "LOW",
-  "codex_thread_id": "019fff3c-a95e-7b01-92e3-49e6538a1482",
-  "review_base_sha": "9142a3ae4e3955f68861e07db628858ab1b08b3f",
-  "review_diff_hash": "d91cb05e0e7c8362e5602d903ed7e6a50fa5093a",
+  "codex_thread_id": "019fff3f-7c0a-7763-b03b-404c677174e2",
+  "review_base_sha": "9f9a342ac4a092b2ddc2454b63dce43c991011b5",
+  "review_diff_hash": "50b46d6c5cfc654f20a411ef460789ac3c353a64",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "f8ca21842f91397180d2e490b0170bc937bb054bcce5b7eb00539cb7939af7d0",
-  "current_phase": "phase-1-nonconvergence-analyzer",
+  "current_phase": "phase-2-hardcap-report-wiring",
   "phases": [
     {
       "id": "phase-1-nonconvergence-analyzer",
@@ -20,7 +20,8 @@
     {
       "id": "phase-2-hardcap-report-wiring",
       "title": "hardCap 보고 배선",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -60,8 +61,8 @@
       "series_id": "phase:phase-2-hardcap-report-wiring#1",
       "review_kind": "phase",
       "phase_id": "phase-2-hardcap-report-wiring",
-      "attempts": 2,
-      "closed_reason": null
+      "attempts": 3,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#2",
@@ -72,13 +73,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-2-hardcap-report-wiring",
     "outcome": "approved",
     "compare_hash": "54e19b8d16bf22e4fe5f1d0cb4de7b501f36ad318d0341950e32da4581883448",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T07:48:28.250Z",
+    "at": "2026-08-14T07:52:42.342Z",
     "findings": [],
     "elided_count": 0
   },
@@ -93,6 +94,12 @@
       "phase_id": "phase-1-nonconvergence-analyzer",
       "consumed_by_commit_sha": "a79f2b4bcb98fcb051b72f6931fe6e70937070e8",
       "approval_consumed_at": "2026-08-14T07:21:48.939Z"
+    },
+    {
+      "approved_tree": "50b46d6c5cfc654f20a411ef460789ac3c353a64",
+      "phase_id": "phase-2-hardcap-report-wiring",
+      "consumed_by_commit_sha": "1c3aeebbc86fd220dfabbec569ba74f2e9d7ead5",
+      "approval_consumed_at": "2026-08-14T07:53:08.984Z"
     }
   ],
   "user_commit_confirmed": null,
