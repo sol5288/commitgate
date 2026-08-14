@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"80e9e7dd7bbfe04c95a6f3f765a6c4f33b7c2902","status":"COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계를 승인하고 phase-1-consume-binding을 구현·검증한 뒤 phase 리뷰를 요청하세요.","observations":[]}
