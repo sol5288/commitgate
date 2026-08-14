@@ -2,13 +2,13 @@
   "id": "REQ-2026-147",
   "branch": "feat/req-2026-147-hardcap-nonconvergence-report-successor",
   "risk_level": "LOW",
-  "codex_thread_id": "019fff23-3768-76f3-9951-f4600f969d9e",
-  "review_base_sha": "dea199d677db473d6dd325c90234b8c8573debb9",
-  "review_diff_hash": "3ef4f09e66db8a1b73226de05e11ceddc8d9a0db",
+  "codex_thread_id": "019fff3c-a95e-7b01-92e3-49e6538a1482",
+  "review_base_sha": "9142a3ae4e3955f68861e07db628858ab1b08b3f",
+  "review_diff_hash": "d91cb05e0e7c8362e5602d903ed7e6a50fa5093a",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "1bf5aa7de4a17f0af51319e0b5cdc3797e6d2a9bfe25c3bb01b1f04661d4b1c4",
+  "design_approved_hash": "f8ca21842f91397180d2e490b0170bc937bb054bcce5b7eb00539cb7939af7d0",
   "current_phase": "phase-1-nonconvergence-analyzer",
   "phases": [
     {
@@ -55,35 +55,58 @@
       "phase_id": "phase-1-nonconvergence-analyzer",
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-hardcap-report-wiring#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-hardcap-report-wiring",
+      "attempts": 2,
+      "closed_reason": null
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "phase",
-    "phase_id": "phase-1-nonconvergence-analyzer",
+    "review_kind": "design",
+    "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "3c3971747406418287e87c36f753cb37c006ad6a18dc274c8907fa5caf86d4dd",
+    "compare_hash": "54e19b8d16bf22e4fe5f1d0cb4de7b501f36ad318d0341950e32da4581883448",
     "count": 1,
     "errors": [],
-    "at": "2026-08-14T07:21:20.785Z",
+    "at": "2026-08-14T07:48:28.250Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "400d1fed125e57cb2f5d1f65cab2cf14becf09d9",
-    "design": "4a5bdf7eb5d4cf0505bc5163e665e1a016146a57",
-    "plan": "898b32ccfaf0de215d4654b31022c5c130dbea77"
+    "design": "4a523e5b991190d66d96e8f21e729b31f24d656b",
+    "plan": "c6881d9b1cd93699ea3f2a58e65709307cac2c3f"
   },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3ef4f09e66db8a1b73226de05e11ceddc8d9a0db",
+      "phase_id": "phase-1-nonconvergence-analyzer",
+      "consumed_by_commit_sha": "a79f2b4bcb98fcb051b72f6931fe6e70937070e8",
+      "approval_consumed_at": "2026-08-14T07:21:48.939Z"
+    }
+  ],
+  "user_commit_confirmed": null,
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-147/responses/design-r03-approved.json",
-    "response_sha256": "6c340e3968cefad09b6abcbb8b941d47a7bffe331454af26fc1fb0d42fbac3f1",
+    "response_path": "workflow/REQ-2026-147/responses/design-r05-approved.json",
+    "response_sha256": "d89814448ebcd16988adecc12dd8fc1be7280e8f22e106d80ba80ce6fcf24488",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "a6f476995485603a467624dc2899e3ff965ea501",
-    "codex_thread_id": "019fff1a-04f4-7740-843c-63651f7a7e1e",
+    "review_base_sha": "22b528be70c313e6644d0a4a3e34b18354a4abc7",
+    "codex_thread_id": "019fff3c-a95e-7b01-92e3-49e6538a1482",
     "machine_schema_version": "1.1",
     "status": "STEP_COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-08-14T07:10:38.547Z",
+    "approved_at": "2026-08-14T07:48:28.250Z",
     "archive_inventory": {
       "items": [
         {
@@ -97,22 +120,21 @@
         {
           "response_path": "workflow/REQ-2026-147/responses/design-r03-approved.json",
           "sha256": "6c340e3968cefad09b6abcbb8b941d47a7bffe331454af26fc1fb0d42fbac3f1"
+        },
+        {
+          "response_path": "workflow/REQ-2026-147/responses/design-r04-needs-fix.json",
+          "sha256": "d5bbd1042d85b3180937111902f2bd7a065a1f3884b4239dafcddcda63091fd0"
+        },
+        {
+          "response_path": "workflow/REQ-2026-147/responses/design-r05-approved.json",
+          "sha256": "d89814448ebcd16988adecc12dd8fc1be7280e8f22e106d80ba80ce6fcf24488"
         }
       ],
-      "inventory_sha256": "ca03a69c4b85645bbfd43a94d887c5751d5346c82eff730b12b2d961c4cdee24",
+      "inventory_sha256": "dbfcbd502731ec36a44845165985ff04f8f111da76e64100a6e1020ded80162d",
       "review_kind": "design",
       "phase_id": null,
-      "source_response_path": "workflow/REQ-2026-147/responses/design-r03-approved.json"
+      "source_response_path": "workflow/REQ-2026-147/responses/design-r05-approved.json"
     },
-    "design_hash": "1bf5aa7de4a17f0af51319e0b5cdc3797e6d2a9bfe25c3bb01b1f04661d4b1c4"
-  },
-  "consumed_approvals": [
-    {
-      "approved_tree": "3ef4f09e66db8a1b73226de05e11ceddc8d9a0db",
-      "phase_id": "phase-1-nonconvergence-analyzer",
-      "consumed_by_commit_sha": "a79f2b4bcb98fcb051b72f6931fe6e70937070e8",
-      "approval_consumed_at": "2026-08-14T07:21:48.939Z"
-    }
-  ],
-  "user_commit_confirmed": null
+    "design_hash": "f8ca21842f91397180d2e490b0170bc937bb054bcce5b7eb00539cb7939af7d0"
+  }
 }

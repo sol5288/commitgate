@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"22b528be70c313e6644d0a4a3e34b18354a4abc7","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계 delta를 커밋한 뒤, Phase 2 변경분을 별도 phase 리뷰에 제출하세요.","observations":[]}
