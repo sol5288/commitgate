@@ -2,13 +2,13 @@
   "id": "REQ-2026-151",
   "branch": "feat/req-2026-151-terminal-reentry-and-state-commitment",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "01a00035-f084-75c3-89cd-09eadf4934fe",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "f8f48b6e0231a52b7440b13ac00b3de452003c300f42eda531ab833a19b8e21a",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,63 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "07d089ef5a431b1cf0d9befe4d0f1789b8e2612f20be98c8876ac5a8bbe82516",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-14T12:19:22.353Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "e90319cee72307fe2c8cec6a47ed623a95c24efd",
+    "design": "000d10dcb66423a3c334212ad619ec327d1b54e3",
+    "plan": "031f2be35417edea95df8229f0b927845a05361c"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-151/responses/design-r03-approved.json",
+    "response_sha256": "e92e813bb130013ac2f89f3c43e303c82909d645c8aef11675ba67ad4d6f0441",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "919a3c0da50d08c82c96e5331daba92bd824977c",
+    "codex_thread_id": "01a00035-f084-75c3-89cd-09eadf4934fe",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-14T12:19:22.353Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-151/responses/design-r01-needs-fix.json",
+          "sha256": "1cb2f2aadd3fc20c8190bcd9982b447d499823b39c8c531e45d6aa14d4cb072f"
+        },
+        {
+          "response_path": "workflow/REQ-2026-151/responses/design-r02-needs-fix.json",
+          "sha256": "d9b0d2ec9c30c62a3a18800425286c2dca0813f4672aa225b9553ff50e30c426"
+        },
+        {
+          "response_path": "workflow/REQ-2026-151/responses/design-r03-approved.json",
+          "sha256": "e92e813bb130013ac2f89f3c43e303c82909d645c8aef11675ba67ad4d6f0441"
+        }
+      ],
+      "inventory_sha256": "e046d93c6d1503d5dea1105294921c51f7b6c3c9037b17a4e2e341f764a2c0f0",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-151/responses/design-r03-approved.json"
+    },
+    "design_hash": "f8f48b6e0231a52b7440b13ac00b3de452003c300f42eda531ab833a19b8e21a"
   }
 }
