@@ -31,7 +31,15 @@ import { isArchiveFileName, sourceCommitForbiddenStaged } from './lib/scratch'
 // REQ-2026-085: 도구가 만든 부기 커밋 표식(leaf — 순환 없음).
 import { bookkeepingMessage } from './lib/bookkeeping'
 // REQ-2026-057: 소비된 상태를 durable checkpoint로 커밋(leaf — 순환 없음).
+import { parseStatusZ, STATUS_Z_ARGS } from './lib/porcelain'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
+import {
+  planEvidenceRecovery,
+  executeEvidenceRecovery,
+  buildRecoveryFacts,
+  RECOVERY_GUIDANCE,
+  type RecoveryIo,
+} from './lib/evidence-recovery'
 import { LEDGER_BASENAME } from './lib/review-ledger'
 import { CLOSE_PROOF_BASENAME, parseCloseProof, deriveBaseState } from './lib/close-proof'
 import { requiredConfirmScope, effectiveConfirmScope } from './lib/evidence'
@@ -202,6 +210,35 @@ export function consumeState(
     consumed_approvals: [...prev, entry],
     user_commit_confirmed: keepConfirm ? state.user_commit_confirmed : null,
   }
+}
+
+/**
+ * REQ-2026-142: 복구 사실 조립 입력. 🔴 `buildRecoveryFacts` 를 통해 **`req:doctor` 와 같은 조립**을 쓴다 —
+ * D10 을 평가하는 쪽과 실행하는 쪽이 다른 사실을 보면 "doctor 는 통과, commit 은 거부"라는 새 교착이 생긴다.
+ */
+function recoveryIo(root: string, ticketRel: string, state: WorkflowState): ReturnType<typeof buildRecoveryFacts> {
+  const io: RecoveryIo = {
+    ticketRel,
+    state,
+    headText: (rel) => createEvidencePorts(root, `${ticketRel}/responses`).headText(rel),
+    dirtyPaths: () => parseStatusZ(git([...STATUS_Z_ARGS])).flatMap((e) => (e.origPath === undefined ? [e.path] : [e.origPath, e.path])),
+    revParse: (rev) => {
+      try {
+        return git(['rev-parse', rev])
+      } catch {
+        return null
+      }
+    },
+    fileSha: (rel) => {
+      try {
+        return createHash('sha256').update(readFileSync(join(root, rel))).digest('hex')
+      } catch {
+        return null
+      }
+    },
+    hashUtf8: (str) => createHash('sha256').update(str, 'utf8').digest('hex'),
+  }
+  return buildRecoveryFacts(io)
 }
 
 // ─────────────────────────────────────────────── B3: 복구/finalize(순수) ──
@@ -927,6 +964,40 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   // ── B3: finalize(복구) — source 재커밋 없이 evidence/consume만 복구 ──
   if (finalize) {
+    // ── REQ-2026-142 DEC-3a: 소비 state 만 미커밋인 창 ──
+    // ④에서 소비 state 를 **쓴 뒤 checkpoint 커밋 전에** 죽으면 `approval_evidence` 가 이미 없다.
+    // 그러면 아래 `recoveryClassify` 는 원리적으로 성립할 수 없고("복구할 미완 승인 없음"), 예전엔
+    // 여기서 영영 막혔다. 남은 일은 checkpoint 하나뿐이므로 그것만 재개한다 — 증거는 이미 HEAD 에 있다.
+    //
+    // 🔴 판정은 `planEvidenceRecovery` 가 한다. `!ev` 라는 사실만으로 여는 것이 아니다.
+    if (!ev) {
+      const plan = planEvidenceRecovery(recoveryIo(cfg.root, ticketRel, state))
+      if (plan.kind !== 'ready' || plan.resumeFrom !== 'checkpoint')
+        throw new Error(
+          `finalize 거부: ${plan.kind === 'blocked' ? `${plan.reason} — ${RECOVERY_GUIDANCE[plan.reason]}` : 'approval_evidence 없음'}`,
+        )
+      runDoctor([...doctorArgs, '--finalize'])
+      const res = executeEvidenceRecovery(plan, {
+        finalizeEvidenceAndConsume: () => {
+          throw new Error('(예상외) checkpoint 재개에서 evidence finalize 가 호출됐다')
+        },
+        commitStateCheckpoint: () =>
+          commitStateCheckpoint({
+            root: cfg.root,
+            ticketRel,
+            ticketId: String(state.id ?? ''),
+            state,
+            reason: '소비 state checkpoint 복구',
+            gitFn: git,
+          }),
+      })
+      console.log(
+        res.checkpointCommitted
+          ? '[req:commit] ✅ finalize 복구 완료 — 증거는 이미 커밋돼 있었고 소비 state checkpoint 만 재개했습니다'
+          : '[req:commit] ✅ finalize 복구 불요 — 이미 완료된 상태입니다(멱등 no-op)',
+      )
+      return
+    }
     // P2-a: pending 마커가 없을 수 있다(source 커밋 성공 후 markPendingEvidence 전에 crash). HEAD가 승인 source면 마커를 재구성해 복구.
     let fstate = state
     if (!pendingSourceSha(fstate)) {

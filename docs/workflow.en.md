@@ -511,6 +511,42 @@ npx commitgate req:review-exception <REQ> --close-stale <series_id> --reason "<w
 - 🔴 **Re-running converges even if this command itself dies midway.** It never re-creates a row that is
   already recorded; it only finishes what is left.
 
+## If the commit died while recording evidence — `req:commit --finalize`
+
+`req:commit --run` has two stages: the **source commit**, then **evidence recording** (archives,
+`approvals.jsonl`, consumed state). If the second stage dies, evidence files are left dirty in the
+working tree and `req:next` points you here.
+
+```sh
+npx commitgate req:commit <REQ> --finalize --run
+```
+
+It resumes from wherever it died, doing only what is left. Re-running is safe (idempotent).
+
+- Source committed, no evidence yet → archives and manifest onward
+- Evidence committed, approval not consumed → consume and checkpoint only
+- Consumed, only `state.json` uncommitted → checkpoint only
+- Already complete → succeeds without doing anything
+
+### What passes and what does not
+
+This recovery does **not** turn off `D10` (clean working tree). It lets through exactly the files that
+match the archive list pinned at approval time (path + SHA-256), **byte for byte**, and nothing else.
+
+| Situation | Result |
+|---|---|
+| Archive contents changed after approval | 🔴 refused |
+| An archive not on the list is present | 🔴 refused |
+| Source files or another ticket's files are dirty | 🔴 refused |
+| The source commit's content differs from what was approved | 🔴 refused |
+| The committed manifest and `state` lists disagree | 🔴 refused |
+
+When refused, you get the reason and what to do next. 🔴 There is no path that fixes this by hand-editing
+the ledger, `state.json`, or `approvals.jsonl` — evidence resolved that way is not evidence.
+
+🔴 **Tickets approved before this release have no such list.** Without that basis the recovery stays
+closed; get a fresh approval by re-reviewing.
+
 ## Command Cheat Sheet
 
 | Command | Purpose |

@@ -15,6 +15,7 @@ import { isAllowedResponsesScratch, reviewScratchPaths } from './lib/scratch'
 import { effectiveRiskHits, DEFAULT_RISK_PATTERNS, type RiskHit } from './lib/effective-risk'
 // REQ-2026-048 phase-1: confinement 술어는 leaf `lib/evidence.ts`가 정본 — 여기서 재수출(기존 경로 보존).
 import { isConfinedArchivePath } from './lib/evidence'
+import { planEvidenceRecovery, buildRecoveryFacts, RECOVERY_GUIDANCE } from './lib/evidence-recovery'
 export { isConfinedArchivePath } from './lib/evidence'
 import {
   loadState,
@@ -243,6 +244,11 @@ export interface DoctorInputs {
   // B3: finalize(복구) 모드. D9 비교 대상을 staged tree → pending_evidence_for.source_commit_sha의 source 커밋 tree로 교체(우회 아님).
   finalize?: boolean
   finalizeSourceTree?: string | null // git rev-parse <pending.source_commit_sha>^{tree}
+  /**
+   * 🔴 REQ-2026-142 DEC-4: D10 이 통과시킬 **증거 복구 경로 목록**. `planEvidenceRecovery` 가 `Ready` 를
+   *    낸 경우에만 채워진다. 그 밖에는 `undefined` 이고, 그때 D10 은 이 REQ 이전과 완전히 동일하다.
+   */
+  recoveryAllowlist?: readonly string[]
   /**
    * D19(REQ-2026-014): 대상 `package.json`의 `scripts` 맵. main()이 읽어 채운다(runChecks는 순수).
    *   - `undefined` = main()이 조회하지 않음(legacy/2-arg 호출) → OK '점검 불요'
@@ -640,7 +646,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
   }
 
   // D10: unstaged/untracked(비-스크래치) — review용 클린. A2: ticketRel 전달 시 responses/ untracked 아카이브만 스크래치 허용(tracked 변조·approvals.jsonl·타 티켓 flag).
-  const dirty = findUnstagedOrUntracked(inp.statusEntries, inp.scratch, inp.ticketRel)
+  const dirty = findUnstagedOrUntracked(inp.statusEntries, inp.scratch, inp.ticketRel, inp.recoveryAllowlist)
   if (dirty.length)
     c.push({ id: 'D10', level: 'FAIL', msg: `unstaged/untracked 존재:\n  ${dirty.map(formatStatusEntry).join('\n  ')}` })
   else c.push({ id: 'D10', level: 'OK', msg: '워킹트리 클린(staged + 스크래치)' })
@@ -1825,6 +1831,48 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 
   // 상태는 한 번만 읽는다 — statusEntries와 D31 입력이 같은 스냅샷을 본다(이중 조회 = 판독 갈림 위험).
   const statusEntries = parseStatusZ(git([...STATUS_Z_ARGS]))
+  // ── REQ-2026-142: 증거 복구 예외(DEC-4) ──
+  // 🔴 **`finalize` 일 때만** plan 을 계산한다. 정상 경로에서는 이 블록 자체가 실행되지 않아
+  //    `recoveryAllowlist` 가 `undefined` 로 남고, D10 은 이 REQ 이전과 한 글자도 다르지 않다.
+  //
+  // 🔴 **왜 `req:commit` 이 아니라 여기인가**: D10 이 평가되는 곳이 여기다. 목록을 `req:commit` 에서
+  //    만들어 CLI 인자로 넘기면 경로 목록을 문자열로 실어 나르는 더 나쁜 결합이 되고, 그 인자를 아는
+  //    다른 호출부가 생기면 예외가 넓어진다. `--finalize` 게이트 하나 안에 가두는 편이 좁다.
+  //    `req:doctor --finalize` 를 사람이 직접 불러도 이 경로는 **읽기 전용 보고**만 바꾼다.
+  let recoveryAllowlist: readonly string[] | undefined
+  if (finalize) {
+    const plan = planEvidenceRecovery(
+      buildRecoveryFacts({
+        ticketRel,
+        state,
+        headText: (rel) => createEvidencePorts(cfg.root, `${ticketRel}/responses`).headText(rel),
+        dirtyPaths: () => statusEntries.flatMap((e) => (e.origPath === undefined ? [e.path] : [e.origPath, e.path])),
+        revParse: (rev) => {
+          try {
+            return git(['rev-parse', rev])
+          } catch {
+            return null
+          }
+        },
+        fileSha: (rel) => {
+          try {
+            return createHash('sha256').update(readFileSync(join(cfg.root, rel))).digest('hex')
+          } catch {
+            return null
+          }
+        },
+        hashUtf8: (str) => createHash('sha256').update(str, 'utf8').digest('hex'),
+      }),
+    )
+    if (plan.kind === 'ready') {
+      recoveryAllowlist = plan.allowlist
+      console.log(`[req:doctor] ℹ️ 증거 복구 적용 가능(${plan.resumeFrom}) — ${plan.detail}`)
+    } else {
+      console.log(`[req:doctor] ℹ️ 증거 복구 미적용(${plan.reason}) — ${RECOVERY_GUIDANCE[plan.reason]}`)
+    }
+  }
+
+
   const inp: DoctorInputs = {
     state,
     currentBranch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
@@ -1915,6 +1963,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     liveResponseSha256,
     finalize,
     finalizeSourceTree,
+    recoveryAllowlist,
     reqScripts: readReqScripts(cfg.root),
     // D20(REQ-2026-038): 자산 skew content-hash 입력. shipped=packageRoot 사본, vendored=cfg.schemaPathAbs(소비 repo 사본).
     packagedSchemaSha: safeSha256(join(packageRoot(), 'workflow', 'machine.schema.json')),

@@ -36,7 +36,14 @@ import { secretScanGate } from './lib/secret-scan'
 import { loadConfig, packageRoot, buildScriptInvocation, DEFAULTS, type ResolvedConfig, type PackageManager, type ReviewBudget, type GranularityGate, type PolicySnapshot } from './lib/config'
 // REQ-2026-048 phase-1: 증거/매니페스트 공통 술어는 leaf `lib/evidence.ts`가 정본. 여기서 **재수출**해
 // 기존 import 경로(`from './review-codex'`)를 쓰던 호출부·테스트를 그대로 둔다.
-import { archiveBaseName, durableDesignEvidence, isValidIsoInstant, parseManifestEntries } from './lib/evidence'
+import {
+  archiveBaseName,
+  buildArchiveInventory,
+  buildPinnedInventory,
+  durableDesignEvidence,
+  isValidIsoInstant,
+  parseManifestEntries,
+} from './lib/evidence'
 export { archiveBaseName, isValidIsoInstant } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
 import {
@@ -63,7 +70,7 @@ import { commitStateCheckpoint, serializeState } from './lib/state-checkpoint'
 import { assertSetupComplete } from './lib/setup-gate'
 import { createReviewerProbes, type ReviewerProbes } from './lib/adapters'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
-import type { ReviewKind, ApprovalEvidence } from './lib/review-types'
+import type { ReviewKind, ApprovalEvidence, PinnedArchiveInventory } from './lib/review-types'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -96,6 +103,7 @@ export function __getGitAdapterForTest(): GitAdapter {
  *    9개 CLI가 `from './review-codex'`로 이 타입들을 가져오므로 호출부를 하나도 바꾸지 않기 위해서다.
  */
 export type { ReviewKind, ApprovalEvidence } from './lib/review-types'
+export type { PinnedArchiveInventory, PinnedInventoryItem } from './lib/review-types'
 
 /** 구조화 응답 스키마 버전 (machine.schema.json과 동기). */
 export const MACHINE_SCHEMA_VERSION = '1.1'
@@ -2105,6 +2113,8 @@ export function processResponse(args: {
   schemaPath?: string
   // REQ-016 A1: 승인 시 증거 핀 정본(아카이브 경로+sha). 미제공 시 evidence 미부착(하위호환).
   archive?: { path: string; sha256: string }
+  /** REQ-2026-142 DEC-2: 승인 시점 인벤토리 핀(호출부가 fs로 산출해 주입). */
+  archiveInventory?: PinnedArchiveInventory
   approvedAt?: string
   // REQ-2026-031 B-1: design 승인 시 저장할 문서별 blob OID. 승인+archive 분기에서만 state.design_baseline에 설정.
   designDocBlobs?: DesignDocBlobs
@@ -2162,6 +2172,7 @@ export function processResponse(args: {
         designHash: designHash ?? null,
         threadId,
         archive: args.archive,
+        archiveInventory: args.archiveInventory,
         approvedAt: args.approvedAt ?? new Date().toISOString(),
       })
     }
@@ -2197,6 +2208,7 @@ export function processResponse(args: {
       phaseDesignRef: args.phaseDesignRef ?? null, // REQ-2026-052 DEC-B5: 승인 시점 design 결속 핀
       threadId,
       archive: args.archive,
+      archiveInventory: args.archiveInventory,
       approvedAt: args.approvedAt ?? new Date().toISOString(),
     })
   }
@@ -2357,8 +2369,18 @@ export function findUnstagedOrUntracked(
   entries: StatusEntry[],
   allowedScratch: string[],
   ticketRel?: string,
+  /**
+   * 🔴 REQ-2026-142 DEC-4: **증거 복구 예외**. `planEvidenceRecovery`가 `Ready`를 낸 경우에만 채워진다.
+   *    그 밖의 모든 호출은 이 인자를 주지 않으므로(`undefined` → 빈 집합) 판정이 **한 글자도 바뀌지 않는다**.
+   *
+   * 🔴 `--finalize` **플래그만으로는 절대 채워지지 않는다.** 플래그는 plan을 계산할 자격일 뿐이고, 통과
+   *    근거는 승인 시점에 못 박은 인벤토리와의 바이트 일치다. 그래서 여기 들어오는 것은 "복구가 만질
+   *    정확한 경로 목록"이지 "`responses/`를 봐주자"가 아니다.
+   */
+  recoveryAllowlist?: readonly string[],
 ): StatusEntry[] {
   const allowed = new Set(allowedScratch.map((p) => p.replace(/\\/g, '/')))
+  const recovery = new Set((recoveryAllowlist ?? []).map((p) => p.replace(/\\/g, '/')))
   const respPrefix = ticketRel
     ? `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
     : null
@@ -2367,6 +2389,9 @@ export function findUnstagedOrUntracked(
     const paths = entryPaths(e)
     // 정확 경로 스크래치 허용은 **비-rename**에만 — rename은 아래 responses/·기본 규칙으로 판정한다.
     if (e.origPath === undefined && allowed.has(e.path)) return false
+    // 🔴 복구 예외: rename/copy는 **src·dest 둘 다** 목록에 있어야 통과한다(`every`) — 한쪽만 보면
+    //    허용 경로로의 rename이 임의 파일을 끌고 들어온다. 목록이 비면 아래 검사는 항상 false다.
+    if (recovery.size && paths.every((p) => recovery.has(p))) return false
     // REQ-016 A1/D-016-4: 현재 티켓 responses/ 하위(src 또는 dest)는 **untracked 단일 아카이브만** 스크래치 허용.
     // approvals.jsonl·tracked 수정/삭제/리네임/카피는 무조건 flag(커밋된 증거 변조/주입 차단).
     if (respPrefix && paths.some((p) => p.startsWith(respPrefix))) return !isAllowedResponsesScratch(e, ticketRel as string)
@@ -2417,9 +2442,15 @@ export function buildApprovalEvidence(args: {
   phaseDesignRef?: string | null
   threadId: string
   archive: { path: string; sha256: string }
+  /**
+   * REQ-2026-142 DEC-2: 승인 시점 아카이브 인벤토리 핀. 생략 가능 — 호출부가 인벤토리를 만들지 못한
+   * 이례적 상황(디렉터리 조회 실패 등)에서도 **승인 자체는 성립해야** 한다. 그때는 복구가 열리지 않을 뿐이다
+   * (근거 없이 여는 것보다 낫다).
+   */
+  archiveInventory?: PinnedArchiveInventory
   approvedAt: string
 }): ApprovalEvidence {
-  const { kind, verdict, binding, phaseId, designHash, phaseDesignRef, threadId, archive, approvedAt } = args
+  const { kind, verdict, binding, phaseId, designHash, phaseDesignRef, threadId, archive, archiveInventory, approvedAt } = args
   const ev: ApprovalEvidence = {
     response_path: archive.path,
     response_sha256: archive.sha256,
@@ -2432,6 +2463,10 @@ export function buildApprovalEvidence(args: {
     commit_approved: verdict.commit_approved ?? '',
     approved_at: approvedAt,
   }
+  // REQ-2026-142 DEC-2: 인벤토리 핀은 **kind 무관**(design·phase 둘 다 finalize 중단 대상이다).
+  //   🔴 부재를 `null`이나 빈 목록으로 채우지 않는다 — "만든 적 없음"과 "비어 있음"이 구별돼야 복구가
+  //      옛 승인을 fail-closed로 거절할 수 있다.
+  if (archiveInventory) ev.archive_inventory = archiveInventory
   // REQ-2026-052 DEC-B5: phase 승인엔 design 결속(phase_design_ref)을 함께 핀한다. design 행엔 넣지 않는다(kind 격리).
   return kind === 'design'
     ? { ...ev, design_hash: designHash ?? null }
@@ -3020,6 +3055,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   }
   const decision = archiveDecision(probe, opts.kind) // null=아카이브 안 함(무효), 'approved'|'needs-fix'
   let archiveDesc: { path: string; sha256: string } | undefined
+  let archiveInventory: PinnedArchiveInventory | undefined
   // REQ-2026-025 D4: 측정 로그의 archive_round. 무효 응답은 아카이브를 남기지 않으므로 null로 남는다.
   let archiveRound: number | null = null
   if (decision) {
@@ -3034,6 +3070,16 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
       writeFileSync(archiveAbs, respBytes)
       archiveDesc = { path: repoRel(archiveAbs), sha256: createHash('sha256').update(respBytes).digest('hex') }
       archiveRound = round
+      // ── REQ-2026-142 DEC-2: 승인 시점 인벤토리 핀 산출 ──
+      // 🔴 **방금 쓴 아카이브가 포함돼야 하므로 디렉터리를 다시 읽는다.** 위 `existing`은 write 이전 스냅샷이라
+      //    승인본 자신이 빠진다 — 그러면 `source_response_path`가 목록에 없어 복구가 미결속으로 거절된다.
+      const after = readdirSync(responsesDir).filter((n) => isArchiveFileName(n))
+      const items = buildArchiveInventory(after, opts.kind, phaseId, ticketRel, (rel) =>
+        createHash('sha256').update(readFileSync(join(cfg.root, rel))).digest('hex'),
+      )
+      archiveInventory = buildPinnedInventory(items, opts.kind, phaseId, archiveDesc.path, (str) =>
+        createHash('sha256').update(str, 'utf8').digest('hex'),
+      )
     } catch {
       // 아카이브 기록 실패 — evidence 미부착(probe 결과 사용)
     }
@@ -3041,7 +3087,7 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
   // 승인 + 아카이브가 있을 때만 evidence 핀 부착 위해 재호출, 아니면 검증된 probe 결과 사용.
   const result =
     decision === 'approved' && archiveDesc
-      ? processResponse({ ...baseArgs, archive: archiveDesc, approvedAt })
+      ? processResponse({ ...baseArgs, archive: archiveDesc, archiveInventory, approvedAt })
       : probe
   const responseSha256 = existsSync(respPath)
     ? createHash('sha256').update(readFileSync(respPath)).digest('hex')

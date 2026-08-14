@@ -15,7 +15,7 @@
  */
 import { isArchiveFileName } from './scratch'
 import { bookkeepingMessage } from './bookkeeping'
-import type { ApprovalEvidence, ReviewKind } from './review-types'
+import type { ApprovalEvidence, PinnedArchiveInventory, PinnedInventoryItem, ReviewKind } from './review-types'
 import type { StopGate } from './config'
 
 // ─────────────────────────────────────────────────────── 공통 형식 술어 ──
@@ -122,10 +122,7 @@ export function effectiveConfirmScope(c: UserCommitConfirmed | null | undefined)
  * (나중에 파일이 늘거나 지워지면 결과가 달라진다). 경로+sha로 매니페스트에 박으면 사후 감사에서
  * **재검증**할 수 있고, DONE 게이트가 이 목록을 그대로 오라클로 쓴다.
  */
-export interface ArchiveInventoryItem {
-  response_path: string
-  sha256: string
-}
+export type ArchiveInventoryItem = PinnedInventoryItem
 
 /** approvals.jsonl 한 줄(D-016-3b). kind 격리: phase=approved_tree, design=design_hash. */
 export interface ManifestEntry {
@@ -263,6 +260,44 @@ export function buildArchiveInventory(
     response_path: p,
     sha256: shaOf(p),
   }))
+}
+
+/**
+ * 인벤토리의 **정규형 직렬화**(순수·결정적) — `inventory_sha256`의 입력이다(REQ-2026-142 DEC-2).
+ *
+ * 🔴 **왜 정규형인가**: 핀을 만든 시점과 복구가 다시 계산하는 시점이 다르다. 같은 목록이면 **항상 같은
+ *    문자열**이 나와야 두 값의 비교가 성립한다. 그래서 ① `response_path` 오름차순으로 정렬하고
+ *    ② 키 순서를 코드로 고정한다(객체 리터럴의 삽입 순서에 기대지 않는다) ③ 두 필드만 담는다.
+ *
+ * 🔴 **`JSON.stringify(items)`를 그대로 쓰지 않는 이유**가 이것이다 — 그 값은 배열 순서와 키 삽입 순서에
+ *    민감해서, 디렉터리 읽기 순서가 다른 머신에서 다른 해시가 나온다.
+ */
+export function canonicalInventoryForm(items: readonly PinnedInventoryItem[]): string {
+  const rows = [...items]
+    .sort((x, y) => (x.response_path < y.response_path ? -1 : x.response_path > y.response_path ? 1 : 0))
+    .map((i) => [i.response_path, i.sha256])
+  return JSON.stringify(rows)
+}
+
+/**
+ * 승인 시점 인벤토리 핀 산출(순수 — 해시 계산은 주입).
+ *
+ * @param hashUtf8 UTF-8 문자열 → sha256(hex). 이 모듈은 leaf라 `node:crypto`를 직접 쓰지 않는다.
+ */
+export function buildPinnedInventory(
+  items: readonly PinnedInventoryItem[],
+  kind: ReviewKind,
+  phaseId: string | null,
+  sourceResponsePath: string,
+  hashUtf8: (s: string) => string,
+): PinnedArchiveInventory {
+  return {
+    items: [...items].map((i) => ({ response_path: i.response_path, sha256: i.sha256 })),
+    inventory_sha256: hashUtf8(canonicalInventoryForm(items)),
+    review_kind: kind,
+    phase_id: phaseId,
+    source_response_path: sourceResponsePath,
+  }
 }
 
 /**
