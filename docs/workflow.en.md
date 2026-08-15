@@ -54,12 +54,17 @@ Both integration paths are valid: **through a PR (optional)** and **direct push*
 Re-reviews of the same `(review kind, phase)` are budgeted
 ([`reviewBudget`](configuration.en.md#review-budget--reviewbudget) in `req.config.json`).
 
-- Rounds 1 through `autoBudget` (default 5) run with no human involvement.
-- What happens past `autoBudget` (rounds 6–8 by default) is decided by **`onSoftLimit`**:
+- **Reviews that produced a verdict** (an approval or a change request — a review that ended normally)
+  run with no human involvement until they reach `autoBudget` (default 5).
+- What happens after that is decided by **`onSoftLimit`**:
   `"ask"` (default) needs a human approval per round via `req:review-exception`;
   `"auto"` runs them without approval and the ledger records that they passed **by policy**.
 - Once `hardCap` (default 8) is spent, the next round is blocked **under both values**. At that point you
   either close the ticket or write a coherent successor REQ.
+- 🔴 **The two limits count different things.** `autoBudget` counts **reviews that produced a verdict**;
+  `hardCap` counts **calls actually made**. An invalid response is excluded from the verdict tally but
+  included in the call tally (the call went out and cost money). So you **cannot quote a fixed "from
+  round N"**.
 
 🔴 This stop is **cost control**, not a safety gate. Under `"auto"` the review approval, the evidence, the
 integration control points, and `hardCap` are all unchanged. `"auto"` also makes `req:review-exception`

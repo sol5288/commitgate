@@ -55,6 +55,15 @@ This is the easy part to confuse. Both talk about "stopping", but they cover **d
 
   🔴 **Choosing `auto` does not change the human confirmations set by "Stop point" above** (commit and integration approval). What it *does* remove is **the "human exception approval" that was required after the budget was exceeded** — so a human steps in less often and you spend more on reviews.
 
+#### 🔴 `auto` appears in **two places** — with different meanings
+
+| Which `auto` | What it means |
+|---|---|
+| Stop point `stopGate: "auto"` | Carries through integration **only when a human issued a delegation in advance** |
+| Review budget `reviewBudget.onSoftLimit: "auto"` | Continues re-reviews past the budget **without a human exception approval** |
+
+🔴 **Neither one lifts `hardCap` (default 8).** They share a name but cover different ground.
+
   🔴 **Under either value you are blocked once `hardCap` (default 8) is reached.** The two limits **count different things**: `autoBudget` counts **reviews that produced a verdict**, while `hardCap` counts **calls actually made**. An invalid response does not count toward the verdict tally but does count toward the call tally (the money was already spent). See [Configuration — `reviewBudget`](./configuration.en.md#review-budget--reviewbudget).
 - setup finishes by checking your **codex login** and signing you in if needed.
 - To change an answer later, run setup again or edit `req.config.json` directly.
