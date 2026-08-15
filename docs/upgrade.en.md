@@ -69,6 +69,28 @@ npx commitgate quickstart --apply      # inject/replace managed blocks only (pre
 Anything you only need to handle **for a specific version** lives here. Sections are never removed, so if you
 are coming from an older version, read **every section after yours, in order**.
 
+### 0.23.0 → 0.23.1 — upgrade if you use `auto` (patch)
+
+**It is inside your caret range, so `npm i -D commitgate@0.23.1` picks it up directly.**
+
+- 🔴 **The installed contract contradicted the tool.** In 0.23.0, `AGENTS.template.md` listed only
+  `phase`/`req`/`merge` and stated that integration approval is required under every value. Under
+  `auto` with a valid delegation the tool does not ask again, so an agent following that contract
+  **stops when it should not.**
+- 🔴 **Three ways around the `auto` integration gate existed** — each let the policy fixed when the
+  ticket was created weaken at the final merge (a later settings change, a renamed branch, or an
+  undeterminable state).
+
+```sh
+npm i -D commitgate@0.23.1
+npx commitgate sync --apply --gitignore   # re-sync shipped template assets
+npx commitgate check                      # C5 points at the outdated contract sentences
+```
+
+🔴 **`AGENTS.md` is yours, so the tool does not rewrite it.** Refresh the managed block
+(`commitgate:autonomy`) with `npx commitgate quickstart --apply`; apply the rest by hand using what
+C5 reports.
+
 ### 0.22 → 0.23 — two new policy axes (both opt-in) + policy snapshots for in-flight tickets
 
 **① Install explicitly.** A caret does not cross minors (`^0.22.0` means `>=0.22.0 <0.23.0`).
