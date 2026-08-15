@@ -2,13 +2,13 @@
   "id": "REQ-2026-156",
   "branch": "feat/req-2026-156-req-2026-156-checkpoint-window-guard",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "01a00330-0664-7073-98e9-20bd5605a5a5",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "03996a1c305da470462ba0574829a809139ffe50f841a1fc534f89202c3d59ac",
   "current_phase": null,
   "phases": [],
   "approval_evidence_required": true,
@@ -16,5 +16,55 @@
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "09614ed8c48f94ba91bda718f9e685d39264d675",
+    "design": "59d5ab3b9b13d27b80bf2eb7e8e7dd4847f262af",
+    "plan": "7967da41f8cf38c55c3cd9c086ef8ad22e87b420"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-156/responses/design-r01-approved.json",
+    "response_sha256": "237963a36099e7452c01128f7c77f46dd47835748ce7dad3c0d4eb12146af9af",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "4cdb06a0927677d3368f87c03438af1bf1d9ffde",
+    "codex_thread_id": "01a00330-0664-7073-98e9-20bd5605a5a5",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-15T02:13:47.620Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-156/responses/design-r01-approved.json",
+          "sha256": "237963a36099e7452c01128f7c77f46dd47835748ce7dad3c0d4eb12146af9af"
+        }
+      ],
+      "inventory_sha256": "bc51b7d553f82478c68e504992b59673ced86f760a6a84f763382402bd364d7b",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-156/responses/design-r01-approved.json"
+    },
+    "design_hash": "03996a1c305da470462ba0574829a809139ffe50f841a1fc534f89202c3d59ac"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "d35496cd51cb18cb66e8856582cc10b531f9defa63d3c9f4f82af32f311c2805",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-15T02:13:47.620Z",
+    "findings": [],
+    "elided_count": 0
   }
 }
