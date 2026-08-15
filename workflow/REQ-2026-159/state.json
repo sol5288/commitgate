@@ -2,14 +2,14 @@
   "id": "REQ-2026-159",
   "branch": "feat/req-2026-159-auto-integration-snapshot-binding",
   "risk_level": "LOW",
-  "codex_thread_id": "01a0049e-ef4c-70b1-aeb2-6d7a1938dca1",
-  "review_base_sha": "48355faf11b535f123a14528cb6fc2cc47617b19",
-  "review_diff_hash": "cddc5b6168c3aa3dc06b419f6e9976552825cf48",
+  "codex_thread_id": "01a004aa-0e32-7391-b9a3-37788667e8d4",
+  "review_base_sha": "cdefdd7605616c4b40dc545b81bd080363626353",
+  "review_diff_hash": "d62c2cccd97e82cde5a006d6da23f6e9202f840d",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "55300646e356c40de03d86d1cb44cc34f1054465874a7f3fbcbf9e3485ce1307",
-  "current_phase": "phase-1-integration-policy-binding",
+  "current_phase": "phase-2-contract-and-migration",
   "phases": [
     {
       "id": "phase-1-integration-policy-binding",
@@ -47,16 +47,23 @@
       "attempts": 4,
       "closed_reason": "approved",
       "void_attempts": 1
+    },
+    {
+      "series_id": "phase:phase-2-contract-and-migration#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-contract-and-migration",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-integration-policy-binding",
+    "phase_id": "phase-2-contract-and-migration",
     "outcome": "approved",
-    "compare_hash": "10e603b18f9d969aac8d44948a1ef4709486ba2bd9b50ffaa5342fc88decf3c0",
-    "count": 2,
+    "compare_hash": "3459db93760f519c9c8224d314a3ecbdfe87b4f4673a6666e1a8b53b59877142",
+    "count": 1,
     "errors": [],
-    "at": "2026-08-15T08:54:06.944Z",
+    "at": "2026-08-15T09:06:07.033Z",
     "findings": [],
     "elided_count": 0
   },
@@ -100,6 +107,12 @@
       "phase_id": "phase-1-integration-policy-binding",
       "consumed_by_commit_sha": "43ab2fbcdefb29887f25f3428a96cc743ab97afc",
       "approval_consumed_at": "2026-08-15T08:54:40.877Z"
+    },
+    {
+      "approved_tree": "d62c2cccd97e82cde5a006d6da23f6e9202f840d",
+      "phase_id": "phase-2-contract-and-migration",
+      "consumed_by_commit_sha": "be74f002a1240acf1c043efcc86799892dce0c74",
+      "approval_consumed_at": "2026-08-15T09:06:32.624Z"
     }
   ],
   "user_commit_confirmed": null
