@@ -22,7 +22,7 @@ import { loadConfig, effectiveStopGate, isStopGate, type PolicyAdoption, type Po
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
-import { inRecoveryWindow, recoveryWindowProblem } from './lib/recovery-window'
+import { stateWriteBlockedReason, recoveryWindowProblem, buildCheckpointWindowFacts, type CheckpointWindowFacts } from './lib/recovery-window'
 import { loadState, writeState, type WorkflowState } from './review-codex'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
 
@@ -108,6 +108,22 @@ export interface Deps {
 
 const defaultDeps: Deps = { now: () => new Date().toISOString(), log: (m) => console.log(m) }
 
+/**
+ * 🔴 REQ-2026-156: checkpoint 창 사실을 git 에서 읽는다. **읽기 실패는 차단하지 않는다** —
+ *    없으면 빈 값으로 떨어지고 그 창이 아니라고 본다(추가 안전장치가 새 교착을 만들면 안 된다).
+ */
+const cpFacts = (root: string, rel: string): CheckpointWindowFacts =>
+  buildCheckpointWindowFacts({
+    ticketRel: rel,
+    blob: (rev, p) => {
+      try {
+        return createGitAdapter(root).exec(['show', `${rev}:${p}`])
+      } catch {
+        return null
+      }
+    },
+  })
+
 export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaultDeps): void {
   const o = parseArgs(argv)
   // setup 완료 게이트 — 다른 state 변경 verb 와 동일하게 가장 앞이다.
@@ -129,7 +145,10 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
    *    정책이 이미 같은 티켓은 복구 창에서도 **성공으로 끝나고 `--finalize` 안내를 받지 못한다**.
    * 🔴 dry-run 은 막지 않는다 — `o.run` 을 함께 본다.
    */
-  if (o.run && inRecoveryWindow(state)) throw new Error(recoveryWindowProblem(reqId, 'req:repolicy'))
+  {
+    const why = o.run ? stateWriteBlockedReason(state, cpFacts(cfg.root, ticketRel)) : 'none'
+    if (why !== 'none') throw new Error(recoveryWindowProblem(reqId, 'req:repolicy', why))
+  }
 
   const plan = planRepolicy(state, cfg.stopGate)
   deps.log(`[req:repolicy] ${reqId} · 티켓 정책="${plan.current}" · req.config.json="${cfg.stopGate}"`)

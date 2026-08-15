@@ -1603,10 +1603,21 @@ describe('[REQ-2026-092] stagedNames — phase 게이트와 동일한 -z 원문 
     writeFileSync(join(repo, 'src.ts'), 'export const a = 1\n')
     git(['add', '-A'])
     __setGitForTest(repo)
-    // review-codex(phase 게이트)가 쓰는 획득 방식 — 같은 인자·같은 split.
-    const fromGate = git([...STAGED_NAMES_Z_ARGS]).split('\0').map((p) => p.replace(/\\/g, '/')).filter((p) => p.length > 0)
-    expect(stagedNames()).toEqual(fromGate)
-    // 판정도 당연히 같다.
+    /**
+     * 🔴 REQ-2026-156 DEC-2: **비교 기준을 실제 호출부와 동일하게 만든다.**
+     *
+     * 전에는 여기서 `\` → `/` 정규화와 빈 조각 필터를 적용했다. 실제 호출부
+     * (`review-codex.ts` 의 `sourceCommitForbiddenStaged(git([...STAGED_NAMES_Z_ARGS]).split('\0'), …)`)
+     * 는 **둘 다 하지 않는다** — 그래서 정규화가 재도입돼도 일반 경로 fixture 에서는 통과했다.
+     */
+    const fromGate = git([...STAGED_NAMES_Z_ARGS]).split('\0')
+    /**
+     * 🔴 `stagedNames()` 는 빈 조각을 거른다(`-z` 마지막 NUL 뒤). 호출부는 거르지 않는다 —
+     *    **실재하는 차이**이고, `sourceCommitForbiddenStaged` 가 빈 문자열을 무시하므로 판정은 같다.
+     *    "테스트만 정규화해서 같아 보이게" 두지 않고, 차이를 그대로 적는다.
+     */
+    expect(stagedNames()).toEqual(fromGate.filter((p) => p.length > 0))
+    // 🔴 정본은 **판정**이 같다는 것이다 — 두 호출부가 같은 결론에 이른다.
     expect(sourceCommitForbiddenStaged(stagedNames(), TICKET_REL)).toEqual(sourceCommitForbiddenStaged(fromGate, TICKET_REL))
   })
 })

@@ -73,7 +73,7 @@ import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 import type { ReviewKind, ApprovalEvidence, PinnedArchiveInventory } from './lib/review-types'
 import { nonConvergenceReport } from './lib/nonconvergence'
 import { hardBlockedInput, toTicketRel } from './lib/hardblocked-facts'
-import { inRecoveryWindow, recoveryWindowProblem } from './lib/recovery-window'
+import { stateWriteBlockedReason, recoveryWindowProblem, buildCheckpointWindowFacts } from './lib/recovery-window'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -2794,8 +2794,25 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
    * 🔴 **kind 와 무관**하다(설계 r03 P1) — design·phase 둘 다 같은 경로를 탄다.
    * 🔴 dry-run 은 막지 않는다 — `opts.run` 을 함께 본다.
    */
-  if (opts.run && inRecoveryWindow(state))
-    throw new Error(recoveryWindowProblem(String(state.id ?? ''), 'req:review-codex'))
+  {
+    // 🔴 REQ-2026-156: checkpoint 창(핀이 없는 구간)도 본다. 읽기 실패는 차단하지 않는다.
+    const why = opts.run
+      ? stateWriteBlockedReason(
+          state,
+          buildCheckpointWindowFacts({
+            ticketRel: relative(cfg.root, ticketDir).replace(/\\/g, '/'),
+            blob: (rev, p) => {
+              try {
+                return git(['show', `${rev}:${p}`])
+              } catch {
+                return null
+              }
+            },
+          }),
+        )
+      : 'none'
+    if (why !== 'none') throw new Error(recoveryWindowProblem(String(state.id ?? ''), 'req:review-codex', why))
+  }
   // --fresh-thread: blocked 회로차단기 명시적 회복 — 마커 제거(단락 해제) + resume 대신 새 스레드(고착 resume 끊기).
   if (opts.freshThread) state = clearBlockedReview(state)
 

@@ -22,7 +22,7 @@ import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { requiredConfirmScope, userConfirmProblem, type ConfirmScope, type UserCommitConfirmed } from './lib/evidence'
 import { readDeliveryGate } from './lib/delivery'
 import { loadState, writeState, type WorkflowState } from './review-codex'
-import { inRecoveryWindow, recoveryWindowProblem } from './lib/recovery-window'
+import { stateWriteBlockedReason, recoveryWindowProblem, buildCheckpointWindowFacts, type CheckpointWindowFacts } from './lib/recovery-window'
 import { humanDecisionProblem } from './lib/placeholders'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
 
@@ -124,6 +124,22 @@ const defaultDeps: Deps = {
   inDeliverySet: detectInDeliverySet,
 }
 
+/**
+ * 🔴 REQ-2026-156: checkpoint 창 사실을 git 에서 읽는다. **읽기 실패는 차단하지 않는다** —
+ *    없으면 빈 값으로 떨어지고 그 창이 아니라고 본다(추가 안전장치가 새 교착을 만들면 안 된다).
+ */
+const cpFacts = (root: string, rel: string): CheckpointWindowFacts =>
+  buildCheckpointWindowFacts({
+    ticketRel: rel,
+    blob: (rev, p) => {
+      try {
+        return createGitAdapter(root).exec(['show', `${rev}:${p}`])
+      } catch {
+        return null
+      }
+    },
+  })
+
 export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaultDeps): void {
   const o = parseArgs(argv)
   // 🔴 setup 완료 게이트 — 다른 state 변경 verb와 동일하게 가장 앞이다.
@@ -182,7 +198,10 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
    *
    * 🔴 **첫 write 앞**이다(설계 r02 P1). dry-run 은 막지 않으므로 `o.run` 을 함께 본다.
    */
-  if (o.run && inRecoveryWindow(state)) throw new Error(recoveryWindowProblem(reqId, 'req:confirm'))
+  {
+    const why = o.run ? stateWriteBlockedReason(state, cpFacts(cfg.root, ticketRel)) : 'none'
+    if (why !== 'none') throw new Error(recoveryWindowProblem(reqId, 'req:confirm', why))
+  }
 
   if (!o.run) {
     deps.log('[req:confirm] DRY-RUN — write 없음(--run 시 기록).')

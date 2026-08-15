@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { loadConfig, packageRoot, type ReviewBudget } from './lib/config'
-import { inRecoveryWindow, recoveryWindowProblem } from './lib/recovery-window'
+import { stateWriteBlockedReason, recoveryWindowProblem, buildCheckpointWindowFacts, type CheckpointWindowReason } from './lib/recovery-window'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { bookkeepingMessage } from './lib/bookkeeping'
@@ -199,17 +199,31 @@ export function main(argv: string[] = process.argv.slice(2)): void {
    *    이 자리가 유일하다. 읽기 실패(티켓 없음 등)는 종전 오류가 그대로 나도록 삼킨다.
    */
   if (o.run) {
-    let st: WorkflowState | null = null
+    const rid = o.reqId.startsWith('REQ-') ? o.reqId : `REQ-${o.reqId}`
+    let blocked: CheckpointWindowReason = 'none'
     try {
       const c = loadConfig({ root: o.root })
-      st = loadState(join(c.workflowDirAbs, o.reqId.startsWith('REQ-') ? o.reqId : `REQ-${o.reqId}`))
-    } catch {
-      st = null
-    }
-    if (st && inRecoveryWindow(st))
-      throw new Error(
-        recoveryWindowProblem(o.reqId.startsWith('REQ-') ? o.reqId : `REQ-${o.reqId}`, 'req:review-exception'),
+      const dir = join(c.workflowDirAbs, rid)
+      const rel = relative(c.root, dir).replace(/\\/g, '/')
+      const g = createGitAdapter(c.root)
+      blocked = stateWriteBlockedReason(
+        loadState(dir),
+        // 🔴 REQ-2026-156: 읽기 실패는 차단하지 않는다 — 빈 값으로 떨어진다.
+        buildCheckpointWindowFacts({
+          ticketRel: rel,
+          blob: (rev, p) => {
+            try {
+              return g.exec(['show', `${rev}:${p}`])
+            } catch {
+              return null
+            }
+          },
+        }),
       )
+    } catch {
+      blocked = 'none'
+    }
+    if (blocked !== 'none') throw new Error(recoveryWindowProblem(rid, 'req:review-exception', blocked))
   }
   // 🔴 해소 모드는 예외 부여와 **완전히 다른 경로**다 — `--kind`·rationale 을 요구하지 않는다.
   if (o.closeStale !== null) return runCloseStale(o)
