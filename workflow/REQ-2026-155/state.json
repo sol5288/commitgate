@@ -2,15 +2,27 @@
   "id": "REQ-2026-155",
   "branch": "feat/req-2026-155-req-2026-155-recovery-window-and-raw-paths",
   "risk_level": "LOW",
-  "codex_thread_id": "01a002d1-0f0f-78b2-bdbc-ceb6ef3f255a",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a002eb-6c48-7d13-882b-e75f95f3c661",
+  "review_base_sha": "b15703d3c7de7b529e2518f877f1c97d57f42b83",
+  "review_diff_hash": "e8e3ca4c5358949f0aae56e2b40030979a82fbcc",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "6deacac77c9ff128781612b1d649d084ff458bc904536491cc1a9a4f115b2b59",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-checkpoint-verb-guard",
+  "phases": [
+    {
+      "id": "phase-1-checkpoint-verb-guard",
+      "title": "복구 창 verb 가드",
+      "status": "pending",
+      "approved": true
+    },
+    {
+      "id": "phase-2-raw-input-fidelity",
+      "title": "raw 입력 충실도",
+      "status": "pending"
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +36,23 @@
       "phase_id": null,
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-checkpoint-verb-guard#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-checkpoint-verb-guard",
+      "attempts": 4,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-checkpoint-verb-guard",
     "outcome": "approved",
-    "compare_hash": "2b7462a507d5aa76e0bff73a27882692af598008b33deba416fdb4ed5622a7cb",
+    "compare_hash": "52438c738df514980a2882c388b8b75ddeb451b4df6d46a2c1e49d346e4f4b6c",
     "count": 1,
     "errors": [],
-    "at": "2026-08-15T00:29:04.663Z",
+    "at": "2026-08-15T00:58:36.120Z",
     "findings": [],
     "elided_count": 0
   },
@@ -78,5 +97,14 @@
       "source_response_path": "workflow/REQ-2026-155/responses/design-r04-approved.json"
     },
     "design_hash": "6deacac77c9ff128781612b1d649d084ff458bc904536491cc1a9a4f115b2b59"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "e8e3ca4c5358949f0aae56e2b40030979a82fbcc",
+      "phase_id": "phase-1-checkpoint-verb-guard",
+      "consumed_by_commit_sha": "851afb808117fc3558e1515dfbd87e6bb340a880",
+      "approval_consumed_at": "2026-08-15T00:58:46.611Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
