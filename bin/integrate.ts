@@ -253,6 +253,15 @@ export type DelegationGateResult =
   | { kind: 'not-required' }
   | { kind: 'allowed'; delegationId: string; permissions: DelegationPermissions }
   | { kind: 'denied'; lines: string[] }
+  /**
+   * **자동 통합은 못 하지만, 대화형 사람 확인으로는 진행할 수 있다**(REQ-2026-160).
+   *
+   * 🔴 `scope === null`(브랜치 이름에서 통합 대상을 확정할 수 없음) **이고 fail-closed 사실이
+   *    하나도 없을 때만** 난다. 그 외의 거부는 전부 `denied` 이고 **대화형에서도 열리지 않는다.**
+   * 🔴 이 값은 **권한을 주지 않는다.** `planPushActions`·위임 소비·push 는 `kind === 'allowed'`
+   *    에만 걸려 있으므로 이 경로는 **로컬 병합까지만**이다(위임이 없으니 당연하다).
+   */
+  | { kind: 'manual-confirmation-required'; lines: string[] }
 
 /**
  * `stopGate: "auto"` 에서 **사전 위임을 요구**한다.
@@ -352,14 +361,34 @@ export function delegationGate(
   if (!delegationRequired) return { kind: 'not-required' }
 
   const scope = scopeOfBranch(prepared.featureBranch, deps.branchPrefix)
-  if (scope === null)
+  if (scope === null) {
+    /**
+     * 🔴 **fail-closed 사실을 먼저 평가한다**(REQ-2026-160 설계 r01 P1).
+     *
+     *    scope 를 못 읽었다고 곧바로 "사람이 확인하면 된다"로 넘기면, HIGH·`hardCap`·미판정 리뷰가
+     *    **평가되지 않은 채** 대화형 `y` 하나로 통과한다. 그 셋은 위임이 있어도 막는 것들이고,
+     *    이 경로에는 위임 자체가 없어 `--high-risk` 같은 해제 수단도 없다.
+     */
+    const blockers = failClosedBlockers(ticketFacts)
+    if (blockers.length > 0)
+      return {
+        kind: 'denied',
+        lines: [
+          `사전 위임 대상을 브랜치 이름에서 판정할 수 없습니다: ${prepared.featureBranch}`,
+          ...blockers.map((b) => `  ${b}`),
+          '  🔴 위 사유는 **사람 확인으로도 열리지 않습니다** — 대화형에서도 통합하지 않습니다.',
+        ],
+      }
     return {
-      kind: 'denied',
+      kind: 'manual-confirmation-required',
       lines: [
         `사전 위임 대상을 브랜치 이름에서 판정할 수 없습니다: ${prepared.featureBranch}`,
-        `  stopGate:"auto" 는 위임 대상이 확정돼야 진행합니다 — 사람 확인으로 통합하세요.`,
+        `  stopGate:"auto" 는 위임 대상이 확정돼야 **자동으로** 진행합니다.`,
+        '  이 경우에만 **대화형 최종 확인**으로 사람이 직접 통합할 수 있습니다(기본 No).',
+        '  🔴 자동 통합을 원하면 브랜치 이름을 표준 형식으로 두고 `req:delegate` 로 위임하십시오.',
       ],
     }
+  }
   // 범위 귀속(DEC-4a) — `verifyRangeDeep` 과 **같은 입력**으로 계산한다(분류기 이원화 금지).
   const deepInput = collectDeepInput(deps.git, deps.readBlobs, prepared.trunkHeadSha, prepared.featureHeadSha, deps.ticketRoot)
   const report = verifyRangeDeep(deepInput)
@@ -616,6 +645,25 @@ export type IntegrationPolicy =
  * 🔴 확정할 수 없으면 **`null`(= 판정 불가)** 이다. 귀속되지 않은 커밋이 하나라도 있으면 이 범위가
  *    무엇을 담고 있는지 모르는 것이므로 "없음"으로 읽지 않는다.
  */
+/**
+ * **사람 확인으로도 열리지 않는** 사유들(REQ-2026-160, 순수).
+ *
+ * 🔴 **한 벌만 둔다.** `delegationGate` 의 scope 미판정 분기와 `runIntegrate` 의 정책 판정 불가
+ *    분기가 **같은 판정**을 써야 한다 — 두 벌로 두면 한쪽만 고쳐지고, 그 순간 한쪽이 열린다
+ *    (phase-1 r01 P1 이 정확히 그 구멍이었다: 정책이 `indeterminate` 면 게이트를 건너뛰어
+ *    HIGH·hardCap·미판정 리뷰가 **아예 평가되지 않았다**).
+ *
+ * 🔴 **HIGH 는 `--high-risk` 위임으로만 풀린다.** 이 두 분기에는 위임 자체가 없으므로 해제 수단이
+ *    존재하지 않는다 — "대화형이니까 사람이 판단하면 된다"로 열면 HIGH 확인 절차를 통째로 우회한다.
+ */
+export function failClosedBlockers(facts: Pick<AutoFacts, 'riskLevel' | 'budgetHardCapReached' | 'reviewInconclusive'>): string[] {
+  const out: string[] = []
+  if (facts.riskLevel === 'HIGH') out.push('high-risk-unacked — HIGH 위험 티켓이고 이 경로에는 위임(--high-risk)이 없습니다')
+  if (facts.budgetHardCapReached) out.push('budget-hardcap — 리뷰 예산 hardCap 에 도달했습니다')
+  if (facts.reviewInconclusive) out.push('review-inconclusive — 판정이 끝나지 않은 리뷰가 있습니다')
+  return out
+}
+
 export function policyTargetIds(
   attribution: { tickets: readonly string[]; deliveries?: readonly string[]; unattributableCommits: readonly unknown[] },
   scope: DelegationScope | null,
@@ -816,6 +864,34 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
           }),
           policyMembersUnknown: ticketFacts.policyMembersUnknown,
         }
+  /**
+   * 🔴 **scope 미판정 경로의 위험 사실**(REQ-2026-160 DEC-1a). scope 를 못 읽으면 `ticketFacts` 는
+   *    허용값(`riskLevel: null` 등)이라 HIGH·`hardCap`·미판정 리뷰가 **평가되지 않는다**.
+   *    그 상태로 대화형 확인을 열어 주면 사람 확인으로 열리면 안 되는 거부를 통과시킨다.
+   *
+   * 🔴 **`scope !== null` 경로는 건드리지 않는다** — 정책 대상은 브랜치 티켓보다 넓을 수 있어서
+   *    (귀속 합집합) 그 값으로 바꾸면 무관한 티켓의 HIGH 가 정상 통합을 막는 거짓 거부가 생긴다.
+   */
+  /**
+   * 🔴 **읽은 state 만 센다.** `readTicketFacts` 는 못 읽으면 `HIGH`·`reviewInconclusive` 를
+   *    **자리표시자**로 돌려준다 — 그것은 "위험하다"가 아니라 "모른다"는 뜻이다. 자리표시자를 실제
+   *    사실처럼 쓰면 두 가지가 동시에 망가진다: ① 사용자에게 "HIGH 라서 막혔다"고 **거짓 사유**를
+   *    말하고, ② REQ-2026-159 가 만든 **"판정 불가는 사람이 확인할 수 있다"** 경로를 영구히 닫는다.
+   *    모른다는 사실은 `policyMembersUnknown`·`stateUnreadable` 이 이미 정책 판정으로 옮긴다.
+   */
+  const readableRisk = (policyIds ?? [])
+    .map((id) => readTicketFacts(deps.readBlobs, prepared.featureHeadSha, deps.ticketRoot, id, deps.reviewHardCap))
+    .filter((f) => !f.stateUnreadable)
+  const readableFacts = {
+    riskLevel: readableRisk.some((f) => f.riskLevel === 'HIGH') ? 'HIGH' : 'LOW',
+    budgetHardCapReached: readableRisk.some((f) => f.budgetHardCapReached),
+    reviewInconclusive: readableRisk.some((f) => f.reviewInconclusive),
+  }
+  /**
+   * 🔴 **`scope !== null` 경로는 건드리지 않는다** — 정책 대상은 브랜치 티켓보다 넓을 수 있어서
+   *    (귀속 합집합) 그 값으로 바꾸면 무관한 티켓의 HIGH 가 정상 통합을 막는 거짓 거부가 생긴다.
+   */
+  const gateFacts: AutoFacts = scopeForFacts !== null ? policyFacts : { ...policyFacts, ...readableFacts }
   const policy = resolveIntegrationPolicy(policyFacts, deps.stopGate)
   /**
    * 🔴 **판정 불가는 자동 진행을 막을 뿐, 사람 판단까지 막지는 않는다**(phase-1 r02 P1).
@@ -826,6 +902,22 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
    *    안내가 "대화형이면 승인할 수 있다"고 적으므로 그 경로가 **실제로 존재해야** 한다.
    */
   if (policy.kind === 'indeterminate') {
+    /**
+     * 🔴 **fail-closed 사유가 먼저다**(REQ-2026-160 phase-1 r01 P1). 정책이 판정 불가면 아래에서
+     *    게이트를 `not-required` 로 두는데, 그러면 `delegationGate` 안의 HIGH·`hardCap`·미판정 리뷰
+     *    검사가 **아예 돌지 않는다.** 읽을 수 있었던 대상 중 하나라도 그 상태면 **대화형에서도** 막는다.
+     */
+    // 🔴 **읽은 state 만** 본다 — 자리표시자(못 읽음 → HIGH)를 실제 사실로 쓰면 거짓 사유를 말하고
+    //    REQ-2026-159 의 사람 확인 경로를 영구히 닫는다.
+    const blockers = failClosedBlockers(readableFacts)
+    if (blockers.length > 0) {
+      deps.log('commitgate integrate — 차단:')
+      for (const l of policy.lines) deps.log(`  ${l}`)
+      for (const b of blockers) deps.log(`  ${b}`)
+      deps.log('  🔴 위 사유는 **사람 확인으로도 열리지 않습니다**.')
+      safeAppend(row({ exit: 1 }))
+      return { exit: 1, plan, merged: false }
+    }
     deps.log(deps.interactive ? 'commitgate integrate — 정책 판정 불가:' : 'commitgate integrate — 차단:')
     for (const l of policy.lines) deps.log(`  ${l}`)
     if (!deps.interactive) {
@@ -846,12 +938,25 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
   const gate: DelegationGateResult =
     policy.kind === 'indeterminate'
       ? { kind: 'not-required' }
-      : delegationGate(deps, prepared, ticketFacts, policy.delegationRequired)
+      : delegationGate(deps, prepared, gateFacts, policy.delegationRequired)
   if (gate.kind === 'denied') {
     deps.log('commitgate integrate — 차단:')
     for (const l of gate.lines) deps.log(`  ${l}`)
     safeAppend(row({ exit: 1 }))
     return { exit: 1, plan, merged: false }
+  }
+  /**
+   * 🔴 **안내한 탈출구는 실제로 열려 있어야 한다**(REQ-2026-160). 예전에는 이 경우도 `denied` 라
+   *    "사람 확인으로 통합하세요"라고 적어 놓고 대화형에서도 즉시 멈췄다.
+   *    `policy.kind === 'indeterminate'` 처리와 **같은 모양**으로 맞춘다.
+   */
+  if (gate.kind === 'manual-confirmation-required') {
+    deps.log(deps.interactive ? 'commitgate integrate — 자동 통합 불가(사람 확인 필요):' : 'commitgate integrate — 차단:')
+    for (const l of gate.lines) deps.log(`  ${l}`)
+    if (!deps.interactive) {
+      safeAppend(row({ exit: 1 }))
+      return { exit: 1, plan, merged: false }
+    }
   }
 
   deps.log(`commitgate integrate — ${prepared.featureBranch} → ${prepared.trunkBranch}`)

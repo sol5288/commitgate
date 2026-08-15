@@ -278,6 +278,13 @@ integration, `I1`/`I2`/`B1` are not asked again — the human approval did not d
 the moment the delegation was issued. With no delegation, or one that expired, was revoked, or was already
 consumed, the run stops as usual. `R1`/`R2`/`R3` (tag, publish, release) can never be delegated.
 
+🔴 **One narrow exception: when the integration target cannot be determined from the branch name.** The run
+will not integrate automatically, but a human can still do it through the **final interactive confirmation**
+(`[y/N]`, defaulting to No). There is no delegation on that path, so it stops at the local merge and does not
+push. 🔴 **No other refusal opens up that way** — a missing, expired, revoked, or already-consumed delegation,
+a moved trunk, a source mismatch, changes outside the delegated scope, an undelegated HIGH-risk ticket,
+reaching `hardCap`, or a `BLOCKED` review.
+
 `commitgate setup`, and **any command that demands a confirmation sentence** (`--confirm`) —
 `req:rebind`, `delivery seal`/`approve`/`reopen`. That last one matters because such a command can appear as a
 **diagnostic line** while `kind` is `AGENT`: judging by `kind` alone would have the agent write your confirmation

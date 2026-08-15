@@ -166,3 +166,29 @@ describe('[REQ-2026-159] 계약이 stopGate 전체를 말한다', () => {
     expect(md, '어느 축도 hardCap 을 해제하지 않는다').toContain('`hardCap`을 해제하지 않는다')
   })
 })
+
+/**
+ * REQ-2026-160 — **계약이 "열리는 것 하나 / 열리지 않는 것 전부"를 구분한다.**
+ *
+ * 🔴 열리는 쪽만 검사하면 **절반만 지킨다**. 다음 사람이 "대화형이면 되는구나"로 읽고 다른 거부까지
+ *    열어 주는 것이 이 REQ 가 막으려는 보안 결함이다.
+ */
+describe('[REQ-2026-160] 계약이 대화형 예외의 경계를 말한다', () => {
+  it('🔴 열리는 경우: 통합 대상을 브랜치 이름에서 확정할 수 없을 때만', () => {
+    const md = template()
+    expect(md).toContain('통합 대상을 브랜치 이름에서 확정할 수 없으면')
+    expect(md, '이 경우에만 이라는 한정').toContain('이 경우에**만**')
+  })
+
+  it('🔴 열리지 않는 경우를 **전부** 적는다', () => {
+    const md = template()
+    // 🔴 목록을 손으로 세지 않는다 — 이 사유들은 `DENY_REASONS` 등록부에서 온다.
+    for (const w of ['위임 부재', '만료', '철회', '이미 소비', 'trunk 이동', 'source 불일치', '위임 범위 밖', 'HIGH 미위임', 'hardCap', 'BLOCKED'])
+      expect(md, `사람 확인으로도 열리지 않는 사유: ${w}`).toContain(w)
+    expect(md, '"사람 확인으로도 열리지 않는다"는 단정').toContain('사람 확인으로도 열리지 않는다')
+  })
+
+  it('🔴 이 경로는 push 하지 않는다는 것도 적는다(권한이 없다)', () => {
+    expect(template()).toContain('push 도 하지 않는다')
+  })
+})

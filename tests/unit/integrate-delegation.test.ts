@@ -186,15 +186,41 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
     expect(g.kind).toBe('allowed')
   })
 
-  it('🔴 브랜치에서 대상을 판정할 수 없으면 거부한다', () => {
+  /**
+   * 🔴 **REQ-2026-160 에서 이 계약이 바뀌었다.** 브랜치에서 대상을 판정하지 못하면 **자동 통합은
+   *    여전히 안 되지만**, 대화형 사람 확인으로는 진행할 수 있다 — 예전에는 `denied` 라고 하면서
+   *    문구만 "사람 확인으로 통합하세요"라고 적어 **실행 불가능한 안내**였다.
+   */
+  it('🔴 브랜치에서 대상을 판정할 수 없으면 자동 통합하지 않는다(사람 확인으로만)', () => {
     const g = delegationGate(
       gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED()) }),
       prepared({ featureBranch: 'hotfix/thing' }),
       FACTS_OK,
       true,
     )
-    expect(g.kind).toBe('denied')
-    if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('판정할 수 없')
+    expect(g.kind).toBe('manual-confirmation-required')
+    if (g.kind === 'manual-confirmation-required') {
+      expect(g.lines.join('\n')).toContain('판정할 수 없')
+      expect(g.lines.join('\n')).toContain('대화형')
+    }
+  })
+
+  /**
+   * 🔴 **핵심 오라클**(설계 r01 P1): scope 를 못 읽었어도 HIGH·hardCap·미판정 리뷰는 **`denied`** 다.
+   *    이 경로에는 위임 자체가 없어 `--high-risk` 같은 해제 수단이 존재하지 않는다.
+   */
+  it('🔴 scope 미판정이어도 HIGH·hardCap·BLOCKED 는 denied 다(사람 확인으로도 안 열린다)', () => {
+    const deps = gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED()) })
+    const cases = [
+      [{ ...FACTS_OK, riskLevel: 'HIGH' }, 'high-risk-unacked'],
+      [{ ...FACTS_OK, budgetHardCapReached: true }, 'budget-hardcap'],
+      [{ ...FACTS_OK, reviewInconclusive: true }, 'review-inconclusive'],
+    ] as const
+    for (const [facts, reason] of cases) {
+      const g = delegationGate(deps, prepared({ featureBranch: 'hotfix/thing' }), facts, true)
+      expect(g.kind, reason).toBe('denied')
+      if (g.kind === 'denied') expect(g.lines.join('\n')).toContain(reason)
+    }
   })
 
   /** 🔴 delivery 멤버를 읽지 못하면 거부한다(빈 목록으로 취급하지 않는다). */
@@ -960,5 +986,228 @@ describe('[REQ-2026-159] resolveIntegrationPolicy — 대상이 비면 판정 �
     )
     expect(p.kind).toBe('resolved')
     if (p.kind === 'resolved') expect(p.delegationRequired).toBe(true)
+  })
+})
+
+/**
+ * REQ-2026-160 — **안내한 탈출구가 실제로 열린다. 그러나 그것 하나만.**
+ *
+ * 🔴 `scope` 를 브랜치 이름에서 판정하지 못하면 자동 통합은 못 하지만, **대화형 최종 확인**으로
+ *    사람이 진행할 수 있다. 예전에는 `denied` 라 대화형에서도 즉시 멈추면서 문구만
+ *    "사람 확인으로 통합하세요"라고 적었다 — 실행 불가능한 안내.
+ *
+ * 🔴 **핵심은 반대편이다**: HIGH · `hardCap` · 미판정 리뷰 · 진짜 위임 거부는 **대화형 `y` 여도
+ *    병합되지 않는다.** 새 분기가 그것들까지 열어 주면 그것이 보안 우회다.
+ */
+describe('[REQ-2026-160] scope 미판정 — 대화형 확인으로만 열린다', () => {
+  const RENAMED = 'feat/req-renamed'
+  const ATTRIBUTED = 'REQ-2026-001'
+  const CLAIM_SHA = '7'.repeat(40)
+
+  const stateOf = (over: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      id: ATTRIBUTED,
+      risk_level: 'LOW',
+      review_series: [{ series_id: 'phase:p1#1', attempts: 1, closed_reason: 'approved' }],
+      policy_snapshot: { stop_gate: 'auto' },
+      ...over,
+    })
+
+  const run = async (over: {
+    state?: string
+    branch?: string
+    interactive?: string
+    ledger?: string | null
+    refs?: Record<string, string>
+  } = {}): Promise<{ exit: number; merged: boolean; merges: number; pushes: number; logs: string }> => {
+    const inner = fakeGit({ branch: over.branch ?? RENAMED, refs: over.refs })
+    let claimed = false
+    const git: ReturnType<typeof fakeGit> = {
+      calls: inner.calls,
+      exec(args: string[]): string {
+        if (claimed && args[0] === 'rev-parse' && args[1] !== '--abbrev-ref' && !(args[2] ?? '').includes(TRUNK)) {
+          inner.calls.push(args)
+          return `${CLAIM_SHA}\n`
+        }
+        if (claimed && args[0] === 'rev-list' && args.some((a) => a.includes('..'))) {
+          inner.calls.push(args)
+          return `${CLAIM_SHA}\n`
+        }
+        if (claimed && args[0] === 'rev-list') {
+          inner.calls.push(args)
+          return `${MERGE_SHA} ${BASE} ${CLAIM_SHA}\n`
+        }
+        return inner.exec(args)
+      },
+    }
+    const deps = makeDeps({
+      git,
+      stopGate: 'merge',
+      readBlobs: fakeReadBlobs({ [`workflow/${ATTRIBUTED}/state.json`]: over.state ?? stateOf() }),
+      readDelegationLedger: () => over.ledger ?? null,
+      now: () => '2026-08-10T00:00:00.000Z',
+      appendDelegationRow: (r: DelegationRow): void => void (r.kind === 'consumed' && (claimed = true)),
+      ...(over.interactive === undefined ? {} : { interactive: true, ask: async (): Promise<string> => over.interactive as string }),
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    return {
+      exit: r.exit,
+      merged: r.merged,
+      merges: git.calls.filter((c) => c[0] === 'merge').length,
+      pushes: git.calls.filter((c) => c[0] === 'push').length,
+      logs: deps.logs.join(String.fromCharCode(10)),
+    }
+  }
+
+  it('① 비대화형 → 차단(merge 0회)', async () => {
+    const r = await run()
+    expect(r.exit, r.logs).toBe(1)
+    expect(r.merged).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('판정할 수 없습니다')
+  })
+
+  it('② 대화형 y → 통합된다(안내한 탈출구가 실제로 열린다)', async () => {
+    const r = await run({ interactive: 'y' })
+    expect(r.merged, r.logs).toBe(true)
+    expect(r.logs).toContain('자동 통합 불가(사람 확인 필요)')
+  })
+
+  it('③ 대화형 Enter(빈 문자열) → 병합하지 않는다(기본 No)', async () => {
+    const r = await run({ interactive: '' })
+    expect(r.merged).toBe(false)
+    expect(r.merges).toBe(0)
+  })
+
+  /** 🔴 ④⑤⑥ — 이 REQ 의 핵심. 사람 확인으로 **열리면 안 되는** 것들. */
+  it('④ hardCap 도달 + 대화형 y → 병합되지 않는다', async () => {
+    const r = await run({
+      state: stateOf({ review_series: [{ series_id: 'phase:p1#1', attempts: 8, closed_reason: 'approved' }] }),
+      interactive: 'y',
+    })
+    expect(r.merged, r.logs).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('budget-hardcap')
+  })
+
+  it('⑤ HIGH 위험 + 대화형 y → 병합되지 않는다', async () => {
+    const r = await run({ state: stateOf({ risk_level: 'HIGH' }), interactive: 'y' })
+    expect(r.merged, r.logs).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('high-risk-unacked')
+  })
+
+  it('⑥ 리뷰 미판정(BLOCKED) + 대화형 y → 병합되지 않는다', async () => {
+    const r = await run({
+      state: stateOf({ review_series: [{ series_id: 'phase:p1#1', attempts: 1, closed_reason: null }] }),
+      interactive: 'y',
+    })
+    expect(r.merged, r.logs).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('review-inconclusive')
+  })
+
+  /** 🔴 ⑦ — scope 가 **확정된** 경로의 진짜 위임 거부는 대화형에서도 열리지 않는다. */
+  it('⑦ scope 확정 + trunk-moved 위임 거부 + 대화형 y → 병합되지 않는다', async () => {
+    const r = await run({
+      branch: FEATURE_001,
+      state: stateOf(),
+      ledger: ledgerOf(ISSUED({ trunk_sha: 'f'.repeat(40) })),
+      interactive: 'y',
+    })
+    expect(r.merged, r.logs).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('trunk-moved')
+  })
+
+  /** 🔴 ⑧ — 이 경로는 **권한이 없다**. 로컬 병합까지만. */
+  it('⑧ 대화형 y 로 통합해도 push 하지 않는다', async () => {
+    const r = await run({ interactive: 'y' })
+    expect(r.merged).toBe(true)
+    expect(r.pushes).toBe(0)
+  })
+})
+
+/**
+ * REQ-2026-160 phase-1 r01 P1 — **정책이 판정 불가여도 fail-closed 사유는 먼저 막는다.**
+ *
+ * 🔴 정책 판정 불가면 게이트를 `not-required` 로 두는데, 그러면 `delegationGate` 안의 HIGH·hardCap·
+ *    미판정 리뷰 검사가 **아예 돌지 않는다.** 그 상태로 대화형 `y` 를 받으면 열리면 안 되는 것이 열린다.
+ *
+ * 🔴 **읽지 못한 state 는 "위험"이 아니라 "모름"이다.** `readTicketFacts` 의 자리표시자(HIGH·미판정)를
+ *    실제 사실로 쓰면 ① 거짓 사유를 말하고 ② REQ-2026-159 가 만든 사람 확인 경로를 영구히 닫는다.
+ */
+describe('[REQ-2026-160] 판정 불가 + fail-closed 사유', () => {
+  const RENAMED = 'feat/req-renamed'
+  const M1 = 'REQ-2026-001'
+  const M2 = 'REQ-2026-999'
+
+  /**
+   * 🔴 **이 조합은 묶음에서만 난다.** 티켓 하나짜리 범위에서는 "정책 판정 불가"의 원인이 곧
+   *    "state 를 못 읽음"이라 읽을 수 있는 사실이 남지 않는다. 묶음은 **멤버 하나는 읽히고 하나는
+   *    손상**일 수 있어, 읽힌 쪽의 HIGH 를 평가해야 하면서 정책은 판정 불가다.
+   */
+  const SLUG = 'mixed'
+  const DELIVERY_BRANCH = `delivery/${SLUG}`
+  const record = JSON.stringify({
+    schema_version: 1,
+    slug: SLUG,
+    branch: DELIVERY_BRANCH,
+    target_branch: TRUNK,
+    state: 'approved',
+    members: [
+      { req_id: M1, order: 1, delivery_base_sha: BASE, status: 'integrated' },
+      { req_id: M2, order: 2, delivery_base_sha: BASE, status: 'integrated' },
+    ],
+    events: [],
+    approval: { base_sha: BASE, at: '2026-08-10T00:00:00.000Z' },
+  })
+
+  const run = async (blobs: Record<string, string>, answer: string) => {
+    const inner = fakeGit({ branch: DELIVERY_BRANCH })
+    const git: ReturnType<typeof fakeGit> = {
+      calls: inner.calls,
+      exec(args: string[]): string {
+        if (args[0] === 'show') return record
+        if (args[0] === 'rev-list' && args.includes('--')) return ''
+        return inner.exec(args)
+      },
+    }
+    const deps = {
+      ...makeDeps({
+        git,
+        stopGate: 'merge',
+        readBlobs: fakeReadBlobs({ [`workflow/delivery/${SLUG}.json`]: record, ...blobs }),
+        readDelegationLedger: () => null,
+        interactive: true,
+        ask: async (): Promise<string> => answer,
+      }),
+      branchPrefix: 'delivery/',
+    }
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    return { merged: r.merged, merges: git.calls.filter((c) => c[0] === 'merge').length, logs: deps.logs.join(String.fromCharCode(10)) }
+  }
+
+  const high = JSON.stringify({ id: M1, risk_level: 'HIGH', review_series: [], policy_snapshot: { stop_gate: 'auto' } })
+  const ok = JSON.stringify({ id: M1, risk_level: 'LOW', review_series: [] })
+  const okM2 = JSON.stringify({ id: M2, risk_level: 'LOW', review_series: [] })
+
+  it('🔴 읽을 수 있는 멤버가 HIGH 면 정책 판정 불가여도 대화형 y 로 열리지 않는다', async () => {
+    // M2 손상 → 정책 indeterminate. M1 은 읽히고 HIGH → 막아야 한다.
+    const r = await run({ [`workflow/${M1}/state.json`]: high, [`workflow/${M2}/state.json`]: '{broken' }, 'y')
+    expect(r.merged, r.logs).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('high-risk-unacked')
+    expect(r.logs).toContain('사람 확인으로도 열리지 않습니다')
+  })
+
+  /**
+   * 🔴 **대조군 — 자리표시자를 실제 사실로 쓰지 않는다.** 손상만 있고 실제 HIGH 가 없으면
+   *    REQ-2026-159 가 만든 사람 확인 경로가 그대로 살아 있어야 한다.
+   */
+  it('🔴 손상만 있고 실제 위험 사실이 없으면 대화형 y 로 통합된다(REQ-159 경로 보존)', async () => {
+    const r = await run({ [`workflow/${M1}/state.json`]: ok, [`workflow/${M2}/state.json`]: '{broken' }, 'y')
+    expect(r.merged, r.logs).toBe(true)
+    expect(r.logs).not.toContain('high-risk-unacked')
   })
 })
