@@ -4,7 +4,9 @@ import {
   delegationGate,
   planPushActions,
   readDeliveryFacts,
+  policyTargetIds,
   readTicketFacts,
+  resolveIntegrationPolicy,
   runIntegrate,
   type AutoFacts,
   type RunDeps,
@@ -239,7 +241,9 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
 
 describe('[REQ-2026-140] readTicketFacts — 못 읽으면 fail-closed', () => {
   it('state.json 이 없으면 HIGH·미결로 본다', () => {
-    const f = readTicketFacts(fakeReadBlobs(), HEAD, 'workflow', TICKET, 8)
+    // 🔴 기본 fake 가 이제 `REQ-2026-001`·`REQ-2026-999` state 를 담으므로(현실적 트리),
+    //    "없는 경우"를 보려면 **fake 에 없는 티켓 id** 를 써야 한다.
+    const f = readTicketFacts(fakeReadBlobs(), HEAD, 'workflow', 'REQ-2026-777', 8)
     expect(f).toEqual({
       riskLevel: 'HIGH',
       budgetHardCapReached: false,
@@ -831,5 +835,130 @@ describe('[REQ-2026-159] runIntegrate — 정책은 티켓 스냅샷에서 해�
     })
     expect(r.merged).toBe(false)
     expect(r.merges).toBe(0)
+  })
+})
+
+/**
+ * REQ-2026-159 phase-3 — **브랜치 이름이 `auto` 정책을 약화시키는 통로가 되면 안 된다.**
+ *
+ * 🔴 우회 경로: `branchPrefix`(`feat/req-`)는 만족하지만 뒤에 REQ 번호 형식이 없는 브랜치
+ *    (`feat/req-renamed`)는 `scopeOfBranch()` 가 `null` 이다. 이전 구현은 그때 정책 대상을 비우고
+ *    **현재 config 로 폴백**했다 — config 가 `merge` 면 위임 검사가 꺼진다.
+ *
+ * 🔴 해소는 **정책 대상과 위임 대상을 분리**하는 것이다. 위임 권한은 그대로 브랜치 scope 만 쓰고,
+ *    정책은 **결속된 범위의 커밋 귀속**에서도 티켓을 찾는다.
+ */
+describe('[REQ-2026-159] 브랜치 이름으로 정책을 약화시킬 수 없다', () => {
+  const RENAMED = 'feat/req-renamed'
+  const ATTRIBUTED = 'REQ-2026-001' // 기본 fake 의 매니페스트·부기 경로가 가리키는 티켓
+
+  const runRenamed = async (
+    stateJson: string,
+    over: { interactive?: string } = {},
+  ): Promise<{ exit: number; merged: boolean; merges: number; logs: string }> => {
+    const git = fakeGit({ branch: RENAMED })
+    const deps = makeDeps({
+      git,
+      stopGate: 'merge',
+      readBlobs: fakeReadBlobs({ [`workflow/${ATTRIBUTED}/state.json`]: stateJson }),
+      readDelegationLedger: () => null,
+      ...(over.interactive === undefined ? {} : { interactive: true, ask: async (): Promise<string> => over.interactive as string }),
+    })
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    return {
+      exit: r.exit,
+      merged: r.merged,
+      merges: git.calls.filter((c) => c[0] === 'merge').length,
+      logs: deps.logs.join(String.fromCharCode(10)),
+    }
+  }
+
+  const auto = JSON.stringify({ id: ATTRIBUTED, risk_level: 'LOW', review_series: [], policy_snapshot: { stop_gate: 'auto' } })
+  const legacy = JSON.stringify({ id: ATTRIBUTED, risk_level: 'LOW', review_series: [] })
+
+  it('🔴 scope 를 못 읽어도 귀속으로 찾은 auto 스냅샷이 위임을 요구한다(비대화형 → 거부)', async () => {
+    const r = await runRenamed(auto)
+    expect(r.exit, r.logs).toBe(1)
+    expect(r.merged).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('사전 위임')
+  })
+
+  it('🔴 귀속으로 찾은 티켓이 legacy 면 config 를 따른다(무회귀 — 병합)', async () => {
+    const r = await runRenamed(legacy)
+    expect(r.merged, r.logs).toBe(true)
+  })
+
+  /**
+   * 🔴 **config 폴백이 사라졌다는 것**을 이 브랜치에서 직접 본다. 귀속으로 대상은 찾았지만 그 티켓의
+   *    state 를 읽지 못하면, 예전 코드는 대상이 비어 `merge` 로 폴백해 **그대로 병합**했다.
+   */
+  it('🔴 귀속 대상의 state 를 읽지 못하면 비대화형은 거부한다(config 폴백 없음)', async () => {
+    const r = await runRenamed('{broken')
+    expect(r.exit, r.logs).toBe(1)
+    expect(r.merged).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('판정할 수 없습니다')
+  })
+
+  it('🔴 같은 입력에서 대화형 y 면 사람 판단으로 통합된다', async () => {
+    const r = await runRenamed('{broken', { interactive: 'y' })
+    expect(r.merged, r.logs).toBe(true)
+  })
+})
+
+/**
+ * `policyTargetIds` — 정책 대상 확정(순수). 🔴 **"모름"과 "없음"을 구별한다.**
+ * 대상이 하나도 없으면 빈 배열이고, 호출부(`resolveIntegrationPolicy`)가 그것을 판정 불가로 다룬다.
+ */
+describe('[REQ-2026-159] policyTargetIds', () => {
+  const noDelivery = (): string[] | null => null
+
+  it('🔴 귀속되지 않은 커밋이 하나라도 있으면 모름(null)이다', () => {
+    expect(policyTargetIds({ tickets: ['REQ-2026-001'], unattributableCommits: [{}] }, null, noDelivery)).toBeNull()
+  })
+
+  it('브랜치 scope 와 귀속을 **합친다**(더 좁게 읽지 않는다)', () => {
+    const ids = policyTargetIds(
+      { tickets: ['REQ-2026-001'], unattributableCommits: [] },
+      { kind: 'ticket', req_id: 'REQ-2026-999' },
+      noDelivery,
+    )
+    expect(ids?.slice().sort()).toEqual(['REQ-2026-001', 'REQ-2026-999'])
+  })
+
+  it('🔴 묶음 멤버를 읽지 못하면 모름(null)이다', () => {
+    expect(policyTargetIds({ tickets: [], deliveries: ['s'], unattributableCommits: [] }, null, noDelivery)).toBeNull()
+  })
+
+  it('대상이 없으면 빈 배열이다 — 호출부가 판정 불가로 다룬다', () => {
+    expect(policyTargetIds({ tickets: [], unattributableCommits: [] }, null, noDelivery)).toEqual([])
+  })
+})
+
+/**
+ * `resolveIntegrationPolicy` — 🔴 **대상이 비면 config 로 폴백하지 않는다.**
+ *
+ * 변이 검사가 이 구멍을 드러냈다: `policyTargetIds` 가 `[]` 를 돌려주는 것만 검사하고 그 `[]` 가
+ * **판정 불가로 이어지는지**는 아무도 보지 않아, 폴백을 되돌려도 전부 green 이었다.
+ */
+describe('[REQ-2026-159] resolveIntegrationPolicy — 대상이 비면 판정 불가', () => {
+  const empty: AutoFacts = { ...FACTS_OK, memberPolicies: [], policyMembersUnknown: false }
+
+  for (const sg of ['phase', 'req', 'merge', 'auto'] as const) {
+    it(`🔴 config ${sg} 에서도 indeterminate 다(폴백 없음)`, () => {
+      const p = resolveIntegrationPolicy(empty, sg)
+      expect(p.kind, sg).toBe('indeterminate')
+      if (p.kind === 'indeterminate') expect(p.lines.join(String.fromCharCode(10))).toContain('확정할 수 없습니다')
+    })
+  }
+
+  it('대상이 있으면 정상 판정한다(대조군)', () => {
+    const p = resolveIntegrationPolicy(
+      { ...empty, memberPolicies: [{ id: 'REQ-2026-001', snapshotStopGate: 'auto', stateUnreadable: false }] },
+      'merge',
+    )
+    expect(p.kind).toBe('resolved')
+    if (p.kind === 'resolved') expect(p.delegationRequired).toBe(true)
   })
 })

@@ -11,7 +11,11 @@
 ```
 phase-1-integration-policy-binding
 phase-2-contract-and-migration
+phase-3-policy-target-binding
 ```
+
+🔴 **phase-3 은 외부 리뷰가 phase-1·2 이후에 낸 P1 이다.** 계획에 뒤늦게 들어왔지만 **통합 전에
+반드시 수행한다** — 건너뛰면 phase-1 이 막은 결함의 우회로가 열린 채로 통합된다.
 
 ## Phase 1 — 통합 정책 결속 (`phase-1-integration-policy-binding`)
 
@@ -67,9 +71,38 @@ Exit — **무회귀**:
 - 계약 스위트: `npx vitest run tests/unit/agent-autonomy-contract.test.ts tests/unit/setup-docs-parity.test.ts tests/unit/docs-stale-claims.test.ts tests/unit/check.test.ts` + `npm run docs:lint`
 - Codex 승인.
 
+## Phase 3 — 정책 대상 결속 (`phase-3-policy-target-binding`) — 외부 리뷰 P1
+
+**선행: `phase-2-contract-and-migration` 승인·커밋 완료.**
+
+브랜치 이름이 `branchPrefix` 만 만족하고 REQ 번호 형식이 아니면 `scopeOfBranch()` 가 `null` 이고,
+phase-1 은 그때 정책 대상을 비워 **현재 config 로 폴백**했다 — `auto` 스냅샷을 약화시키는 우회로.
+🔴 내가 그 자리에 "오늘 동작 그대로다"라고 주석까지 달아 뒀다. **보존한 것이 곧 구멍이었다.**
+
+Exit:
+- 🔴 **정책 대상과 위임 대상을 분리**한다. 위임 권한은 그대로 브랜치 scope 만, 정책은 **범위의 커밋
+  귀속**에서도 티켓을 찾는다(`policyTargetIds`).
+- 🔴 대상이 비면 **판정 불가**다 — config 폴백 분기를 제거한다.
+- 🔴 귀속되지 않은 커밋이 하나라도 있거나 묶음 멤버를 못 읽으면 **모름(null)** 이다.
+- 🔴 회귀: `feat/req-renamed` + auto 스냅샷 + config merge + 비대화형 → exit 1 · merge 0회 ·
+  같은 입력 legacy → 병합(무회귀) · state 손상 → 거부, 대화형 y → 병합.
+- 🔴 **변이 2건**: 폴백 복원 → red · 귀속 무시(브랜치 scope 만) → red.
+  🔴 첫 시도에서 폴백 변이가 **green 이었다** — `policyTargetIds` 가 `[]` 를 돌려주는 것만 보고
+  그 `[]` 가 판정 불가로 이어지는지는 아무도 안 봤다. `resolveIntegrationPolicy` 직접 오라클 추가.
+- 🔴 계약·문서: "권한 판단은 설정값이나 브랜치 이름만으로 내려지지 않는다"를 명시.
+
+- 계약 스위트: `npx vitest run tests/unit/integrate-delegation.test.ts tests/unit/integrate-verb.test.ts tests/unit/ci-workflow-policy.test.ts tests/unit/agent-autonomy-contract.test.ts` + `npm run docs:lint`
+- Codex 승인.
+
 ## 완료
+
+🔴 **phase-1·2·3 이 모두 승인·커밋된 뒤에만** 아래로 간다.
+
 - 게이트 해당분 · **통합 직전 전체 스위트 1회 + `verify-range --strict`** · CHANGELOG.
-- 🔴 CHANGELOG 는 **"읽지 못함 → 거부"가 유일한 의도적 동작 변경**임을 적는다.
+- 🔴 CHANGELOG 는 **의도적 동작 변경 둘을 각각** 적는다(DEC-9 와 일치):
+  ① 티켓 state·묶음 레코드를 **읽지 못하면** 판정 불가 — 비대화형 거부 · 대화형 최종 확인.
+  ② **정책 대상을 확정할 수 없으면**(대상 없음 또는 모름) 판정 불가 — 예전의 "대상이 비면
+     현재 config 를 따른다" 폴백이 사라진다.
 - 🔴 CHANGELOG 는 **계약 문서 결함이 설치 프로젝트 전체에 복사된다**는 점을 적는다 —
   도구가 맞아도 계약이 틀리면 에이전트는 계약을 따른다.
 - 통합은 `stopGate: "auto"` 다. 사전 위임 또는 `[B1]` direct push 를 사람이 승인한다.

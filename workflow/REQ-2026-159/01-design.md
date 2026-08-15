@@ -155,17 +155,46 @@ export function delegationGate(
 |---|---|
 | `phase-1-integration-policy-binding` | DEC-1~5 (코드 + `runIntegrate` 회귀) |
 | `phase-2-contract-and-migration` | DEC-6~8 (계약 문서 · 계약 테스트 · retired-claims) |
+| `phase-3-policy-target-binding` | DEC-9 (정책 대상 결속 — 외부 리뷰 P1) |
 
-축이 둘(도구 게이트 / 문서 계약)이고 각각 독립 검증이 가능하므로 나눈다.
+축이 셋(도구 게이트 / 문서 계약 / 정책 대상 결속)이고 각각 독립 검증이 가능하므로 나눈다.
+🔴 phase-3 은 phase-1·2 이후에 외부 리뷰가 낸 P1 이다 — **통합 전에 반드시 수행한다.**
 
 ## 변경 파일
 
 **phase-1**: `bin/integrate.ts` · `tests/integration/integrate-*.test.ts`(신규 또는 확장)
 **phase-2**: `AGENTS.template.md` · `scripts/req/lib/retired-claims.ts` ·
-`tests/unit/agent-autonomy-contract.test.ts` · `CHANGELOG.md`
+`tests/unit/agent-autonomy-contract.test.ts` · `docs/configuration*.md` · `docs/workflow*.md` ·
+`docs/ssot-design/04-*.md` · `scripts/req/lib/config.ts` · `CHANGELOG.md`
+**phase-3**: `bin/integrate.ts` · `tests/unit/integrate-delegation.test.ts` ·
+`tests/support/integrate-fakes.ts` · `AGENTS.template.md` · `docs/workflow.md` · `CHANGELOG.md`
 
 ## 안전
 
 - 🔴 `hardCap` · HIGH · BLOCKED · 범위 밖 변경 · 위임 만료/철회/소비 정지는 **건드리지 않는다**.
 - 🔴 legacy 티켓(스냅샷 없음)의 동작을 바꾸지 않는다.
-- 🔴 DEC-2 의 "읽지 못함 → 거부"는 **유일한 의도적 동작 변경**이다. CHANGELOG 에 그렇게 적는다.
+- 🔴 **의도적 동작 변경은 둘**이고 CHANGELOG 에서 **구분해 적는다**:
+  ① DEC-2 — 티켓 state·묶음 레코드를 **읽지 못하면** 판정 불가(비대화형 거부 · 대화형 확인).
+  ② DEC-9 — **정책 대상을 확정할 수 없으면**(대상 없음 또는 모름) 판정 불가. 예전의
+     "대상이 비면 config 를 따른다" 폴백이 사라진다.
+
+## DEC-9 — 정책 대상과 위임 대상을 **분리**한다 (phase-3)
+
+| | 무엇으로 정하나 | 왜 |
+|---|---|---|
+| **위임 권한** | 브랜치에서 확정한 scope **만**(`scopeOfBranch`) | 원장을 뒤져 "이 브랜치를 가리키는 위임"을 고르게 하면 그 선택이 곧 권한 확대다(REQ-2026-140) |
+| **정책** | 브랜치 scope **∪ 범위의 커밋 귀속**(`attributeRange`) | 브랜치 이름은 사람이 언제든 바꿀 수 있고, 그것이 `auto` 스냅샷을 약화시키는 통로가 되면 안 된다 |
+
+```
+policyTargetIds(attribution, scope, deliveryMembersOf) : string[] | null
+  귀속되지 않은 커밋이 하나라도 있음  → null (모름)
+  묶음 멤버를 읽지 못함                → null (모름)
+  그 외                                → 귀속 티켓 ∪ 묶음 멤버 ∪ 브랜치 scope 대상
+```
+
+- 🔴 **대상이 비면 config 로 폴백하지 않는다.** `resolveIntegrationPolicy` 의 그 분기를 **제거**하고
+  판정 불가로 바꾼다. 비대화형은 거부, 대화형은 최종 확인(DEC-2 와 같은 처리).
+- 🔴 브랜치 scope 를 **합친다**(더 좁게 읽지 않는다) — 귀속이 놓친 티켓을 잃지 않기 위해서다.
+- 🔴 **`[]` 와 `null` 은 다르다.** `[]` = 대상 없음, `null` = 모름. 둘 다 판정 불가로 가지만
+  메시지가 다르고, 무엇보다 **`[]` 가 판정 불가로 이어지는지에 오라클이 필요하다** —
+  첫 변이 검사에서 폴백을 되돌렸는데 green 이었다(순수 함수가 `[]` 를 돌려주는 것만 봤다).

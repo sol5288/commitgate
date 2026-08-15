@@ -50,6 +50,13 @@ const VALID_ROW = JSON.stringify({
  */
 export const DEFAULT_TICKET_STATE_PATH = 'workflow/REQ-2026-999/state.json'
 const DEFAULT_TICKET_STATE = JSON.stringify({ req_id: 'REQ-2026-999', risk_level: 'LOW', review_series: [] })
+/**
+ * 🔴 범위 귀속이 가리키는 티켓의 state 도 둔다(REQ-2026-159 phase-3). 기본 fake 의 매니페스트와
+ *    부기 커밋 경로가 `REQ-2026-001` 을 가리키므로, 정책 대상은 브랜치의 `REQ-2026-999` 와
+ *    **둘 다**다. 실제 트리에는 둘 다 있으므로 없는 fake 가 비현실적이다.
+ */
+const ATTRIBUTED_TICKET_STATE_PATH = 'workflow/REQ-2026-001/state.json'
+const ATTRIBUTED_TICKET_STATE = JSON.stringify({ req_id: 'REQ-2026-001', risk_level: 'LOW', review_series: [] })
 
 /** 정책 스냅샷이 박힌 티켓 state 를 만든다(REQ-2026-159 테스트용). */
 export function ticketStateJson(stopGate: string | null, over: Record<string, unknown> = {}): string {
@@ -67,6 +74,7 @@ export function fakeReadBlobs(extra?: Record<string, string>): (ref: string, pat
     [MANIFEST_PATH]: `${VALID_ROW}\n`,
     [ARCHIVE_PATH]: ARCHIVE_CONTENT,
     [DEFAULT_TICKET_STATE_PATH]: DEFAULT_TICKET_STATE,
+    [ATTRIBUTED_TICKET_STATE_PATH]: ATTRIBUTED_TICKET_STATE,
     ...extra,
   }
   return (_ref, paths) => new Map(paths.map((p) => [p, p in known ? Buffer.from(known[p] as string, 'utf8') : null]))

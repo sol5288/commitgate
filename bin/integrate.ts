@@ -604,6 +604,37 @@ export type IntegrationPolicy =
   | { kind: 'indeterminate'; lines: string[] }
   | { kind: 'resolved'; delegationRequired: boolean; basis: string }
 
+/**
+ * **정책 대상**(어느 티켓의 스냅샷을 읽을 것인가)을 정한다 — REQ-2026-159 phase-3.
+ *
+ * 🔴 **정책 대상과 위임 대상을 분리한다.**
+ *  - **위임 권한** 판정은 지금까지처럼 **브랜치에서 확정한 scope** 만 쓴다(`scopeOfBranch`).
+ *    원장을 뒤져 "이 브랜치를 가리키는 위임"을 고르게 하면 그 선택이 곧 권한 확대다.
+ *  - **정책** 판정은 **결속된 범위의 커밋 귀속**에서도 티켓을 얻는다. 브랜치 이름은 사람이 언제든
+ *    바꿀 수 있고, 그것이 `auto` 스냅샷을 약화시키는 통로가 되면 안 된다.
+ *
+ * 🔴 확정할 수 없으면 **`null`(= 판정 불가)** 이다. 귀속되지 않은 커밋이 하나라도 있으면 이 범위가
+ *    무엇을 담고 있는지 모르는 것이므로 "없음"으로 읽지 않는다.
+ */
+export function policyTargetIds(
+  attribution: { tickets: readonly string[]; deliveries?: readonly string[]; unattributableCommits: readonly unknown[] },
+  scope: DelegationScope | null,
+  deliveryMembersOf: (slug: string) => string[] | null,
+): string[] | null {
+  if (attribution.unattributableCommits.length > 0) return null
+  const ids = new Set<string>(attribution.tickets)
+  const slugs = new Set<string>(attribution.deliveries ?? [])
+  // 🔴 브랜치에서 확정된 대상도 **합친다** — 귀속이 놓친 티켓을 잃지 않기 위해서다(더 좁게 읽지 않는다).
+  if (scope !== null && scope.kind === 'ticket') ids.add(scope.req_id)
+  if (scope !== null && scope.kind === 'delivery') slugs.add(scope.slug)
+  for (const slug of slugs) {
+    const members = deliveryMembersOf(slug)
+    if (members === null) return null
+    for (const m of members) ids.add(m)
+  }
+  return [...ids]
+}
+
 export function resolveIntegrationPolicy(facts: AutoFacts, cfgStopGate: StopGate): IntegrationPolicy {
   // 🔴 묶음의 **멤버 목록 자체**를 결속된 SHA 에서 읽지 못하면 어느 티켓들이 들어가는지 모른다.
   //    "모르니까 통과"로 읽으면 그것이 곧 구멍이다.
@@ -647,9 +678,26 @@ export function resolveIntegrationPolicy(facts: AutoFacts, cfgStopGate: StopGate
         .join(' · '),
     }
 
-  // 🔴 멤버가 하나도 없는 경우(브랜치에서 scope 를 못 읽음)는 config 를 따른다 — 오늘 동작 그대로다.
+  /**
+   * 🔴 **대상이 하나도 없으면 config 로 폴백하지 않는다**(REQ-2026-159 phase-3 P1).
+   *
+   *    예전에는 여기서 `cfgStopGate === 'auto'` 로 답했다 — "오늘 동작 그대로"라는 이유였는데,
+   *    그 자리가 정확히 **우회 경로**였다: `branchPrefix` 만 만족하고 REQ 번호 형식이 아닌 브랜치
+   *    (`feat/req-renamed`)는 대상이 비고, config 가 `merge` 면 위임 검사가 꺼진다.
+   *    **브랜치 이름을 바꾸는 것이 `auto` 정책을 약화시키는 통로가 되면 안 된다.**
+   */
   if (facts.memberPolicies.length === 0)
-    return { kind: 'resolved', delegationRequired: cfgStopGate === 'auto', basis: `config ${cfgStopGate}(scope 미상)` }
+    return {
+      kind: 'indeterminate',
+      lines: [
+        '이 통합이 어느 티켓의 정책을 따라야 하는지 확정할 수 없습니다.',
+        '  브랜치 이름과 범위 귀속 어느 쪽에서도 대상 티켓·묶음이 나오지 않았습니다.',
+        '  통합은 되돌리기 비싼 단계라 판정 불가에서 진행하지 않습니다(fail-closed).',
+        `  해소: 브랜치 이름을 표준 형식(\`<branchPrefix><연도>-<번호>-...\` 또는 \`delivery/<slug>\`)으로 두거나,`,
+        '    티켓 증거가 이 범위의 커밋에 남아 있어야 합니다.',
+        '    대화형 세션이라면 아래 최종 확인에서 사람이 직접 승인할 수 있습니다(기본 No).',
+      ],
+    }
 
   return {
     kind: 'resolved',
@@ -738,7 +786,37 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
           memberPolicies: [],
           policyMembersUnknown: false,
         }
-  const policy = resolveIntegrationPolicy(ticketFacts, deps.stopGate)
+  /**
+   * 🔴 **정책 대상은 브랜치 이름에 의존하지 않는다**(phase-3 P1). `branchPrefix` 만 만족하고 REQ 번호
+   *    형식이 아닌 브랜치(`feat/req-renamed`)에서 `scopeOfBranch` 가 `null` 이면 예전에는 대상이 비어
+   *    config 로 폴백했고, 그것이 `auto` 스냅샷을 약화시키는 우회로였다.
+   *    이제 **결속된 범위의 커밋 귀속**에서도 대상을 찾는다(위임 권한 판정은 그대로 브랜치 scope 만).
+   */
+  const policyIds = ((): string[] | null => {
+    const deepInput = collectDeepInput(deps.git, deps.readBlobs, prepared.trunkHeadSha, prepared.featureHeadSha, deps.ticketRoot)
+    const report = verifyRangeDeep(deepInput)
+    const att = attributeRange({
+      commits: deepInput.commits,
+      entries: report.entries,
+      manifests: deepInput.manifests,
+      ticketRoot: deps.ticketRoot,
+    })
+    return policyTargetIds(att, scopeForFacts, (slug) =>
+      readDeliveryMembersAt(deps.readBlobs, deps.ticketRoot, slug, prepared.featureHeadSha),
+    )
+  })()
+  const policyFacts: AutoFacts =
+    policyIds === null
+      ? { ...ticketFacts, policyMembersUnknown: true }
+      : {
+          ...ticketFacts,
+          memberPolicies: policyIds.map((id) => {
+            const f = readTicketFacts(deps.readBlobs, prepared.featureHeadSha, deps.ticketRoot, id, deps.reviewHardCap)
+            return { id, snapshotStopGate: f.snapshotStopGate, stateUnreadable: f.stateUnreadable }
+          }),
+          policyMembersUnknown: ticketFacts.policyMembersUnknown,
+        }
+  const policy = resolveIntegrationPolicy(policyFacts, deps.stopGate)
   /**
    * 🔴 **판정 불가는 자동 진행을 막을 뿐, 사람 판단까지 막지는 않는다**(phase-1 r02 P1).
    *

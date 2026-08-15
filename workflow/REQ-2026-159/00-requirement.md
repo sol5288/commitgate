@@ -66,3 +66,18 @@
 🔴 **이 저장소의 실측은 `npm test` = 690.16초(11.5분)이고, 그 실행에서 101 파일·3722 건이 전부
 통과했다.** 10분 타임아웃이면 정확히 그 지점에서 끊긴다 — 교착이 아니라 초과다.
 진행 로그가 없다는 지적 자체는 유효하며 후속 큐로 넘긴다.
+
+## 추가 P1 (외부 리뷰 — phase-1·2 통합 前)
+
+`scopeOfBranch()` 가 `null` 이면 phase-1 은 정책 대상을 비우고 **현재 config 로 폴백**한다.
+
+```
+1. stopGate:"auto" 에서 티켓 생성 → policy_snapshot.stop_gate = "auto"
+2. 브랜치를 `feat/req-renamed` 로 변경 — branchPrefix(`feat/req-`)는 만족하지만
+   뒤에 REQ 번호 형식이 없어 scopeOfBranch() = null
+3. config 를 stopGate:"merge" 로 변경
+4. 비대화형 `integrate --run` → 위임 검사 꺼짐 → 병합
+```
+
+🔴 **브랜치 이름을 바꾸는 것이 `auto` 정책을 약화시키는 통로**다. phase-1 이 막은 결함의 우회로다.
+🔴 그 자리에 내가 "오늘 동작 그대로다"라는 주석까지 달아 두었다 — **보존한 것이 곧 구멍이었다.**
