@@ -2,14 +2,14 @@
   "id": "REQ-2026-159",
   "branch": "feat/req-2026-159-auto-integration-snapshot-binding",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00500-136c-7112-b769-dc512fcf5b89",
-  "review_base_sha": "cdefdd7605616c4b40dc545b81bd080363626353",
-  "review_diff_hash": "d62c2cccd97e82cde5a006d6da23f6e9202f840d",
+  "codex_thread_id": "01a00502-0327-71f2-ac0e-c9eba3147038",
+  "review_base_sha": "aa9dec20852462871f535d3e232275574deacfc0",
+  "review_diff_hash": "5544a47dc3bebdaf89672dedd7656e03d97db03e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "66abe176cc4b78a66a996cff4c076564d5fc81a65bf5ff16063d82884aabd10f",
-  "current_phase": "phase-2-contract-and-migration",
+  "current_phase": "phase-3-policy-target-binding",
   "phases": [
     {
       "id": "phase-1-integration-policy-binding",
@@ -82,16 +82,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-policy-target-binding#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-policy-target-binding",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-3-policy-target-binding",
     "outcome": "approved",
-    "compare_hash": "215055a6e0080743b1db9517efb2a5e9a4f1393700cb6d0bc6c3bd2eaeee2c11",
+    "compare_hash": "019bbac4ad03a03d4619af3ffa577978ef71102a0a943f4c62b0ff3fcd0745e2",
     "count": 1,
     "errors": [],
-    "at": "2026-08-15T10:39:40.106Z",
+    "at": "2026-08-15T10:41:57.481Z",
     "findings": [],
     "elided_count": 0
   },
@@ -112,6 +119,12 @@
       "phase_id": "phase-2-contract-and-migration",
       "consumed_by_commit_sha": "be74f002a1240acf1c043efcc86799892dce0c74",
       "approval_consumed_at": "2026-08-15T09:06:32.624Z"
+    },
+    {
+      "approved_tree": "5544a47dc3bebdaf89672dedd7656e03d97db03e",
+      "phase_id": "phase-3-policy-target-binding",
+      "consumed_by_commit_sha": "c829a621c0c97fe0794e1a91d7fc6acc1b347889",
+      "approval_consumed_at": "2026-08-15T10:42:30.621Z"
     }
   ],
   "user_commit_confirmed": null,
