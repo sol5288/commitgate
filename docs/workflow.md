@@ -256,6 +256,11 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 멈추는 자리는 정해져 있습니다: 통제점표(I1/I2/B1·R1/R2/R3), HIGH 확인, destructive 작업, 설계 **범위**
 변경, 리뷰 `BLOCKED`, 전제 미충족, `AWAIT_HUMAN`/`BLOCKED`, `commitgate setup`,
 그리고 **확인 문장(`--confirm`)을 요구하는 명령**(`req:rebind`·`delivery seal`/`approve`/`reopen`).
+
+🔴 **`stopGate: "auto"`의 예외 한 가지.** 이 통합을 덮는 **유효한 사전 위임**(`req:delegate`)이 있으면
+통제점표의 `I1`/`I2`/`B1`을 다시 묻지 않습니다 — 사람의 승인이 사라진 것이 아니라 **위임 발급 시점으로
+앞당겨진 것**입니다. 위임이 없거나 만료·철회·소비됐으면 그대로 멈춥니다. `R1`/`R2`/`R3`(tag·publish·
+release)는 위임 대상이 아니라 언제나 사람이 승인합니다.
 마지막 항목이 중요한 이유는 그런 명령이 `AGENT` 상태의 **진단 줄**로 나올 수 있기 때문입니다 —
 `kind`만 보고 판단하면 에이전트가 사람의 확인 문장을 대신 써 넣게 됩니다.
 

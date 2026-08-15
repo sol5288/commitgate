@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { CONFIG_SCHEMA } from '../../scripts/req/lib/config'
 
 /**
  * REQ-2026-131 — **에이전트 자율 진행 계약**이 배포 템플릿에 살아 있는지.
@@ -94,5 +95,74 @@ describe('[REQ-2026-131] 자율 진행 계약이 배포 템플릿에 있다', ()
     const section = text.slice(text.indexOf('## 사람 전용 명령'), text.indexOf('## 사람에게 보고해야 할 때'))
     expect(section).toContain('npx commitgate setup')
     expect(section, '통제점 명령이 사람 전용 표에 들어갔다').not.toContain('req:confirm')
+  })
+})
+
+/**
+ * REQ-2026-159 — **계약이 `stopGate: "auto"` 를 정확히 말한다.**
+ *
+ * 🔴 왜 필요한가: 0.23.0 의 배포 계약은 `phase`/`req`/`merge` 만 열거하고 "통합 승인은 어느 값에서도
+ *    필요하다"고 적었다. 도구는 `auto` + 유효 위임에서 다시 묻지 않는데, **설치 프로젝트로 복사되는
+ *    계약**이 반대로 말하고 있었다 — 도구가 맞아도 계약이 틀리면 에이전트는 계약을 따른다.
+ *
+ * 🔴 **열거를 손으로 적지 않는다.** `CONFIG_SCHEMA` 의 `stopGate` enum 에서 파생한다 —
+ *    축이 늘면 자동으로 red 다(REQ-2026-158 의 교훈: 가드 범위가 결함 범위보다 좁으면 또 샌다).
+ */
+describe('[REQ-2026-159] 계약이 stopGate 전체를 말한다', () => {
+  const stopGateValues = (): string[] => {
+    const props = (CONFIG_SCHEMA as unknown as { properties?: Record<string, { enum?: string[] }> }).properties
+    const en = props?.stopGate?.enum
+    expect(Array.isArray(en), 'CONFIG_SCHEMA 에 stopGate enum 이 없다').toBe(true)
+    return en as string[]
+  }
+
+  it('🔴 전제 고정 — stopGate 는 네 값이다', () => {
+    expect(stopGateValues().sort()).toEqual(['auto', 'merge', 'phase', 'req'])
+  })
+
+  /**
+   * 🔴 **범위를 열거 문장 하나로 좁힌다.** 처음에는 `정지 지점은` 부터 관리 블록까지를 잘라 봤는데,
+   *    그 구간에는 바로 아래 "통합 승인" 항목의 `auto` 도 들어 있어서 **열거에서 `auto` 를 지워도
+   *    가드가 통과했다**(변이 검사가 잡아 준 것이다). 가드의 적용 범위가 검사 대상보다 넓으면
+   *    무관한 등장이 오라클을 대신 만족시킨다.
+   */
+  it('🔴 정지 지점 열거가 enum 전체를 덮는다', () => {
+    const md = template()
+    const from = md.indexOf('정지 지점은')
+    expect(from, '정지 지점 항목을 찾지 못했다').toBeGreaterThan(-1)
+    // 다음 최상위 항목(`- **`)까지가 이 항목의 본문이다.
+    const to = md.indexOf('\n- **', from)
+    const item = md.slice(from, to === -1 ? undefined : to)
+    expect(item, '항목 경계를 잘못 잡았다').not.toContain('통합(main 병합) 승인')
+    for (const v of stopGateValues()) expect(item, `정지 지점 열거에 \`${v}\` 가 없다`).toContain(`\`${v}\``)
+  })
+
+  it('🔴 auto 의 통합 승인 규칙을 양쪽 다 적는다 — 멈추는 경우와 멈추지 않는 경우', () => {
+    const md = template()
+    expect(md, '위임이 없으면 merge 처럼 멈춘다는 것').toContain('유효한 사전 위임이 없으면 `merge`와 똑같이 멈춘다')
+    expect(md, '위임이 있으면 다시 묻지 않는다는 것').toContain('유효한 위임이 있으면 사람이 다시')
+  })
+
+  /** 🔴 안심시키는 문장이 잃는 것을 감추면 안 된다 — `auto` 에서도 멈추는 조건을 전부 적는다. */
+  it('🔴 auto 에서도 멈추는 조건을 적는다', () => {
+    const md = template()
+    for (const w of ['HIGH 위험', 'hardCap', 'BLOCKED', '위임 범위 밖', '만료·철회'])
+      expect(md, `auto 에서도 멈추는 조건: ${w}`).toContain(w)
+  })
+
+  /** 🔴 관리 블록 예외표 #1 도 같은 사실을 말해야 한다 — 여기만 옛말이면 에이전트는 여기를 읽는다. */
+  it('🔴 자율 진행 예외표가 auto + 유효 위임의 예외를 말한다', () => {
+    const md = template()
+    const block = md.slice(md.indexOf('<!-- commitgate:autonomy -->'), md.indexOf('<!-- /commitgate:autonomy -->'))
+    expect(block, '관리 블록을 찾지 못했다').toContain('통제점표')
+    expect(block).toContain('stopGate: "auto"')
+    expect(block, 'tag·publish·release 는 위임 대상이 아니라는 것').toContain('위임 대상이 아니다')
+  })
+
+  /** 🔴 두 축을 섞지 않는다(REQ-2026-158 DEC-3) — 비용 축은 이름으로 구별해 적는다. */
+  it('🔴 비용 축(reviewBudget.onSoftLimit)을 이름으로 구별해 적는다', () => {
+    const md = template()
+    expect(md).toContain('reviewBudget.onSoftLimit')
+    expect(md, '어느 축도 hardCap 을 해제하지 않는다').toContain('`hardCap`을 해제하지 않는다')
   })
 })
