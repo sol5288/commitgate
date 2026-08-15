@@ -2,15 +2,23 @@
   "id": "REQ-2026-158",
   "branch": "feat/req-2026-158-req-2026-158-review-budget-doc-drift",
   "risk_level": "LOW",
-  "codex_thread_id": "01a003d1-621e-7131-ae57-e9c8d50d1841",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a003e2-b8db-76f2-86d7-36fc876c06b3",
+  "review_base_sha": "12fca5bf68ff608e0bb31eb2f0ec5a6ac0283aec",
+  "review_diff_hash": "3d72cfdd32978aa7467bbf35e6c26cfa48696f52",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "24c52412bb315957e0d089b9222c82cc190505fcf396dc17aa259f40f141d4de",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-review-budget-doc-drift",
+  "phases": [
+    {
+      "id": "phase-1-review-budget-doc-drift",
+      "title": "리뷰 예산 문서 드리프트",
+      "status": "pending",
+      "max_files": 12,
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -23,6 +31,13 @@
       "review_kind": "design",
       "phase_id": null,
       "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-review-budget-doc-drift#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-review-budget-doc-drift",
+      "attempts": 3,
       "closed_reason": "approved"
     }
   ],
@@ -57,14 +72,23 @@
     "design_hash": "24c52412bb315957e0d089b9222c82cc190505fcf396dc17aa259f40f141d4de"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-review-budget-doc-drift",
     "outcome": "approved",
-    "compare_hash": "7a82bf75050ad3f81b4771fc34c31d750c785a6c0e134c5f967f492bbebd590b",
+    "compare_hash": "abcdc67d3497153ab4c900f55734f7c6cbd66813a7ef32537d199524acf19fe8",
     "count": 1,
     "errors": [],
-    "at": "2026-08-15T05:08:23.818Z",
+    "at": "2026-08-15T05:28:26.880Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3d72cfdd32978aa7467bbf35e6c26cfa48696f52",
+      "phase_id": "phase-1-review-budget-doc-drift",
+      "consumed_by_commit_sha": "82f49a60f29a440af808055751fe386f742dc1e4",
+      "approval_consumed_at": "2026-08-15T05:29:18.921Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
