@@ -1,0 +1,109 @@
+{
+  "id": "REQ-2026-156",
+  "branch": "feat/req-2026-156-req-2026-156-checkpoint-window-guard",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a0036b-55fa-7460-9355-93201f5e54a7",
+  "review_base_sha": "81e750cc88a662bbc50fd77e44f3c43f224070f1",
+  "review_diff_hash": "dc8322b8a6c2dbba98196e4a9c703a96b46b7a5d",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "c63fab8456b9ea103f4c3e1b4e376e09a0128e7bb4e4f187bb20aeef6574d4ef",
+  "current_phase": "phase-1-checkpoint-window-guard",
+  "phases": [
+    {
+      "id": "phase-1-checkpoint-window-guard",
+      "title": "checkpoint 창 가드",
+      "status": "pending",
+      "max_files": 10,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-checkpoint-window-guard#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-checkpoint-window-guard",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "09614ed8c48f94ba91bda718f9e685d39264d675",
+    "design": "59d5ab3b9b13d27b80bf2eb7e8e7dd4847f262af",
+    "plan": "fb0b942925c51f2dd89f45c6a8b3b92c0cd7a0f6"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-checkpoint-window-guard",
+    "outcome": "approved",
+    "compare_hash": "87fb33fa13b37fb24d7ff0f32c18d0dd75d8b3977d1afbc1637d931e1eb1eb84",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-15T03:18:20.515Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-156/responses/design-r03-approved.json",
+    "response_sha256": "767271a9e6eeaf098416d50c38a865ff94aa76600c31672a3305a7b5304146f9",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "25e6c0554c134513fb15fe844760f8c4b15f94e7",
+    "codex_thread_id": "01a00334-4741-72a2-83e4-d3eeca059ed8",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-15T02:16:13.428Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-156/responses/design-r01-approved.json",
+          "sha256": "237963a36099e7452c01128f7c77f46dd47835748ce7dad3c0d4eb12146af9af"
+        },
+        {
+          "response_path": "workflow/REQ-2026-156/responses/design-r02-needs-fix.json",
+          "sha256": "5f361245aa5a8cda5a028666dee6d664870377b82670c1dfdc74f3d284c903bd"
+        },
+        {
+          "response_path": "workflow/REQ-2026-156/responses/design-r03-approved.json",
+          "sha256": "767271a9e6eeaf098416d50c38a865ff94aa76600c31672a3305a7b5304146f9"
+        }
+      ],
+      "inventory_sha256": "257fe2ca9e46e70626631eb36711d3c43b8fffeba8670d00b56c62174f9109fd",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-156/responses/design-r03-approved.json"
+    },
+    "design_hash": "c63fab8456b9ea103f4c3e1b4e376e09a0128e7bb4e4f187bb20aeef6574d4ef"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "dc8322b8a6c2dbba98196e4a9c703a96b46b7a5d",
+      "phase_id": "phase-1-checkpoint-window-guard",
+      "consumed_by_commit_sha": "38883cf8312b8d662499fdc0536cd1f6f9740d81",
+      "approval_consumed_at": "2026-08-15T03:18:35.190Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

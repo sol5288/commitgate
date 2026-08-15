@@ -22,7 +22,7 @@ import { loadConfig, effectiveStopGate, isStopGate, type PolicyAdoption, type Po
 import { createGitAdapter } from './lib/adapters'
 import { assertSetupComplete } from './lib/setup-gate'
 import { commitStateCheckpoint } from './lib/state-checkpoint'
-import { inRecoveryWindow } from './lib/evidence-recovery'
+import { stateWriteBlockedReason, recoveryWindowProblem, buildCheckpointWindowFacts, type CheckpointWindowFacts } from './lib/recovery-window'
 import { loadState, writeState, type WorkflowState } from './review-codex'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
 
@@ -108,6 +108,22 @@ export interface Deps {
 
 const defaultDeps: Deps = { now: () => new Date().toISOString(), log: (m) => console.log(m) }
 
+/**
+ * 🔴 REQ-2026-156: checkpoint 창 사실을 git 에서 읽는다. **읽기 실패는 차단하지 않는다** —
+ *    없으면 빈 값으로 떨어지고 그 창이 아니라고 본다(추가 안전장치가 새 교착을 만들면 안 된다).
+ */
+const cpFacts = (root: string, rel: string): CheckpointWindowFacts =>
+  buildCheckpointWindowFacts({
+    ticketRel: rel,
+    blob: (rev, p) => {
+      try {
+        return createGitAdapter(root).exec(['show', `${rev}:${p}`])
+      } catch {
+        return null
+      }
+    },
+  })
+
 export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaultDeps): void {
   const o = parseArgs(argv)
   // setup 완료 게이트 — 다른 state 변경 verb 와 동일하게 가장 앞이다.
@@ -119,6 +135,20 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
   const ticketDir = join(cfg.workflowDirAbs, reqId)
   const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
   const state = loadState(ticketDir)
+  /**
+   * 🔴 REQ-2026-154 DEC-2 / REQ-2026-155: **복구 창에서는 쓰지 않는다.**
+   *
+   * evidence 커밋 뒤·소비 checkpoint 전에 state 를 바꿔 checkpoint 커밋하면, 커밋된 증거의
+   * `consumed_state_sha256` 결속이 깨지고 이후 `--finalize` 가 영구 차단된다(실측 재현).
+   *
+   * 🔴 **`loadState` 직후**여야 한다(phase-1 r03 P1). 아래 `noop` 조기 반환이 가드보다 앞에 있으면,
+   *    정책이 이미 같은 티켓은 복구 창에서도 **성공으로 끝나고 `--finalize` 안내를 받지 못한다**.
+   * 🔴 dry-run 은 막지 않는다 — `o.run` 을 함께 본다.
+   */
+  {
+    const why = o.run ? stateWriteBlockedReason(state, cpFacts(cfg.root, ticketRel)) : 'none'
+    if (why !== 'none') throw new Error(recoveryWindowProblem(reqId, 'req:repolicy', why))
+  }
 
   const plan = planRepolicy(state, cfg.stopGate)
   deps.log(`[req:repolicy] ${reqId} · 티켓 정책="${plan.current}" · req.config.json="${cfg.stopGate}"`)
@@ -141,23 +171,6 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
     deps.log('[req:repolicy] DRY-RUN — write 없음(--run 시 기록).')
     return
   }
-  /**
-   * 🔴 REQ-2026-154 DEC-2: **복구 창에서는 쓰지 않는다.**
-   *
-   * evidence 커밋 뒤·소비 checkpoint 전에 이 명령이 state 를 바꿔 checkpoint 커밋하면, 커밋된
-   * 증거의 `consumed_state_sha256` 결속이 깨지고 이후 `--finalize` 가 영구 차단된다(실측 재현).
-   *
-   * 🔴 **dry-run 은 막지 않는다** — 무엇이 바뀔지 보는 것은 안전하고, 막으면 판단 근거를 잃는다.
-   *    그래서 이 검사는 `--run` 게이트 **뒤**에 있다.
-   */
-  if (inRecoveryWindow(state))
-    throw new Error(
-      `${reqId} 는 증거 복구가 끝나지 않은 상태입니다 — 이 창에서 정책을 바꾸면 커밋된 증거와의 결속이 깨집니다.\n` +
-        `  먼저 복구를 끝내십시오:\n` +
-        `    npx commitgate req:commit ${reqId} --finalize --run\n` +
-        `  🔴 아무것도 쓰지 않았습니다 — 복구 뒤 이 명령을 다시 실행하면 채택됩니다.`,
-    )
-
   // 🔴 시각은 **실제 시계**. 채택 이력은 append-only 다.
   const snapshot = nextSnapshot(state, plan, deps.now(), o.reason)
   const next: WorkflowState = { ...state, policy_snapshot: snapshot }

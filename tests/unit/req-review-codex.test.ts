@@ -91,6 +91,8 @@ import {
   type DesignDocBlobs,
   type DesignDocs,
   type DesignDocKey,
+  STAGED_NAMES_Z_ARGS,
+  phaseCodeFiles,
 } from '../../scripts/req/review-codex'
 import { createFakeReviewerAdapter, deriveStrictOutputSchema } from '../../scripts/req/lib/adapters'
 import { computeReviewSemanticIdentity } from '../../scripts/req/lib/review-target'
@@ -2052,6 +2054,8 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
     persona: string | null
     baseline?: DesignDocBlobs | 'current' | 'partial' | null
     phase?: boolean
+    /** 🔴 REQ-2026-155: 복구 창(`pending_evidence_for` 살아 있음) 재현용. */
+    pending?: boolean
   }): { repo: string; git: (a: string[]) => string; ticketAbs: string } => {
     const repo = mkdtempSync(join(tmpdir(), 'req033-'))
     repos.push(repo)
@@ -2095,9 +2099,125 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
       state.design_approved_hash = captureDesignBinding(TICKET_REL, git).designHash
       state.phases = [{ id: 'phase-1', approved: false }]
     }
+    // 🔴 REQ-2026-155: 복구 창 재현 — source 커밋은 났고 증거 소비가 끝나지 않은 상태.
+    if (o.pending) state.pending_evidence_for = { source_commit_sha: 'a'.repeat(40) }
     writeFileSync(join(ticketAbs, 'state.json'), JSON.stringify(state))
     return { repo, git, ticketAbs }
   }
+
+  /**
+   * 🔴 REQ-2026-155 DEC-1 — **복구 창에서는 리뷰를 시작하지 않는다.**
+   *
+   * 구조 가드(소스 문자열)만으로는 부족하다: 가드를 `if (false && …)` 로 바꿔도 green 이다.
+   * 여기서 **실제 동작**을 본다 — 거부하고, state·HEAD·원장·아카이브가 그대로이며,
+   * 무엇보다 **fake reviewer 가 한 번도 불리지 않는다**(= 유료 호출을 하지 않았다).
+   */
+  for (const kind of ['design', 'phase'] as const) {
+    it(`🔴 [REQ-2026-155] 복구 창에서 --kind ${kind} --run 이 거부하고 아무것도 쓰지 않는다`, () => {
+      const { repo, git, ticketAbs } = setupRepo({ persona: null, phase: kind === 'phase', pending: true })
+      const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+      const before = readFileSync(join(ticketAbs, 'state.json'), 'utf8')
+      const commits = git(['rev-list', '--count', 'HEAD']).trim()
+      const ledger = join(ticketAbs, 'responses', 'review-ledger.jsonl')
+      const ledgerBefore = existsSync(ledger) ? readFileSync(ledger, 'utf8') : null
+      const respDir = join(ticketAbs, 'responses')
+      const archivesBefore = existsSync(respDir) ? readdirSync(respDir).sort() : []
+
+      expect(() =>
+        reviewCodexMain(
+          ['2026-001', '--kind', kind, ...(kind === 'phase' ? ['--phase', 'phase-1'] : []), '--root', repo, '--run'],
+          { reviewer: fake },
+        ),
+      ).toThrow(/증거 복구가 끝나지 않은/)
+
+      // 🔴 **유료 호출을 하지 않았다** — 늦게 막는 것과 앞에서 막는 것의 차이가 여기서 드러난다.
+      expect(fake.requests.length).toBe(0)
+      expect(readFileSync(join(ticketAbs, 'state.json'), 'utf8')).toBe(before)
+      expect(git(['rev-list', '--count', 'HEAD']).trim()).toBe(commits)
+      expect(existsSync(ledger) ? readFileSync(ledger, 'utf8') : null).toBe(ledgerBefore)
+      expect(existsSync(respDir) ? readdirSync(respDir).sort() : []).toEqual(archivesBefore)
+    })
+  }
+
+  it('🔴 [REQ-2026-155] 복구 창이 아니면 종전대로 동작한다(무회귀)', () => {
+    const { repo } = setupRepo({ persona: null })
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    expect(() => reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo], { reviewer: fake })).not.toThrow()
+  })
+
+  /**
+   * 🔴 REQ-2026-156 — **checkpoint 창에서도** `review-codex` 가 거부한다(외부 리뷰 P3).
+   *
+   * 기존 e2e 는 `pending_evidence_for` 창만 다뤘다. checkpoint facts 를 빈 값으로 바꾸는 변이가
+   * 그 테스트를 통과하므로, **같은 fixture 로** 유료 호출 0회·state/HEAD/원장/아카이브 불변을 본다.
+   */
+  for (const kind of ['design', 'phase'] as const) {
+    it(`🔴 [REQ-2026-156] checkpoint 창에서 --kind ${kind} --run 이 거부하고 아무것도 쓰지 않는다`, () => {
+      const { repo, git, ticketAbs } = setupRepo({ persona: null, phase: kind === 'phase' })
+      // 🔴 checkpoint 창을 만든다: HEAD 매니페스트에 **결속이 든** 소비 행, HEAD state 에는 미기록.
+      //    핀(`pending_evidence_for`)은 **없다** — 그래서 창 ①이 아니라 ②다.
+      const src = git(['rev-parse', 'HEAD']).trim()
+      mkdirSync(join(ticketAbs, 'responses'), { recursive: true })
+      writeFileSync(
+        join(ticketAbs, 'responses', 'approvals.jsonl'),
+        `${JSON.stringify({
+          kind: 'phase',
+          phase_id: 'phase-1',
+          consumed_by_commit_sha: src,
+          consumed_state_sha256: 'e'.repeat(64),
+        })}\n`,
+      )
+      git(['add', '--', `${TICKET_REL}/responses/approvals.jsonl`])
+      git(['commit', '-qm', 'chore(REQ-2026-001): evidence-finalize'])
+
+      const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+      const before = readFileSync(join(ticketAbs, 'state.json'), 'utf8')
+      const commits = git(['rev-list', '--count', 'HEAD']).trim()
+      const ledger = join(ticketAbs, 'responses', 'review-ledger.jsonl')
+      const ledgerBefore = existsSync(ledger) ? readFileSync(ledger, 'utf8') : null
+      const respDir = join(ticketAbs, 'responses')
+      const archivesBefore = readdirSync(respDir).sort()
+
+      expect(() =>
+        reviewCodexMain(
+          ['2026-001', '--kind', kind, ...(kind === 'phase' ? ['--phase', 'phase-1'] : []), '--root', repo, '--run'],
+          { reviewer: fake },
+        ),
+      ).toThrow(/증거 복구가 끝나지 않은|증거 결속이 손상/)
+
+      expect(fake.requests.length).toBe(0) // 🔴 유료 호출을 하지 않았다
+      expect(readFileSync(join(ticketAbs, 'state.json'), 'utf8')).toBe(before)
+      expect(git(['rev-list', '--count', 'HEAD']).trim()).toBe(commits)
+      expect(existsSync(ledger) ? readFileSync(ledger, 'utf8') : null).toBe(ledgerBefore)
+      expect(readdirSync(respDir).sort()).toEqual(archivesBefore)
+    })
+  }
+
+  /**
+   * 🔴 REQ-2026-156 — **실제 phase 면적 게이트**가 티켓 밖 역슬래시 경로를 센다(외부 리뷰 P3).
+   *
+   * 기존 회귀는 `req-commit` 의 `stagedNames()` 만 봤다. `review-codex` 쪽 호출부에 정규화가
+   * 재도입돼도 통과했다 — 여기서는 **`phaseCodeFiles` 를 실제 staged 원문으로** 구동한다.
+   */
+  it('🔴 [REQ-2026-156] phase 면적 게이트가 티켓 밖 역슬래시 파일을 코드로 센다(POSIX 전용)', () => {
+    if (process.platform === 'win32') {
+      console.warn('[REQ-2026-156] win32 는 파일명에 역슬래시를 담을 수 없어 건너뜁니다(POSIX CI 가 정본)')
+      return
+    }
+    const { repo, git } = setupRepo({ persona: null, phase: true })
+    const BS = String.fromCharCode(92)
+    const outside = `workflow${BS}REQ-2026-001-outside.ts`
+    writeFileSync(join(repo, outside), 'export const a = 1\n')
+    writeFileSync(join(repo, 'src.ts'), 'export const b = 1\n')
+    git(['add', '-A'])
+    // 🔴 실제 게이트가 보는 것과 **같은 방식**으로 원문을 얻는다(정규화 없음).
+    const staged = git([...STAGED_NAMES_Z_ARGS]).split('\0')
+    const code = phaseCodeFiles(staged, TICKET_REL)
+    expect(code).toContain(outside) // 티켓 밖 → 코드 파일로 센다
+    expect(code).toContain('src.ts')
+  })
+
+
 
   const preview = (ticketAbs: string): string => readFileSync(join(ticketAbs, '.review-preview.txt'), 'utf8')
 
@@ -5093,6 +5213,17 @@ describe('[REQ-2026-052 addendum] 정상 phase-review 경로의 phase_design_ref
       state: state as never, ev: ev as never, archiveNames: readdirSync(responsesDir), validPhaseIds: ['p1', 'p2'],
       sourceSha: git(['rev-parse', 'HEAD']),
     } as never)
+    /**
+     * 🔴 REQ-2026-156: **소비 checkpoint 를 커밋한다** — 실제 `req:commit` 이 하는 마지막 단계다.
+     *
+     * `finalizeEvidenceAndConsume` 안의 checkpoint 커밋은 **실패를 삼키고**, 이 fixture 에서는
+     * 실제로 커밋되지 않는다. 그러면 저장소가 **창 ②**(evidence 커밋 뒤·checkpoint 전)에 머물고,
+     * 이 REQ 의 가드가 다음 리뷰를 정당하게 막는다 — fixture 가 production 흐름과 달랐던 것이다.
+     */
+    if (git(['status', '--porcelain', '--', `${TICKET_REL}/state.json`]).trim()) {
+      git(['add', '--', `${TICKET_REL}/state.json`])
+      git(['commit', '-qm', `chore(REQ-2026-001): state checkpoint — phase ${pid} 소비`])
+    }
     return ev.phase_design_ref as string
   }
 

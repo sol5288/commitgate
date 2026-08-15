@@ -73,6 +73,7 @@ import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 import type { ReviewKind, ApprovalEvidence, PinnedArchiveInventory } from './lib/review-types'
 import { nonConvergenceReport } from './lib/nonconvergence'
 import { hardBlockedInput, toTicketRel } from './lib/hardblocked-facts'
+import { stateWriteBlockedReason, recoveryWindowProblem, buildCheckpointWindowFacts } from './lib/recovery-window'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -1462,7 +1463,9 @@ export function phaseCodeFiles(stagedPaths: readonly string[], ticketRel: string
   const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/`
   // 🔴 `trim()`을 쓰지 않는다 — 공백으로 시작·끝나는 경로는 git에서 합법이고, 다듬으면 접두사가 어긋난다.
   //    `-z` 출력은 마지막 NUL 뒤 빈 조각만 생기므로 빈 문자열만 거른다.
-  return [...new Set(stagedPaths.map((p) => p.replace(/\\/g, '/')).filter((p) => p !== ''))].filter((p) => !p.startsWith(prefix))
+  // 🔴 REQ-2026-155: `\` → `/` 변환을 뺀다 — 티켓 **밖**의 `workflow\REQ-…/large.ts` 가 내부처럼
+  //    보여 면적 게이트(`max_files`)에서 제외되던 우회로다.
+  return [...new Set(stagedPaths.filter((p) => p !== ''))].filter((p) => !p.startsWith(prefix))
 }
 
 /**
@@ -2491,11 +2494,12 @@ export function findUnstagedOrUntracked(
    */
   recoveryAllowlist?: readonly string[],
 ): StatusEntry[] {
-  const allowed = new Set(allowedScratch.map((p) => p.replace(/\\/g, '/')))
-  const recovery = new Set((recoveryAllowlist ?? []).map((p) => p.replace(/\\/g, '/')))
-  const respPrefix = ticketRel
-    ? `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
-    : null
+  // 🔴 REQ-2026-155 DEC-2: 목록도 **raw** 로 비교한다 — 한쪽만 정규화하면 복구 plan 과 판정이
+  //    갈려 "plan 은 ready 인데 실제 --finalize 는 D10 에 막히는" 교착이 생긴다.
+  //    `ticketRel` 은 도구가 만든 POSIX 값이므로 후행 `/` 정리만 한다.
+  const allowed = new Set(allowedScratch)
+  const recovery = new Set(recoveryAllowlist ?? [])
+  const respPrefix = ticketRel ? `${ticketRel.replace(/\/+$/, '')}/responses/` : null
   return entries.filter((e) => {
     // rename/copy(`R`/`C`)는 src·dest 둘 다 검사(A2-P2-1: dest로 responses/ 주입 우회 차단).
     const paths = entryPaths(e)
@@ -2778,6 +2782,37 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
     throw new Error(
       'legacy ticket(review_series_model_version 부재) — 자동 리뷰 불가. 사람이 이 티켓을 새 모델로 채택할지 결정해야 한다(req:next가 AWAIT_HUMAN으로 안내).',
     )
+  /**
+   * 🔴 REQ-2026-155 DEC-1: **복구 창에서는 리뷰를 시작하지 않는다.**
+   *
+   * evidence 커밋 뒤·소비 checkpoint 전에 리뷰를 돌리면 `gateAndRecordAttempt()` 가 원장·state 를
+   * 쓰고 승인 시 `writeState` 까지 한다. 그러면 커밋된 증거의 `consumed_state_sha256` 결속이 깨져
+   * 이후 `--finalize` 가 영구 차단된다.
+   *
+   * 🔴 **여기여야 한다**(설계 r02 P1): `gateAndRecordAttempt()`·**유료 codex 호출**·`writeState`
+   *    전부보다 앞이다. 늦게 막으면 "아무것도 쓰지 않았습니다"가 거짓말이 되고 **돈까지 쓴다**.
+   * 🔴 **kind 와 무관**하다(설계 r03 P1) — design·phase 둘 다 같은 경로를 탄다.
+   * 🔴 dry-run 은 막지 않는다 — `opts.run` 을 함께 본다.
+   */
+  {
+    // 🔴 REQ-2026-156: checkpoint 창(핀이 없는 구간)도 본다. 읽기 실패는 차단하지 않는다.
+    const why = opts.run
+      ? stateWriteBlockedReason(
+          state,
+          buildCheckpointWindowFacts({
+            ticketRel: relative(cfg.root, ticketDir).replace(/\\/g, '/'),
+            blob: (rev, p) => {
+              try {
+                return git(['show', `${rev}:${p}`])
+              } catch {
+                return null
+              }
+            },
+          }),
+        )
+      : 'none'
+    if (why !== 'none') throw new Error(recoveryWindowProblem(String(state.id ?? ''), 'req:review-codex', why))
+  }
   // --fresh-thread: blocked 회로차단기 명시적 회복 — 마커 제거(단락 해제) + resume 대신 새 스레드(고착 resume 끊기).
   if (opts.freshThread) state = clearBlockedReview(state)
 

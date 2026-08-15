@@ -1566,6 +1566,36 @@ describe('[REQ-2026-092] stagedNames — phase 게이트와 동일한 -z 원문 
     expect(sourceCommitForbiddenStaged(names, TICKET_REL)).toEqual([rel])
   })
 
+  /**
+   * 🔴 REQ-2026-155 DEC-2 — `stagedNames()` 는 **git 이 준 경로를 그대로** 돌려준다.
+   *
+   * POSIX 에서 역슬래시는 파일명의 일부다. `\` → `/` 로 바꾸면 티켓 **밖**의
+   * `workflow\REQ-…-outside.ts` 가 내부처럼 보여 phase 면적 게이트에서 빠진다(실측된 우회로).
+   *
+   * 🔴 비교 기준을 테스트에서 정규화하면 production 변환을 되돌려도 통과한다 — 그래서 여기서는
+   *    **리터럴 역슬래시를 담은 실제 파일**을 만들고 그 이름이 **그대로** 나오는지 본다.
+   */
+  it('🔴 리터럴 역슬래시 경로를 정규화하지 않고 그대로 돌려준다', () => {
+    /**
+     * 🔴 **Windows 에서는 재현할 수 없다** — `\` 가 경로 구분자라 `workflow\x.ts` 를 쓰면
+     *    `workflow/x.ts` 라는 **다른 파일**이 만들어진다(실측). 조용히 넘어가지 않고 사유를 남긴다.
+     *    이 결함은 POSIX 전용이고 CI 의 ubuntu·macos 잡이 정본이다.
+     */
+    if (process.platform === 'win32') {
+      console.warn('[REQ-2026-155] win32 는 파일명에 역슬래시를 담을 수 없어 이 재현을 건너뜁니다(POSIX CI 가 정본)')
+      return
+    }
+    const { repo, git } = setup()
+    const BS = String.fromCharCode(92)
+    const raw = `workflow${BS}REQ-2026-001-outside.ts`
+    writeFileSync(join(repo, raw), 'export const a = 1\n')
+    git(['add', '-A'])
+    __setGitForTest(repo)
+    const names = stagedNames()
+    expect(names).toContain(raw)
+    expect(names).not.toContain(raw.split(BS).join('/'))
+  })
+
   it('🔴 phase 게이트와 바이트 파리티 — 같은 인덱스에서 두 호출부가 같은 배열을 얻는다', () => {
     const { repo, git } = setup()
     writeFileSync(join(repo, `${TICKET_REL}/state.json`), '{}\n')
@@ -1573,10 +1603,21 @@ describe('[REQ-2026-092] stagedNames — phase 게이트와 동일한 -z 원문 
     writeFileSync(join(repo, 'src.ts'), 'export const a = 1\n')
     git(['add', '-A'])
     __setGitForTest(repo)
-    // review-codex(phase 게이트)가 쓰는 획득 방식 — 같은 인자·같은 split.
-    const fromGate = git([...STAGED_NAMES_Z_ARGS]).split('\0').map((p) => p.replace(/\\/g, '/')).filter((p) => p.length > 0)
-    expect(stagedNames()).toEqual(fromGate)
-    // 판정도 당연히 같다.
+    /**
+     * 🔴 REQ-2026-156 DEC-2: **비교 기준을 실제 호출부와 동일하게 만든다.**
+     *
+     * 전에는 여기서 `\` → `/` 정규화와 빈 조각 필터를 적용했다. 실제 호출부
+     * (`review-codex.ts` 의 `sourceCommitForbiddenStaged(git([...STAGED_NAMES_Z_ARGS]).split('\0'), …)`)
+     * 는 **둘 다 하지 않는다** — 그래서 정규화가 재도입돼도 일반 경로 fixture 에서는 통과했다.
+     */
+    const fromGate = git([...STAGED_NAMES_Z_ARGS]).split('\0')
+    /**
+     * 🔴 `stagedNames()` 는 빈 조각을 거른다(`-z` 마지막 NUL 뒤). 호출부는 거르지 않는다 —
+     *    **실재하는 차이**이고, `sourceCommitForbiddenStaged` 가 빈 문자열을 무시하므로 판정은 같다.
+     *    "테스트만 정규화해서 같아 보이게" 두지 않고, 차이를 그대로 적는다.
+     */
+    expect(stagedNames()).toEqual(fromGate.filter((p) => p.length > 0))
+    // 🔴 정본은 **판정**이 같다는 것이다 — 두 호출부가 같은 결론에 이른다.
     expect(sourceCommitForbiddenStaged(stagedNames(), TICKET_REL)).toEqual(sourceCommitForbiddenStaged(fromGate, TICKET_REL))
   })
 })

@@ -688,9 +688,11 @@ export function forbiddenSourceStagedMessage(paths: readonly string[]): string {
  *    `-z` + 공백 보존이 ①②를 한꺼번에 없앤다.
  */
 export function stagedNames(): string[] {
+  // 🔴 REQ-2026-155 DEC-2: **git 이 준 경로를 그대로 돌려준다.** `\` → `/` 로 바꾸면 POSIX 의
+  //    리터럴 역슬래시 경로(`workflow\REQ-…/x.ts`)가 티켓 내부처럼 보여 면적 게이트에서 빠진다.
+  //    git 은 플랫폼과 무관하게 `/` 로 보고하므로 이 변환은 처음부터 불필요했다.
   return git([...STAGED_NAMES_Z_ARGS])
     .split('\0')
-    .map((p) => p.replace(/\\/g, '/'))
     .filter((p) => p.length > 0)
 }
 
@@ -1042,6 +1044,7 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
   //    checkpoint가 없으면 이 REQ 이전과 같은 상태(dirty state.json)로 남고, 재실행이 흡수한다(멱등).
   try {
     if (
+      // commitgate:recovery-checkpoint — 복구 자신이다(REQ-2026-155 DEC-1 예외)
       commitStateCheckpoint({
         root: ctx.rootForClose,
         ticketRel: ctx.ticketRel,
@@ -1219,6 +1222,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
           throw new Error('(예상외) checkpoint 재개에서 evidence finalize 가 호출됐다')
         },
         commitStateCheckpoint: () =>
+          // commitgate:recovery-checkpoint — 복구 자신이다(REQ-2026-155 DEC-1 예외)
           commitStateCheckpoint({
             root: cfg.root,
             ticketRel,

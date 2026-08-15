@@ -8,8 +8,17 @@ import { describe, it, expect } from 'vitest'
 import { preservesCoverage, isNegation, narrowingPaths } from '../../scripts/req/lib/gitignore-coverage'
 
 describe('[REQ-2026-154] isNegation', () => {
-  it('`!` 로 시작하면 부정(앞뒤 공백 무시)', () => {
-    for (const s of ['!keep.log', '  !keep.log', '!*.log  ']) expect(isNegation(s), s).toBe(true)
+  it('🔴 **첫 글자**가 `!` 일 때만 부정이다', () => {
+    for (const s of ['!keep.log', '!*.log  ']) expect(isNegation(s), s).toBe(true)
+  })
+
+  /**
+   * 🔴 **계약이 뒤집혔다**(REQ-2026-155 결함 4). 여기 있던 "앞뒤 공백 무시"는 **틀린 동작을
+   *    고정**하고 있었다. gitignore 는 **후행** 공백만 버리고 선행 공백은 패턴의 일부다 —
+   *    `git check-ignore -v` 실측: `*.log` + ` !keep.log` 에서 `keep.log` 는 여전히 ignored 다.
+   */
+  it('🔴 선행 공백이 있으면 부정이 아니다 — 실측으로 확인했다', () => {
+    for (const s of [' !keep.log', '  !keep.log']) expect(isNegation(s), s).toBe(false)
   })
 
   it('그 밖은 부정이 아니다 — 이스케이프한 `\\!` 는 리터럴이다', () => {
