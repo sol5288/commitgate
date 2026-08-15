@@ -56,7 +56,7 @@ CommitGate runs that back-and-forth for you. **Until the check passes, saving is
 
 By default **you are not called at every phase commit** — you confirm when a piece of work finishes and when results get merged. If a re-check runs past its automatic limit, though, the default policy asks you to approve each further round. You can also switch to looking at every step yourself — where the stops actually are is defined in [Where a human stops](#where-a-human-stops) below.
 
-> 💳 **Those loop-back arrows are not unbounded.** Re-checks for one phase run **automatically up to 5 times**. Rounds 6–8 each require a human exception record, and **from round 9 even an exception will not get you through.** Reviews are paid calls, so there is a ceiling — the values are configurable in [Configuration](https://github.com/sol5288/commitgate/blob/main/docs/configuration.en.md).
+> 💳 **Those loop-back arrows are not unbounded.** Reviews that produced a verdict (an approval or a change request — a review that ended normally) run automatically until they reach **5**. After that, configuration decides whether **a human approves an exception** each time or it just continues. **Either way, once 8 calls have actually been made, the next review does not run.** Reviews are paid calls, so there is a ceiling — the values and the policy are configurable in [Configuration](https://github.com/sol5288/commitgate/blob/main/docs/configuration.en.md).
 
 | What you would otherwise track yourself | What CommitGate does instead |
 |---|---|
@@ -329,7 +329,7 @@ More symptoms and answers are in **[Troubleshooting](https://github.com/sol5288/
 
 | Command | Purpose |
 |---|---|
-| `npx commitgate setup` | Pick the review model and stop point, sign in to codex (interactive, required) |
+| `npx commitgate setup` | Pick the review model, reasoning effort, stop point (`stopGate`), and review-budget overflow policy (`reviewBudget.onSoftLimit`), then sign in to codex (interactive, required) |
 | `npx commitgate check` | Diagnose readiness (read-only) |
 | `npx commitgate report` | Summarize local review, verification, and CI-choice history (read-only) |
 | `npx commitgate verify-range --strict` | Deep-check approval evidence for a commit range; fail on unproven or invalid evidence |
