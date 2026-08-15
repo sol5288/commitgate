@@ -1,0 +1,109 @@
+{
+  "id": "REQ-2026-160",
+  "branch": "feat/req-2026-160-manual-confirm-on-scope-undetermined",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a00582-d127-7f72-9fe7-ebecc3c948c3",
+  "review_base_sha": "0c974196b69bd9db4a48814321d9cc06d17404a3",
+  "review_diff_hash": "cb716abbbc2763c3f142da47082a76a451eb4d5d",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "6aa27036040db62919a54f0859aeb8473adec24357bb180804eab7cd25ba67cc",
+  "current_phase": "phase-1-manual-confirm-gate",
+  "phases": [
+    {
+      "id": "phase-1-manual-confirm-gate",
+      "title": "수동 확인 게이트",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-manual-confirm-gate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-manual-confirm-gate",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-manual-confirm-gate",
+    "outcome": "approved",
+    "compare_hash": "c51ab49ef051976360c17a03ce0bfe72a0caddfa0467c8cb7ae73bc636be1762",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-15T13:03:12.388Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "6bcc01029fd155d765bbd67a0cd56f24310f76d7",
+    "design": "ba3b2216071aef2d7144a96ef639d3e115a11d90",
+    "plan": "89551bb1b848228ed0fa57d1bda7a2f668517e82"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-160/responses/design-r03-approved.json",
+    "response_sha256": "0f5e0b8b394a2dd5f76d074f20b94dea36619f785784bd112c455aeeb8f863ff",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "77b2079ab22d9567ec77dd117a8b7807dfef5eea",
+    "codex_thread_id": "01a00581-7874-7690-9319-03954abe049b",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-15T13:00:26.164Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-160/responses/design-r01-needs-fix.json",
+          "sha256": "4c82a779093799d7669e12cd33f124bd52404ae070a876ed030a97fc38018997"
+        },
+        {
+          "response_path": "workflow/REQ-2026-160/responses/design-r02-approved.json",
+          "sha256": "70e51474700ea533207af9d4c0399fc21142ea098c97b0d656c976f3cdbe32e0"
+        },
+        {
+          "response_path": "workflow/REQ-2026-160/responses/design-r03-approved.json",
+          "sha256": "0f5e0b8b394a2dd5f76d074f20b94dea36619f785784bd112c455aeeb8f863ff"
+        }
+      ],
+      "inventory_sha256": "c5b3850d6e11072f3f5378fd419d75b63e3f77f61630c5a203b385095a89a1a9",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-160/responses/design-r03-approved.json"
+    },
+    "design_hash": "6aa27036040db62919a54f0859aeb8473adec24357bb180804eab7cd25ba67cc"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "cb716abbbc2763c3f142da47082a76a451eb4d5d",
+      "phase_id": "phase-1-manual-confirm-gate",
+      "consumed_by_commit_sha": "731019fba7fac670433a87f4d9a238c9a088fa07",
+      "approval_consumed_at": "2026-08-15T13:03:48.026Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}
