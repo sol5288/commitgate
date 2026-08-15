@@ -73,6 +73,7 @@ import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 import type { ReviewKind, ApprovalEvidence, PinnedArchiveInventory } from './lib/review-types'
 import { nonConvergenceReport } from './lib/nonconvergence'
 import { hardBlockedInput, toTicketRel } from './lib/hardblocked-facts'
+import { inRecoveryWindow, recoveryWindowProblem } from './lib/recovery-window'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -2778,6 +2779,20 @@ function mainImpl(argv: string[], opts2?: { reviewer?: ReviewerAdapter; probes?:
     throw new Error(
       'legacy ticket(review_series_model_version 부재) — 자동 리뷰 불가. 사람이 이 티켓을 새 모델로 채택할지 결정해야 한다(req:next가 AWAIT_HUMAN으로 안내).',
     )
+  /**
+   * 🔴 REQ-2026-155 DEC-1: **복구 창에서는 리뷰를 시작하지 않는다.**
+   *
+   * evidence 커밋 뒤·소비 checkpoint 전에 리뷰를 돌리면 `gateAndRecordAttempt()` 가 원장·state 를
+   * 쓰고 승인 시 `writeState` 까지 한다. 그러면 커밋된 증거의 `consumed_state_sha256` 결속이 깨져
+   * 이후 `--finalize` 가 영구 차단된다.
+   *
+   * 🔴 **여기여야 한다**(설계 r02 P1): `gateAndRecordAttempt()`·**유료 codex 호출**·`writeState`
+   *    전부보다 앞이다. 늦게 막으면 "아무것도 쓰지 않았습니다"가 거짓말이 되고 **돈까지 쓴다**.
+   * 🔴 **kind 와 무관**하다(설계 r03 P1) — design·phase 둘 다 같은 경로를 탄다.
+   * 🔴 dry-run 은 막지 않는다 — `opts.run` 을 함께 본다.
+   */
+  if (opts.run && inRecoveryWindow(state))
+    throw new Error(recoveryWindowProblem(String(state.id ?? ''), 'req:review-codex'))
   // --fresh-thread: blocked 회로차단기 명시적 회복 — 마커 제거(단락 해제) + resume 대신 새 스레드(고착 resume 끊기).
   if (opts.freshThread) state = clearBlockedReview(state)
 

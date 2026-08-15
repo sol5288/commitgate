@@ -22,6 +22,7 @@ import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { requiredConfirmScope, userConfirmProblem, type ConfirmScope, type UserCommitConfirmed } from './lib/evidence'
 import { readDeliveryGate } from './lib/delivery'
 import { loadState, writeState, type WorkflowState } from './review-codex'
+import { inRecoveryWindow, recoveryWindowProblem } from './lib/recovery-window'
 import { humanDecisionProblem } from './lib/placeholders'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
 
@@ -173,6 +174,15 @@ export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaul
             : '  이 값으로 기록하려면 먼저 req.config.json 의 stopGate 를 바꾸고 `npx commitgate req:repolicy <REQ> --run` 으로 이 티켓에 채택하세요.',
       ].join('\n'),
     )
+
+  /**
+   * 🔴 REQ-2026-155 DEC-1: **복구 창에서는 쓰지 않는다.** `user_commit_confirmed` 는 `consumeState`
+   *    출력에 직접 들어가므로, 이 창에서 바꾸면 커밋된 증거의 `consumed_state_sha256` 결속이 깨지고
+   *    이후 `--finalize` 가 영구 차단된다(실측 재현).
+   *
+   * 🔴 **첫 write 앞**이다(설계 r02 P1). dry-run 은 막지 않으므로 `o.run` 을 함께 본다.
+   */
+  if (o.run && inRecoveryWindow(state)) throw new Error(recoveryWindowProblem(reqId, 'req:confirm'))
 
   if (!o.run) {
     deps.log('[req:confirm] DRY-RUN — write 없음(--run 시 기록).')

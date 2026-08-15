@@ -26,15 +26,31 @@ Exit:
 - 🔴 **거부 뒤 복구가 실제로 이어진다**: 그 상태에서 `req:commit --finalize --run` 이 **성공**하고
   커밋된 state 해시가 매니페스트 결속과 일치한다. 🔴 **복구 자신은 막히지 않는다** — 유일한 나갈 길이다.
 - 🔴 **네 verb 전부** 복구 창에서 거부한다(`req:confirm` · `req:repolicy` · `req:review-exception` ·
-  `review-codex` design 승인). 각각 회귀 테스트.
+  `review-codex`). **각각 e2e 로 state 바이트·HEAD 커밋 수 불변**을 확인한다(설계 r02 P1) —
+  "거부했다"만으로는 부족하다. 거부 前에 이미 썼을 수 있다.
+- 🔴 **`review-codex` 는 `--kind design`·`--kind phase` 둘 다** `gateAndRecordAttempt()`·유료 호출·
+  `writeState` 보다 앞에서 거부한다(설계 r03 P1). 각 kind 마다 e2e 오라클:
+  ① state 바이트 불변 ② 커밋 수 불변 ③ **원장에 새 attempt 행이 없다**
+  ④ 리뷰 응답 아카이브가 새로 생기지 않는다(= **유료 호출을 하지 않았다**).
+- 🔴 **`req:review-exception` 은 `--close-stale`·`--resolve`·일반 경로 셋 다** 거부한다(설계 r03 P1).
+  두 보조 모드는 **일반 경로 가드보다 앞에서 분기**하므로 가드를 `main()` 의 state 로드 직후·
+  **모드 분기 앞**에 둔다. 각 모드마다 state 바이트·커밋 수 불변 e2e.
+- 🔴 **가드는 verb 당 한 자리**다 — 모드마다 흩어 놓으면 새 모드에서 또 빠진다(이번 실패의 형태).
+- 🔴 **순서 가드**: 네 verb 파일의 진입 함수 본문에서 `inRecoveryWindow` 의 위치가 첫
+  `writeState(`·`gateAndRecordAttempt(`·`commitStateCheckpoint(` 보다 **앞**이다.
+  🔴 소스 순서 **프록시**임을 주석에 적는다 — 정본은 위 e2e 다.
 - 🔴 **dry-run 은 막지 않는다** — `--run` 없는 호출은 종전대로 동작한다(각 verb 별 확인).
 - 🔴 **복구 창이 아니면 전부 무회귀** — 기존 테스트가 그대로 통과한다.
 - 🔴 **안내가 실행 가능하다**: `npx commitgate req:commit <REQ> --finalize --run` 을 주고
   **아무것도 쓰지 않았음**을 말한다.
-- 🔴 **소스 가드**: `commitStateCheckpoint(` 를 부르는 모든 파일이 그 호출 **앞뒤 60줄 창** 안에서
-  `inRecoveryWindow` 를 참조한다. 예외는 `req-commit.ts` **하나**이고 목록에 명시한다.
-  🔴 **변이 검사**: 어느 verb 의 가드를 지우면 이 소스 가드가 **red** 다(새 호출부 추가도 같다).
-  🔴 근사임을 주석에 적는다(정확한 AST 분석은 과하다 — 창을 벗어난 배치는 못 잡는다).
+- 🔴 **소스 가드**(설계 r01 P1 로 예외 범위를 좁혔다): `commitStateCheckpoint(` 가 나오는 **모든**
+  자리는 ⓐ 바로 위 2줄 안에 고정 마커(`commitgate:recovery-checkpoint`)가 있거나 ⓑ 앞뒤 60줄 창
+  안에 `inRecoveryWindow` 가 있어야 한다. 그 밖은 red.
+  🔴 **마커는 정확히 2개** — 늘어나면 red(복사 우회 차단).
+  🔴 **변이 검사 3건**: ① 어느 verb 의 가드를 지우면 red ② **`req-commit.ts` 안에 마커 없는 새
+  `commitStateCheckpoint` 호출을 넣으면 red**(파일 예외였다면 green 이었을 자리다) ③ 마커를
+  하나 더 붙이면 red.
+  🔴 60줄 창은 **근사**임을 주석에 적는다 — 창을 벗어난 배치는 못 잡는다.
 - 계약 스위트: `npx vitest run tests/unit/repolicy-verb.test.ts tests/unit/req-confirm.test.ts tests/unit/req-review-exception.test.ts tests/unit/evidence-recovery-wiring.test.ts tests/unit/dispatch.test.ts`
 - Codex 승인.
 

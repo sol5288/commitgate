@@ -2052,6 +2052,8 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
     persona: string | null
     baseline?: DesignDocBlobs | 'current' | 'partial' | null
     phase?: boolean
+    /** 🔴 REQ-2026-155: 복구 창(`pending_evidence_for` 살아 있음) 재현용. */
+    pending?: boolean
   }): { repo: string; git: (a: string[]) => string; ticketAbs: string } => {
     const repo = mkdtempSync(join(tmpdir(), 'req033-'))
     repos.push(repo)
@@ -2095,9 +2097,52 @@ describe('[B-2a] main() delta 게이트 배선(near-e2e, hand-built expected)', 
       state.design_approved_hash = captureDesignBinding(TICKET_REL, git).designHash
       state.phases = [{ id: 'phase-1', approved: false }]
     }
+    // 🔴 REQ-2026-155: 복구 창 재현 — source 커밋은 났고 증거 소비가 끝나지 않은 상태.
+    if (o.pending) state.pending_evidence_for = { source_commit_sha: 'a'.repeat(40) }
     writeFileSync(join(ticketAbs, 'state.json'), JSON.stringify(state))
     return { repo, git, ticketAbs }
   }
+
+  /**
+   * 🔴 REQ-2026-155 DEC-1 — **복구 창에서는 리뷰를 시작하지 않는다.**
+   *
+   * 구조 가드(소스 문자열)만으로는 부족하다: 가드를 `if (false && …)` 로 바꿔도 green 이다.
+   * 여기서 **실제 동작**을 본다 — 거부하고, state·HEAD·원장·아카이브가 그대로이며,
+   * 무엇보다 **fake reviewer 가 한 번도 불리지 않는다**(= 유료 호출을 하지 않았다).
+   */
+  for (const kind of ['design', 'phase'] as const) {
+    it(`🔴 [REQ-2026-155] 복구 창에서 --kind ${kind} --run 이 거부하고 아무것도 쓰지 않는다`, () => {
+      const { repo, git, ticketAbs } = setupRepo({ persona: null, phase: kind === 'phase', pending: true })
+      const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+      const before = readFileSync(join(ticketAbs, 'state.json'), 'utf8')
+      const commits = git(['rev-list', '--count', 'HEAD']).trim()
+      const ledger = join(ticketAbs, 'responses', 'review-ledger.jsonl')
+      const ledgerBefore = existsSync(ledger) ? readFileSync(ledger, 'utf8') : null
+      const respDir = join(ticketAbs, 'responses')
+      const archivesBefore = existsSync(respDir) ? readdirSync(respDir).sort() : []
+
+      expect(() =>
+        reviewCodexMain(
+          ['2026-001', '--kind', kind, ...(kind === 'phase' ? ['--phase', 'phase-1'] : []), '--root', repo, '--run'],
+          { reviewer: fake },
+        ),
+      ).toThrow(/증거 복구가 끝나지 않은/)
+
+      // 🔴 **유료 호출을 하지 않았다** — 늦게 막는 것과 앞에서 막는 것의 차이가 여기서 드러난다.
+      expect(fake.requests.length).toBe(0)
+      expect(readFileSync(join(ticketAbs, 'state.json'), 'utf8')).toBe(before)
+      expect(git(['rev-list', '--count', 'HEAD']).trim()).toBe(commits)
+      expect(existsSync(ledger) ? readFileSync(ledger, 'utf8') : null).toBe(ledgerBefore)
+      expect(existsSync(respDir) ? readdirSync(respDir).sort() : []).toEqual(archivesBefore)
+    })
+  }
+
+  it('🔴 [REQ-2026-155] 복구 창이 아니면 종전대로 동작한다(무회귀)', () => {
+    const { repo } = setupRepo({ persona: null })
+    const fake = createFakeReviewerAdapter({ lastMessage: '{}', threadId: 'T', rawStdout: '' })
+    expect(() => reviewCodexMain(['2026-001', '--kind', 'design', '--root', repo], { reviewer: fake })).not.toThrow()
+  })
+
 
   const preview = (ticketAbs: string): string => readFileSync(join(ticketAbs, '.review-preview.txt'), 'utf8')
 

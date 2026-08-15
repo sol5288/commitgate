@@ -1042,6 +1042,7 @@ export function finalizeEvidenceAndConsume(ctx: FinalizeCtx): void {
   //    checkpoint가 없으면 이 REQ 이전과 같은 상태(dirty state.json)로 남고, 재실행이 흡수한다(멱등).
   try {
     if (
+      // commitgate:recovery-checkpoint — 복구 자신이다(REQ-2026-155 DEC-1 예외)
       commitStateCheckpoint({
         root: ctx.rootForClose,
         ticketRel: ctx.ticketRel,
@@ -1219,6 +1220,7 @@ export function main(argv: string[] = process.argv.slice(2)): void {
           throw new Error('(예상외) checkpoint 재개에서 evidence finalize 가 호출됐다')
         },
         commitStateCheckpoint: () =>
+          // commitgate:recovery-checkpoint — 복구 자신이다(REQ-2026-155 DEC-1 예외)
           commitStateCheckpoint({
             root: cfg.root,
             ticketRel,
