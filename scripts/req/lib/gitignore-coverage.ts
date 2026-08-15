@@ -17,9 +17,21 @@ function lines(text: string): string[] {
   return text.replace(/\r\n?/g, '\n').split('\n')
 }
 
-/** `!` 로 시작하는 부정 패턴인가(앞뒤 공백은 무시). */
+/**
+ * `!` 로 시작하는 부정 패턴인가.
+ *
+ * 🔴 **`trim()` 을 쓰지 않는다**(REQ-2026-155 결함 4). gitignore 는 **후행** 공백만 버리고
+ *    **선행 공백은 패턴의 일부**다. 실측(`git check-ignore -v`):
+ *
+ *      `.gitignore` = `*.log` + ` !keep.log`  →  `keep.log` 는 **여전히 1행 `*.log` 가 이긴다**
+ *
+ *    = 선행 공백이 있으면 부정이 **아니다**. 다듬으면 그런 줄을 부정으로 오인해 완료 티켓의
+ *    후속 작업 안내를 불필요하게 막는다.
+ *
+ * 🔴 `\!literal` 은 이스케이프된 리터럴이라 첫 글자가 `\` — 부정이 아니다(종전과 같다).
+ */
 export function isNegation(line: string): boolean {
-  return line.trim().startsWith('!')
+  return line.startsWith('!')
 }
 
 /**

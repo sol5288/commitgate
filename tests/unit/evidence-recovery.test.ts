@@ -16,6 +16,8 @@ import {
   consumedStateShaFor,
 } from '../../scripts/req/lib/evidence-recovery'
 import { consumedAtOfRow } from '../../scripts/req/req-commit'
+import { findUnstagedOrUntracked } from '../../scripts/req/review-codex'
+import { parseStatusZ } from '../../scripts/req/lib/porcelain'
 import { buildPinnedInventory, canonicalInventoryForm } from '../../scripts/req/lib/evidence'
 import type { ApprovalEvidence, PinnedInventoryItem } from '../../scripts/req/lib/review-types'
 
@@ -123,9 +125,15 @@ describe('Ready — 정상 복구', () => {
     expect(p.kind).toBe('ready')
   })
 
-  it('경로 구분자가 역슬래시여도 정규화한다', () => {
+  /**
+   * 🔴 **계약이 뒤집혔다**(REQ-2026-155 DEC-2). 여기 있던 "역슬래시여도 정규화한다"는 **틀린 동작을
+   *    고정**하고 있었다 — D10 은 raw 경로를 비교하므로, plan 만 정규화하면 판정이 갈려
+   *    "plan 은 ready 인데 실제 `--finalize` 는 D10 에 막히는" 교착이 생긴다.
+   *    지우지 않고 반대 계약으로 남긴다.
+   */
+  it('🔴 역슬래시 경로를 정규화하지 않는다 — D10 과 판정이 갈리면 안 된다', () => {
     const p = planEvidenceRecovery(facts({ dirtyPaths: [R02.replace(/\//g, '\\')] }))
-    expect(p.kind).toBe('ready')
+    expect(p.kind).toBe('blocked')
   })
 })
 
@@ -518,4 +526,28 @@ describe('[REQ-2026-151] consumedAtOfRow — 멱등 skip 이 소비 시각을 �
   it('빈 매니페스트는 null(정상 경로가 새 시각을 잡는다)', () => {
     expect(consumedAtOfRow('', SRC, ev)).toBeNull()
   })
+})
+
+/**
+ * 🔴 REQ-2026-155 DEC-2 — **복구 plan 과 D10 의 판정이 갈리지 않는다.**
+ *
+ * plan 만 경로를 정규화하면 "plan 은 ready 인데 실제 `--finalize` 는 D10 에 막히는" 교착이 생긴다.
+ * 도구가 복구 가능하다고 판정한 명령이 실행 불가인 것 — 이 저장소가 반복해 밟은 부류다.
+ */
+describe('[REQ-2026-155] 🔴 plan 과 D10 이 같은 판정을 낸다', () => {
+  const BS = String.fromCharCode(92)
+  const zOf = (p: string): ReturnType<typeof parseStatusZ> => parseStatusZ(` M ${p}\u0000`)
+
+  for (const [label, path] of [
+    ['정상 POSIX 경로', R02],
+    ['리터럴 역슬래시 경로', R02.replace(/\//g, BS)],
+  ] as [string, string][]) {
+    it(`🔴 ${label} — plan 이 ready 면 D10 도 통과, blocked 면 D10 도 차단`, () => {
+      const plan = planEvidenceRecovery(facts({ dirtyPaths: [path] }))
+      const allowlist = plan.kind === 'ready' ? plan.allowlist : []
+      const dirty = findUnstagedOrUntracked(zOf(path), [], T, allowlist)
+      // 🔴 두 판정이 **같은 방향**이어야 한다. 갈리는 순간 안내한 명령이 실행 불가다.
+      expect(plan.kind === 'ready', `${label}: plan=${plan.kind} · D10 dirty=${dirty.length}`).toBe(dirty.length === 0)
+    })
+  }
 })

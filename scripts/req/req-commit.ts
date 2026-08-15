@@ -688,9 +688,11 @@ export function forbiddenSourceStagedMessage(paths: readonly string[]): string {
  *    `-z` + 공백 보존이 ①②를 한꺼번에 없앤다.
  */
 export function stagedNames(): string[] {
+  // 🔴 REQ-2026-155 DEC-2: **git 이 준 경로를 그대로 돌려준다.** `\` → `/` 로 바꾸면 POSIX 의
+  //    리터럴 역슬래시 경로(`workflow\REQ-…/x.ts`)가 티켓 내부처럼 보여 면적 게이트에서 빠진다.
+  //    git 은 플랫폼과 무관하게 `/` 로 보고하므로 이 변환은 처음부터 불필요했다.
   return git([...STAGED_NAMES_Z_ARGS])
     .split('\0')
-    .map((p) => p.replace(/\\/g, '/'))
     .filter((p) => p.length > 0)
 }
 

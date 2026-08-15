@@ -1463,7 +1463,9 @@ export function phaseCodeFiles(stagedPaths: readonly string[], ticketRel: string
   const prefix = `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/`
   // 🔴 `trim()`을 쓰지 않는다 — 공백으로 시작·끝나는 경로는 git에서 합법이고, 다듬으면 접두사가 어긋난다.
   //    `-z` 출력은 마지막 NUL 뒤 빈 조각만 생기므로 빈 문자열만 거른다.
-  return [...new Set(stagedPaths.map((p) => p.replace(/\\/g, '/')).filter((p) => p !== ''))].filter((p) => !p.startsWith(prefix))
+  // 🔴 REQ-2026-155: `\` → `/` 변환을 뺀다 — 티켓 **밖**의 `workflow\REQ-…/large.ts` 가 내부처럼
+  //    보여 면적 게이트(`max_files`)에서 제외되던 우회로다.
+  return [...new Set(stagedPaths.filter((p) => p !== ''))].filter((p) => !p.startsWith(prefix))
 }
 
 /**
@@ -2492,11 +2494,12 @@ export function findUnstagedOrUntracked(
    */
   recoveryAllowlist?: readonly string[],
 ): StatusEntry[] {
-  const allowed = new Set(allowedScratch.map((p) => p.replace(/\\/g, '/')))
-  const recovery = new Set((recoveryAllowlist ?? []).map((p) => p.replace(/\\/g, '/')))
-  const respPrefix = ticketRel
-    ? `${ticketRel.replace(/\\/g, '/').replace(/\/+$/, '')}/responses/`
-    : null
+  // 🔴 REQ-2026-155 DEC-2: 목록도 **raw** 로 비교한다 — 한쪽만 정규화하면 복구 plan 과 판정이
+  //    갈려 "plan 은 ready 인데 실제 --finalize 는 D10 에 막히는" 교착이 생긴다.
+  //    `ticketRel` 은 도구가 만든 POSIX 값이므로 후행 `/` 정리만 한다.
+  const allowed = new Set(allowedScratch)
+  const recovery = new Set(recoveryAllowlist ?? [])
+  const respPrefix = ticketRel ? `${ticketRel.replace(/\/+$/, '')}/responses/` : null
   return entries.filter((e) => {
     // rename/copy(`R`/`C`)는 src·dest 둘 다 검사(A2-P2-1: dest로 responses/ 주입 우회 차단).
     const paths = entryPaths(e)

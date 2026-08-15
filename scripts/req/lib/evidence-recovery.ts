@@ -304,7 +304,13 @@ export function planEvidenceRecovery(facts: RecoveryFacts): RecoveryPlan {
   const stateRel = `${ticketRel}/state.json`
   const manifestRel = `${ticketRel}/responses/approvals.jsonl`
   const ledgerRel = `${ticketRel}/responses/review-ledger.jsonl`
-  const dirty = facts.dirtyPaths.map(norm)
+  /**
+   * 🔴 REQ-2026-155 DEC-2: **git 이 준 경로를 바꾸지 않는다.** 여기서 `\`→`/` 로 정규화하면
+   *    D10(`findUnstagedOrUntracked`)은 raw 경로를 비교하므로 판정이 **갈린다** — plan 은 `ready`
+   *    인데 실제 `--finalize` 는 D10 에 막히는 교착이 생긴다(POSIX 리터럴 역슬래시 경로).
+   *    정규화는 도구가 **만든** `ticketRel` 한 곳에만 남는다.
+   */
+  const dirty = [...facts.dirtyPaths]
   const ev = facts.approvalEvidence
 
   // ── ④의 state write 후 checkpoint commit 전 (DEC-3a) ──

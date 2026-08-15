@@ -45,8 +45,14 @@ describe('sourceCommitForbiddenStaged — source 커밋 금지 staged 경로 (RE
   it('🔴 responses는 디렉터리 경계로 판정한다 — responses-old/ 는 다른 디렉터리다', () => {
     expect(run([`${T}/responses-old/x.json`])).toEqual([])
   })
-  it('역슬래시 입력을 정규화한다(호출부가 -z와 --name-only로 서로 다르게 값을 얻는다)', () => {
-    expect(run([`${T}\\state.json`.replace(/\//g, '\\')])).toEqual([`${T}/state.json`])
+  /**
+   * 🔴 **계약이 뒤집혔다**(REQ-2026-155 DEC-2). 여기 있던 "역슬래시 입력을 정규화한다"는 **틀린
+   *    동작을 고정**하고 있었다 — POSIX 에서 `workflow\REQ-…\state.json` 은 리터럴 역슬래시를 가진
+   *    **다른 파일**이고, 정규화하면 그 무고한 파일을 금지 경로로 오인한다. 바로 위 주석이
+   *    `trim()` 을 금지한 것과 **같은 이유**다. 지우지 않고 반대 계약으로 남긴다.
+   */
+  it('🔴 역슬래시 입력을 정규화하지 않는다 — Git 경로가 정본이다', () => {
+    expect(run([`${T}\\state.json`.replace(/\//g, '\\')])).toEqual([])
   })
   it('ticketDirRel의 후행 슬래시·역슬래시를 정규화한다', () => {
     expect(run([`${T}/state.json`], 'workflow\\REQ-2026-001\\')).toEqual([`${T}/state.json`])

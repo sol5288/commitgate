@@ -94,8 +94,9 @@ export function sourceCommitForbiddenStaged(
   //    다듬으면 그 무고한 파일을 금지 경로로 오인해 정상 리뷰·커밋을 거부한다. 같은 이유로
   //    `review-codex.ts`의 `phaseCodeFiles`도 의도적으로 trim하지 않는다.
   //    `-z` 출력의 마지막 NUL 뒤 빈 조각만 길이로 거른다.
+  // 🔴 REQ-2026-155: `\` → `/` 변환도 뺀다 — 바로 위가 `trim()` 을 금지한 것과 **같은 이유**다
+  //    (Git 경로가 정본이다). POSIX 에서 역슬래시는 파일명의 일부다.
   return stagedPaths
-    .map((p) => p.replace(/\\/g, '/'))
     .filter((p) => p.length > 0)
     .filter((p) => p === statePath || p.startsWith(responsesPrefix))
 }

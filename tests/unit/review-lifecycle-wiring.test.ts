@@ -472,4 +472,22 @@ describe('[REQ-2026-086] 비ASCII 경로 회귀(core.quotePath 기본값)', () =
   it('공백이 있는 경로도 접두사가 어긋나지 않는다', () => {
     expect(phaseCodeFiles(['workflow/REQ-1/ a.md', 'src/b .ts', ''], 'workflow/REQ-1')).toEqual(['src/b .ts'])
   })
+
+  /**
+   * 🔴 REQ-2026-155 결함 3 — **git 이 준 경로를 바꾸면 면적 게이트가 우회된다.**
+   *
+   * POSIX 에서 `workflow\REQ-1/large.ts` 는 티켓 **밖**의 리터럴 역슬래시 파일이다. `\`→`/` 로
+   * 정규화하면 티켓 내부처럼 보여 `phaseCodeFiles` 에서 **제외**되고, `max_files` 가 그 파일을
+   * 세지 않은 채 승인한다. `sourceCommitForbiddenStaged()` 도 state/responses 가 아니라 통과시킨다.
+   */
+  it('🔴 티켓 밖의 리터럴 역슬래시 경로를 코드 파일로 센다 — 면적 게이트 우회 차단', () => {
+    const BS = String.fromCharCode(92)
+    const outside = `workflow${BS}REQ-1/large.ts`
+    expect(phaseCodeFiles(['src/one.ts', outside], 'workflow/REQ-1')).toEqual(['src/one.ts', outside])
+  })
+
+  it('🔴 티켓 안의 역슬래시 파일명은 여전히 제외된다', () => {
+    const BS = String.fromCharCode(92)
+    expect(phaseCodeFiles([`workflow/REQ-1/a${BS}b.md`, 'src/one.ts'], 'workflow/REQ-1')).toEqual(['src/one.ts'])
+  })
 })
