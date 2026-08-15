@@ -182,10 +182,10 @@ npm init -y   # if there is no package.json
 ```sh
 npm install -D commitgate     # 1) install the runtime — the executable code lives in node_modules/commitgate
 npx commitgate init           # 2) add config, contract, schemas + the req:* scripts to your project
-npx commitgate setup          # 3) pick the review model, reasoning effort, and stop point; sign in to codex
+npx commitgate setup          # 3) pick the review model, reasoning effort, stop point, and review-budget policy; sign in to codex
 ```
 
-🔴 **Step 3 cannot be skipped.** Until setup completes, `req:new` and the other workflow commands are blocked. **A human runs it directly in a terminal** — it is interactive-only and exits immediately, without asking anything, in agent sessions and CI. There are three questions and you answer them with ↑/↓.
+🔴 **Step 3 cannot be skipped.** Until setup completes, `req:new` and the other workflow commands are blocked. **A human runs it directly in a terminal** — it is interactive-only and exits immediately, without asking anything, in agent sessions and CI. There are **four questions** and you answer them with ↑/↓ — what they ask and what each one means is in [Quick start — What setup asks](https://github.com/sol5288/commitgate/blob/main/docs/quick-start.en.md#what-setup-asks).
 
 **4) Commit the scaffold.** Installation writes files but **does not commit** them, and `req:new` requires that nothing is left unsaved.
 

@@ -181,10 +181,10 @@ npm init -y   # package.json 이 없다면
 ```sh
 npm install -D commitgate     # 1) 런타임 설치 — 실행 코드가 node_modules/commitgate 에 들어옵니다
 npx commitgate init           # 2) 설정·계약·스키마 + req:* 스크립트를 프로젝트에 깝니다
-npx commitgate setup          # 3) 리뷰 모델·추론강도·멈춤 지점을 고르고 codex 로그인까지 (대화형)
+npx commitgate setup          # 3) 리뷰 모델·추론강도·멈춤 지점·리뷰 예산 정책을 고르고 codex 로그인까지 (대화형)
 ```
 
-🔴 **3단계는 건너뛸 수 없습니다.** setup을 마치지 않으면 `req:new`를 비롯한 워크플로 명령이 막힙니다. **사람이 터미널에서 직접** 실행해야 합니다 — 대화형 전용이라 에이전트 세션·CI에서는 질문 없이 즉시 종료합니다. 질문은 세 개이고 ↑/↓로 고르면 됩니다.
+🔴 **3단계는 건너뛸 수 없습니다.** setup을 마치지 않으면 `req:new`를 비롯한 워크플로 명령이 막힙니다. **사람이 터미널에서 직접** 실행해야 합니다 — 대화형 전용이라 에이전트 세션·CI에서는 질문 없이 즉시 종료합니다. 질문은 **네 개**이고 ↑/↓로 고르면 됩니다 — 무엇을 묻고 어떤 뜻인지는 [빠른 시작](https://github.com/sol5288/commitgate/blob/main/docs/quick-start.md)의 "setup이 묻는 것"에 표로 있습니다.
 
 **4) 설치분을 커밋합니다.** 설치는 파일만 놓고 **커밋하지 않는데**, `req:new`는 저장하지 않은 변경이 없는 상태를 요구합니다.
 

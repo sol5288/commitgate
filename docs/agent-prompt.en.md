@@ -18,7 +18,7 @@ The command below belongs to **the human**. An agent does not run it — it **as
 
 | Command | Why it is yours |
 |---|---|
-| `npx commitgate setup` | It is **interactive-only**. In pipes, CI, or agent sessions it exits immediately without asking anything, so an agent running it produces nothing but a failure. It picks the review model, reasoning effort, and stop point, and finishes codex login. |
+| `npx commitgate setup` | It is **interactive-only**. In pipes, CI, or agent sessions it exits immediately without asking anything, so an agent running it produces nothing but a failure. It picks the review model, reasoning effort, stop point, and **review-budget policy** (`reviewBudget.onSoftLimit`), and finishes codex login. |
 
 🔴 `req:confirm` is **not** in this table. It is a **control point**, not a human-only command — the agent runs it
 after receiving your approval sentence verbatim (`req:next` prints the exact command). Reading the timestamp from
