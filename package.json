@@ -1,6 +1,6 @@
 {
   "name": "commitgate",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "CommitGate — Builder↔Reviewer(Claude↔Codex) fail-closed 커밋 게이트: 리뷰·승인·증거 없인 커밋을 통과시키지 않는 AI REQ 워크플로 kit. 커밋 게이트(req:new/next/review-codex/doctor/commit) + 범위 증거 검증·통합 seam(verify-range/attest/integrate). GitHub CI는 기본 실행하지 않는 opt-in입니다.",
   "type": "module",
   "license": "MIT",

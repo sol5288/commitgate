@@ -69,6 +69,63 @@ npx commitgate quickstart --apply      # inject/replace managed blocks only (pre
 Anything you only need to handle **for a specific version** lives here. Sections are never removed, so if you
 are coming from an older version, read **every section after yours, in order**.
 
+### 0.22 → 0.23 — two new policy axes (both opt-in) + policy snapshots for in-flight tickets
+
+**① Install explicitly.** A caret does not cross minors (`^0.22.0` means `>=0.22.0 <0.23.0`).
+
+```sh
+npm install -D commitgate@^0.23.0
+npx commitgate sync --apply --gitignore   # re-sync shipped template assets
+npx commitgate doctor                     # check policy-snapshot state via D32
+```
+
+**② Nothing changes until you turn it on.** 0.23 adds two policy axes, but **the defaults are what you
+are already running.**
+
+| Axis | What it decides | Default | How to change |
+|---|---|---|---|
+| `stopGate` | **where a human confirms** during commit/integration | `req` (unchanged) | `npx commitgate setup` |
+| `reviewBudget.onSoftLimit` | whether to continue **without human approval** once the review budget is exceeded | `ask` (unchanged) | `npx commitgate setup` |
+
+- 🔴 **The two axes decide different things.** `stopGate` is **safety** (where you stop);
+  `onSoftLimit` is **cost** (how many more re-reviews to allow). Changing one leaves the other alone.
+- 🔴 **The name `auto` appears in two places.** `stopGate: "auto"` proceeds through integration
+  **only when a delegation exists**; `onSoftLimit: "auto"` continues re-reviews **without a human
+  exception approval** past the soft budget. **Neither lifts `hardCap`.**
+- 🔴 `setup` is an **interactive command a human runs**. Do not have an agent run it — these two axes
+  decide which gates the agent must pass, so letting the agent choose them opens a path where
+  **the agent picks its own gates**.
+
+**③ If you enable `stopGate: "auto"` — "auto" is not "unlimited".** It integrates only verified changes
+**within the scope of an advance delegation**.
+
+```sh
+npx commitgate req:delegate --scope ticket:<REQ> --source <branch> \
+    --sentence "<the approval sentence the human actually said>" [--allow-push] [--allow-bypass] --run
+```
+
+- A delegation is consumed **exactly once**; consumed, revoked, or expired delegations cannot be
+  revived (issue a new one).
+- Even with a delegation, **reaching `hardCap`, an undelegated HIGH-risk ticket, a BLOCKED review, or
+  mismatched evidence** still stops integration.
+- Integrating an `auto` ticket without a delegation stops the tool — it does not fall through.
+
+**④ If you have tickets in flight, read `doctor` D32.** From 0.23 a ticket runs to completion under
+**the policy it was created with** (policy snapshot). Tickets started on 0.22 or earlier have no
+snapshot, so `req:doctor` reports **D32 WARN**. To adopt the current settings for such a ticket:
+
+```sh
+npx commitgate req:doctor <REQ>          # read what D32 says first
+npx commitgate req:repolicy <REQ> --run  # adopt the current config policy for that ticket
+```
+
+D32 is a **WARN, not a block** — the ticket proceeds either way.
+
+**⑤ The 0.22 ②-b caveat still applies.** `sync` does **not** update the contract body of `AGENTS.md`.
+0.23 changed the setup description and policy wording in the shipped template
+(`AGENTS.template.md`), so check whether your installed `AGENTS.md` still carries the old wording
+(see C5 in `npx commitgate check`).
+
 ### 0.20/0.21 → 0.22 — caret does not cross minors: install explicitly + backfill gitignore
 
 **① It does not upgrade automatically.** In npm semver, `^0.20.0` means `>=0.20.0 <0.21.0`, so
