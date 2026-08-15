@@ -31,8 +31,13 @@ Exit — **사실 정정 5건**(전부 실측 근거가 요구 문서에 있다)
 
 Exit — **초보자 기준**:
 - 🔴 두 축(`stopGate`=안전 · `onSoftLimit`=비용)을 **구분해 설명**한다. quick-start 에 표로 둔다.
-- 🔴 `auto` 옆에 **"리뷰 승인과 사람 확인은 그대로 — 바뀌는 것은 돈뿐"** 이라는 취지의 한 줄이 있다.
-  (setup 프롬프트가 이미 "(비용 통제 — 안전 게이트가 아닙니다)"라고 말한다 — 문서도 같은 말을 한다.)
+- 🔴 `auto` 옆에 **그대로인 것과 없어지는 것**이 둘 다 적혀 있다(설계 r01 P1):
+  `stopGate` 의 사람 확인은 유지 · **예산 초과 뒤의 "사람 예외 승인"은 없어짐** · `hardCap` 은 차단.
+  🔴 "사람 확인은 그대로"라고만 쓰면 **사용자가 잃는 확인 하나를 감추는 것**이다.
+- 🔴 **"6~8회차" 같은 회차 번호를 쓰지 않는다**(설계 r02 P1). 두 한도의 계수 기준이 다르다:
+  소프트(`autoBudget`)는 **판정이 나온 횟수**, `hardCap` 은 **실제 호출 횟수**다. 무효 응답이
+  하나 있으면 6번째 호출도 자동 통과한다. **조건문**으로 쓰고, **무효 응답이 어느 쪽에 들어가는지**
+  한 줄로 밝힌다. 고정 문자열 부재 검사로 "6~8회"를 금지한다(한/영 모두).
 - 🔴 무엇을 고르면 무엇이 달라지는지를 **먼저** 말하고 설정 키는 괄호로 준다.
 
 Exit — **중복 금지·정본**:
@@ -41,13 +46,16 @@ Exit — **중복 금지·정본**:
 
 Exit — **회귀 가드**(`tests/unit/setup-docs-parity.test.ts`):
 - 🔴 **소스가 정본**이다: `buildQuestions(...)` 의 개수 ↔ quick-start(한/영) 표 행 수.
-  `CONFIG_SCHEMA` 의 `stopGate` enum ↔ quick-start(한/영)가 나열한 선택지.
+  🔴 **선택지를 대조하는 행은 키로 결속한다**(설계 r01 P1): `stopGate` 행과
+  `reviewBudget.onSoftLimit` 행 **각각**을 `CONFIG_SCHEMA` 의 enum·기본값과 맞춘다.
+  행 수와 `stopGate` 만 보면 네 번째 행에서 `auto` 를 지워도 통과한다.
   🔴 문서끼리 비교하지 않는다 — 그러면 둘 다 틀린 채로 통과한다.
 - 🔴 **표 행만 센다**(마크다운 표는 구조가 고정적이다). 산문을 정규식으로 파싱하지 않는다 —
   그 파서가 다음 결함이 된다(REQ-2026-041: 손수 검증 oracle 은 바닥이 없다).
 - 🔴 **한/영이 같은 개수·같은 선택지 집합**을 말한다.
-- 🔴 **변이 검사 3건**: ① quick-start 표에서 행 하나를 지우면 red ② `auto` 를 선택지에서 빼면 red
-  ③ 영문판만 고치면 red(한쪽만 갱신하는 실수를 잡는다).
+- 🔴 **변이 검사 4건**: ① quick-start 표에서 행 하나를 지우면 red
+  ② `stopGate` 행에서 `auto` 를 빼면 red ③ **`onSoftLimit` 행에서 `auto` 를 빼면 red**(행 수는
+  그대로다 — 이것이 r01 P1 이 지적한 구멍이다) ④ 영문판만 고치면 red.
 
 Exit — **무회귀**:
 - 🔴 `npm run docs:lint`(remark-validate-links) 통과. README→docs 링크는 **절대 blob URL**(D5-b),
@@ -55,8 +63,7 @@ Exit — **무회귀**:
 - 🔴 기존 문서 테스트(`docs-*`·`readme-*`)가 그대로 통과한다.
 - 🔴 **코드·기본값·선택지는 한 줄도 바꾸지 않는다** — `git diff --stat` 에 `scripts/`·`bin/` 이 없다.
 
-- 계약 스위트: `npx vitest run tests/unit/setup-docs-parity.test.ts tests/unit/dispatch.test.ts` +
-  기존 문서 스위트 + `npm run docs:lint`
+- 계약 스위트: `npx vitest run tests/unit/setup-docs-parity.test.ts tests/unit/docs-stale-claims.test.ts tests/unit/readme-landing.test.ts tests/unit/dispatch.test.ts` + `npm run docs:lint`
 - Codex 승인.
 
 ## 완료

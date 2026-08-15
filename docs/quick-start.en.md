@@ -27,17 +27,35 @@ npx commitgate check
 
 ### What setup asks
 
-It asks three questions. Each one is answered by **moving with ↑/↓ and confirming with Enter** (Ctrl+C cancels). The answers are written to `req.config.json`.
+It asks **four questions**. Each one is answered by **moving with ↑/↓ and confirming with Enter** (Ctrl+C cancels). The answers are written to `req.config.json`.
 
 | Question | Default | Choices |
 |---|---|---|
 | Review model (`reviewModel`) | `gpt-5.6-terra` | `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` · **type your own…** · empty (inherit codex global settings) |
 | Reasoning effort (`reviewReasoningEffort`) | `medium` | `none` · `minimal` · `low` · `medium` · `high` · `xhigh` · empty |
-| Stop point (`stopGate`) | `req` | `phase` · `req` · `merge` |
+| Stop point (`stopGate`) | `req` | `phase` · `req` · `merge` · `auto` |
+| When the review budget is exceeded (`reviewBudget.onSoftLimit`) | `ask` | `ask` · `auto` |
 
-- **Model** has a "type your own…" item because values outside the list are valid. The other two are schema enums, so you pick from the list only.
+- **Model** has a "type your own…" item because values outside the list are valid. The other three are schema enums, so you pick from the list only.
 - **Empty** does not clear the setting — it means *follow the codex global configuration*.
-- **Stop point** decides where a human confirms: `phase` = before every phase commit; `req` = at the commit that completes the REQ; `merge` = when the delivery set is done (with no set, just before this REQ's integration, like `req`). The single source, including how `HIGH` risk is treated, is [Workflow — Human confirmation for HIGH-risk tickets](./workflow.en.md#human-confirmation-for-high-risk-tickets).
+
+#### 🔴 The last two questions decide **different things**
+
+This is the easy part to confuse. Both talk about "stopping", but they cover **different ground.**
+
+| Question | What it decides | Nature |
+|---|---|---|
+| Stop point (`stopGate`) | **Where a human approves** — commits and integration | 🔒 **Safety** |
+| Review budget (`reviewBudget.onSoftLimit`) | Whether to continue when re-reviews **exceed the budget** | 💳 **Cost** |
+
+- **Stop point** decides where a human confirms: `phase` = before every phase commit; `req` = at the commit that completes the REQ; `merge` = when the delivery set is done (with no set, just before this REQ's integration, like `req`); `auto` = same as `merge`, except that it also carries through integration **only when a human issued a delegation in advance** (with no delegation it stops exactly as `merge` does). The single source, including how `HIGH` risk is treated, is [Workflow — Human confirmation for HIGH-risk tickets](./workflow.en.md#human-confirmation-for-high-risk-tickets).
+- **Review budget** decides how many times the same spot may be re-reviewed automatically. Reviews that produced a verdict run automatically until they reach `autoBudget` (default 5). What happens after that is what this question decides:
+  - `ask` (default) — from then on, **a human must approve an exception for each round**.
+  - `auto` — it keeps going without human approval and records the grounds in the ledger.
+
+  🔴 **Choosing `auto` does not change the human confirmations set by "Stop point" above** (commit and integration approval). What it *does* remove is **the "human exception approval" that was required after the budget was exceeded** — so a human steps in less often and you spend more on reviews.
+
+  🔴 **Under either value you are blocked once `hardCap` (default 8) is reached.** The two limits **count different things**: `autoBudget` counts **reviews that produced a verdict**, while `hardCap` counts **calls actually made**. An invalid response does not count toward the verdict tally but does count toward the call tally (the money was already spent). See [Configuration — `reviewBudget`](./configuration.en.md#review-budget--reviewbudget).
 - setup finishes by checking your **codex login** and signing you in if needed.
 - To change an answer later, run setup again or edit `req.config.json` directly.
 
@@ -128,7 +146,7 @@ CommitGate stops **before writing any file**. The cases are:
 | Codex CLI | `codex --version` | Required for review runs |
 
 > 💳 **Reviews are not free.** CommitGate itself is MIT open source, but a review **actually calls Codex**, which consumes the usage or billing of the account you signed in with (a ChatGPT account or an OpenAI API key). What it costs depends on the model you pick and the size of the change, so no figure is quoted here — check your account's pricing.
-> The number of re-reviews in one series is capped (default: 5 automatic, rounds 6–8 need a human exception, blocked from round 9) — see [Configuration — `reviewBudget`](./configuration.en.md).
+> The number of re-reviews in one series is capped. With the defaults, **5 reviews that produced a verdict** run automatically; after that `reviewBudget.onSoftLimit` decides (`ask` = a human approves an exception each round; `auto` = it continues without approval). **Under either value you are blocked once 8 calls have actually been made** — see [Configuration — `reviewBudget`](./configuration.en.md#review-budget--reviewbudget).
 
 If Codex CLI is not installed:
 
