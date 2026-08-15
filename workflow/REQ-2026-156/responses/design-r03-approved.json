@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"25e6c0554c134513fb15fe844760f8c4b15f94e7","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"Phase 1 구현을 진행하고 exit 계약의 e2e·회귀·변이 검사를 충족한 뒤 phase 리뷰를 요청하세요.","observations":[]}
