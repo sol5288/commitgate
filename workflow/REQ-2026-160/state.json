@@ -2,14 +2,14 @@
   "id": "REQ-2026-160",
   "branch": "feat/req-2026-160-manual-confirm-on-scope-undetermined",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00581-7874-7690-9319-03954abe049b",
-  "review_base_sha": "ac1381408587ec3b9d2928cf0213853e8e769f97",
-  "review_diff_hash": "f8e585d8f06948d58947b3ab8b271b06058f8b94",
+  "codex_thread_id": "01a00582-d127-7f72-9fe7-ebecc3c948c3",
+  "review_base_sha": "0c974196b69bd9db4a48814321d9cc06d17404a3",
+  "review_diff_hash": "cb716abbbc2763c3f142da47082a76a451eb4d5d",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "6aa27036040db62919a54f0859aeb8473adec24357bb180804eab7cd25ba67cc",
-  "current_phase": null,
+  "current_phase": "phase-1-manual-confirm-gate",
   "phases": [
     {
       "id": "phase-1-manual-confirm-gate",
@@ -37,8 +37,8 @@
       "series_id": "phase:phase-1-manual-confirm-gate#1",
       "review_kind": "phase",
       "phase_id": "phase-1-manual-confirm-gate",
-      "attempts": 1,
-      "closed_reason": null
+      "attempts": 2,
+      "closed_reason": "approved"
     },
     {
       "series_id": "design:-#2",
@@ -49,13 +49,13 @@
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-manual-confirm-gate",
     "outcome": "approved",
-    "compare_hash": "bfce10938281ef8b40e579d2765455b1f8b0988ed0e5a67c4ae40c29b364e394",
+    "compare_hash": "c51ab49ef051976360c17a03ce0bfe72a0caddfa0467c8cb7ae73bc636be1762",
     "count": 1,
     "errors": [],
-    "at": "2026-08-15T13:00:26.164Z",
+    "at": "2026-08-15T13:03:12.388Z",
     "findings": [],
     "elided_count": 0
   },
@@ -96,5 +96,14 @@
       "source_response_path": "workflow/REQ-2026-160/responses/design-r03-approved.json"
     },
     "design_hash": "6aa27036040db62919a54f0859aeb8473adec24357bb180804eab7cd25ba67cc"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "cb716abbbc2763c3f142da47082a76a451eb4d5d",
+      "phase_id": "phase-1-manual-confirm-gate",
+      "consumed_by_commit_sha": "731019fba7fac670433a87f4d9a238c9a088fa07",
+      "approval_consumed_at": "2026-08-15T13:03:48.026Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
