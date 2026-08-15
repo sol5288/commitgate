@@ -40,8 +40,43 @@ const VALID_ROW = JSON.stringify({
   user_commit_confirmed: null,
 })
 
+/**
+ * 브랜치 `feat/req-2026-999-x` 가 가리키는 티켓의 `state.json`(REQ-2026-159).
+ *
+ * 🔴 **기본 fake 에 넣는다.** 실제 트리에는 `req:new` 시점부터 이 파일이 커밋돼 있고, 통합은 끝난
+ *    티켓에서 돈다 — 없는 쪽이 비현실적이다. 없던 시절의 fake 로는 "정책 스냅샷을 읽는다"는
+ *    새 경로가 **읽지 못함**으로만 관측돼, 무엇을 검사하는지 알 수 없게 된다.
+ * 🔴 스냅샷은 **일부러 넣지 않는다** — legacy 티켓(= config 를 따름)이 기존 테스트들의 전제다.
+ */
+export const DEFAULT_TICKET_STATE_PATH = 'workflow/REQ-2026-999/state.json'
+const DEFAULT_TICKET_STATE = JSON.stringify({ req_id: 'REQ-2026-999', risk_level: 'LOW', review_series: [] })
+/**
+ * 🔴 범위 귀속이 가리키는 티켓의 state 도 둔다(REQ-2026-159 phase-3). 기본 fake 의 매니페스트와
+ *    부기 커밋 경로가 `REQ-2026-001` 을 가리키므로, 정책 대상은 브랜치의 `REQ-2026-999` 와
+ *    **둘 다**다. 실제 트리에는 둘 다 있으므로 없는 fake 가 비현실적이다.
+ */
+const ATTRIBUTED_TICKET_STATE_PATH = 'workflow/REQ-2026-001/state.json'
+const ATTRIBUTED_TICKET_STATE = JSON.stringify({ req_id: 'REQ-2026-001', risk_level: 'LOW', review_series: [] })
+
+/** 정책 스냅샷이 박힌 티켓 state 를 만든다(REQ-2026-159 테스트용). */
+export function ticketStateJson(stopGate: string | null, over: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    req_id: 'REQ-2026-999',
+    risk_level: 'LOW',
+    review_series: [],
+    ...(stopGate === null ? {} : { policy_snapshot: { stop_gate: stopGate } }),
+    ...over,
+  })
+}
+
 export function fakeReadBlobs(extra?: Record<string, string>): (ref: string, paths: readonly string[]) => Map<string, Buffer | null> {
-  const known: Record<string, string> = { [MANIFEST_PATH]: `${VALID_ROW}\n`, [ARCHIVE_PATH]: ARCHIVE_CONTENT, ...extra }
+  const known: Record<string, string> = {
+    [MANIFEST_PATH]: `${VALID_ROW}\n`,
+    [ARCHIVE_PATH]: ARCHIVE_CONTENT,
+    [DEFAULT_TICKET_STATE_PATH]: DEFAULT_TICKET_STATE,
+    [ATTRIBUTED_TICKET_STATE_PATH]: ATTRIBUTED_TICKET_STATE,
+    ...extra,
+  }
   return (_ref, paths) => new Map(paths.map((p) => [p, p in known ? Buffer.from(known[p] as string, 'utf8') : null]))
 }
 

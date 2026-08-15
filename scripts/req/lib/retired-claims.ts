@@ -315,6 +315,30 @@ export const RETIRED_CLAIMS: readonly RetiredClaim[] = [
     text: 'auto 는 최종 merge 까지 무정지',
     why: '위임이 없으면 merge 처럼 멈추고, hardCap·HIGH·BLOCKED·범위 밖 변경은 위임이 있어도 막는다',
   },
+  /**
+   * 🔴 REQ-2026-159 — `stopGate: "auto"` 는 유효한 사전 위임이 있으면 통합 승인을 다시 묻지 않는다.
+   *    아래 문장들은 **설치 프로젝트로 복사되는 계약**(`AGENTS.md`)에 그대로 남아 있어, 소비자의
+   *    에이전트가 위임이 있는데도 통합에서 멈추게 만든다 — 도구가 맞아도 계약이 틀리면 계약이 이긴다.
+   *
+   * 🔴 **배열 끝에 붙인다.** `RETIRED_CLAIMS[0]` 을 표본으로 쓰는 테스트가 있어서, 앞에 끼워 넣으면
+   *    그 표본이 바뀌어 무관한 검사가 깨진다(실제로 밟았다).
+   */
+  {
+    text: '통합(main 병합) 승인은 어느 값에서도 필요하다',
+    why: 'stopGate:"auto" 는 유효한 사전 위임이 그 승인을 대신한다 (REQ-2026-159 · AGENTS.md)',
+  },
+  {
+    text: '통합(main 병합) 승인은 어느 값에서나 필요합니다',
+    why: 'stopGate:"auto" 는 유효한 사전 위임이 그 승인을 대신한다 (REQ-2026-159 · configuration.md)',
+  },
+  {
+    text: '통합 승인은 stopGate 값(phase/req/merge)과 무관하게 항상 존재',
+    why: '열거에 auto 가 빠져 있고, auto 에서는 위임이 그 승인을 대신한다 (REQ-2026-159 · AGENTS.md)',
+  },
+  {
+    text: 'Integration (main merge) approval is required under every value',
+    why: 'under stopGate:"auto" a valid advance delegation stands in for it (REQ-2026-159 · configuration.en.md)',
+  },
 ]
 
 /**

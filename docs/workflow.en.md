@@ -273,6 +273,11 @@ If you chose `phase`, this autonomy rule does not apply.
 
 The places it does stop are fixed: the control-point table (I1/I2/B1, R1/R2/R3), HIGH confirmation, destructive
 operations, a change of design **scope**, a `BLOCKED` review, unmet prerequisites, `AWAIT_HUMAN`/`BLOCKED`,
+🔴 **One exception under `stopGate: "auto"`.** If a **valid advance delegation** (`req:delegate`) covers this
+integration, `I1`/`I2`/`B1` are not asked again — the human approval did not disappear, it moved **earlier**, to
+the moment the delegation was issued. With no delegation, or one that expired, was revoked, or was already
+consumed, the run stops as usual. `R1`/`R2`/`R3` (tag, publish, release) can never be delegated.
+
 `commitgate setup`, and **any command that demands a confirmation sentence** (`--confirm`) —
 `req:rebind`, `delivery seal`/`approve`/`reopen`. That last one matters because such a command can appear as a
 **diagnostic line** while `kind` is `AGENT`: judging by `kind` alone would have the agent write your confirmation
