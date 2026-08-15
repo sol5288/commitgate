@@ -2,14 +2,14 @@
   "id": "REQ-2026-155",
   "branch": "feat/req-2026-155-req-2026-155-recovery-window-and-raw-paths",
   "risk_level": "LOW",
-  "codex_thread_id": "01a002eb-6c48-7d13-882b-e75f95f3c661",
-  "review_base_sha": "b15703d3c7de7b529e2518f877f1c97d57f42b83",
-  "review_diff_hash": "e8e3ca4c5358949f0aae56e2b40030979a82fbcc",
+  "codex_thread_id": "01a00317-b793-7370-a2dd-a7f07e095306",
+  "review_base_sha": "26986a58f562c0ab0e98691bf469c9a69fe2d9c5",
+  "review_diff_hash": "a3d9c1335a842da976e017d3ade01c4d2505c033",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "6deacac77c9ff128781612b1d649d084ff458bc904536491cc1a9a4f115b2b59",
-  "current_phase": "phase-1-checkpoint-verb-guard",
+  "current_phase": "phase-2-raw-input-fidelity",
   "phases": [
     {
       "id": "phase-1-checkpoint-verb-guard",
@@ -20,7 +20,8 @@
     {
       "id": "phase-2-raw-input-fidelity",
       "title": "raw 입력 충실도",
-      "status": "pending"
+      "status": "pending",
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -43,16 +44,23 @@
       "phase_id": "phase-1-checkpoint-verb-guard",
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-raw-input-fidelity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-raw-input-fidelity",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-checkpoint-verb-guard",
+    "phase_id": "phase-2-raw-input-fidelity",
     "outcome": "approved",
-    "compare_hash": "52438c738df514980a2882c388b8b75ddeb451b4df6d46a2c1e49d346e4f4b6c",
+    "compare_hash": "252dbd371e0623a7a0ba805c2522a72288ae97067e8fbdc9f26f65f96f2fe70a",
     "count": 1,
     "errors": [],
-    "at": "2026-08-15T00:58:36.120Z",
+    "at": "2026-08-15T01:46:33.100Z",
     "findings": [],
     "elided_count": 0
   },
@@ -104,6 +112,12 @@
       "phase_id": "phase-1-checkpoint-verb-guard",
       "consumed_by_commit_sha": "851afb808117fc3558e1515dfbd87e6bb340a880",
       "approval_consumed_at": "2026-08-15T00:58:46.611Z"
+    },
+    {
+      "approved_tree": "a3d9c1335a842da976e017d3ade01c4d2505c033",
+      "phase_id": "phase-2-raw-input-fidelity",
+      "consumed_by_commit_sha": "cb7c53636c222320cd88ef4a2d5d619bab7da8c2",
+      "approval_consumed_at": "2026-08-15T01:46:51.561Z"
     }
   ],
   "user_commit_confirmed": null
