@@ -2,15 +2,23 @@
   "id": "REQ-2026-160",
   "branch": "feat/req-2026-160-manual-confirm-on-scope-undetermined",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00572-d8bd-7602-87f1-8e57d2b23d13",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00581-7874-7690-9319-03954abe049b",
+  "review_base_sha": "ac1381408587ec3b9d2928cf0213853e8e769f97",
+  "review_diff_hash": "f8e585d8f06948d58947b3ab8b271b06058f8b94",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "8406252b43a770843192c667771cc4810360a9aaff00a4aeb0ee2b7e0bf3a4aa",
+  "design_approved_hash": "6aa27036040db62919a54f0859aeb8473adec24357bb180804eab7cd25ba67cc",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-manual-confirm-gate",
+      "title": "수동 확인 게이트",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,35 +32,49 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-manual-confirm-gate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-manual-confirm-gate",
+      "attempts": 1,
+      "closed_reason": null
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "fa04b33ac3297d8359ebd1ba40ac5580ba4dfeb42d1ea1862884d5dd3ac82e46",
+    "compare_hash": "bfce10938281ef8b40e579d2765455b1f8b0988ed0e5a67c4ae40c29b364e394",
     "count": 1,
     "errors": [],
-    "at": "2026-08-15T12:45:08.350Z",
+    "at": "2026-08-15T13:00:26.164Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "6bcc01029fd155d765bbd67a0cd56f24310f76d7",
-    "design": "555e4909cc833e3149f49a44c81adbe8cdb5a028",
+    "design": "ba3b2216071aef2d7144a96ef639d3e115a11d90",
     "plan": "89551bb1b848228ed0fa57d1bda7a2f668517e82"
   },
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-160/responses/design-r02-approved.json",
-    "response_sha256": "70e51474700ea533207af9d4c0399fc21142ea098c97b0d656c976f3cdbe32e0",
+    "response_path": "workflow/REQ-2026-160/responses/design-r03-approved.json",
+    "response_sha256": "0f5e0b8b394a2dd5f76d074f20b94dea36619f785784bd112c455aeeb8f863ff",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "965ad3fde402b3b5505c3cd6b410daef0d696382",
-    "codex_thread_id": "01a00572-d8bd-7602-87f1-8e57d2b23d13",
+    "review_base_sha": "77b2079ab22d9567ec77dd117a8b7807dfef5eea",
+    "codex_thread_id": "01a00581-7874-7690-9319-03954abe049b",
     "machine_schema_version": "1.1",
-    "status": "COMPLETE",
+    "status": "STEP_COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-08-15T12:45:08.350Z",
+    "approved_at": "2026-08-15T13:00:26.164Z",
     "archive_inventory": {
       "items": [
         {
@@ -62,13 +84,17 @@
         {
           "response_path": "workflow/REQ-2026-160/responses/design-r02-approved.json",
           "sha256": "70e51474700ea533207af9d4c0399fc21142ea098c97b0d656c976f3cdbe32e0"
+        },
+        {
+          "response_path": "workflow/REQ-2026-160/responses/design-r03-approved.json",
+          "sha256": "0f5e0b8b394a2dd5f76d074f20b94dea36619f785784bd112c455aeeb8f863ff"
         }
       ],
-      "inventory_sha256": "096e9043d17fa6551efcffdec356ef021762c0e9800f2cbf9ca8e6b3757606df",
+      "inventory_sha256": "c5b3850d6e11072f3f5378fd419d75b63e3f77f61630c5a203b385095a89a1a9",
       "review_kind": "design",
       "phase_id": null,
-      "source_response_path": "workflow/REQ-2026-160/responses/design-r02-approved.json"
+      "source_response_path": "workflow/REQ-2026-160/responses/design-r03-approved.json"
     },
-    "design_hash": "8406252b43a770843192c667771cc4810360a9aaff00a4aeb0ee2b7e0bf3a4aa"
+    "design_hash": "6aa27036040db62919a54f0859aeb8473adec24357bb180804eab7cd25ba67cc"
   }
 }
