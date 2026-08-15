@@ -2,15 +2,23 @@
   "id": "REQ-2026-157",
   "branch": "feat/req-2026-157-req-2026-157-setup-docs-parity",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00394-6212-7892-8db7-b344da22d27e",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a0039d-e0ce-78d2-8ca0-42622748bdd3",
+  "review_base_sha": "3ce2c2c050540d2c7ea19dcf8d9b1a4dc361a351",
+  "review_diff_hash": "44a1620d51d3b99f3dbad5ca714fb3a61fa40e76",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "f443f814e0b313ea4643ae91f40c3d9f68ab410fb30ea6991f6ca2a87237a984",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-setup-docs-parity",
+  "phases": [
+    {
+      "id": "phase-1-setup-docs-parity",
+      "title": "setup 문서 정합",
+      "status": "pending",
+      "max_files": 11,
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +32,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-setup-docs-parity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-setup-docs-parity",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-setup-docs-parity",
     "outcome": "approved",
-    "compare_hash": "363e417cfe2d5d548064c5ac86faafdea6c41d04b0e6230bee3b34f8b78d3e32",
+    "compare_hash": "d5a15d4252dc095577a4a8691960dba86c67f4366b07cca0370599821c169912",
     "count": 1,
     "errors": [],
-    "at": "2026-08-15T04:01:27.434Z",
+    "at": "2026-08-15T04:13:28.043Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,5 +89,14 @@
       "source_response_path": "workflow/REQ-2026-157/responses/design-r03-approved.json"
     },
     "design_hash": "f443f814e0b313ea4643ae91f40c3d9f68ab410fb30ea6991f6ca2a87237a984"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "44a1620d51d3b99f3dbad5ca714fb3a61fa40e76",
+      "phase_id": "phase-1-setup-docs-parity",
+      "consumed_by_commit_sha": "54243f8cc855c28155d6640d22b0d0bc97ccf73b",
+      "approval_consumed_at": "2026-08-15T04:13:41.774Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
