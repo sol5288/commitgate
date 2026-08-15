@@ -95,7 +95,15 @@ describe('delivery 묶음 승인 결속(REQ-2026-130)', () => {
   }
   /** `branchPrefix: "delivery/"` — 지원되는 설정. 이때 delivery 브랜치가 전제를 통과한다. */
   const deliveryPrefixDeps = (post: string[], record?: string | null) => ({
-    ...makeDeps({ git: deliveryGit(post, record) as never }),
+    // 🔴 레코드는 `git show` 와 `readBlobs` **양쪽**에 둔다(REQ-2026-159). 실제 트리에서는 둘이
+    //    같은 것을 보는데, fake 가 한쪽만 답하면 새 경로가 "읽지 못함"으로만 관측된다.
+    ...makeDeps({
+      git: deliveryGit(post, record) as never,
+      readBlobs: fakeReadBlobs({
+        'workflow/delivery/payment.json': record === undefined ? recordJson() : (record ?? ''),
+        'workflow/REQ-2026-001/state.json': JSON.stringify({ req_id: 'REQ-2026-001', risk_level: 'LOW', review_series: [] }),
+      }),
+    }),
     branchPrefix: 'delivery/',
   })
 

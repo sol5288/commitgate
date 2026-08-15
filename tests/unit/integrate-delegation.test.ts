@@ -83,12 +83,15 @@ const FACTS_OK: AutoFacts = {
   reviewInconclusive: false,
   deliveryMembers: null,
   compositionChanged: false,
+  // REQ-2026-159: 정책 해소용 멤버 사실. 이 스위트는 `delegationGate` 자체를 보므로 빈 목록이면 충분하다.
+  memberPolicies: [],
+  policyMembersUnknown: false,
 }
 
 describe('[REQ-2026-140] delegationGate — auto 가 아니면 아무것도 하지 않는다', () => {
   it('🔴 phase·req·merge 는 not-required 다(무회귀)', () => {
     for (const sg of ['phase', 'req', 'merge'] as const) {
-      const g = delegationGate(gateDeps({ stopGate: sg, readDelegationLedger: () => null }), prepared(), FACTS_OK)
+      const g = delegationGate(gateDeps({ stopGate: sg, readDelegationLedger: () => null }), prepared(), FACTS_OK, false)
       expect(g.kind, sg).toBe('not-required')
     }
   })
@@ -96,7 +99,7 @@ describe('[REQ-2026-140] delegationGate — auto 가 아니면 아무것도 하�
 
 describe('[REQ-2026-140] delegationGate — auto', () => {
   it('🔴 위임이 없으면 거부하고 발급 방법을 알려준다', () => {
-    const g = delegationGate(gateDeps({ stopGate: 'auto', readDelegationLedger: () => null }), prepared(), FACTS_OK)
+    const g = delegationGate(gateDeps({ stopGate: 'auto', readDelegationLedger: () => null }), prepared(), FACTS_OK, true)
     expect(g.kind).toBe('denied')
     if (g.kind === 'denied') {
       expect(g.lines.join('\n')).toContain('absent')
@@ -109,6 +112,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED()) }),
       prepared(),
       FACTS_OK,
+      true,
     )
     expect(g.kind).toBe('allowed')
     if (g.kind === 'allowed') expect(g.delegationId).toBe('D1')
@@ -119,6 +123,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED({ trunk_sha: 'f'.repeat(40) })) }),
       prepared(),
       FACTS_OK,
+      true,
     )
     expect(g.kind).toBe('denied')
     if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('trunk-moved')
@@ -129,6 +134,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED({ source_branch: 'feat/req-2026-002-y' })) }),
       prepared(),
       FACTS_OK,
+      true,
     )
     expect(g.kind).toBe('denied')
     if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('source-mismatch')
@@ -148,6 +154,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED(), consumed) }),
       prepared(),
       FACTS_OK,
+      true,
     )
     expect(g.kind).toBe('denied')
     if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('consumed')
@@ -161,7 +168,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       [{ ...FACTS_OK, reviewInconclusive: true }, 'review-inconclusive'],
     ] as const
     for (const [facts, reason] of cases) {
-      const g = delegationGate(deps, prepared(), facts)
+      const g = delegationGate(deps, prepared(), facts, true)
       expect(g.kind, reason).toBe('denied')
       if (g.kind === 'denied') expect(g.lines.join('\n')).toContain(reason)
     }
@@ -172,6 +179,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED({ high_risk_ack: true })) }),
       prepared(),
       { ...FACTS_OK, riskLevel: 'HIGH' },
+      true,
     )
     expect(g.kind).toBe('allowed')
   })
@@ -181,6 +189,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       gateDeps({ stopGate: 'auto', readDelegationLedger: () => ledgerOf(ISSUED()) }),
       prepared({ featureBranch: 'hotfix/thing' }),
       FACTS_OK,
+      true,
     )
     expect(g.kind).toBe('denied')
     if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('판정할 수 없')
@@ -195,6 +204,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       }),
       prepared({ featureBranch: 'delivery/0.23.0' }),
       { ...FACTS_OK, deliveryMembers: null },
+      true,
     )
     expect(g.kind).toBe('denied')
   })
@@ -207,6 +217,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       }),
       prepared({ featureBranch: 'delivery/0.23.0' }),
       { ...FACTS_OK, deliveryMembers: [TICKET], compositionChanged: true },
+      true,
     )
     expect(g.kind).toBe('denied')
     if (g.kind === 'denied') expect(g.lines.join('\n')).toContain('composition-changed')
@@ -220,6 +231,7 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
       }),
       prepared({ featureBranch: 'delivery/0.23.0' }),
       { ...FACTS_OK, deliveryMembers: [TICKET], compositionChanged: false },
+      true,
     )
     expect(g.kind).toBe('allowed')
   })
@@ -228,7 +240,14 @@ describe('[REQ-2026-140] delegationGate — auto', () => {
 describe('[REQ-2026-140] readTicketFacts — 못 읽으면 fail-closed', () => {
   it('state.json 이 없으면 HIGH·미결로 본다', () => {
     const f = readTicketFacts(fakeReadBlobs(), HEAD, 'workflow', TICKET, 8)
-    expect(f).toEqual({ riskLevel: 'HIGH', budgetHardCapReached: false, reviewInconclusive: true })
+    expect(f).toEqual({
+      riskLevel: 'HIGH',
+      budgetHardCapReached: false,
+      reviewInconclusive: true,
+      // 🔴 REQ-2026-159: 읽지 못한 것은 legacy 가 **아니다** — 어느 정책이 지배하는지 모른다는 뜻이다.
+      snapshotStopGate: null,
+      stateUnreadable: true,
+    })
   })
 
   it('손상 JSON 도 같은 취급이다', () => {
@@ -239,7 +258,14 @@ describe('[REQ-2026-140] readTicketFacts — 못 읽으면 fail-closed', () => {
 
   it('정상 state 는 그대로 읽는다', () => {
     const f = readTicketFacts(fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: OK_STATE }), HEAD, 'workflow', TICKET, 8)
-    expect(f).toEqual({ riskLevel: 'LOW', budgetHardCapReached: false, reviewInconclusive: false })
+    expect(f).toEqual({
+      riskLevel: 'LOW',
+      budgetHardCapReached: false,
+      reviewInconclusive: false,
+      // 스냅샷이 없는 정상 state = legacy(= config 를 따름). `stateUnreadable` 과 구분된다.
+      snapshotStopGate: null,
+      stateUnreadable: false,
+    })
   })
 
   it('🔴 hardCap 도달을 읽는다', () => {
@@ -362,18 +388,26 @@ describe('[REQ-2026-140] runIntegrate 배선 — 순수 테스트가 못 잡는 
     expect(deps.git.calls.some((c) => c[0] === 'merge')).toBe(false)
   })
 
-  it('🔴 stopGate 가 auto 가 아니면 위임 원장을 읽지도 않는다(무회귀)', async () => {
-    let read = 0
+  /**
+   * 🔴 **REQ-2026-159 에서 이 계약이 바뀌었다.** 예전에는 `stopGate` 가 `auto` 가 아니면 원장을
+   *    읽지도 않았다. 그것이 바로 결함이었다: `auto` 로 만든 티켓이 나중에 `merge` config 를
+   *    만나면 **아무것도 읽지 않고** 통과했다.
+   *
+   *    이제는 정책을 티켓 스냅샷에서 해소해야 하므로 사실을 **항상** 모은다(전부 read-only).
+   *    지켜야 할 무회귀는 "읽지 않는다"가 아니라 **"판정이 `not-required` 이고 병합이 그대로 된다"**
+   *    이다 — 아래가 그것을 본다.
+   */
+  it('🔴 legacy 티켓 + config merge 는 위임을 요구하지 않고 그대로 병합한다(무회귀)', async () => {
     const deps = makeDeps({
       git: fakeGit({ branch: FEATURE_001 }),
       stopGate: 'merge',
-      readDelegationLedger: () => {
-        read++
-        return null
-      },
+      readBlobs: fakeReadBlobs({ [`workflow/${TICKET}/state.json`]: OK_STATE }),
+      readDelegationLedger: () => null,
     })
-    await runIntegrate(integrateOpts({ run: false }), deps)
-    expect(read).toBe(0)
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    expect(r.merged, deps.logs.join(String.fromCharCode(10))).toBe(true)
+    // 🔴 판정 근거까지 본다 — "위임을 요구하지 않았다"만이 아니라 **왜** 그런지가 보고돼야 한다.
+    expect(deps.logs.join(String.fromCharCode(10))).toContain('사전 위임 불필요')
   })
 })
 
@@ -575,5 +609,227 @@ describe('[REQ-2026-140] runIntegrate — push·수행 기록 배선', () => {
     expect(r.exit).toBe(1)
     expect(r.merged).toBe(true)
     expect(deps.logs.join('\n')).toContain('앞서 있습니다')
+  })
+})
+
+/**
+ * REQ-2026-159 — **티켓 정책 스냅샷이 최종 통합에도 적용된다.**
+ *
+ * 🔴 **왜 `runIntegrate` 를 태우는가**: 순수 함수만 검사하면 배선이 끊겨도 green 이다. 실제로
+ *    `bin/integrate.ts` 는 `resolveIntegrationPolicy` 없이도 컴파일됐고, `cfg.stopGate` 를 직접
+ *    넘기고 있었다 — 그것이 이 REQ 의 P1 이다.
+ *
+ * 🔴 **비대화형 + `--run`** 으로 돈다. 그 조합에서 최종 확인이 생략되므로(`deps.interactive` 분기)
+ *    도구 게이트가 유일한 방어선이다.
+ *
+ * 🔴 **exit code 만 보지 않는다.** `merge` 호출 횟수까지 센다 — 병합한 뒤 실패한 경우와 구별된다.
+ */
+describe('[REQ-2026-159] runIntegrate — 정책은 티켓 스냅샷에서 해소된다', () => {
+  const stateWith = (stopGate: string | null): string =>
+    JSON.stringify({
+      id: TICKET,
+      risk_level: 'LOW',
+      review_series: [{ series_id: 'phase:p1#1', attempts: 1, closed_reason: 'approved' }],
+      ...(stopGate === null ? {} : { policy_snapshot: { stop_gate: stopGate } }),
+    })
+
+  const DELIVERY_SLUG = 'bundle'
+  const DELIVERY_BRANCH = `delivery/${DELIVERY_SLUG}`
+  const M1 = 'REQ-2026-001'
+  const M2 = 'REQ-2026-002'
+  const deliveryRecord = JSON.stringify({
+    schema_version: 1,
+    slug: DELIVERY_SLUG,
+    branch: DELIVERY_BRANCH,
+    target_branch: TRUNK,
+    state: 'approved',
+    members: [
+      { req_id: M1, order: 1, delivery_base_sha: BASE, status: 'integrated' },
+      { req_id: M2, order: 2, delivery_base_sha: BASE, status: 'integrated' },
+    ],
+    events: [],
+    approval: { base_sha: BASE, at: '2026-08-10T00:00:00.000Z' },
+  })
+
+  const CLAIM_SHA = '7'.repeat(40)
+
+  /**
+   * 실행 한 벌. `blobs` 로 트리 내용을, `ledger` 로 위임 원장을 정한다.
+   *
+   * 🔴 `showRecord` — delivery 승인 결속 검사는 레코드를 `git show` 로 읽는다(트리는 `readBlobs`).
+   *    실제 저장소에서는 둘이 같은 것을 보므로 fake 도 **양쪽에 같은 값**을 둔다.
+   * 🔴 `withClaim` — 소비 커밋이 tip 을 움직이는 것을 모사한다. 공유 fake 는 ref 가 고정이라
+   *    `C === V` 가 되어 CAS 불변식에서 정상 경로가 막힌다(fake 의 한계이지 결함이 아니다).
+   */
+  const run = async (over: {
+    stopGate: RunDeps['stopGate']
+    blobs: Record<string, string>
+    ledger?: string | null
+    branch?: string
+    branchPrefix?: string
+    showRecord?: string
+    withClaim?: boolean
+    /** 대화형 세션 모사 + 최종 확인 답변([y/N]). */
+    interactive?: { answer: string }
+  }): Promise<{ exit: number; merged: boolean; merges: number; logs: string }> => {
+    const inner = fakeGit({ branch: over.branch ?? FEATURE_001 })
+    let claimed = false
+    const git: ReturnType<typeof fakeGit> = {
+      calls: inner.calls,
+      exec(args: string[]): string {
+        if (over.showRecord !== undefined && args[0] === 'show') return over.showRecord
+        // 승인 이후 커밋 조회(staleness). 이 스위트가 보는 것은 **정책 해소**이므로 깨끗하다고 답한다.
+        if (over.showRecord !== undefined && args[0] === 'rev-list' && args.includes('--')) return ''
+        if (claimed && args[0] === 'rev-parse' && args[1] !== '--abbrev-ref' && !(args[2] ?? '').includes(TRUNK)) {
+          inner.calls.push(args)
+          return `${CLAIM_SHA}\n`
+        }
+        if (claimed && args[0] === 'rev-list' && args.some((a) => a.includes('..'))) {
+          inner.calls.push(args)
+          return `${CLAIM_SHA}\n`
+        }
+        if (claimed && args[0] === 'rev-list') {
+          inner.calls.push(args)
+          return `${MERGE_SHA} ${BASE} ${CLAIM_SHA}\n`
+        }
+        return inner.exec(args)
+      },
+    }
+    const deps = {
+      ...makeDeps({
+        git,
+        stopGate: over.stopGate,
+        readBlobs: fakeReadBlobs(over.blobs),
+        readDelegationLedger: () => over.ledger ?? null,
+        now: () => '2026-08-10T00:00:00.000Z',
+        ...(over.withClaim === true
+          ? { appendDelegationRow: (r: DelegationRow): void => void (r.kind === 'consumed' && (claimed = true)) }
+          : {}),
+        ...(over.interactive === undefined
+          ? {}
+          : { interactive: true, ask: async (): Promise<string> => over.interactive?.answer ?? 'n' }),
+      }),
+      ...(over.branchPrefix === undefined ? {} : { branchPrefix: over.branchPrefix }),
+    }
+    const r = await runIntegrate(integrateOpts({ run: true }), deps)
+    return {
+      exit: r.exit,
+      merged: r.merged,
+      merges: git.calls.filter((c) => c[0] === 'merge').length,
+      logs: deps.logs.join(String.fromCharCode(10)),
+    }
+  }
+
+  it('① 스냅샷 auto + config merge + 위임 없음 → 거부하고 병합하지 않는다', async () => {
+    const r = await run({ stopGate: 'merge', blobs: { [`workflow/${TICKET}/state.json`]: stateWith('auto') } })
+    expect(r.exit, r.logs).toBe(1)
+    expect(r.merged).toBe(false)
+    // 🔴 exit 만 보면 "병합한 뒤 실패"와 구분되지 않는다.
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('사전 위임')
+  })
+
+  it('② 스냅샷 merge + config auto → 없던 위임 요구가 생기지 않는다(병합)', async () => {
+    const r = await run({ stopGate: 'auto', blobs: { [`workflow/${TICKET}/state.json`]: stateWith('merge') } })
+    expect(r.merged, r.logs).toBe(true)
+    expect(r.logs).toContain('스냅샷 merge')
+    expect(r.logs).toContain('사전 위임 불필요')
+  })
+
+  it('③ 스냅샷 auto + config merge + 유효 위임 → 통합된다', async () => {
+    const r = await run({
+      stopGate: 'merge',
+      blobs: { [`workflow/${TICKET}/state.json`]: stateWith('auto') },
+      ledger: ledgerOf(ISSUED()),
+      withClaim: true,
+    })
+    expect(r.merged, r.logs).toBe(true)
+    // 🔴 **근거를 보고한다**(phase-1 r01 P1) — 어느 티켓의 무엇이 위임을 요구했는지.
+    expect(r.logs).toContain(`${TICKET}: 스냅샷 auto`)
+    expect(r.logs).toContain('사전 위임 필요')
+  })
+
+  it('④ 묶음에 auto 티켓과 merge 티켓이 섞이면 위임 없이는 거부한다', async () => {
+    const r = await run({
+      stopGate: 'merge',
+      branch: DELIVERY_BRANCH,
+      branchPrefix: 'delivery/',
+      blobs: {
+        [`workflow/delivery/${DELIVERY_SLUG}.json`]: deliveryRecord,
+        [`workflow/${M1}/state.json`]: stateWith('auto'),
+        [`workflow/${M2}/state.json`]: stateWith('merge'),
+      },
+      showRecord: deliveryRecord,
+    })
+    expect(r.exit, r.logs).toBe(1)
+    expect(r.merged).toBe(false)
+    expect(r.merges).toBe(0)
+  })
+
+  it('⑤ legacy(스냅샷 없음) + config merge → 현재 config 동작 보존(병합)', async () => {
+    const r = await run({ stopGate: 'merge', blobs: { [`workflow/${TICKET}/state.json`]: stateWith(null) } })
+    expect(r.merged, r.logs).toBe(true)
+  })
+
+  /**
+   * 🔴 **설계 r01 P1 의 회귀 오라클.** "그 외 → config" 로 접으면 유효한 `merge` 스냅샷이 버려져
+   *    이 경우가 위임을 요구하게 된다 — 목표("생성 시 정책이 끝까지 간다")의 역방향 위반이다.
+   */
+  it('⑥ 묶음이 전부 merge 스냅샷 + config auto → 없던 위임 요구가 생기지 않는다(병합)', async () => {
+    const r = await run({
+      stopGate: 'auto',
+      branch: DELIVERY_BRANCH,
+      branchPrefix: 'delivery/',
+      blobs: {
+        [`workflow/delivery/${DELIVERY_SLUG}.json`]: deliveryRecord,
+        [`workflow/${M1}/state.json`]: stateWith('merge'),
+        [`workflow/${M2}/state.json`]: stateWith('merge'),
+      },
+      showRecord: deliveryRecord,
+    })
+    expect(r.merged, r.logs).toBe(true)
+    // 🔴 r01 P1: 두 멤버의 스냅샷이 **각각** 근거로 보고된다.
+    expect(r.logs).toContain(`${M1}: 스냅샷 merge`)
+    expect(r.logs).toContain(`${M2}: 스냅샷 merge`)
+    expect(r.logs).toContain('사전 위임 불필요')
+  })
+
+  /**
+   * 🔴 **읽지 못함은 legacy 가 아니다.** 같은 입력을 못 읽으면 위험도는 이미 HIGH 로 되돌리면서
+   *    정책만 "모르니까 통과"로 읽을 수는 없다.
+   */
+  it('⑦ 티켓 state 를 읽지 못하면 config 값과 무관하게 거부한다(fail-closed)', async () => {
+    const r = await run({ stopGate: 'merge', blobs: { [`workflow/${TICKET}/state.json`]: '{oops' } })
+    expect(r.exit, r.logs).toBe(1)
+    expect(r.merged).toBe(false)
+    expect(r.merges).toBe(0)
+    expect(r.logs).toContain('판정할 수 없습니다')
+    // 🔴 안내가 약속한 것과 실제 동작이 같아야 한다 — 이 문장이 있으면 아래 두 테스트가 그것을 증명한다.
+    expect(r.logs).toContain('대화형 세션이라면')
+  })
+
+  /**
+   * 🔴 **r02 P1 — 안내한 탈출구는 실제로 열려 있어야 한다.**
+   *    "대화형이면 사람이 승인할 수 있다"고 적어 놓고 대화형에서도 즉시 멈추면, 이 저장소가 여러 번
+   *    밟은 **실행 불가능한 안내**를 또 만드는 것이다.
+   */
+  it('⑧ 판정 불가 + 대화형 + 사람이 y → 통합된다', async () => {
+    const r = await run({
+      stopGate: 'merge',
+      blobs: { [`workflow/${TICKET}/state.json`]: '{oops' },
+      interactive: { answer: 'y' },
+    })
+    expect(r.merged, r.logs).toBe(true)
+    expect(r.logs).toContain('정책 판정 불가')
+  })
+
+  it('⑨ 판정 불가 + 대화형 + 사람이 n → 병합하지 않는다(기본 No)', async () => {
+    const r = await run({
+      stopGate: 'merge',
+      blobs: { [`workflow/${TICKET}/state.json`]: '{oops' },
+      interactive: { answer: '' },
+    })
+    expect(r.merged).toBe(false)
+    expect(r.merges).toBe(0)
   })
 })
