@@ -2,20 +2,21 @@
   "id": "REQ-2026-164",
   "branch": "feat/req-2026-164-upgrade-axis-registry-and-docs",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00bcf-1701-70c3-accf-65b17ccb5e9c",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00bd3-ec86-7fb3-9063-c73bab5f657c",
+  "review_base_sha": "1f0a0f32533115f517c943260dc20e8de997d5b5",
+  "review_diff_hash": "fec0004bbac959bbfd8adff45b6552bccb84fcff",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "26ef4377271ebe412949d5bb0d5a55dd7064631420030e5fb6e07d41c9cc919d",
-  "current_phase": null,
+  "current_phase": "phase-1-axis-registry",
   "phases": [
     {
       "id": "phase-1-axis-registry",
       "title": "축 등록부 + 정본 문서",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     },
     {
       "id": "phase-2-readme-parity",
@@ -43,16 +44,23 @@
       "phase_id": null,
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-axis-registry#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-axis-registry",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-axis-registry",
     "outcome": "approved",
-    "compare_hash": "d451f29be2c858d92c5d526efe4cb486109f6768b7e078069ffece951a32a6a8",
+    "compare_hash": "1e7f0853477d5c42515806d49fa4ad7c0112faf94ad727a5ad28608d325d5676",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T18:22:12.969Z",
+    "at": "2026-08-16T18:28:17.471Z",
     "findings": [],
     "elided_count": 0
   },
@@ -97,5 +105,14 @@
       "source_response_path": "workflow/REQ-2026-164/responses/design-r04-approved.json"
     },
     "design_hash": "26ef4377271ebe412949d5bb0d5a55dd7064631420030e5fb6e07d41c9cc919d"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "fec0004bbac959bbfd8adff45b6552bccb84fcff",
+      "phase_id": "phase-1-axis-registry",
+      "consumed_by_commit_sha": "bd81869f28eaa4dc032531b82c8515b764dfaed4",
+      "approval_consumed_at": "2026-08-16T18:28:43.918Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
