@@ -54,6 +54,8 @@ import { CLOSE_PROOF_BASENAME, recoveryGuidance, type CloseProofEvent } from './
 // REQ-2026-094 D27: 증인 불일치 판정은 `lib/evidence`가 정본(여기서 재구현 금지).
 import { splitUnboundPhases, designHashFromManifest, consumedApprovalsWithoutRow } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
+// REQ-2026-161 DEC-1: 명령 표면 판정·입력 획득·안내 문장의 정본. `check` C6와 같은 것을 쓴다.
+import { missingReqScripts, readPackageScripts, commandSurfaceMessage } from './lib/command-surface'
 // REQ-2026-097 DEC-1: 종결 판정의 술어·입력 획득을 intake와 공유한다(자체 구현 금지).
 import { scanTicketIntake } from './lib/intake'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, effectiveStopGate, isStopGate, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
@@ -118,7 +120,7 @@ export function classifyPolicyDrift(state: { policy_snapshot?: unknown }, config
 
 export const D_CHECK_IDS = [
   'D2', 'D3', 'D5', 'D6', 'D9', 'D10', 'D11', 'D13', 'D15', 'D16', 'D17', 'D18', 'D19',
-  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30', 'D31', 'D32',
+  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30', 'D31', 'D32', 'D33',
 ] as const
 
 /** D-체크 id — `D_CHECK_IDS` 등재분만. 새 id는 등록부에 먼저 추가해야 컴파일된다. */
@@ -289,6 +291,14 @@ export interface DoctorInputs {
   //   undefined = 미계산(2-arg/legacy) → OK. [] = 전부 보호됨 → OK. 비어있지 않음 → WARN.
   //   dev/dogfood(packageRootDiffers===false)면 D20/D21처럼 skip. optional이어야 테스트 base 리터럴이 안 깨진다.
   repoRootScratchUnprotected?: string[]
+  /**
+   * D33(REQ-2026-161): 대상 repo `package.json`의 `scripts` 맵. **설치본의 `req:*` 명령 표면** 판정 입력.
+   *
+   * 🔴 읽기는 `lib/command-surface`의 `readPackageScripts` **하나**가 한다(설계 DEC-1) — `check` C6와
+   *    같은 입력 획득이어야 두 표면이 같은 답을 낸다.
+   * `undefined` = 미계산(2-arg/legacy) → 점검 불요. `null` = 읽지 못함(판정 불가) → 점검 불요.
+   */
+  packageScripts?: Record<string, unknown> | null
   /**
    * D24(REQ-2026-062): setup 완료 게이트 판정. `undefined` = 미계산(2-arg 경로).
    * 🔴 이 값이 무엇이든 **WARN 상한**이다 — 차단은 doctor가 아니라 워크플로 verb의 preflight가 한다.
@@ -888,6 +898,32 @@ export function runChecks(inp: DoctorInputs): Check[] {
         '다음 review가 이 파일을 만들면 **D10이 FAIL하여 커밋이 막힙니다**. ' +
         '`commitgate sync --gitignore --apply` 로 배포 템플릿의 누락 규칙을 보강하세요(기존 행은 변경하지 않습니다, REQ-2026-047).',
     })
+  }
+
+  /**
+   * D33(REQ-2026-161): **설치본의 `req:*` 명령 표면**이 설치된 패키지의 verb 표면보다 좁은가.
+   *
+   * 🔴 **D19와 다른 질문이다.** D19는 설치 *모드*(Stage A/B/mixed)를 5개 표본 키의 **값 형태**로 판정하고,
+   *    부재 키는 `filter(isString)`에서 조용히 떨어진다 — 그래서 `req:delegate`가 없어도 `OK Stage B`다.
+   *    그 판정은 옳다. 한 체크에 두 질문을 섞으면 **한쪽 답이 다른 쪽을 가린다**(지금 그렇게 가려졌다).
+   *
+   * 🔴 **level 상한은 WARN**(D19~D23과 동일 근거). `req:commit`이 doctor를 하드 게이트로 spawn하므로
+   *    FAIL이면 스크립트 하나가 없는 설치본의 **모든 커밋이 벽돌**이 된다.
+   *
+   * 🔴 실측이 이 검사의 존재 이유다: 0.23.1 설치본에서 `req:next`가 `pnpm req:delegate ...`를 안내했는데
+   *    그 스크립트가 없어 실행이 실패했고, `check`·`doctor`·`sync` 어디도 그 사실을 말하지 않았다.
+   */
+  if (inp.packageRootDiffers === false) {
+    c.push({ id: 'D33', level: 'OK', applicable: false, msg: 'req:* 명령 표면 점검 불요(dev repo/dogfood — packageRoot === config root)' })
+  } else if (inp.packageScripts === undefined) {
+    c.push({ id: 'D33', level: 'OK', applicable: false, msg: 'req:* 명령 표면 점검 불요(2-arg/미계산)' })
+  } else if (inp.packageScripts === null) {
+    // 🔴 읽지 못한 것을 "부족"으로 읽지 않는다 — C6와 같은 규율.
+    c.push({ id: 'D33', level: 'OK', applicable: false, msg: 'req:* 명령 표면 점검 불요(package.json 의 scripts 를 읽지 못함)' })
+  } else {
+    const missing = missingReqScripts(inp.packageScripts)
+    if (missing.length === 0) c.push({ id: 'D33', level: 'OK', msg: commandSurfaceMessage(missing) })
+    else c.push({ id: 'D33', level: 'WARN', reason_code: 'command-surface-skew', msg: commandSurfaceMessage(missing) })
   }
 
   // D23(REQ-2026-056): frozen-lockfile 위생 진단.
@@ -1987,6 +2023,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // REQ-2026-111: 새 관측 로그도 같은 보호 대상이다 — 루트 `.gitignore`·`templates/workflow.gitignore`
     //   양쪽이 배포되지 않은 설치본을 D22가 알리게 한다(자산 skew 전례: REQ-2026-025·038).
     repoRootScratchUnprotected: unprotectedRepoRootScratch([REVIEW_CALL_LOG_REL, DOCTOR_RUN_LOG_REL], git),
+    // D33(REQ-2026-161): 명령 표면 skew. 읽기는 command-surface 하나가 한다(check C6와 같은 입력).
+    packageScripts: readPackageScripts(cfg.root),
     // D29(REQ-2026-112): 계약 파일을 **읽기만** 한다. 파일이 하나도 없으면 `undefined`(점검 불요).
     retiredClaimHits: ((): { file: string; claim: RetiredClaim }[] | undefined => {
       const rels = CONTRACT_FILE_RELS.filter((r) => existsSync(join(cfg.root, r)))

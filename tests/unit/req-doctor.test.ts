@@ -23,6 +23,8 @@ import { validateResponseStructure } from '../../scripts/req/review-codex'
  * 테스트 편의: `--porcelain` 표기 문자열(`'R  old -> new'`)을 `StatusEntry`로 변환.
  * `-z` 시맨틱(path=NEW, origPath=OLD)으로 맞춘다 — runChecks가 이제 StatusEntry[]를 받기 때문.
  */
+import { expectedReqScripts } from '../../scripts/req/lib/command-surface'
+
 const E = (...lines: string[]): StatusEntry[] =>
   lines.map((l) => {
     const index = l[0] as string
@@ -69,6 +71,7 @@ function mk(over: Partial<Omit<DoctorInputs, 'state'>> & { state?: Partial<Workf
   return { ...base, ...rest, state: { ...base.state, ...stateOver } as WorkflowState }
 }
 const lvl = (checks: Check[], id: string) => checks.find((c) => c.id === id)?.level
+const msg = (checks: Check[], id: string) => checks.find((c) => c.id === id)?.msg ?? ''
 
 const validVerdict = {
   machine_schema_version: '1.1',
@@ -1287,4 +1290,69 @@ describe('[REQ-2026-110] D28 — HIGH 확인 차단 진단', () => {
 
   it('입력 미지정(undefined) → D28 OK — 기존 호출부 무회귀', () =>
     expect(lvl(runChecks(mk({})), 'D28')).toBe('OK'))
+})
+
+/**
+ * D33(REQ-2026-161) — 설치본 `req:*` **명령 표면** skew.
+ *
+ * 🔴 D19 와 **질문이 다르다**. D19 는 설치 *모드*를 5개 표본 키의 값 형태로 판정하고 부재 키를 걸러내므로
+ *    새 verb 가 없어도 `OK Stage B` 다. 그 사실이 실측에서 결함을 가렸다 — 그래서 별도 체크다.
+ */
+describe('[doctor] D33 — req:* 명령 표면 skew', () => {
+  const full = (): Record<string, unknown> => ({ ...expectedReqScripts(), build: 'vite build' })
+
+  it('전부 있으면 OK(개수 표기)', () => {
+    const c = runChecks(mk({ packageRootDiffers: true, packageScripts: full() }))
+    expect(lvl(c, 'D33')).toBe('OK')
+    expect(msg(c, 'D33')).toContain(String(Object.keys(expectedReqScripts()).length))
+  })
+
+  it('🔴 부족하면 WARN + 누락 verb 이름 + 해소 명령', () => {
+    const partial = full()
+    delete partial['req:delegate']
+    const c = runChecks(mk({ packageRootDiffers: true, packageScripts: partial }))
+    expect(lvl(c, 'D33')).toBe('WARN')
+    expect(msg(c, 'D33')).toContain('req:delegate')
+    expect(msg(c, 'D33')).toContain('npx commitgate sync --apply --scripts')
+  })
+
+  it('🔴 FAIL 이 아니다 — 스크립트 부재로 커밋 경로가 벽돌이 되면 안 된다', () => {
+    const c = runChecks(mk({ packageRootDiffers: true, packageScripts: {} }))
+    expect(lvl(c, 'D33')).toBe('WARN')
+    expect(c.some((x) => x.level === 'FAIL' && x.id === 'D33')).toBe(false)
+  })
+
+  it('🔴 dogfood(packageRootDiffers=false)면 점검 불요 — 이 저장소가 스스로 WARN 이 되지 않는다', () => {
+    const c = runChecks(mk({ packageRootDiffers: false, packageScripts: {} }))
+    expect(lvl(c, 'D33')).toBe('OK')
+    expect(msg(c, 'D33')).toContain('dogfood')
+  })
+
+  it('scripts 판독 실패(null)는 "부족"이 아니다', () => {
+    const c = runChecks(mk({ packageRootDiffers: true, packageScripts: null }))
+    expect(lvl(c, 'D33')).toBe('OK')
+    expect(msg(c, 'D33')).toContain('읽지 못함')
+  })
+
+  it('미계산(2-arg/legacy)이면 점검 불요 — 기존 호출부가 깨지지 않는다', () => {
+    const c = runChecks(mk({ packageRootDiffers: true }))
+    expect(lvl(c, 'D33')).toBe('OK')
+    expect(msg(c, 'D33')).toContain('미계산')
+  })
+
+  it('값이 비문자열이어도 존재하면 부재가 아니다(계획=적용 판정 일치)', () => {
+    const withNull = full()
+    withNull['req:delegate'] = null
+    expect(lvl(runChecks(mk({ packageRootDiffers: true, packageScripts: withNull })), 'D33')).toBe('OK')
+  })
+
+  it('🔴 D19 는 이 축을 판정하지 않는다 — 두 체크가 서로를 가리지 않는다', () => {
+    const partial = full()
+    delete partial['req:delegate']
+    const c = runChecks(
+      mk({ packageRootDiffers: true, packageScripts: partial, reqScripts: { ...expectedReqScripts() } as Record<string, string> }),
+    )
+    expect(lvl(c, 'D19')).toBe('OK') // 모드는 정상(Stage B)
+    expect(lvl(c, 'D33')).toBe('WARN') // 표면은 부족
+  })
 })
