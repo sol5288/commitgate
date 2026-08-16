@@ -910,7 +910,7 @@ export function runChecks(inp: DoctorInputs): Check[] {
    * 🔴 **level 상한은 WARN**(D19~D23과 동일 근거). `req:commit`이 doctor를 하드 게이트로 spawn하므로
    *    FAIL이면 스크립트 하나가 없는 설치본의 **모든 커밋이 벽돌**이 된다.
    *
-   * 🔴 실측이 이 검사의 존재 이유다: 0.23.1 설치본에서 `req:next`가 `pnpm req:delegate ...`를 안내했는데
+   * 🔴 실측이 이 검사의 존재 이유다: 0.23.1 설치본에서 `req:next`가 `req:delegate` 실행을 안내했는데
    *    그 스크립트가 없어 실행이 실패했고, `check`·`doctor`·`sync` 어디도 그 사실을 말하지 않았다.
    */
   if (inp.packageRootDiffers === false) {
