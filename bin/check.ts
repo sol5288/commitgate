@@ -13,7 +13,9 @@
  */
 import { resolve, join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
-import { loadConfig, type ResolvedConfig } from '../scripts/req/lib/config'
+import { loadConfig, packageRoot, type ResolvedConfig } from '../scripts/req/lib/config'
+// 🔴 명령 표면 판정·입력 획득·안내 문장의 **정본**(REQ-2026-161 DEC-1/DEC-4). D33과 같은 것을 쓴다.
+import { missingReqScripts, readPackageScripts, commandSurfaceMessage } from '../scripts/req/lib/command-surface'
 // 🔴 폐기 주장 목록·매칭 로직의 **정본**을 그대로 쓴다. 사본을 만들면 한쪽만 갱신돼 조용히 거짓이 된다.
 import { retiredClaimsIn, type RetiredClaim } from '../scripts/req/lib/retired-claims'
 import { I2_APPROVAL } from '../scripts/req/lib/control-points'
@@ -29,7 +31,7 @@ import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 export type CheckLevel = 'OK' | 'WARN' | 'FAIL'
 
 export interface CheckItem {
-  id: 'C1' | 'C2' | 'C3' | 'C4' | 'C5'
+  id: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6'
   level: CheckLevel
   msg: string
 }
@@ -65,6 +67,26 @@ export interface CheckInputs {
   auth: AuthProbeResult
   /** 계약 파일 본문(C5). 읽기는 호출부가 한다 — `runChecks`는 순수하게 유지한다. */
   contracts: ContractFile[]
+  /**
+   * C6 입력 — 대상 repo `package.json`의 `scripts` 맵(REQ-2026-161).
+   *
+   * 🔴 읽기는 `lib/command-surface`의 `readPackageScripts` **하나**가 한다(설계 DEC-1). 소비자가 각자
+   *    읽으면 부재·파싱실패·비객체 처리가 갈라져 C6와 D33이 다른 판정을 낸다.
+   * `null` = 읽지 못함(= 판정 불가). `undefined` = 미수집(2-arg/legacy 테스트 리터럴 무손상).
+   *
+   * 🔴 값 타입이 `unknown`인 것이 중요하다 — 존재 판정은 `init`의 `k in scripts`와 같아야 하고,
+   *    문자열로 좁히면 `"req:new": null` 같은 키가 **부재로 읽혀** 진단과 백필이 갈라진다(phase-2 r02 P1).
+   */
+  packageScripts?: Record<string, unknown> | null
+  /**
+   * C6 dogfood skip — 패키지 루트와 대상 루트가 **다른가**(= 실제 소비 설치본인가).
+   *
+   * 🔴 **skip이 없으면 이 저장소 자신이 WARN이 된다**(설계 r01 P1). 여기 `package.json`의 `req:*`는
+   *    5개(Stage A 형태)뿐인데 `VERB_MODULES`의 `req:*`는 12개다. `req:doctor`의 D20/D21/D22가 쓰는
+   *    것과 **같은 기준**이다.
+   * `undefined` = 미계산 → 점검 불요.
+   */
+  packageRootDiffers?: boolean
 }
 
 /**
@@ -162,6 +184,27 @@ export function runChecks(inp: CheckInputs): CheckReport {
     })
   }
 
+  // C6 — 설치본의 `req:*` **명령 표면**이 설치된 패키지보다 좁은가(REQ-2026-161).
+  //
+  // 🔴 WARN이지 FAIL이 아니다. 스크립트 하나가 없다고 기존 작업을 막으면 REQ-2026-087이 되돌린
+  //    실수의 반복이다. 이 진단의 목적은 차단이 아니라 **업그레이드 직후 눈에 띄게 하는 것**이다.
+  // 🔴 판정은 D33과 **같은 술어**를 쓴다(`missingReqScripts`) — 두 표면이 갈라지지 않는다.
+  if (inp.packageRootDiffers === false)
+    checks.push({ id: 'C6', level: 'OK', msg: 'req:* 명령 표면 점검 불요(dev repo/dogfood — packageRoot === 대상 root)' })
+  else if (inp.packageRootDiffers === undefined || inp.packageScripts === undefined)
+    checks.push({ id: 'C6', level: 'OK', msg: 'req:* 명령 표면 점검 불요(미계산)' })
+  else if (inp.packageScripts === null)
+    // 🔴 읽지 못한 것을 "부족"으로 말하지 않는다 — C1 실패 시 C4가 취하는 것과 같은 규율.
+    checks.push({ id: 'C6', level: 'OK', msg: 'req:* 명령 표면 점검 불요(package.json 의 scripts 를 읽지 못함)' })
+  else {
+    const missing = missingReqScripts(inp.packageScripts)
+    checks.push({
+      id: 'C6',
+      level: missing.length === 0 ? 'OK' : 'WARN',
+      msg: commandSurfaceMessage(missing),
+    })
+  }
+
   const summary = {
     ok: checks.filter((c) => c.level === 'OK').length,
     warn: checks.filter((c) => c.level === 'WARN').length,
@@ -247,7 +290,15 @@ export function collectContracts(dir: string): ContractFile[] {
 }
 
 export function collectInputs(dir: string, probes = createReviewerProbes()): CheckInputs {
-  return { config: loadConfigResult(dir), version: probes.version(), auth: probes.auth(), contracts: collectContracts(dir) }
+  return {
+    config: loadConfigResult(dir),
+    version: probes.version(),
+    auth: probes.auth(),
+    contracts: collectContracts(dir),
+    // 🔴 C6 입력 수집(REQ-2026-161). 읽기는 `readPackageScripts` 하나가 하고, 판정은 `runChecks`가 한다.
+    packageScripts: readPackageScripts(dir),
+    packageRootDiffers: packageRoot() !== resolve(dir),
+  }
 }
 
 export function printHelp(): void {
@@ -268,8 +319,12 @@ export function printHelp(): void {
   C4  리뷰 모델·추론강도 고정 여부
   C5  계약 문서(AGENTS.md · AGENTS.commitgate.md)의 폐기된 CommitGate 서술
       (업그레이드 후 남은 옛 계약 = WARN — 커밋을 막지 않습니다. 수동 병합 안내만 합니다)
+  C6  package.json 의 req:* 명령 표면이 설치된 패키지보다 좁은가
+      (업그레이드로 늘어난 verb 가 설치본에 없음 = WARN — 커밋을 막지 않습니다.
+       \`sync --apply --scripts\` 로 없는 키만 채우도록 안내만 합니다.
+       dev repo/dogfood(packageRoot === 대상 root)에서는 점검하지 않습니다)
 
-exit: FAIL이 하나라도 있으면 1, 아니면 0. (C5 WARN 은 exit 0 입니다)
+exit: FAIL이 하나라도 있으면 1, 아니면 0. (C5 · C6 WARN 은 exit 0 입니다)
 
 하지 않는 일:
   질문 · 파일 쓰기 · 자동 수정 · 로그인 실행(대화형이라 \`commitgate setup\` 소관) ·

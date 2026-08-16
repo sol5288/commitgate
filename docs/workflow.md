@@ -206,8 +206,33 @@ npm run req:commit -- 2026-001 --run -F commit-message.txt   # 같은 뜻(git co
 ## delivery set — 여러 REQ를 한 묶음으로
 
 요구사항이 커서 REQ를 나눠 진행하거나, 여러 설계 문서를 순차로 구현할 때가 있습니다. 그럴 때
-`stopGate: "merge"` + `commitgate delivery` 로 REQ들을 하나의 묶음으로 묶고, **묶음 전체가 끝날 때까지**
-main 병합 정지를 미룰 수 있습니다.
+`commitgate delivery` 로 REQ들을 하나의 묶음으로 묶고, **묶음 전체가 끝날 때까지** main 병합 정지를
+미룰 수 있습니다.
+
+🔴 **`stopGate` 가 `merge` 든 `auto` 든 묶음이 동작합니다.** 두 값이 커밋 단계에서 같고
+(`AUTO_APPROVE_OF` — LOW phase 자동 커밋), 종단 판정도 같은 술어(`defersToIntegration`)를 씁니다.
+
+🔴 **다만 마지막 `delivery/<slug>` → `main` 병합은 두 값 모두 사람이 합니다.** `commitgate integrate` 는
+**feature→trunk** 통합 명령이고, 기본 `branchPrefix`(`feat/req-`)에서 `delivery/<slug>` 는 전제에서
+걸러집니다(`현재 브랜치가 feature 브랜치가 아닙니다`). 그래서 묶음의 마지막 병합은 통제점표
+(`I1`/`I2` 또는 `B1`)에서 사람이 수행합니다 — `auto` 라고 해서 이 자리가 사라지지 않습니다.
+(`req:delegate --scope delivery:<slug>` 위임은 `branchPrefix` 를 `delivery/` 로 둔 설정에서만 통합에
+쓰입니다. 그 설정은 일반 `feat/req-*` 통합을 막으므로 기본 권장이 아닙니다.)
+
+**정지 횟수로 보면** — 티켓마다 개별 통합하면 사람이 멈추는 자리가 **티켓 수**만큼이지만, 묶음은
+**3회로 고정**입니다. 멤버가 몇 개든 달라지지 않습니다:
+
+`delivery seal` 확인 → `delivery approve` 확인 → **통합 승인**(`I1`/`I2` 또는 `B1`).
+`merge`·`auto` 가 같습니다 — 줄어드는 것은 **티켓마다 반복되던 통합 정지**이지 이 세 자리가 아닙니다.
+member 사이의 `delivery integrate`(feature→묶음 브랜치)는 사람 확인 없이 도구가 수행합니다.
+
+🔴 **HIGH 위험 member 는 예외입니다.** 위험도가 `HIGH` 인 member 는 `delivery integrate` 전에
+그 티켓의 `req:confirm --scope delivery` 를 **따로** 요구합니다(`merge`·`auto` 공통 —
+`bin/delivery.ts` 의 통합 자격 검사). 위임을 `--high-risk` 로 발급해도 이 확인은 대체되지 않습니다.
+그래서 정지 횟수는 **3 + HIGH member 수**입니다. 위 3회 고정은 **모든 member 가 LOW 일 때**의 값입니다.
+
+티켓을 잘게 나누는 방침과 충돌하지 않습니다 — 묶음은 티켓·phase 크기를 바꾸지 않고 **병합 경로만**
+바꾸므로, 리뷰 면적은 그대로입니다.
 
 ```sh
 npx commitgate delivery create payment-improvement --run       # delivery/payment-improvement 브랜치 + 레코드
@@ -227,7 +252,7 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
   `--force` 류 우회는 없습니다.
 - `seal` 이후에는 `begin` 할 수 없습니다. 되돌리려면 `reopen` — 승인이 있었다는 사실은 이력에 남습니다.
 - 🔴 **도구는 `delivery` → `main` 을 병합하지 않습니다.** `approve`는 승인을 기록할 뿐이고, 실제 병합은
-  기존 통제점표(I1/I2/B1)에서 사람이 실행합니다.
+  통제점표(I1/I2/B1)에서 사람이 실행합니다 — `stopGate` 가 `auto` 여도 같습니다(위 참조).
 - 🔴 **승인은 그 시점의 묶음 내용에 결속됩니다.** `approve`는 승인 직전 묶음 브랜치 tip을 레코드에
   남기고(`approval.base_sha`), 그 뒤 **묶음 레코드 밖을 건드린 커밋**이 들어오면 게이트가 다시
   `AWAIT_HUMAN`(재승인)을 냅니다 — 승인한 내용과 병합될 내용이 다르기 때문입니다.
@@ -236,13 +261,14 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
   이 결속이 없는 옛 레코드는 예전처럼 통과합니다.
 - 브랜치 위치에 의존하지 않습니다 — 도구가 필요한 곳으로 옮겼다가 **원래 브랜치로 되돌립니다**.
 
-`stopGate: "merge"` 를 켜면 `req:next` 종단도 묶음을 봅니다: 묶음이 아직 열려 있으면 `DONE`(다음 REQ를
+`stopGate` 가 `merge` 또는 `auto` 면 `req:next` 종단도 묶음을 봅니다: 묶음이 아직 열려 있으면 `DONE`(다음 REQ를
 열 수 있다), 닫혔고 모든 member가 종결됐으면 `AWAIT_HUMAN`. 같은 판정을 `integrate`와 `seal`도
 전이 직후에 냅니다 — 마지막 `integrate` 뒤에 `seal` 한 사용자는 `req:next`를 다시 부를 이유가 없기 때문입니다.
 
 🔴 **묶음에 속하지 않은 REQ 는 `req` 와 똑같이 멈춥니다**: 종단이 `AWAIT_HUMAN`(통합 feature→main)이고,
-`HIGH` 티켓이면 그 직전에 `req:confirm --scope req` 를 요구합니다. `merge` 를 골랐다고 해서 정지가
+`HIGH` 티켓이면 그 직전에 `req:confirm --scope req` 를 요구합니다. `merge`·`auto` 를 골랐다고 해서 정지가
 사라지지는 않습니다 — 묶음이 없으면 이 REQ 다음에 올 것이 다음 REQ 가 아니라 **통합**이기 때문입니다.
+(`auto` 는 그 통합을 덮는 유효한 사전 위임이 있을 때만 다시 묻지 않습니다.)
 
 ## 에이전트는 언제 묻지 않습니까
 

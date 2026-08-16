@@ -9,16 +9,21 @@ import {
   parseArgs,
   loadConfigResult,
   collectContracts,
+  collectInputs,
+  printHelp,
   CONTRACT_FILES,
   TEMPLATE_COMPARE_PATH,
   HelpRequested,
   type CheckInputs,
   type CheckReport,
 } from '../../bin/check'
+import { expectedReqScripts, commandSurfaceGuidance } from '../../scripts/req/lib/command-surface'
+import { parseArgs as syncParseArgs } from '../../bin/sync'
+import { packageRoot } from '../../scripts/req/lib/config'
 import { RETIRED_CLAIMS, retiredClaimsIn } from '../../scripts/req/lib/retired-claims'
 import { I2_APPROVAL } from '../../scripts/req/lib/control-points'
 import { readFileSync, existsSync, statSync } from 'node:fs'
-import type { AuthProbeResult, VersionProbeResult } from '../../scripts/req/lib/adapters'
+import type { AuthProbeResult, VersionProbeResult, ReviewerProbes } from '../../scripts/req/lib/adapters'
 import { DEFAULTS } from '../../scripts/req/lib/config'
 
 /**
@@ -57,13 +62,13 @@ describe('[check] 전부 정상 → ok', () => {
   it('FAIL 0건이면 ok=true, 모든 항목 OK', () => {
     const r = runChecks(inputs())
     expect(r.ok).toBe(true)
-    // C5 추가(0.22.0)는 **additive** 다 — 기존 C1~C4 의 의미·등급은 그대로다.
-    expect(r.summary).toEqual({ ok: 5, warn: 0, fail: 0 })
+    // C5 추가(0.22.0)·C6 추가(REQ-2026-161)는 **additive** 다 — 기존 C1~C4 의 의미·등급은 그대로다.
+    expect(r.summary).toEqual({ ok: 6, warn: 0, fail: 0 })
   })
 
-  it('항목 id는 C1~C5 순서로 고정된다(에이전트 소비 안정성)', () => {
+  it('항목 id는 C1~C6 순서로 고정된다(에이전트 소비 안정성)', () => {
     // 🔴 순서가 계약이다. 새 검사는 **뒤에만** 붙는다 — 기존 인덱스를 밀면 소비자가 깨진다.
-    expect(runChecks(inputs()).checks.map((c) => c.id)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5'])
+    expect(runChecks(inputs()).checks.map((c) => c.id)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'])
   })
 })
 
@@ -467,5 +472,184 @@ ${staleText.slice(mid)}`
     expect(claims.length).toBeGreaterThan(0)
     const msg = byId(runChecks(inputs({ contracts: contracts({ 'AGENTS.md': staleText }) })), 'C5')?.msg ?? ''
     for (const c of claims) expect(msg).toContain(c.why)
+  })
+})
+
+/**
+ * C6 — 설치본의 `req:*` **명령 표면**이 설치된 패키지보다 좁은가 (REQ-2026-161 phase-2).
+ *
+ * 🔴 실측이 이 검사의 존재 이유다: 0.23.1 설치본 2곳에서 `req:delegate`가 없는데 `check`는 C1~C5
+ *    PASS, `doctor`는 `OK D19: Stage B`, `sync`는 "변경 없음"이었다. 결함은 `req:next`가 안내한
+ *    명령이 **실행 시점에** 없는 것으로만 드러났다.
+ */
+describe('[check] C6 — req:* 명령 표면 skew', () => {
+  const full = (): Record<string, string> => ({ ...expectedReqScripts(), build: 'vite build' })
+
+  it('전부 있으면 OK(일치 · 개수 표기)', () => {
+    const c = byId(runChecks(inputs({ packageScripts: full(), packageRootDiffers: true })), 'C6')
+    expect(c?.level).toBe('OK')
+    expect(c?.msg).toContain(String(Object.keys(expectedReqScripts()).length))
+  })
+
+  it('🔴 없는 verb 를 이름으로 말하고 해소 명령을 준다(WARN)', () => {
+    const partial = full()
+    delete partial['req:delegate']
+    delete partial['req:repolicy']
+    const c = byId(runChecks(inputs({ packageScripts: partial, packageRootDiffers: true })), 'C6')
+    expect(c?.level).toBe('WARN')
+    expect(c?.msg).toContain('req:delegate')
+    expect(c?.msg).toContain('req:repolicy')
+    expect(c?.msg).toContain('npx commitgate sync --apply --scripts')
+  })
+
+  it('🔴 WARN 이지 FAIL 이 아니다 — 스크립트 부재가 기존 작업을 막으면 안 된다', () => {
+    const r = runChecks(inputs({ packageScripts: {}, packageRootDiffers: true }))
+    expect(byId(r, 'C6')?.level).toBe('WARN')
+    expect(r.ok).toBe(true)
+    expect(r.summary.fail).toBe(0)
+  })
+
+  it('🔴 dogfood(packageRoot === 대상 root)면 점검 불요 — 이 저장소가 스스로 WARN 이 되지 않는다', () => {
+    const c = byId(runChecks(inputs({ packageScripts: {}, packageRootDiffers: false })), 'C6')
+    expect(c?.level).toBe('OK')
+    expect(c?.msg).toContain('dogfood')
+  })
+
+  it('🔴 판정 불가(scripts 읽기 실패)는 "부족"이 아니다 — 같은 원인을 두 번 세지 않는다', () => {
+    const c = byId(runChecks(inputs({ packageScripts: null, packageRootDiffers: true })), 'C6')
+    expect(c?.level).toBe('OK')
+    expect(c?.msg).toContain('읽지 못함')
+  })
+
+  it('미계산(legacy 입력 리터럴)이면 점검 불요 — 기존 호출부가 깨지지 않는다', () => {
+    expect(byId(runChecks(inputs()), 'C6')?.level).toBe('OK')
+    expect(byId(runChecks(inputs()), 'C6')?.msg).toContain('미계산')
+  })
+
+  it('값이 사용자 정의여도 부재가 아니다(값은 판정 대상이 아니다 — 모드는 D19 의 몫)', () => {
+    const custom = Object.fromEntries(Object.keys(expectedReqScripts()).map((k) => [k, 'my-wrapper']))
+    expect(byId(runChecks(inputs({ packageScripts: custom, packageRootDiffers: true })), 'C6')?.level).toBe('OK')
+  })
+})
+
+/**
+ * 🔴 **배선 테스트**(설계: 순수 판정만 테스트하면 배선 끊김을 못 잡는다 — REQ-2026-096~099 3연속 실증).
+ *    `collectInputs`가 실제로 두 입력을 채우는지, 그리고 그것이 `runChecks`까지 도달하는지 본다.
+ */
+describe('[check] C6 배선 — collectInputs → runChecks 실경로', () => {
+  const tmps: string[] = []
+  const repo = (pkg: unknown): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-check-c6-'))
+    tmps.push(dir)
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg), 'utf8')
+    return dir
+  }
+  // 🔴 probe 는 stub 이다 — 이 describe 는 **명령 표면 배선**만 본다(codex 호출 없음).
+  const probes: ReviewerProbes = {
+    version: () => OK_VERSION,
+    auth: () => LOGGED_IN,
+    login: () => {
+      throw new Error('배선 테스트는 로그인을 호출하지 않는다')
+    },
+  }
+  const cleanup = (): void => {
+    while (tmps.length) rmSync(tmps.pop() as string, { recursive: true, force: true })
+  }
+
+  it('collectInputs 가 packageScripts·packageRootDiffers 를 실제로 채운다', () => {
+    try {
+      const dir = repo({ scripts: { 'req:new': 'commitgate req:new' } })
+      const inp = collectInputs(dir, probes)
+      expect(inp.packageScripts).toEqual({ 'req:new': 'commitgate req:new' })
+      expect(inp.packageRootDiffers).toBe(true) // tmp repo ≠ 패키지 루트
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('실경로: 누락 설치본 → C6 WARN 이 누락 verb 를 이름으로 말한다', () => {
+    try {
+      const dir = repo({ scripts: { 'req:new': 'commitgate req:new' } })
+      const c = byId(runChecks(collectInputs(dir, probes)), 'C6')
+      expect(c?.level).toBe('WARN')
+      expect(c?.msg).toContain('req:delegate')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('실경로: 전부 갖춘 설치본 → C6 OK', () => {
+    try {
+      const dir = repo({ scripts: expectedReqScripts() })
+      expect(byId(runChecks(collectInputs(dir, probes)), 'C6')?.level).toBe('OK')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('🔴 실경로: 이 저장소 자신(dogfood) → C6 가 WARN 이 되지 않는다', () => {
+    // 이 저장소의 req:* 는 5개(Stage A 형태)뿐이고 VERB_MODULES 는 그보다 많다 —
+    // skip 이 없으면 여기서 WARN 이 난다. 그 회귀를 고정한다.
+    const inp = collectInputs(packageRoot(), probes)
+    expect(inp.packageRootDiffers).toBe(false)
+    expect(byId(runChecks(inp), 'C6')?.level).toBe('OK')
+  })
+})
+
+/**
+ * `--help` 가 실제 점검 항목과 일치하는가 (phase-2 r01 P1).
+ *
+ * 🔴 **id 목록을 이 파일에 손으로 적지 않는다.** 기대값은 `runChecks` 가 실제로 방출한 id 에서 오고,
+ *    검사는 "help 가 그 전부를 열거하는가" 다. 그래서 C7 을 추가하고 help 를 안 고치면 **자동으로 red**
+ *    가 된다 — 이 P1 이 다시 나지 않는 유일한 형태다(손으로 센 목록은 반드시 놓친다 — REQ-2026-149).
+ */
+describe('[check] --help 가 실제 점검 항목과 갈라지지 않는다', () => {
+  const helpText = (): string => {
+    const lines: string[] = []
+    const orig = console.log
+    console.log = (...a: unknown[]) => void lines.push(a.map(String).join(' '))
+    try {
+      printHelp()
+    } finally {
+      console.log = orig
+    }
+    return lines.join('\n')
+  }
+
+  it('🔴 runChecks 가 내는 모든 항목 id 를 help 가 열거한다', () => {
+    const ids = runChecks(inputs()).checks.map((c) => c.id)
+    expect(ids.length).toBeGreaterThan(5) // 오라클이 공허해지지 않게 표면이 실재함을 먼저 고정
+    const help = helpText()
+    for (const id of ids) expect(help).toContain(`  ${id}  `)
+  })
+
+  it('WARN 이 exit 0 이라는 서술이 WARN 을 낼 수 있는 항목을 빠뜨리지 않는다', () => {
+    // C5·C6 는 WARN 상한 항목이다 — exit 설명이 둘 다 언급해야 사용자가 exit 계약을 오해하지 않는다.
+    const help = helpText()
+    const exitLine = help.split('\n').find((l) => l.startsWith('exit:')) ?? ''
+    expect(exitLine).toContain('C5')
+    expect(exitLine).toContain('C6')
+  })
+
+  it('C6 항목이 해소 명령과 dogfood 예외를 함께 말한다', () => {
+    const help = helpText()
+    expect(help).toContain('sync --apply --scripts')
+    expect(help).toContain('dogfood')
+  })
+})
+
+/**
+ * C6 가 복구 안내를 낼 때 **그 명령이 실제로 존재하는가** (phase-2 r02 P1 → 계획 재정렬 DEC-7).
+ *
+ * 🔴 이 REQ 가 고치는 병이 "도구가 시킨 명령이 실행 시점에 없다" 이므로, 진단이 가리키는 복구 수단이
+ *    실재함을 **검사로** 묶는다. 안내 문자열만 맞추면 다음 리팩터에서 또 갈라진다.
+ */
+describe('[check] C6 가 안내하는 복구 명령이 실재한다', () => {
+  it('🔴 안내한 sync 옵션을 sync 가 실제로 파싱한다', () => {
+    const missing = ['req:delegate']
+    const msg = commandSurfaceGuidance(missing)
+    expect(msg).toContain('--scripts')
+    // 문자열이 아니라 **동작**으로 확인한다 — 옵션이 없으면 parseArgs 가 throw 한다.
+    expect(syncParseArgs(['--apply', '--scripts']).scripts).toBe(true)
   })
 })

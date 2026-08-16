@@ -843,10 +843,19 @@ export function printHelp(): void {
   create → begin(REQ 1) → 작업·리뷰 → integrate → begin(REQ 2) → … → seal → approve
   seal 이후에는 begin 할 수 없습니다. 되돌리려면 reopen(이력에 남습니다).
 
-req.config.json 의 stopGate: "merge" 를 함께 쓰면 req:next 종단도 묶음 단위로 판정합니다.
+req.config.json 의 stopGate 가 merge 또는 auto 면 req:next 종단도 묶음 단위로 판정합니다.
+  두 값은 묶음 경로에서 **동작이 같습니다**. auto 의 사전 위임은 개별 티켓의 feature→main 통합에
+  적용되고, 묶음의 delivery/<slug> → main 에는 기본 설정에서 쓰이지 않습니다(아래 '하지 않는 일').
+
+  정지 횟수: 티켓별 통합은 티켓 수만큼, 묶음은 **모든 member 가 LOW 면** 3회로 고정입니다 —
+    seal 확인 · approve 확인 · 통합 승인(I1/I2 또는 B1). merge·auto 가 같습니다.
+  HIGH member 는 예외입니다: integrate 전에 그 티켓의 req:confirm --scope delivery 가 따로 필요하며
+  (merge·auto 공통), --high-risk 위임으로도 대체되지 않습니다 → 3 + HIGH member 수.
 
 하지 않는 일:
-  delivery → main 병합 실행(기존 I1/I2/B1 통제점에서 사람이 합니다) ·
+  delivery → main 병합 실행(기존 I1/I2/B1 통제점에서 사람이 합니다 — stopGate: auto 여도 같습니다.
+    commitgate integrate 는 feature→trunk 명령이라 기본 branchPrefix 에서 delivery/<slug> 는
+    전제에서 걸러집니다) ·
   자동 rebase·충돌 해결(재검수 없는 코드 유입 방지) ·
   미승인 REQ의 통합(--force 류 우회 없음).
 `)

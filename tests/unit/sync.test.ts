@@ -14,8 +14,12 @@ import {
   renderPersonaDiff,
   PERSONA_KIT_MARKER,
   PERSONA_DIFF_MAX_LINES,
+  applyScriptInsert,
+  detectJsonIndent,
+  findScriptsObjectSpan,
   type SyncPlan,
 } from '../../bin/sync'
+import { expectedReqScripts } from '../../scripts/req/lib/command-surface'
 import { PACKAGE_ROOT, KIT_SCHEMA_RELPATHS, sha256File } from '../../bin/init'
 import { loadConfig, DEFAULT_REVIEW_PERSONA_RELPATH } from '../../scripts/req/lib/config'
 
@@ -789,5 +793,426 @@ describe('[sync] parseArgs — --persona-apply', () => {
     const o = parseArgs(['--persona-apply'])
     expect(o.personaApply).toBe(true)
     expect(o.persona).toBe(false)
+  })
+})
+
+/**
+ * `--scripts` — `package.json` 의 누락 `req:*` 백필 (REQ-2026-161 phase-2).
+ *
+ * 🔴 이 축의 헤드라인 단언 둘:
+ *   1. **플래그가 없으면 `package.json` 을 열지도 않는다** — 세 문서가 공표한 "sync 는 package.json 을
+ *      건드리지 않는다"가 기본 동작으로 그대로 남는다는 회귀 가드다.
+ *   2. **insert-only** — 사용자가 바꿔 둔 값은 한 글자도 안 바뀐다(`init` 이 Stage A 시절부터 지킨 규칙).
+ */
+describe('[sync] --scripts — 누락 req:* 백필(opt-in · insert-only)', () => {
+  const PKG_4SPACE = `{
+    "name": "probe",
+    "scripts": {
+        "build": "vite build",
+        "req:new": "commitgate req:new",
+        "req:commit": "my-custom-wrapper --keep"
+    }
+}
+`
+  const seedPkg = (dir: string, body = PKG_4SPACE): void => writeFileSync(join(dir, 'package.json'), body, 'utf8')
+  const scriptsOf = (dir: string): Record<string, string> =>
+    (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts
+
+  it('🔴 플래그 없으면 scripts 축이 계획에 아예 없다(기본 동작 불변)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedPkg(dir)
+      const plan = planSync(dir, cfgFor(dir), false)
+      expect(plan.assets.some((a) => a.axis === 'scripts')).toBe(false)
+      expect(plan.scriptInsert ?? null).toBeNull()
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('--scripts: 누락 키를 계획에 담는다(이미 있는 키는 제외)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedPkg(dir)
+      const plan = planSync(dir, cfgFor(dir), false, false, false, true)
+      const a = findAsset(plan, 'package.json')
+      expect(a?.axis).toBe('scripts')
+      expect(a?.status).toBe('keys-missing')
+      const keys = Object.keys(plan.scriptInsert?.missing ?? {})
+      expect(keys).toContain('req:delegate')
+      expect(keys).not.toContain('req:new') // 이미 있음
+      expect(keys).not.toContain('req:commit') // 사용자 정의 값이지만 **있으므로** 대상 아님
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('전부 있으면 in-sync · 삽입 계획 없음(멱등)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedPkg(dir, JSON.stringify({ scripts: expectedReqScripts() }, null, 2) + '\n')
+      const plan = planSync(dir, cfgFor(dir), false, false, false, true)
+      expect(findAsset(plan, 'package.json')?.status).toBe('in-sync')
+      expect(plan.scriptInsert ?? null).toBeNull()
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 package.json 을 읽지 못하면 "부족"이 아니라 unreadable(미접촉)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedPkg(dir, '{ not json')
+      const plan = planSync(dir, cfgFor(dir), false, false, false, true)
+      expect(findAsset(dir === '' ? plan : plan, 'package.json')?.status).toBe('unreadable')
+      expect(plan.scriptInsert ?? null).toBeNull()
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 dry-run(--scripts, --apply 없음)은 파일을 바꾸지 않는다', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedPkg(dir)
+      const before = readFileSync(join(dir, 'package.json'), 'utf8')
+      runSync({ dir, apply: false, persona: false, scripts: true }, { log: () => {} })
+      expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 --apply --scripts: 없는 키만 넣고 사용자 정의 값은 보존한다', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedPkg(dir)
+      runSync({ dir, apply: true, persona: false, scripts: true }, { log: () => {} })
+      const after = scriptsOf(dir)
+      expect(after['req:delegate']).toBe('commitgate req:delegate')
+      expect(after['req:commit']).toBe('my-custom-wrapper --keep') // 🔴 덮지 않는다
+      expect(after['build']).toBe('vite build') // 무관한 키도 그대로
+      for (const k of Object.keys(expectedReqScripts())) expect(after).toHaveProperty(k)
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 들여쓰기·키 순서·말미 개행을 보존한다(diff 가 삽입한 키로 한정된다)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedPkg(dir)
+      runSync({ dir, apply: true, persona: false, scripts: true }, { log: () => {} })
+      const raw = readFileSync(join(dir, 'package.json'), 'utf8')
+      expect(raw).toContain('\n    "name": "probe"') // 4-space 유지(2-space 로 재포맷하지 않는다)
+      expect(raw.endsWith('\n')).toBe(true)
+      const keys = Object.keys(scriptsOf(dir))
+      expect(keys.slice(0, 3)).toEqual(['build', 'req:new', 'req:commit']) // 기존 순서 그대로, 새 키는 뒤에
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('멱등: 두 번 적용해도 두 번째는 변경 없음', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      seedPkg(dir)
+      runSync({ dir, apply: true, persona: false, scripts: true }, { log: () => {} })
+      const once = readFileSync(join(dir, 'package.json'), 'utf8')
+      runSync({ dir, apply: true, persona: false, scripts: true }, { log: () => {} })
+      expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(once)
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('scripts 가 객체가 아니면 삽입하지 않고 실패한다(fail-closed)', () => {
+    const dir = mk()
+    try {
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: 'nope' }), 'utf8')
+      expect(() => applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'x' } })).toThrow('객체가 아닙니다')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('계획 이후 키가 채워졌으면 덮지 않고 빈 결과를 낸다(TOCTOU)', () => {
+    const dir = mk()
+    try {
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { 'req:new': '기존값' } }, null, 2), 'utf8')
+      const added = applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      expect(added).toEqual([])
+      expect(scriptsOf(dir)['req:new']).toBe('기존값')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('parseArgs 가 --scripts 를 받는다', () => {
+    expect(parseArgs(['--scripts']).scripts).toBe(true)
+    expect(parseArgs([]).scripts).toBe(false)
+    expect(parseArgs(['--apply', '--scripts']).scripts).toBe(true)
+  })
+
+  it('들여쓰기 판정: 2·4·탭·판정불가', () => {
+    expect(detectJsonIndent('{\n  "a": 1\n}')).toBe(2)
+    expect(detectJsonIndent('{\n    "a": 1\n}')).toBe(4)
+    expect(detectJsonIndent('{\n\t"a": 1\n}')).toBe('\t')
+    expect(detectJsonIndent('{"a":1}')).toBe(2)
+  })
+
+})
+
+/**
+ * 원문 보존 — phase-2 r01 P1 두 건의 회귀 가드.
+ *
+ * 🔴 `JSON.stringify` 왕복은 **기존 값의 원문 표현을 바꾼다**. "부재만 삽입·기존 값 바이트 불변"은
+ *    선언이 아니라 검사로 지켜야 한다.
+ */
+describe('[sync] --scripts — 원문 보존(재직렬화 금지 · BOM)', () => {
+  const scriptsOf = (dir: string): Record<string, string> =>
+    (JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8').replace(/^﻿/, '')) as {
+      scripts: Record<string, string>
+    }).scripts
+
+  it('🔴 기존 값의 원문 표현이 바뀌지 않는다(이스케이프·숫자 리터럴)', () => {
+    const dir = mk()
+    try {
+      const body = `{
+  "version": 1e+0,
+  "homepage": "http:\/\/example.com",
+  "scripts": {
+    "build": "node .\/build",
+    "req:new": "commitgate req:new"
+  }
+}
+`
+      writeFileSync(join(dir, 'package.json'), body, 'utf8')
+      const added = applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:delegate': 'commitgate req:delegate' } })
+      expect(added).toEqual(['req:delegate'])
+      const after = readFileSync(join(dir, 'package.json'), 'utf8')
+      // 🔴 원문 바이트가 그대로다 — 왕복 직렬화였다면 아래 셋 모두 정규화됐다.
+      expect(after).toContain('"version": 1e+0')
+      expect(after).toContain('"homepage": "http:\/\/example.com"')
+      expect(after).toContain('"build": "node .\/build"')
+      expect(scriptsOf(dir)['req:delegate']).toBe('commitgate req:delegate')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 BOM 이 있어도 적용된다 — 계획과 적용이 같은 방식으로 다룬다', () => {
+    const dir = mk()
+    try {
+      const body = '﻿' + JSON.stringify({ scripts: { 'req:new': 'commitgate req:new' } }, null, 2) + '\n'
+      writeFileSync(join(dir, 'package.json'), body, 'utf8')
+      const added = applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:delegate': 'commitgate req:delegate' } })
+      expect(added).toEqual(['req:delegate'])
+      const after = readFileSync(join(dir, 'package.json'), 'utf8')
+      expect(after.charCodeAt(0)).toBe(0xfeff) // BOM 을 되돌린다
+      expect(scriptsOf(dir)['req:delegate']).toBe('commitgate req:delegate')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('빈 scripts 객체에도 삽입된다', () => {
+    const dir = mk()
+    try {
+      writeFileSync(join(dir, 'package.json'), '{\n  "scripts": {}\n}\n', 'utf8')
+      applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      expect(scriptsOf(dir)['req:new']).toBe('commitgate req:new')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('CRLF 파일은 CRLF 로 삽입한다', () => {
+    const dir = mk()
+    try {
+      writeFileSync(join(dir, 'package.json'), '{\r\n  "scripts": {\r\n    "build": "x"\r\n  }\r\n}\r\n', 'utf8')
+      applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      const after = readFileSync(join(dir, 'package.json'), 'utf8')
+      expect(after).toContain('\r\n    "req:new": "commitgate req:new"\r\n')
+      expect(after).not.toMatch(/[^\r]\n/)
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 문자열 안의 중괄호·"scripts" 를 구조로 오인하지 않는다', () => {
+    const raw = '{\n  "desc": "{ \\"scripts\\": { } }",\n  "scripts": {\n    "a": "1"\n  }\n}\n'
+    const span = findScriptsObjectSpan(raw)
+    expect(span).not.toBeNull()
+    expect(raw.slice((span as { innerStart: number }).innerStart, (span as { innerEnd: number }).innerEnd)).toContain('"a": "1"')
+  })
+
+  it('중첩 객체 안의 scripts 키는 최상위로 오인하지 않는다', () => {
+    const raw = '{\n  "nested": { "scripts": { "x": "1" } },\n  "scripts": {\n    "top": "2"\n  }\n}\n'
+    const span = findScriptsObjectSpan(raw)
+    const inner = raw.slice((span as { innerStart: number }).innerStart, (span as { innerEnd: number }).innerEnd)
+    expect(inner).toContain('"top": "2"')
+    expect(inner).not.toContain('"x": "1"')
+  })
+
+  it('scripts 가 없으면 null(호출부가 fail-closed)', () => {
+    expect(findScriptsObjectSpan('{\n  "name": "x"\n}\n')).toBeNull()
+  })
+})
+
+/**
+ * 계획과 적용이 **같은 판정**을 쓰는가 — phase-2 r02 P1 두 건의 회귀 가드.
+ *
+ * 🔴 이 REQ 가 고치는 병이 바로 "안내와 실제가 다르다"이므로, 그 병을 자기 구현에서 재현하면 안 된다.
+ */
+describe('[sync] --scripts — 계획과 적용의 판정 일치', () => {
+  it('🔴 이스케이프된 scripts 키(\u0073cripts)에서도 백필된다', () => {
+    const dir = mk()
+    try {
+      const body = '{\n  "\u0073cripts": {\n    "build": "x"\n  }\n}\n'
+      writeFileSync(join(dir, 'package.json'), body, 'utf8')
+      // 계획 단계(JSON.parse)가 scripts 로 읽는 것과 같은 것을 스캐너도 찾아야 한다.
+      expect(findScriptsObjectSpan(body)).not.toBeNull()
+      const added = applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      expect(added).toEqual(['req:new'])
+      const parsed = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+      expect(parsed.scripts['req:new']).toBe('commitgate req:new')
+      expect(parsed.scripts['build']).toBe('x')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 비문자열 값의 기존 req 키는 "누락"으로 세지 않는다(계획 = 적용)', () => {
+    const dir = mk()
+    try {
+      gitInit(dir)
+      seedSchemas(dir, 'shipped')
+      writeFileSync(
+        join(dir, 'package.json'),
+        JSON.stringify({ scripts: { 'req:new': null, build: 'x' } }, null, 2) + '\n',
+        'utf8',
+      )
+      const plan = planSync(dir, cfgFor(dir), false, false, false, true)
+      const planned = Object.keys(plan.scriptInsert?.missing ?? {})
+      // 값이 null 이어도 **존재**하므로 삽입 대상이 아니다 — 적용 단계의 `k in scripts` 와 같은 판정.
+      expect(planned).not.toContain('req:new')
+      expect(planned).toContain('req:delegate')
+      const added = applyScriptInsert(dir, plan.scriptInsert as { destRel: string; missing: Record<string, string> })
+      expect(added).toEqual(planned) // 계획한 것과 실제 삽입이 정확히 같다
+      const parsed = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { scripts: Record<string, unknown> }
+      expect(parsed.scripts['req:new']).toBeNull() // 기존 값 미변경
+    } finally {
+      rm(dir)
+    }
+  })
+})
+
+describe('[sync] --scripts — 중복 최상위 scripts 키(phase-2 r03 P1)', () => {
+  it('🔴 JSON.parse 와 같은 객체(마지막)를 편집한다', () => {
+    const dir = mk()
+    try {
+      const body = '{\n  "scripts": {\n    "build": "x"\n  },\n  "scripts": {\n    "req:new": "custom"\n  }\n}\n'
+      writeFileSync(join(dir, 'package.json'), body, 'utf8')
+      applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:delegate': 'commitgate req:delegate' } })
+      const raw = readFileSync(join(dir, 'package.json'), 'utf8')
+      // 의미상 채택되는 것은 마지막 객체다 — 거기 들어가야 백필이 실제로 성립한다.
+      const parsed = JSON.parse(raw) as { scripts: Record<string, string> }
+      expect(parsed.scripts['req:delegate']).toBe('commitgate req:delegate')
+      expect(parsed.scripts['req:new']).toBe('custom')
+      // 첫 번째 객체는 건드리지 않는다.
+      expect(raw.indexOf('"build": "x"')).toBeLessThan(raw.indexOf('"req:delegate"'))
+      expect(raw.slice(0, raw.indexOf('"req:new"'))).not.toContain('req:delegate')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('span 이 마지막 scripts 를 가리킨다', () => {
+    const raw = '{\n  "scripts": { "a": "1" },\n  "scripts": { "b": "2" }\n}\n'
+    const span = findScriptsObjectSpan(raw) as { innerStart: number; innerEnd: number }
+    const inner = raw.slice(span.innerStart, span.innerEnd)
+    expect(inner).toContain('"b": "2"')
+    expect(inner).not.toContain('"a": "1"')
+  })
+})
+
+describe('[sync] --scripts — 말미 공백·빈 줄 보존(phase-2 r04 P1)', () => {
+  it('🔴 닫는 } 앞의 빈 줄이 삽입과 무관하게 사라지지 않는다', () => {
+    const dir = mk()
+    try {
+      const body = '{\n  "scripts": {\n    "build": "x"\n\n\n  }\n}\n'
+      writeFileSync(join(dir, 'package.json'), body, 'utf8')
+      applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      const after = readFileSync(join(dir, 'package.json'), 'utf8')
+      expect(after).toContain('"req:new": "commitgate req:new"\n\n\n  }')
+      expect(after).toContain('"build": "x",\n')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 인라인 닫는 브레이스 앞 공백도 보존한다', () => {
+    const dir = mk()
+    try {
+      writeFileSync(join(dir, 'package.json'), '{\n  "scripts": { "build": "x"    }\n}\n', 'utf8')
+      applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      const after = readFileSync(join(dir, 'package.json'), 'utf8')
+      expect(after).toContain('"req:new": "commitgate req:new"    }')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('🔴 인라인 빈 객체의 말미 공백({    })도 보존한다', () => {
+    const dir = mk()
+    try {
+      writeFileSync(join(dir, 'package.json'), '{\n  "scripts": {    }\n}\n', 'utf8')
+      applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      const after = readFileSync(join(dir, 'package.json'), 'utf8')
+      expect(after).toContain('"req:new": "commitgate req:new"    }')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('완전히 빈 객체({})에도 삽입된다 — 보존할 바이트가 없는 유일한 폴백', () => {
+    const dir = mk()
+    try {
+      writeFileSync(join(dir, 'package.json'), '{\n  "scripts": {}\n}\n', 'utf8')
+      applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      const parsed = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+      expect(parsed.scripts['req:new']).toBe('commitgate req:new')
+    } finally {
+      rm(dir)
+    }
+  })
+
+  it('여러 줄 빈 객체({\n  })에도 삽입되고 말미 형태가 남는다', () => {
+    const dir = mk()
+    try {
+      writeFileSync(join(dir, 'package.json'), '{\n  "scripts": {\n  }\n}\n', 'utf8')
+      applyScriptInsert(dir, { destRel: 'package.json', missing: { 'req:new': 'commitgate req:new' } })
+      const after = readFileSync(join(dir, 'package.json'), 'utf8')
+      expect(after).toContain('"req:new": "commitgate req:new"\n  }')
+    } finally {
+      rm(dir)
+    }
   })
 })
