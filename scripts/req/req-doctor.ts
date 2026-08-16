@@ -56,6 +56,10 @@ import { splitUnboundPhases, designHashFromManifest, consumedApprovalsWithoutRow
 import { createEvidencePorts } from './lib/evidence-ports'
 // REQ-2026-161 DEC-1: 명령 표면 판정·입력 획득·안내 문장의 정본. `check` C6와 같은 것을 쓴다.
 import { missingReqScripts, readPackageScripts, commandSurfaceMessage } from './lib/command-surface'
+// REQ-2026-163 DEC-4: orphan 판정의 정본. integrate 와 같은 술어여야 두 안내가 갈라지지 않는다.
+import { orphanPhaseSeries } from './lib/review-series'
+// 🔴 state 파생 값을 실행 가능한 명령으로 낼 때의 안전 관문(REQ-2026-149 계열).
+import { allShellSafe, quoteArg } from './lib/shell-safe'
 // REQ-2026-097 DEC-1: 종결 판정의 술어·입력 획득을 intake와 공유한다(자체 구현 금지).
 import { scanTicketIntake } from './lib/intake'
 import { loadConfig, packageRoot, stripBom, DEFAULTS, effectiveStopGate, isStopGate, type ResolvedConfig, type PackageManager, type GranularityGate } from './lib/config'
@@ -120,7 +124,7 @@ export function classifyPolicyDrift(state: { policy_snapshot?: unknown }, config
 
 export const D_CHECK_IDS = [
   'D2', 'D3', 'D5', 'D6', 'D9', 'D10', 'D11', 'D13', 'D15', 'D16', 'D17', 'D18', 'D19',
-  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30', 'D31', 'D32', 'D33',
+  'D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27', 'D28', 'D29', 'D30', 'D31', 'D32', 'D33', 'D34',
 ] as const
 
 /** D-체크 id — `D_CHECK_IDS` 등재분만. 새 id는 등록부에 먼저 추가해야 컴파일된다. */
@@ -299,6 +303,11 @@ export interface DoctorInputs {
    * `undefined` = 미계산(2-arg/legacy) → 점검 불요. `null` = 읽지 못함(판정 불가) → 점검 불요.
    */
   packageScripts?: Record<string, unknown> | null
+  /**
+   * D34(REQ-2026-163): **열린 orphan series**(phase 가 `phases[]` 에서 사라진 열린 series).
+   * `main()`이 `orphanPhaseSeries(state)`로 계산해 채운다. `undefined` = 미계산 → 점검 불요.
+   */
+  orphanSeries?: { seriesId: string; phaseId: string }[]
   /**
    * D24(REQ-2026-062): setup 완료 게이트 판정. `undefined` = 미계산(2-arg 경로).
    * 🔴 이 값이 무엇이든 **WARN 상한**이다 — 차단은 doctor가 아니라 워크플로 verb의 preflight가 한다.
@@ -924,6 +933,46 @@ export function runChecks(inp: DoctorInputs): Check[] {
     const missing = missingReqScripts(inp.packageScripts)
     if (missing.length === 0) c.push({ id: 'D33', level: 'OK', msg: commandSurfaceMessage(missing) })
     else c.push({ id: 'D33', level: 'WARN', reason_code: 'command-surface-skew', msg: commandSurfaceMessage(missing) })
+  }
+
+  /**
+   * D34(REQ-2026-163): **열린 orphan series** — phase 가 `phases[]` 에서 사라졌는데 series 가 열려 있다.
+   *
+   * 🔴 **왜 알려야 하나**: `integrate` 는 이제 이것을 미판정으로 세지 않으므로 통합이 막히지는 않는다.
+   *    그래도 `closed_reason: null` 인 레코드가 남아 lifecycle 기록이 부정확하다. 실측에서 이 사실은
+   *    **통합 시점에야** 드러났다(그때는 이미 게이트가 거부한 뒤였다) — integrate 전에 보여야 한다.
+   *
+   * 🔴 **해소 명령을 함께 낸다.** 해소할 수 없는 WARN 은 사용자가 무시하는 법을 배운다.
+   * 🔴 **WARN 상한**(D19~D33 과 동일 근거). `req:commit` 이 doctor 를 하드 게이트로 spawn 하므로
+   *    FAIL 이면 phase 를 개명한 티켓의 모든 커밋이 벽돌이 된다.
+   */
+  if (inp.orphanSeries === undefined)
+    c.push({ id: 'D34', level: 'OK', applicable: false, msg: 'orphan review series 점검 불요(미계산)' })
+  else if (inp.orphanSeries.length === 0) c.push({ id: 'D34', level: 'OK', msg: '열린 orphan review series 없음' })
+  else {
+    const first = inp.orphanSeries[0] as { seriesId: string; phaseId: string }
+    const reqId = String(inp.state.id ?? '')
+    const listed = inp.orphanSeries.map((o) => `${o.seriesId}(phase=${o.phaseId})`).join(' · ')
+    /**
+     * 🔴 **state 에서 온 값을 셸 명령에 그대로 보간하지 않는다**(phase-3 r01 P1 — 명령 주입).
+     *    `series_id` 는 커밋된 state 에서 오고, `phase:x#1" & calc & "` 같은 값이면 사용자가 복사해
+     *    실행할 때 따옴표가 닫혀 삽입된 명령이 돈다. 안전 관문(`allShellSafe`)을 통과할 때만 명령을
+     *    렌더링하고, 아니면 **명령 대신 데이터**를 낸다(반쪽 명령열 금지 — REQ-2026-149).
+     * 🔴 안전 판정을 통과해도 **반드시 인용한다**(`quoteArg`) — `#` 는 큰따옴표 안에서만 안전하다.
+     */
+    const safe = reqId !== '' && allShellSafe(reqId, first.seriesId)
+    const how = safe
+      ? `기록을 정확히 하려면: \`npx commitgate req:review-exception ${quoteArg(reqId)} --close-orphan ${quoteArg(first.seriesId)} --reason "<왜 사라졌는가>" --run\``
+      : 'ID 에 셸에서 안전하지 않은 문자가 있어 실행 명령을 내지 않습니다 — `req:review-exception <REQ> --close-orphan <series_id> --reason "<왜 사라졌는가>" --run` 을 그 값으로 직접 실행하십시오.'
+    c.push({
+      id: 'D34',
+      level: 'WARN',
+      reason_code: 'orphan-review-series',
+      msg:
+        `phases[] 에 없는 phase 의 열린 review series ${inp.orphanSeries.length}건 — ${listed}. ` +
+        'phase 를 개명·재정렬하면 옛 series 레코드가 열린 채 남습니다(통합은 막지 않습니다). ' +
+        how,
+    })
   }
 
   // D23(REQ-2026-056): frozen-lockfile 위생 진단.
@@ -2025,6 +2074,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     repoRootScratchUnprotected: unprotectedRepoRootScratch([REVIEW_CALL_LOG_REL, DOCTOR_RUN_LOG_REL], git),
     // D33(REQ-2026-161): 명령 표면 skew. 읽기는 command-surface 하나가 한다(check C6와 같은 입력).
     packageScripts: readPackageScripts(cfg.root),
+    // D34(REQ-2026-163): 열린 orphan series. integrate 와 **같은 술어**를 쓴다.
+    orphanSeries: orphanPhaseSeries(state as { phases?: unknown; review_series?: unknown }),
     // D29(REQ-2026-112): 계약 파일을 **읽기만** 한다. 파일이 하나도 없으면 `undefined`(점검 불요).
     retiredClaimHits: ((): { file: string; claim: RetiredClaim }[] | undefined => {
       const rels = CONTRACT_FILE_RELS.filter((r) => existsSync(join(cfg.root, r)))

@@ -1356,3 +1356,64 @@ describe('[doctor] D33 — req:* 명령 표면 skew', () => {
     expect(lvl(c, 'D33')).toBe('WARN') // 표면은 부족
   })
 })
+
+/**
+ * D34(REQ-2026-163) — 열린 orphan review series.
+ *
+ * 🔴 통합을 막지 않는다(그건 `integrate` 가 판정에서 뺐다). 여기서 하는 일은 **부정확한 lifecycle
+ *    기록을 integrate 전에 알리고 해소 명령을 주는 것**이다 — 해소할 수 없는 WARN 은 만들지 않는다.
+ */
+describe('[doctor] D34 — 열린 orphan review series', () => {
+  it('없으면 OK', () => {
+    expect(lvl(runChecks(mk({ orphanSeries: [] })), 'D34')).toBe('OK')
+  })
+
+  it('🔴 있으면 WARN + series id·사라진 phase id·해소 명령', () => {
+    const c = runChecks(mk({ orphanSeries: [{ seriesId: 'phase:phase-2-check-c6#1', phaseId: 'phase-2-check-c6' }] }))
+    expect(lvl(c, 'D34')).toBe('WARN')
+    const m = msg(c, 'D34')
+    expect(m).toContain('phase:phase-2-check-c6#1')
+    expect(m).toContain('phase-2-check-c6')
+    expect(m).toContain('--close-orphan') // 🔴 해소 가능한 WARN
+  })
+
+  it('🔴 FAIL 이 아니다 — phase 개명은 정상 행위이고 막으면 그 티켓의 모든 커밋이 벽돌이 된다', () => {
+    const c = runChecks(mk({ orphanSeries: [{ seriesId: 'phase:x#1', phaseId: 'x' }] }))
+    expect(c.some((x) => x.id === 'D34' && x.level === 'FAIL')).toBe(false)
+  })
+
+  it('미계산이면 점검 불요 — 기존 호출부가 깨지지 않는다', () => {
+    expect(lvl(runChecks(mk({})), 'D34')).toBe('OK')
+    expect(msg(runChecks(mk({})), 'D34')).toContain('미계산')
+  })
+
+  /**
+   * 🔴 **명령 주입 회귀**(phase-3 r01 P1). `series_id` 는 커밋된 state 에서 온다. 그것을 셸 명령에
+   *    그대로 보간하면 사용자가 출력을 복사해 실행할 때 따옴표가 닫혀 삽입 명령이 돈다.
+   */
+  it('🔴 셸 안전하지 않은 series_id 면 실행 명령을 내지 않는다(데이터로만)', () => {
+    const evil = 'phase:x#1" & calc & "'
+    const m = msg(runChecks(mk({ orphanSeries: [{ seriesId: evil, phaseId: 'x' }] })), 'D34')
+    expect(m).toContain(evil) // 무엇이 문제인지는 보여준다
+    expect(m).not.toContain('npx commitgate req:review-exception') // 🔴 실행 명령은 없다
+    expect(m).toContain('안전하지 않은 문자')
+  })
+
+  it('🔴 안전해도 인용한다 — # 는 큰따옴표 안에서만 안전하다', () => {
+    const m = msg(
+      runChecks(mk({ orphanSeries: [{ seriesId: 'phase:phase-2-check-c6#1', phaseId: 'phase-2-check-c6' }] })),
+      'D34',
+    )
+    expect(m).toContain('--close-orphan "phase:phase-2-check-c6#1"')
+  })
+
+  it('여러 건이면 개수와 전부를 말한다', () => {
+    const m = msg(
+      runChecks(mk({ orphanSeries: [{ seriesId: 'phase:a#1', phaseId: 'a' }, { seriesId: 'phase:b#1', phaseId: 'b' }] })),
+      'D34',
+    )
+    expect(m).toContain('2건')
+    expect(m).toContain('phase:a#1')
+    expect(m).toContain('phase:b#1')
+  })
+})
