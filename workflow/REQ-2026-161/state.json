@@ -2,15 +2,53 @@
   "id": "REQ-2026-161",
   "branch": "feat/req-2026-161-install-command-surface-skew",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00ad1-bac1-7a20-aa62-24fd907dbca7",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00ad7-1084-7630-a92a-bb148194b1e0",
+  "review_base_sha": "08a9823f6554180b8b270a3ae6d9a300c315ec1d",
+  "review_diff_hash": "572790632922a97313f4e8625347cf215dfd2077",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "2fd93a77833d2f90c844b001de34d1722bd51a134bf8cee3efcab11f08844829",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-command-surface-predicate",
+  "phases": [
+    {
+      "id": "phase-1-command-surface-predicate",
+      "title": "명령 표면 순수 술어",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-check-c6",
+      "title": "check C6 배선(dogfood skip 포함)",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-3-doctor-d33",
+      "title": "doctor D33 배선 + 07 정본 표",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-4-sync-scripts-optin",
+      "title": "sync --scripts opt-in 백필",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-5-docs-parity",
+      "title": "문서 정합(묶음 x auto · upgrade 절차)",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-6-changelog",
+      "title": "CHANGELOG",
+      "status": "pending",
+      "max_files": 8
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +62,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-command-surface-predicate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-command-surface-predicate",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-command-surface-predicate",
     "outcome": "approved",
-    "compare_hash": "3a3f0e9a4e312dd1bfa24dfb99e666be1d35480ad842179f8f6c29e812a38bba",
+    "compare_hash": "c3d95c04333fc096c485500afd37beb42fe8cf996f491fe7d2f3fb785cedd268",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T13:46:58.515Z",
+    "at": "2026-08-16T13:52:41.836Z",
     "findings": [],
     "elided_count": 0
   },
@@ -70,5 +115,14 @@
       "source_response_path": "workflow/REQ-2026-161/responses/design-r02-approved.json"
     },
     "design_hash": "2fd93a77833d2f90c844b001de34d1722bd51a134bf8cee3efcab11f08844829"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "572790632922a97313f4e8625347cf215dfd2077",
+      "phase_id": "phase-1-command-surface-predicate",
+      "consumed_by_commit_sha": "5eea2b6f79f06452ed68f7341a7d6072af431785",
+      "approval_consumed_at": "2026-08-16T13:53:58.362Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
