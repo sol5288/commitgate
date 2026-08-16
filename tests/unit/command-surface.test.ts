@@ -1,7 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { classifyInstallMode } from '../../scripts/req/req-doctor'
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 import { VERB_MODULES } from '../../bin/dispatch.mjs'
 import { STAGE_B_REQ_VERBS, STAGE_B_REQ_SCRIPTS } from '../../bin/init'
 import {
@@ -151,5 +155,36 @@ describe('[command-surface] 안내 문장 — 세 소비자가 같은 문자열�
     expect(ok).toContain('일치')
     expect(ok).toContain(String(Object.keys(expectedReqScripts()).length))
     expect(ok).not.toContain('sync --apply --scripts')
+  })
+})
+
+/**
+ * 🔴 **dogfood 명령 표면**(REQ-2026-163 phase-4). 이 저장소는 Stage A 라 C6/D33 이 의도적으로 skip 하는
+ *    대상인데, 그 사각지대 때문에 `req:next` 가 안내한 `req:delegate` 가 **여기서 실행되지 않았다**
+ *    (실측: `npm error Missing script: "req:delegate"`). 도구가 자기 저장소에서 자기 안내를 따를 수
+ *    있어야 한다.
+ */
+describe('[command-surface] 이 저장소가 자기 명령 표면을 갖춘다', () => {
+  const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+
+  it('🔴 dispatch 가 노출하는 req:* verb 가 전부 package.json 에 있다', () => {
+    const verbs = Object.keys(VERB_MODULES).filter((v) => v.startsWith('req:'))
+    expect(verbs.length).toBeGreaterThan(5) // 오라클이 공허하지 않음을 고정
+    expect(verbs.filter((v) => !(v in pkg.scripts))).toEqual([])
+  })
+
+  it('🔴 값이 Stage A 형태다 — 이 저장소는 소스에서 돌고 D19 가 Stage A 서명으로 판정한다', () => {
+    for (const [verb, mod] of Object.entries(VERB_MODULES)) {
+      if (!verb.startsWith('req:')) continue
+      expect(pkg.scripts[verb], verb).toBe(`tsx ${mod.replace(/^\.\.\//, '')}`)
+    }
+    expect(classifyInstallMode(pkg.scripts)).toBe('stage-a')
+  })
+
+  it('가리키는 모듈 파일이 실제로 존재한다(죽은 스크립트를 넣지 않는다)', () => {
+    for (const [verb, mod] of Object.entries(VERB_MODULES)) {
+      if (!verb.startsWith('req:')) continue
+      expect(existsSync(join(REPO_ROOT, mod.replace(/^\.\.\//, ''))), verb).toBe(true)
+    }
   })
 })

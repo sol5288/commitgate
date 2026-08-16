@@ -40,7 +40,14 @@
     "verify:overrides": "node scripts/verify-review-overrides.mjs",
     "docs:lint": "remark docs README.md README.en.md --quiet --frail",
     "test:fast": "vitest run --project fast",
-    "test:integration": "vitest run --project integration"
+    "test:integration": "vitest run --project integration",
+    "req:reconstruct": "tsx scripts/req/req-reconstruct.ts",
+    "req:close": "tsx scripts/req/req-close.ts",
+    "req:review-exception": "tsx scripts/req/req-review-exception.ts",
+    "req:rebind": "tsx scripts/req/req-rebind.ts",
+    "req:confirm": "tsx scripts/req/req-confirm.ts",
+    "req:repolicy": "tsx scripts/req/req-repolicy.ts",
+    "req:delegate": "tsx scripts/req/req-delegate.ts"
   },
   "files": [
     "scripts/req",
