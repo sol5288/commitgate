@@ -65,6 +65,36 @@
   확인할 파일: `docs/workflow.md`·`docs/workflow.en.md`(delivery 절) · `bin/delivery.ts`(help) ·
   `tests/unit/delivery-stopgate-docs.test.ts`
 
+- **fix: phase 를 개명·재정렬하면 `stopGate: "auto"` 자율 통합이 영구 차단되던 문제** — 리뷰 지적을 따라
+  mid-ticket 으로 phase 이름을 바꾸면 `state.json` 의 옛 series 레코드가 `closed_reason: null` 로 남습니다.
+  attempt 는 전부 닫혔는데 **series 레코드만** 열려 있고, `commitgate integrate` 가 그것을
+  `reviewInconclusive` 로 세어 위임이 있어도 거부했습니다:
+  ```
+  사전 위임이 이 통합을 허용하지 않습니다 (review-inconclusive)
+  ```
+  - 🔴 **나가는 길이 없었습니다.** `--close-stale` 은 열린 *attempt* 축이라 `버릴 열린 attempt 가 없다` 로
+    거부하고, `--resolve replace` 는 *"successor REQ 로 대체"* 라는 다른 의미입니다.
+  - **게이트가 옳게 거부한 것이 아닙니다.** `phases[]` 에 없는 phase 의 열린 series 는 현재 phase 들이
+    검수됐는지에 대해 아무것도 말하지 않습니다 — 존재하지 않는 phase 에는 소비될 승인이 없습니다.
+    그래서 사람 승인 탈출구를 만드는 대신 **판정에서 제외**했습니다(정상 행위마다 통제점을 늘리지 않습니다).
+  - 🔴 **우회가 열리지 않습니다**: 승인 증거는 phase 별이라 새 이름의 phase 는 자기 승인을 새로 받아야 하고,
+    **리뷰 예산 축(`hardCap`)은 orphan 도 그대로 셉니다** — 개명으로 예산이 리셋되지 않습니다.
+
+- **feat: `req:review-exception --close-orphan`** — 사라진 phase 의 series 를 **기록으로 종결**합니다
+  (`closed_reason: 'orphaned'` + close-proof `series-terminal`). 판정에서 빼는 것만으로는 부정확한 lifecycle
+  레코드가 영원히 남아 **해소할 수 없는 경고**가 되기 때문입니다.
+  - 🔴 **승인 문장을 요구하지 않습니다.** `--resolve replace` 는 사람 판단이라 `--confirm` 이 필요하지만,
+    이쪽은 *"그 phase 가 `phases[]` 에 없다"* 는 **도구가 검증하는 사실**입니다. `--reason` 은 요구합니다.
+  - 🔴 **살아 있는 phase 의 series 는 거부**합니다 — 닫아 주면 필요한 리뷰를 건너뛰는 길이 됩니다.
+  - 🔴 **`orphaned` 는 티켓 종결이 아닙니다** — 그러지 않으면 진행 중인 티켓이 `series-terminal` 로 판정되어
+    `req:doctor` 의 종결 면제(D2·D3·D11)가 잘못 붙습니다. 기존 `replace`·`human-resolution` 의 의미는 그대로입니다.
+  - 재실행은 **수렴**합니다(이미 닫혔으면 쓰지 않고 그 사실을 말합니다).
+
+- **feat: `req:doctor` D34** — 열린 orphan series 를 **통합 전에** WARN 으로 알리고 해소 명령을 냅니다
+  (통합은 막지 않습니다). 실측에서 이 사실은 통합 시점에야 드러났습니다.
+  - 🔴 해소 명령의 인자는 커밋된 `state` 에서 오므로 **셸 안전 관문**을 통과할 때만 렌더링합니다 —
+    안전하지 않으면 명령 대신 값을 보여 줍니다(명령 주입 방지).
+
 - **docs: 업그레이드 절차에 명령 표면 축 추가** — 요약이
   `설치 → sync --apply --scripts → quickstart --apply → check` 로 바뀝니다(한/영).
 
