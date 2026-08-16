@@ -34,8 +34,17 @@ export function closeProofPath(ticketRel: string): string {
  */
 export type CloseProofEvent = 'series-terminal' | 'dev-complete' | 'migrated-complete' | 'abandoned'
 
-/** series-terminal의 종결 사유(사람 결정). */
-export type TerminalResolution = 'replace' | 'human-resolution'
+/**
+ * series-terminal의 종결 사유.
+ *
+ * - `replace`·`human-resolution`: **사람 결정**이다. 그 series 를 끝내고 대체 REQ 로 넘어가는 판단이라
+ *   **티켓 수준 사건**이 맞다(존재 자체가 종결).
+ * - `orphaned`(REQ-2026-163): phase 가 `phases[]` 에서 사라져 남은 series 의 **기록 종결**이다.
+ *   🔴 **사람 판단이 아니고 티켓 종결도 아니다** — `verifiedTerminalEvent` 가 제외한다. 그러지 않으면
+ *   진행 중인 티켓에서 phase 를 개명한 순간 그 티켓이 `series-terminal` 로 판정되어 doctor 의 종결
+ *   면제(D2·D3·D11)를 잘못 받는다(설계 DEC-3b).
+ */
+export type TerminalResolution = 'replace' | 'human-resolution' | 'orphaned'
 
 export interface CloseProofRow {
   ticket_id: string
@@ -72,6 +81,14 @@ export interface CloseProofRow {
   abandon_reason?: string | null
   /** `abandoned`일 때 승인 문장(누가 어떻게 승인했나). 그 외 이벤트에서는 없거나 null. 선택 필드(위와 동일 이유). */
   method?: string | null
+  /**
+   * `resolution: 'orphaned'` 일 때 **왜 그 phase 가 사라졌는가**(REQ-2026-163). 그 외에는 없거나 null.
+   *
+   * 🔴 **선택 필드다**(`abandon_reason` 과 같은 이유). 기존 행에는 이 키가 아예 없고 그대로 유효해야 한다 —
+   *    필수로 만들면 업그레이드만으로 완료 티켓이 corrupt 가 되어 intake 가 전부 막힌다.
+   * 🔴 사유가 durable 해야 기록이 감사 가능하다. 콘솔에만 남기면 다음 사람이 왜 닫혔는지 모른다.
+   */
+  orphan_reason?: string | null
 }
 
 /** 직렬화 키 순서(고정 — deterministic) + 허용키 화이트리스트(여기 없는 top-level 키 = 오염 → 거부). */
@@ -89,6 +106,8 @@ export const CLOSE_PROOF_KEYS = [
   //    `appendCloseProofRow`의 멱등 비교(직렬화 문자열 동일성)가 깨진다.
   'abandon_reason',
   'method',
+  // 🔴 REQ-2026-163: **끝에** 붙인다(위와 같은 이유 — 기존 키 순서가 바뀌면 멱등 비교가 깨진다).
+  'orphan_reason',
 ] as const
 
 /**
@@ -101,10 +120,13 @@ export const CLOSE_PROOF_KEYS = [
  *
  * 그래서 두 역할을 분리한다: 허용은 하되 **부재를 정상으로 본다**.
  */
-const OPTIONAL_KEYS: ReadonlySet<string> = new Set(['abandon_reason', 'method'])
+// 🔴 REQ-2026-163: `orphan_reason` 도 선택이다. 여기 넣지 않으면 **기존 커밋 행 전부가 '필수 키 누락'으로
+//    invalid** 가 되어 완료된 티켓조차 intake 를 통과하지 못한다(위 주석이 경고한 그 회귀).
+const OPTIONAL_KEYS: ReadonlySet<string> = new Set(['abandon_reason', 'method', 'orphan_reason'])
 
 const EVENTS: readonly string[] = ['series-terminal', 'dev-complete', 'migrated-complete', 'abandoned']
-const RESOLUTIONS: readonly string[] = ['replace', 'human-resolution']
+// 🔴 REQ-2026-163: `orphaned` 추가. 등재하지 않으면 `--close-orphan` 이 만든 행이 스스로 거부된다.
+const RESOLUTIONS: readonly string[] = ['replace', 'human-resolution', 'orphaned']
 
 /** 한 줄 직렬화(JSONL): 고정 키 순서 JSON + 끝 개행. */
 export function serializeCloseProofRow(row: CloseProofRow): string {
@@ -362,7 +384,13 @@ export function isDevCompleteVerified(input: TerminalStateInput): boolean {
  */
 export function verifiedTerminalEvent(input: TerminalStateInput): CloseProofEvent | null {
   const hasEvent = (e: CloseProofEvent): boolean => input.closeProofRows.some((r) => r.event === e)
-  if (hasEvent('series-terminal')) return 'series-terminal'
+  /**
+   * 🔴 **`orphaned` 는 티켓 종결이 아니다**(REQ-2026-163 DEC-3b). phase 개명으로 남은 series 를 닫은
+   *    **기록**일 뿐이라, 이것을 티켓 baseState 로 읽으면 **진행 중인 티켓이 종결로 보인다** —
+   *    doctor 의 종결 면제(D2·D3·D11)가 잘못 붙는다. 사람 결정(`replace`·`human-resolution`)만 센다.
+   */
+  if (input.closeProofRows.some((r) => r.event === 'series-terminal' && r.resolution !== 'orphaned'))
+    return 'series-terminal'
   // 🔴 dev-complete만 self-verifying(DEC-B2): proof + committed evidence + design_ref로 재검증한다.
   //    series-terminal·migrated-complete는 사람/운영자 결정의 기록이라 존재 자체가 종결이다.
   if (isDevCompleteVerified(input)) return 'dev-complete'

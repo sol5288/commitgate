@@ -24,6 +24,9 @@ import { commitStateCheckpoint } from './lib/state-checkpoint'
 // 🔴 REQ-2026-147: `successorSlug` 는 leaf(`lib/nonconvergence`)로 내려갔다 — `review-codex` 가
 //    써야 하는데 여기서 가져가면 런타임 순환이 된다. re-export 로 기존 호출부·테스트를 유지한다.
 import { successorSlug } from './lib/nonconvergence'
+// REQ-2026-163 DEC-4: orphan 판정의 정본. integrate·doctor 와 같은 술어를 쓴다.
+import { orphanPhaseSeries } from './lib/review-series'
+import { closeProofPath } from './lib/close-proof'
 export { successorSlug }
 import {
   loadState,
@@ -33,6 +36,9 @@ import {
   checkReviewBudget,
   isSeriesKeyTerminal,
   closeSeriesHumanResolutionById,
+  // REQ-2026-163: orphan 기록 종결(사람 결정이 아니라 도구가 검증한 사실).
+  closeSeriesOrphaned,
+  appendCloseProofRowToDisk,
   type WorkflowState,
   type ReviewKind,
   type ReviewExceptionConfirmed,
@@ -68,6 +74,12 @@ export interface Opts {
    * 🔴 두 모드는 겹치지 않는다 — 예외 부여는 "한 번 더 돌린다", 해소는 "이 회차를 버린다" 다.
    */
   closeStale: string | null
+  /**
+   * REQ-2026-163: **orphan series 기록 종결** 모드의 대상 series_id.
+   * 🔴 `--close-stale`(열린 attempt 버리기)·`--resolve`(사람의 대체 결정)와 **다른 축**이다 —
+   *    이쪽은 "phase 가 `phases[]` 에서 사라졌다"는 **도구가 검증하는 사실**이다.
+   */
+  closeOrphan: string | null
   reason: string | null
   /**
    * REQ-2026-145: 사람의 **대체(replace) 결정** 기록 모드. 값은 `replace` 만 받는다.
@@ -92,6 +104,7 @@ export function parseArgs(argv: string[]): Opts {
     run: false,
     root: null,
     closeStale: null,
+    closeOrphan: null,
     reason: null,
     resolve: null,
     series: null,
@@ -114,6 +127,10 @@ export function parseArgs(argv: string[]): Opts {
       const v = argv[++i]
       if (v === undefined) throw new Error('--method 값 필요')
       o.method = v
+    } else if (a === '--close-orphan') {
+      const v = argv[++i]
+      if (v === undefined || v.startsWith('-')) throw new Error(`--close-orphan 에 series_id 가 필요합니다 (받음: ${v ?? '(없음)'})`)
+      o.closeOrphan = v
     } else if (a === '--close-stale') {
       const v = argv[++i]
       if (v === undefined || v.startsWith('-')) throw new Error(`--close-stale 에 series_id 가 필요합니다 (받음: ${v ?? '(없음)'})`)
@@ -227,6 +244,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   }
   // 🔴 해소 모드는 예외 부여와 **완전히 다른 경로**다 — `--kind`·rationale 을 요구하지 않는다.
   if (o.closeStale !== null) return runCloseStale(o)
+  // 🔴 REQ-2026-163: orphan 기록 종결도 **다른 경로**다 — `--kind`·rationale·승인 문장을 요구하지 않는다.
+  if (o.closeOrphan !== null) return runCloseOrphan(o)
   // 🔴 REQ-2026-145: 대체 결정 기록도 **완전히 다른 경로**다 — `--kind`·rationale 을 요구하지 않는다.
   if (o.resolve !== null) return runResolve(o)
   if (!o.kind) throw new Error('--kind design|phase 필요')
@@ -460,6 +479,114 @@ export function planResolveReplace(state: WorkflowState, input: { resolve: strin
       hint: `같은 결정을 두 번 기록하지 않습니다. 이 티켓의 열린 series: ${openList()}`,
     }
   return { ok: true, seriesId: rec.series_id, kind: rec.review_kind, phaseId: rec.phase_id ?? null }
+}
+
+/**
+ * orphan series 판정(순수) — REQ-2026-163 phase-2.
+ *
+ * 🔴 **`phases[]` 에 있는 phase 의 series 는 거부한다.** 그것을 닫아 주면 필요한 리뷰를 건너뛰는 길이
+ *    된다 — 이 명령의 정당성은 "그 phase 가 더 이상 없다"는 **사실**에서만 나온다.
+ * 🔴 **이미 닫혔으면 수렴**이다(거부 아님). 재실행이 막히면 이 명령이 고치려는 교착을 스스로 만든다
+ *    (`--close-stale` 이 같은 규율을 문서로 못 박고 있다).
+ */
+export type CloseOrphanPlan =
+  | { kind: 'close'; seriesId: string; phaseId: string }
+  | { kind: 'noop'; seriesId: string; detail: string }
+  | { kind: 'refuse'; seriesId: string; reason: string; hint: string }
+
+export function planCloseOrphan(state: WorkflowState, seriesId: string, reason: string): CloseOrphanPlan {
+  const reasonProblem = humanDecisionProblem('--reason', reason)
+  if (reasonProblem)
+    return { kind: 'refuse', seriesId, reason: reasonProblem, hint: '왜 그 phase 가 사라졌는지 한 줄로 적으십시오.' }
+
+  const series = ((state.review_series ?? []) as { series_id?: unknown; closed_reason?: unknown }[]).find(
+    (r) => r.series_id === seriesId,
+  )
+  if (!series) return { kind: 'refuse', seriesId, reason: `series ${seriesId} 를 찾을 수 없습니다`, hint: '`req:doctor` 의 D34 가 대상 series id 를 알려 줍니다.' }
+  if (series.closed_reason !== null)
+    return { kind: 'noop', seriesId, detail: `이미 종결됨(${String(series.closed_reason)}) — 쓸 것이 없습니다` }
+
+  const orphan = orphanPhaseSeries(state as { phases?: unknown; review_series?: unknown }).find((x) => x.seriesId === seriesId)
+  if (!orphan)
+    return {
+      kind: 'refuse',
+      seriesId,
+      reason: `series ${seriesId} 는 orphan 이 아닙니다 — 그 phase 가 아직 phases[] 에 있습니다`,
+      hint: '살아 있는 phase 의 series 를 닫으면 필요한 리뷰를 건너뛰게 됩니다. 그 phase 를 정상 리뷰로 종결하십시오.',
+    }
+  return { kind: 'close', seriesId, phaseId: orphan.phaseId }
+}
+
+/**
+ * orphan series 기록 종결 실행 (REQ-2026-163).
+ *
+ * durable 정본은 **close-proof `series-terminal`(`resolution: 'orphaned'`)** 이다 — 리뷰 원장은
+ * `attempt-*` 뿐이라 series 수준 사건을 담을 수 없다(설계 DEC-3). 그 행은 `verifiedTerminalEvent` 가
+ * **티켓 종결에서 제외**하므로 진행 중인 티켓이 종결로 보이지 않는다(DEC-3b).
+ */
+function runCloseOrphan(o: Opts): void {
+  const seriesId = o.closeOrphan as string
+  const cfg = loadConfig({ root: o.root })
+  gitAdapter = createGitAdapter(cfg.root)
+  const reqId = (o.reqId as string).startsWith('REQ-') ? (o.reqId as string) : `REQ-${o.reqId}`
+  const ticketDir = join(cfg.workflowDirAbs, reqId)
+  const ticketRel = relative(cfg.root, ticketDir).replace(/\\/g, '/')
+  const state = loadState(ticketDir)
+
+  const plan = planCloseOrphan(state, seriesId, o.reason ?? '')
+  if (plan.kind === 'refuse') throw new Error(`${reqId}: ${plan.reason}
+  → ${plan.hint}`)
+  if (plan.kind === 'noop') {
+    console.log(`[req:review-exception --close-orphan] ${reqId} ${seriesId}: ${plan.detail}`)
+    return
+  }
+
+  console.log(`[req:review-exception --close-orphan] ${reqId} ${seriesId}: phases[] 에 없는 phase '${plan.phaseId}' 의 series 를 기록 종결합니다.`)
+  if (!o.run) {
+    console.log('[req:review-exception --close-orphan] DRY-RUN — write 없음(--run 시 실행).')
+    return
+  }
+
+  /**
+   * 🔴 durable 먼저. state 만 바뀌고 proof 가 없으면 다음 실행이 "이미 닫힘"으로 수렴해 기록이 영영 없다.
+   * 🔴 **그리고 그 proof 를 반드시 커밋한다**(phase-2 r01 P1). `commitStateCheckpoint` 는 설계상
+   *    `state.json` 만 pathspec 으로 담으므로, proof 를 디스크에만 두면 워킹트리에 남아 다음 정리에서
+   *    사라진다 — 계획이 요구한 durable 기록과 `orphan_reason` 감사 근거가 영구히 유실된다.
+   *    `durableParentSeriesTerminal` 이 쓰는 것과 **같은 pathspec 커밋** 방식이다(다른 staged 미접촉).
+   */
+  const cpRel = closeProofPath(ticketRel)
+  const cpAbs = join(cfg.root, cpRel)
+  const before = existsSync(cpAbs) ? readFileSync(cpAbs, 'utf8') : ''
+  appendCloseProofRowToDisk(cfg.root, ticketRel, {
+    ticket_id: reqId,
+    event: 'series-terminal',
+    series_id: seriesId,
+    resolution: 'orphaned',
+    phase_inventory: null,
+    design_ref: null,
+    at: new Date().toISOString(), // 🔴 실제 시계 — 지어내지 않는다(REQ-2026-019 폐기 사유)
+    reconstructed: false,
+    evidence_basis: null,
+    orphan_reason: (o.reason as string).trim(),
+  })
+
+  const after = existsSync(cpAbs) ? readFileSync(cpAbs, 'utf8') : ''
+  if (after !== before) {
+    git(['add', '--', cpRel])
+    git(['commit', '-m', bookkeepingMessage(`chore(${reqId}): series-terminal close proof (orphaned) — ${seriesId}`), '--', cpRel])
+  }
+
+  const { next, changed } = closeSeriesOrphaned(state, seriesId)
+  if (changed) writeState(ticketDir, next)
+  commitStateCheckpoint({
+    root: cfg.root,
+    ticketRel,
+    ticketId: reqId,
+    state: next,
+    reason: `${seriesId} orphan 기록 종결`,
+    gitFn: git,
+  })
+  console.log(`[req:review-exception --close-orphan] ✅ ${reqId} ${seriesId} 종결 기록·커밋 완료(closed_reason=orphaned).`)
 }
 
 /**
