@@ -4,6 +4,28 @@
 
 ## Unreleased
 
+- **fix: 업그레이드 절차가 문서마다 갈라지던 문제** — 조치가 필요한 축은 **여덟 개**인데(caret 범위 ·
+  `req:*` 명령 표면 · vendored 스키마 · `workflow/.gitignore` · 관리 블록 · review persona · 혼합 설치 ·
+  `AGENTS.md` 계약 문구) 진단은 `check` C5·C6 와 `doctor` D19~D33 에 흩어져 있고, **id 가 아예 없는 축도
+  있습니다** — review persona 는 `npx commitgate sync --persona` 계획 출력으로만 드러나고, caret 범위는
+  진단 수단 자체가 없습니다. 조치는 `sync` 4축·`quickstart`·`migrate`·수동에 나뉩니다.
+  **어느 문서도 이것을 한 자리에서 열거하지 않았습니다.**
+  - 실제로 0.24.0 직전까지 README 한/영이 `sync --apply --gitignore` 를 안내했습니다 — 그 릴리스가
+    `docs/upgrade.*` 만 고치고 README 를 빠뜨린 결과입니다. 축을 늘린 사람이 문서 네 곳을 기억해야 하는
+    구조라, 기억에 기대는 한 또 갈라집니다.
+  - 이제 **축 등록부가 코드에 있고**(`lib/upgrade-axes.ts`) `docs/upgrade.md`·`.en.md` 의 축 표가 그것을
+    담는지 **테스트가 검사**합니다. 축을 늘리고 문서를 안 고치면 red 입니다.
+  - README 는 절차를 복제하지 않고 **요약 한 줄 + 정본 링크**만 둡니다. 가드가 문구가 아니라 **구조**를
+    봅니다(요약 명령 그대로 · 정본 링크 · 표 없음 · 명령 하나 · 축 id 미나열).
+  - 🔴 **진단은 체크 id 만이 아닙니다.** 등록부가 세 종류를 타입으로 구분합니다 — 체크 id(`C6`·`D20` …) ·
+    **명령 출력**(review persona → `npx commitgate sync --persona`) · **없음**(caret 범위 — `^0.x` 는 소비자
+    `package.json` 에서 패키지매니저가 강제해 도구가 감지할 수 없습니다). 없는 진단을 있다고 적지 않습니다.
+  - 🔴 **순수 Stage A 는 결함이 아닙니다** — `D19` 는 Stage A/B 가 **섞였을 때만** 경고합니다. 표의 축
+    이름을 `mixed-install` 로 두어 없는 진단을 안내하지 않습니다.
+
+  확인할 파일: `scripts/req/lib/upgrade-axes.ts` · `docs/upgrade.md`(축 표) · `README.md`(요약 구역) ·
+  `tests/unit/upgrade-axes.test.ts`
+
 ## 0.24.0 (2026-08-17)
 
 > **업그레이드해도 새 명령이 설치본에 생기지 않던 문제를 고칩니다 — 그리고 그 사실을 아무도 말하지
