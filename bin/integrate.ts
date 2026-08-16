@@ -39,6 +39,8 @@ import { deliveryApprovalBlock, deliveryRecordProblems, type DeliveryRecord } fr
 import { bookkeepingMessage } from '../scripts/req/lib/bookkeeping'
 import { collectDeepInput, type RunDeps as VerifyRunDeps } from './verify-range'
 import { attributeRange } from '../scripts/req/lib/range-attribution'
+// REQ-2026-163 DEC-4: series 판정의 정본. doctor 와 같은 술어를 쓴다(두 곳에서 각자 판정하면 갈라진다).
+import { hasInconclusiveSeries } from '../scripts/req/lib/review-series'
 import {
   DELEGATION_LEDGER_REL,
   DENY_GUIDANCE,
@@ -608,8 +610,18 @@ export function readTicketFacts(
   const series = Array.isArray(st.review_series) ? (st.review_series as { attempts?: unknown; closed_reason?: unknown }[]) : []
   return {
     riskLevel: typeof st.risk_level === 'string' ? st.risk_level : 'HIGH',
+    /**
+     * 🔴 **예산 축은 orphan 을 그대로 센다**(REQ-2026-163 DEC-2). phase 를 개명해도 리뷰 예산이
+     *    리셋되면 안 된다 — 그것이 열리면 hardCap 이 우회로가 된다.
+     */
     budgetHardCapReached: series.some((s) => typeof s.attempts === 'number' && s.attempts >= hardCap),
-    reviewInconclusive: series.some((s) => s.closed_reason === null),
+    /**
+     * 🔴 **orphan series 는 세지 않는다**(REQ-2026-163 DEC-1). `phases[]` 에 없는 phase 의 열린 series 는
+     *    현재 phase 들이 검수됐는지에 대해 아무것도 말하지 않는다 — 존재하지 않는 phase 에는 소비될
+     *    승인이 없다. 그것을 미판정으로 세면 리뷰 지적을 따른 phase 개명이 **자율 통합을 영구 차단**한다
+     *    (REQ-2026-161 이 실제로 그렇게 막혔다).
+     */
+    reviewInconclusive: hasInconclusiveSeries(st as { phases?: unknown; review_series?: unknown }),
     snapshotStopGate,
     stateUnreadable: false,
   }

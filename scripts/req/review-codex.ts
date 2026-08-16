@@ -1163,7 +1163,11 @@ export interface SeriesRecord {
   phase_id: string | null
   attempts: number
   // REQ-2026-029 A-2b: 'human-resolution' 추가(A-2a가 열린 확장으로 남긴 타입). approved와 재개방 규칙 정반대.
-  closed_reason: 'approved' | 'human-resolution' | null
+  /**
+   * 🔴 `'orphaned'`(REQ-2026-163): phase 가 `phases[]` 에서 사라져 남은 series 의 **기록 종결**.
+   *    사람 결정이 아니라 도구가 검증한 사실이다 — `--close-orphan` 만 쓴다.
+   */
+  closed_reason: 'approved' | 'human-resolution' | 'orphaned' | null
   // closed_reason='human-resolution'일 때만. 사람이 escalate된 series를 종료·대체로 결정한 손기록.
   human_resolution?: HumanResolution
   // 🔴 REQ-2026-054(DEC-C3): pre-dispatch 실패로 **환불된** 회차 수(additive·기본 0). 예산 게이트가 보는 유효
@@ -1300,6 +1304,23 @@ export function closeSeriesHumanResolutionById(
     i === idx ? { ...r, closed_reason: 'human-resolution' as const, human_resolution: resolution } : r,
   )
   return { ...state, review_series: next }
+}
+
+/**
+ * `orphaned` 종결 (REQ-2026-163) — phase 가 `phases[]` 에서 사라져 남은 series 의 **기록 종결**.
+ *
+ * 🔴 `closeSeriesHumanResolutionById` 와 **다른 함수**다. 저것은 사람 결정(`human_resolution` 필수)이고
+ *    이것은 도구가 검증한 사실이라 승인 문장을 남기지 않는다. 한 함수에 섞으면 "사람이 결정했다"는
+ *    기록이 사실이 아닌 경우가 생긴다.
+ * 🔴 **멱등** — 이미 닫힌 series 는 그대로 돌려준다(호출부가 "쓸 것 없음"으로 수렴한다).
+ */
+export function closeSeriesOrphaned(state: WorkflowState, seriesId: string): { next: WorkflowState; changed: boolean } {
+  const series = readSeries(state)
+  const idx = series.findIndex((r) => r.series_id === seriesId)
+  if (idx < 0) throw new Error(`orphaned 종결 대상이 없다: series_id=${seriesId}`)
+  if (series[idx]!.closed_reason !== null) return { next: state, changed: false }
+  const next = series.map((r, i) => (i === idx ? { ...r, closed_reason: 'orphaned' as const } : r))
+  return { next: { ...state, review_series: next }, changed: true }
 }
 
 export function closeSeriesHumanResolution(

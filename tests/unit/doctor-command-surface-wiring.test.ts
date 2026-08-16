@@ -96,3 +96,39 @@ describe('[REQ-2026-161] req:doctor main() 배선 — D33 명령 표면 skew (�
     expect(line).toContain('읽지 못함')
   })
 })
+
+/**
+ * REQ-2026-163 phase-3 — D34 **배선** e2e(실 git).
+ *
+ * 🔴 `runChecks` 에 `orphanSeries` 를 손으로 넣는 테스트는 `main()` 이 `orphanPhaseSeries(state)` 로
+ *    계산해 주입하는 배선이 끊겨도 통과한다. 실제 진입점을 돌려 출력을 본다.
+ */
+describe('[REQ-2026-163] req:doctor main() 배선 — D34 orphan series (실 git)', () => {
+  /** 티켓 state 의 phases·review_series 를 바꿔 orphan 을 만든다. */
+  function withSeries(repo: string, ticketRel: string, phases: string[], series: unknown[]): void {
+    const p = join(repo, ticketRel, 'state.json')
+    const st = JSON.parse(readFileSync(p, 'utf8')) as Record<string, unknown>
+    writeFileSync(p, JSON.stringify({ ...st, phases: phases.map((id) => ({ id })), review_series: series }))
+  }
+
+  it('🔴 개명으로 남은 orphan 을 D34 가 WARN 으로 말한다(해소 명령 포함)', () => {
+    const repo = mkRepo('req163-doctor-orphan-')
+    const ticketRel = commitStaleTicket(repo, spec)
+    withSeries(repo, ticketRel, ['phase-3'], [
+      { series_id: 'phase:phase-2-check-c6#1', review_kind: 'phase', phase_id: 'phase-2-check-c6', attempts: 2, closed_reason: null },
+    ])
+    const line = lineFor(runDoctorLines(repo), 'D34')
+    expect(line).toContain('WARN D34:')
+    expect(line).toContain('phase:phase-2-check-c6#1')
+    expect(line).toContain('--close-orphan')
+  })
+
+  it('살아 있는 phase 의 열린 series 는 D34 대상이 아니다(과잉 경보 아님)', () => {
+    const repo = mkRepo('req163-doctor-live-')
+    const ticketRel = commitStaleTicket(repo, spec)
+    withSeries(repo, ticketRel, ['live'], [
+      { series_id: 'phase:live#1', review_kind: 'phase', phase_id: 'live', attempts: 1, closed_reason: null },
+    ])
+    expect(lineFor(runDoctorLines(repo), 'D34')).toContain('OK D34:')
+  })
+})
