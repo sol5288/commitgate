@@ -1,7 +1,7 @@
 {
   "packageManager": "npm",
   "handoffPath": null,
-  "reviewReasoningEffort": "high",
+  "reviewReasoningEffort": "medium",
   "stopGate": "auto",
   "reviewBudget": {
     "autoBudget": 5,
@@ -13,7 +13,8 @@
     "timeoutMinutes": 30
   },
   "setup": {
-    "completedVersion": "0.20.0",
-    "completedAt": "2026-08-09T07:35:42.353Z"
-  }
+    "completedVersion": "0.23.1",
+    "completedAt": "2026-08-16T01:04:16.181Z"
+  },
+  "reviewModel": "gpt-5.6-terra"
 }
