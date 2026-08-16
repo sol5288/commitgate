@@ -2,19 +2,94 @@
   "id": "REQ-2026-165",
   "branch": "feat/req-2026-165-check-reports-all-upgrade-axes",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "01a00bec-4744-7e73-9404-27ab5098307c",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "b5c0555852356c6c83745be9357bf7df43a68cb3567b1c407a19cb078a904a1b",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-install-shape-leaf",
+      "title": "술어를 leaf 로",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-2-upgrade-status",
+      "title": "축 판정",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-3-check-c7",
+      "title": "check C7 배선",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-4-docs-changelog",
+      "title": "문서 + CHANGELOG",
+      "status": "pending",
+      "max_files": 8
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "3a8dfa681201b68da2f4129ba9ee10497e2dce7e",
+    "design": "17f2dff844e174746ff3312f078468fe31b07d4e",
+    "plan": "efd2ef6b11fbbf036e826fc46ff90ed3d89ed426"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-165/responses/design-r01-approved.json",
+    "response_sha256": "e8e082637ba4e84b141e94c6c178bc432186490b4bbb924f2d9b200bfbd4a0de",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "57355d96473b1c4f4ca0df20ed1dc491165387e8",
+    "codex_thread_id": "01a00bec-4744-7e73-9404-27ab5098307c",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-16T18:54:04.709Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-165/responses/design-r01-approved.json",
+          "sha256": "e8e082637ba4e84b141e94c6c178bc432186490b4bbb924f2d9b200bfbd4a0de"
+        }
+      ],
+      "inventory_sha256": "de7b3b7f76859affe779c598ea923be3e8ff25da43672aa82547cdd9ebbbd48e",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-165/responses/design-r01-approved.json"
+    },
+    "design_hash": "b5c0555852356c6c83745be9357bf7df43a68cb3567b1c407a19cb078a904a1b"
+  },
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "311803c8c9ea3a762dc56600f4e815fd917d65d24d007198786b0191e75751d3",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-16T18:54:04.709Z",
+    "findings": [],
+    "elided_count": 0
   }
 }
