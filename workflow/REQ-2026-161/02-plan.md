@@ -2,6 +2,10 @@
 
 설계 승인 후 phase별 진행. **각 phase 후 Codex 리뷰·승인 → 다음.**
 
+> 🔴 **순서 규칙(DEC-7 · phase-2 r02 P1)**: **복구가 진단보다 먼저 착륙한다.** 진단(C6·D33)이 가리키는
+> `sync --apply --scripts` 가 없는 상태로 진단을 먼저 내면, WARN 이 안내한 명령이 미지 옵션 오류로 죽는다 —
+> 이 REQ 가 고치려는 결함(도구가 시킨 명령이 실행 시점에 없다)을 중간 상태에서 그대로 재현하는 것이다.
+
 > **Granularity 정책(REQ-2026-016 Phase C)**: phase 1개는 리뷰 가능한 크기로 — 코드 변경 8파일 이하 권고. 초과 시 req:doctor가 D18 WARN(분할 권고·FAIL 아님). 큰 phase는 런타임 분할(예: B→B1/B2/B3)로 검수 면적을 줄인다.
 
 > **테스트 실행 계층(REQ-2026-100)**: 게이트는 테스트를 **실행하지 않는다**. 아래는 비용을 줄이기 위한 실행 시점 권고다.
@@ -22,7 +26,19 @@ Exit: typecheck 0 · `tests/unit/command-surface.test.ts` 그린 · 기대 집�
 `STAGE_B_REQ_VERBS` 와 **같은 집합**임을 검증(복제 목록으로 비교하지 않는다 — tautology 회피) ·
 Codex phase 리뷰 승인.
 
-## Phase 2 — `check` C6 배선 (`phase-2-check-c6`)
+## Phase 2 — `sync --scripts` 백필 (`phase-2-sync-scripts-optin`)
+
+범위: `bin/sync.ts` · 기존 sync 테스트 확장.
+
+- `Opts` 에 `scripts?: boolean` 추가. 플래그 없으면 **`package.json` 을 열지도 않는다**(기본 미접촉).
+- 계획(dry-run)에 백필 대상 키를 출력, `--apply` 에서만 쓴다.
+- **insert-only** — `if (!(k in scripts))`. 기존 값은 읽고 다시 쓰지 않는다.
+- 계획 출력의 opt-in 안내 줄에 `--scripts` 를 추가(`--persona`·`--gitignore` 와 같은 형태).
+
+Exit: typecheck 0 · sync 테스트 그린(플래그 없음 → package.json 미접촉 **회귀 고정** · `--scripts`
+dry-run → 계획만 · `--scripts --apply` → 부재만 삽입·기존 값 바이트 불변) · Codex phase 리뷰 승인.
+
+## Phase 3 — `check` C6 배선 (`phase-3-check-c6`)
 
 범위: `bin/check.ts` · 기존 check 테스트 확장.
 
@@ -39,7 +55,7 @@ Exit: typecheck 0 · `collectInputs` → `runChecks` **실경로**가 도는 테
 배선 끊김을 못 잡는다) · **이 저장소 루트에서 `commitgate check` 가 C6 를 WARN 으로 내지 않음**을
 고정하는 테스트 · Codex phase 리뷰 승인.
 
-## Phase 3 — `doctor` D33 배선 (`phase-3-doctor-d33`)
+## Phase 4 — `doctor` D33 배선 (`phase-4-doctor-d33`)
 
 범위: `scripts/req/req-doctor.ts` · **`docs/ssot-design/07-business-rules-and-state-machines.md`** ·
 기존 doctor 테스트 확장.
@@ -50,28 +66,15 @@ Exit: typecheck 0 · `collectInputs` → `runChecks` **실경로**가 도는 테
   등재만 하고 표를 미루면 그 시점부터 **전체 스위트가 red** 이고 완료 기준 6 에 도달할 수 없다.
   같은 테스트가 "등재 id 는 런타임에서 방출되는가"도 보므로 미계산 경로에서도 `applicable:false` 로
   **반드시 방출**한다.
-- `Inputs` 에 optional 필드 추가(`undefined` = 미계산 → `applicable:false`. 기존 테스트 base 리터럴
-  무손상).
+- `Inputs` 에 optional 필드 추가(`undefined` = 미계산 → `applicable:false`. 기존 테스트 base 리터럴 무손상).
 - `packageRootDiffers === false`(dogfood)면 D20/D21/D22 와 **같은 기준으로** skip.
 - WARN 상한. 메시지는 누락 verb + `commandSurfaceGuidance()`.
-- `main()` 이 대상 repo `package.json` 의 `scripts` 를 읽어 채운다.
+- `main()` 이 대상 repo `package.json` 의 `scripts` 를 읽어 채운다(읽기는 `readPackageScripts` 하나).
 
 Exit: typecheck 0 · doctor 실경로 테스트 그린(부족 있음 → WARN · 부족 없음 → OK · dogfood → skip ·
 미계산 → 점검 불요) · **`tests/unit/docs-stale-claims.test.ts` 그린**(07 표 ↔ `D_CHECK_IDS` 양방향 ·
 런타임 방출) · **변이 검사**로 D33 배선이 실제로 도는지 확인(입력 채우는 줄을 지우면 red) ·
 Codex phase 리뷰 승인.
-
-## Phase 4 — `sync --scripts` 백필 (`phase-4-sync-scripts-optin`)
-
-범위: `bin/sync.ts` · 기존 sync 테스트 확장.
-
-- `Opts` 에 `scripts?: boolean` 추가. 플래그 없으면 **`package.json` 을 열지도 않는다**(기본 미접촉).
-- 계획(dry-run)에 백필 대상 키를 출력, `--apply` 에서만 쓴다.
-- **insert-only** — `if (!(k in scripts))`. 기존 값은 읽고 다시 쓰지 않는다.
-- 계획 출력의 opt-in 안내 줄에 `--scripts` 를 추가(`--persona`·`--gitignore` 와 같은 형태).
-
-Exit: typecheck 0 · sync 테스트 그린(플래그 없음 → package.json 미접촉 **회귀 고정** · `--scripts`
-dry-run → 계획만 · `--scripts --apply` → 부재만 삽입·기존 값 바이트 불변) · Codex phase 리뷰 승인.
 
 ## Phase 5 — 문서 정합 (`phase-5-docs-parity`)
 

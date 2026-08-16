@@ -143,11 +143,23 @@ D33 · C6 · `sync` 계획 출력이 같은 해소 명령을 말해야 한다. �
 | phase | 내용 |
 |---|---|
 | 1 | `lib/command-surface.ts` 순수 술어 + 안내 빌더 + 단위 테스트 |
-| 2 | `bin/check.ts` C6 배선(+ **dogfood skip**) + 실경로 테스트 |
-| 3 | `req-doctor.ts` D33 등록·판정·배선(+ dogfood skip) + **07 정본 표 갱신** + 실경로 테스트 |
-| 4 | `bin/sync.ts` `--scripts` opt-in 백필 + 테스트 |
+| 2 | `bin/sync.ts` `--scripts` opt-in 백필 + 테스트 |
+| 3 | `bin/check.ts` C6 배선(+ **dogfood skip**) + 실경로 테스트 |
+| 4 | `req-doctor.ts` D33 등록·판정·배선(+ dogfood skip) + **07 정본 표 갱신** + 실경로 테스트 |
 | 5 | 문서 — `workflow`(한/영) · `upgrade`(한/영) · `delivery` help + 전수 grep 가드 |
 | 6 | CHANGELOG |
+
+### DEC-7 — **복구가 진단보다 먼저 착륙한다**(phase-2 r02 P1)
+
+처음 계획은 진단(C6·D33)을 먼저 놓고 복구(`sync --scripts`)를 뒤에 뒀다. 그러면 진단이 착륙한 시점에
+`sync` 는 아직 `--scripts` 를 파싱하지 못하므로, **WARN 이 안내한 명령이 미지 옵션 오류로 죽는다.**
+
+🔴 그것은 **이 REQ 가 고치려는 결함과 정확히 같은 계열**이다 — "도구가 시킨 명령이 실행 시점에 없다".
+자기가 고치는 병을 중간 상태에서 재현하는 계획은 틀린 계획이다(REQ-2026-160 이 같은 실수를 했다:
+안내한 탈출구가 실행 불가였다).
+
+그래서 순서를 뒤집는다: **복구 수단이 존재한 뒤에만 그것을 가리키는 진단을 낸다.** 이 규칙은 phase
+순서에만 적용되는 것이 아니라, `commandSurfaceGuidance` 가 가리키는 명령을 바꿀 때마다 유효하다.
 
 🔴 phase 2·3·4 는 **배선 phase** 다. 순수 테스트만으로는 배선 끊김을 못 잡는다(REQ-2026-096~099 에서
 3연속 실증). 각 phase 는 **실제 경로로 도는 테스트**(`runChecks`/`runChecks` 입력 수집/`sync` 계획

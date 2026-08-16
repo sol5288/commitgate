@@ -22,8 +22,14 @@
  *     0.9.6 이하 설치본에는 review-call 로그 규칙이 없어 첫 리뷰 뒤 D10이 커밋을 막는다 — 그 백필 경로다.
  *     존재 판정은 Git 의미론을 보존한다(앞 공백은 패턴의 일부 — `normalizeIgnoreLine`).
  *
- * 안 하는 일: companion skills·package.json·req:*·req.config.json·에이전트 진입점 미접촉.
+ *   - **`package.json`의 `req:*`(`--scripts` opt-in, REQ-2026-161)**: 덮어쓰기 0건. 설치된 패키지의 verb
+ *     표면(`VERB_MODULES`)에 있는데 `scripts`에 **없는 키만** 삽입한다(기존 키는 값이 무엇이든 미변경).
+ *     릴리스가 새 verb를 추가해도 기존 설치본에는 생기지 않아 `req:next`가 안내한 명령이 실행 시점에
+ *     없는 상태가 된다 — 그 백필 경로다. 판정은 `check` C6 · `doctor` D33과 **같은 술어**를 쓴다.
+ *
+ * 안 하는 일: companion skills·req.config.json·에이전트 진입점 미접촉.
  *    `workflow/.gitignore`도 `--gitignore` 없이는 완전 미접촉(**기본 동작 불변**).
+ *    `package.json`도 `--scripts` 없이는 **열지도 않는다**(기본 동작 불변).
  *    캐럿 범위(`^0.x`)는 소비자 package.json에서 PM이 강제하므로 코드로 못 고친다 — 문서(업그레이드 절)가 안내.
  *
  * ⚠️ **confinement는 재구현하지 않는다.** 모든 쓰기가 `statWritableDest`(bin/init.ts) 단일 경로를 탄다 —
@@ -48,6 +54,9 @@ import {
   sha256File,
   assertGitWorkTree,
 } from './init'
+// 🔴 명령 표면 판정·입력 획득의 **정본**(REQ-2026-161 DEC-1). check C6 · doctor D33 과 같은 것을 쓴다 —
+//    복구가 진단과 다른 집합을 보면 "진단은 부족하다는데 백필은 넣을 게 없다"가 된다.
+import { expectedReqScripts, missingReqScripts, readPackageScripts } from '../scripts/req/lib/command-surface'
 import { makeRunCli, isEntrypoint } from '../scripts/req/lib/cli-boundary'
 
 export interface SyncOptions {
@@ -66,6 +75,15 @@ export interface SyncOptions {
    * 🔴 `persona`를 **함의하지 않는다** — 둘을 함께 줘야 한다(우발적 교체를 막는 의도적 중복).
    */
   personaApply?: boolean
+  /**
+   * `package.json`의 **누락된 `req:*` 스크립트** 백필 opt-in(REQ-2026-161). 없으면 `package.json`을
+   * **열지도 않는다** — 기본 동작(미접촉)이 그대로다.
+   *
+   * 🔴 **기본을 바꾸지 않는 것이 요점이다.** 세 문서가 "sync는 package.json을 건드리지 않는다"고
+   *    공표했다. 그 계약을 깨는 대신 `--persona`·`--gitignore`와 **같은 형태의 축**을 하나 더 연다.
+   * 🔴 **insert-only** — 없는 키만 넣고 기존 값은 한 글자도 바꾸지 않는다(`init`과 같은 규칙).
+   */
+  scripts?: boolean
 }
 
 /**
@@ -90,6 +108,10 @@ export type AssetStatus =
   | 'unmanaged-null'
   /** gitignore 축: 파일은 있으나 kit 규칙 일부가 없음 → **누락 행만** 말미에 append(REQ-2026-047). */
   | 'rules-missing'
+  /** scripts 축: `package.json`은 있으나 `req:*` 일부가 없음 → **없는 키만** 삽입(REQ-2026-161). */
+  | 'keys-missing'
+  /** scripts 축: `package.json`을 읽지 못함 → 미접촉. 읽지 못한 것을 "부족"으로 읽지 않는다. */
+  | 'unreadable'
 
 /** persona 본문이 kit 계보임을 표시하는 마커(REQ-2026-050 phase-1이 도입). 첫 줄에 온다. */
 export const PERSONA_KIT_MARKER = '<!-- commitgate:persona v1 -->'
@@ -102,9 +124,21 @@ export function hasPersonaKitMarker(body: string): boolean {
 
 export interface AssetPlan {
   rel: string // 대상-상대 경로(표시용)
-  axis: 'schema' | 'persona' | 'gitignore'
+  axis: 'schema' | 'persona' | 'gitignore' | 'scripts'
   status: AssetStatus
   note?: string
+}
+
+/**
+ * `package.json`의 `scripts`에 **삽입할** 누락 `req:*` 키(REQ-2026-161).
+ *
+ * 🔴 복사도 append도 아니라 **JSON 편집**이라 `writes`/`appends`와 분리한다 — 세 축이 섞이면
+ *    apply 순서·실패 처리가 한 덩어리가 되어 부분 실패를 구분할 수 없다.
+ */
+export interface ScriptInsert {
+  destRel: string
+  /** 넣을 키→값. 이미 있는 키는 여기 들어오지 않는다(insert-only). */
+  missing: Record<string, string>
 }
 
 /** `workflow/.gitignore`에 덧붙일 누락 kit 규칙(REQ-2026-047). 기존 행은 건드리지 않는다. */
@@ -129,6 +163,8 @@ export interface SyncPlan {
   writes: { srcAbs: string; destRel: string }[]
   /** apply 시 **행 단위 append**할 항목(gitignore 축 전용). 복사가 아니라 추가라 writes와 분리한다. */
   appends: GitignoreAppend[]
+  /** apply 시 `package.json`에 삽입할 `req:*` 키(scripts 축 전용 — REQ-2026-161). 없으면 `null`. */
+  scriptInsert?: ScriptInsert | null
   /**
    * apply 시 writes **보다 먼저** 수행할 백업(REQ-2026-050 D6). 현재는 persona 교체 경로만 쓴다.
    * 백업이 실패하면 대응하는 write도 수행하지 않는다(fail-closed) — runSync가 강제한다.
@@ -199,11 +235,13 @@ export function planSync(
   persona: boolean,
   gitignore = false,
   personaApply = false,
+  scripts = false,
 ): SyncPlan {
   const assets: AssetPlan[] = []
   const writes: { srcAbs: string; destRel: string }[] = []
   const appends: GitignoreAppend[] = []
   const backups: PersonaBackup[] = []
+  let scriptInsert: ScriptInsert | null = null
   let personaDiff: SyncPlan['personaDiff'] = null
 
   // ── 스키마 축(무조건 재동기화 — 계약, --force 축) ──
@@ -292,7 +330,224 @@ export function planSync(
     }
   }
 
-  return { targetRoot, assets, writes, appends, backups, personaDiff }
+  // ── package.json 의 누락 `req:*` 스크립트 백필(--scripts opt-in — REQ-2026-161) ──
+  // 🔴 플래그가 없으면 **파일을 열지도 않는다**. "sync 는 package.json 을 건드리지 않는다"는 공표된
+  //    기본 동작이 그대로 유지된다는 사실이 이 분기의 존재 조건이다.
+  // 🔴 **insert-only**. 사용자가 `req:new` 를 자기 래퍼로 바꿔 뒀을 수 있고, 그것은 `init` 이 Stage A
+  //    시절부터 보존해 온 정당한 상태다. 값이 다르다는 이유로 덮는 경로는 만들지 않는다.
+  if (scripts) {
+    const rel = 'package.json'
+    const have = readPackageScripts(targetRoot)
+    if (have === null) {
+      // 🔴 읽지 못한 것을 "부족"으로 읽지 않는다 — C6·D33 과 같은 규율.
+      assets.push({ rel, axis: 'scripts', status: 'unreadable', note: 'package.json 의 scripts 를 읽지 못함 — 미접촉' })
+    } else {
+      const missingKeys = missingReqScripts(have)
+      if (missingKeys.length === 0) {
+        assets.push({ rel, axis: 'scripts', status: 'in-sync', note: 'req:* 명령 표면이 설치된 패키지와 일치' })
+      } else {
+        const expected = expectedReqScripts()
+        // 🔴 `missingReqScripts` 는 **존재**로 판정한다(`k in scripts`) — 적용 단계와 같은 술어다.
+        //    값으로 걸렀다가 `"req:new": null` 같은 키를 "누락"이라 안내하고 실제로는 건너뛰던
+        //    계획/적용 불일치가 phase-2 r02 P1 이었다.
+        const missing = Object.fromEntries(missingKeys.map((k) => [k, expected[k] as string]))
+        assets.push({
+          rel,
+          axis: 'scripts',
+          status: 'keys-missing',
+          note: `누락 ${missingKeys.length}개 → 삽입(기존 키 미변경): ${missingKeys.join(' , ')}`,
+        })
+        scriptInsert = { destRel: rel, missing }
+      }
+    }
+  }
+
+  return { targetRoot, assets, writes, appends, backups, personaDiff, scriptInsert }
+}
+
+/**
+ * `package.json` 의 `scripts` 에 없는 키만 삽입한다(REQ-2026-161).
+ *
+ * 🔴 **재직렬화하지 않는다**(phase-2 r01 P1). `JSON.stringify` 왕복은 **기존 값의 원문 표현을 바꾼다** —
+ *    `"node .\/build"` → `"node ./build"`, `1e+0` → `1`, 유니코드 이스케이프·키 순서·주석 없는 포맷까지.
+ *    "부재만 삽입하고 기존 값은 바이트 불변"이라고 선언해 놓고 파일 전체를 다시 쓰면 그 선언이 거짓이
+ *    되고, 화면의 diff 도 삽입한 키로 한정되지 않는다. 그래서 **원문에 텍스트로 끼워 넣는다.**
+ *
+ * 🔴 **BOM 은 계획과 적용이 같은 방식으로 다뤄야 한다**(phase-2 r01 P1). `readPackageScripts` 는 BOM 을
+ *    떼고 파싱하는데 여기서 원문을 그대로 `JSON.parse` 하면, BOM 이 있는 **유효한** package.json 에서
+ *    계획은 성립하고 적용만 예외로 죽는다. 떼서 파싱하고 **쓸 때 되돌린다**.
+ */
+export function applyScriptInsert(targetRoot: string, ins: ScriptInsert): string[] {
+  const abs = join(targetRoot, ins.destRel)
+  const rawWithBom = readFileSync(abs, 'utf8')
+  const bom = rawWithBom.charCodeAt(0) === 0xfeff ? '﻿' : ''
+  const raw = bom === '' ? rawWithBom : rawWithBom.slice(1)
+
+  const pkg = JSON.parse(raw) as { scripts?: unknown }
+  const cur = pkg.scripts
+  if (typeof cur !== 'object' || cur === null || Array.isArray(cur))
+    throw new Error(`${ins.destRel} 의 scripts 가 객체가 아닙니다 — 삽입하지 않습니다(fail-closed).`)
+  const have = cur as Record<string, unknown>
+
+  // 계획 이후 바뀌었을 수 있다 — 이미 있는 키는 덮지 않는다(TOCTOU).
+  const entries = Object.entries(ins.missing).filter(([k]) => !(k in have))
+  if (entries.length === 0) return []
+
+  const span = findScriptsObjectSpan(raw)
+  if (span === null)
+    throw new Error(`${ins.destRel} 에서 scripts 객체의 위치를 찾지 못했습니다 — 삽입하지 않습니다(fail-closed).`)
+
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n'
+  const indent = scriptsEntryIndent(raw, span)
+  const added = entries.map(([k]) => k)
+  const lines = entries.map(([k, v]) => `${indent}${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(`,${eol}`)
+
+  /**
+   * 마지막 항목 뒤(닫는 `}` 앞)에 끼운다. 기존 바이트는 잘라 붙이기만 하므로 그대로 남는다.
+   *
+   * 🔴 **말미 공백(`tailWs`)을 지우지 않는다**(phase-2 r04 P1). 앞선 판은 그것을 버리고 마지막 줄의
+   *    들여쓰기만 되붙였는데, 그러면 닫는 `}` 앞의 **빈 줄이나 정렬 공백이 삽입과 무관하게 사라진다** —
+   *    "기존 값 바이트 불변 · diff 는 삽입한 키로 한정"이 정상 경로에서 깨진다.
+   *    새 항목은 `tailWs` **앞에** 넣어, 원문의 말미 형태가 그대로 `}` 앞에 남게 한다.
+   */
+  const inner = raw.slice(span.innerStart, span.innerEnd)
+  const hasEntry = inner.trim() !== ''
+  const tailWs = /\s*$/.exec(inner)?.[0] ?? ''
+  const keep = inner.slice(0, inner.length - tailWs.length)
+  const body = hasEntry
+    ? `${keep},${eol}${lines}${tailWs}`
+    : tailWs === ''
+      ? // 🔴 `{}` — **보존할 바이트가 실제로 없는** 유일한 경우다. 여기서만 들여쓰기를 만들어 준다.
+        `${eol}${lines}${eol}${closingBraceIndent(indent)}`
+      : // 빈 객체지만 공백이 있는 형태(`{    }` · `{\n  }`) — 그 공백도 사용자의 포맷이므로 그대로 둔다.
+        `${eol}${lines}${tailWs}`
+
+  writeFileSync(abs, bom + raw.slice(0, span.innerStart) + body + raw.slice(span.innerEnd), 'utf8')
+  return added
+}
+
+/**
+ * 최상위 `"scripts"` **객체 값**의 내부 범위(여는 `{` 다음 ~ 닫는 `}` 앞).
+ *
+ * 🔴 **정규식이 아니라 스캐너다.** 문자열 리터럴 안의 `{`·`}`·`"scripts"` 를 구조로 오인하면 엉뚱한 곳에
+ *    쓴다. 이스케이프와 문자열 상태를 추적하며 depth 1 의 키만 본다.
+ */
+export function findScriptsObjectSpan(raw: string): { innerStart: number; innerEnd: number } | null {
+  let i = 0
+  let depth = 0
+  let inStr = false
+  let esc = false
+  let quoteStart = -1
+  let pendingKey: string | null = null
+  let last: { innerStart: number; innerEnd: number } | null = null
+  for (; i < raw.length; i++) {
+    const c = raw[i] as string
+    if (inStr) {
+      if (esc) esc = false
+      else if (c === '\\') esc = true
+      else if (c === '"') {
+        inStr = false
+        /**
+         * 🔴 **원문 토큰이 아니라 JSON 의미로 비교한다**(phase-2 r02 P1). `"scripts"` 는 유효한
+         *    JSON 에서 `scripts` 와 같은 키다. 계획 단계(`JSON.parse`)는 그것을 `scripts` 로 읽는데
+         *    스캐너가 원문만 보면 span 을 못 찾아, **약속한 백필이 fail-closed 로 죽는다.**
+         */
+        if (depth === 1 && quoteStart >= 0) pendingKey = decodeJsonString(raw.slice(quoteStart, i + 1))
+      }
+      continue
+    }
+    if (c === '"') {
+      inStr = true
+      quoteStart = i
+      continue
+    }
+    if (c === '{' || c === '[') {
+      // 🔴 `"scripts"` 뒤의 `{` 를 만났을 때만 범위를 연다 — `:` 사이에 다른 토큰이 없어야 한다.
+      if (c === '{' && depth === 1 && pendingKey === 'scripts') {
+        const end = matchBrace(raw, i)
+        if (end === null) return null
+        /**
+         * 🔴 **마지막 `scripts` 를 쓴다**(phase-2 r03 P1). 중복 최상위 키는 유효한 JSON 이고
+         *    `JSON.parse` 는 **뒤의 것**을 채택한다. 첫 번째에 삽입하면 계획(파싱 기준)과 적용
+         *    (편집 기준)이 서로 다른 객체를 보게 되어, 백필했다고 말하고도 의미상으로는 여전히
+         *    키가 없다. 그래서 조기 반환하지 않고 끝까지 훑어 **마지막 것**을 남긴다.
+         */
+        last = { innerStart: i + 1, innerEnd: end }
+        i = end // 이 객체 내부는 이미 소비했다(depth 는 그대로 1).
+        pendingKey = null
+        continue
+      }
+      depth++
+      pendingKey = null
+      continue
+    }
+    if (c === '}' || c === ']') {
+      depth--
+      pendingKey = null
+      continue
+    }
+    if (c === ',') pendingKey = null
+  }
+  return last
+}
+
+/** 따옴표를 포함한 JSON 문자열 토큰 → 값. 파싱 불가면 `null`(키로 쓰이지 않는다). */
+function decodeJsonString(token: string): string | null {
+  try {
+    const v: unknown = JSON.parse(token)
+    return typeof v === 'string' ? v : null
+  } catch {
+    return null
+  }
+}
+
+/** `open` 위치의 `{` 에 대응하는 `}` 인덱스(문자열·이스케이프 인식). 없으면 `null`. */
+function matchBrace(raw: string, open: number): number | null {
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let i = open; i < raw.length; i++) {
+    const c = raw[i] as string
+    if (inStr) {
+      if (esc) esc = false
+      else if (c === '\\') esc = true
+      else if (c === '"') inStr = false
+      continue
+    }
+    if (c === '"') inStr = true
+    else if (c === '{') depth++
+    else if (c === '}') {
+      depth--
+      if (depth === 0) return i
+    }
+  }
+  return null
+}
+
+/** `scripts` 내부 항목의 들여쓰기. 기존 항목이 있으면 그것을, 없으면 파일 들여쓰기의 2배를 쓴다. */
+export function scriptsEntryIndent(raw: string, span: { innerStart: number; innerEnd: number }): string {
+  const inner = raw.slice(span.innerStart, span.innerEnd)
+  const m = /\r?\n([ \t]*)"/.exec(inner)
+  if (m?.[1] !== undefined && m[1] !== '') return m[1]
+  const unit = detectJsonIndent(raw)
+  const one = typeof unit === 'string' ? unit : ' '.repeat(unit)
+  return one + one
+}
+
+/**
+ * 닫는 `}` 앞 들여쓰기 — **원문에 기준 삼을 말미가 없을 때만** 쓴다(인라인 빈 객체).
+ * 항목 들여쓰기의 절반(= 한 단계 바깥)을 취한다.
+ */
+export function closingBraceIndent(entryIndent: string): string {
+  return entryIndent.slice(0, Math.floor(entryIndent.length / 2))
+}
+
+/** 원문의 들여쓰기 폭(공백 수) 또는 탭. 판정 불가면 2(가장 흔한 값이자 `init` 이 쓰는 값). */
+export function detectJsonIndent(raw: string): number | string {
+  const m = /\n(\t+|[ ]+)"/.exec(raw)
+  const lead = m?.[1]
+  if (lead === undefined) return 2
+  return lead.startsWith('\t') ? '\t' : lead.length
 }
 
 // ────────────────────────────────────────────── persona diff (D5) ──
@@ -361,7 +616,13 @@ export function renderPersonaDiff(
 }
 
 /** 계획을 사람이 읽는 줄 배열로. shell 연산자 미사용(Windows PowerShell/cmd 호환 — DEC-011-8). */
-export function renderPlan(plan: SyncPlan, apply: boolean, persona: boolean, gitignore = false): string[] {
+export function renderPlan(
+  plan: SyncPlan,
+  apply: boolean,
+  persona: boolean,
+  gitignore = false,
+  scripts = false,
+): string[] {
   const L: string[] = []
   const GLYPH: Record<AssetStatus, string> = {
     new: '＋',
@@ -372,6 +633,8 @@ export function renderPlan(plan: SyncPlan, apply: boolean, persona: boolean, git
     'unmanaged-custom': '·',
     'unmanaged-null': '·',
     'rules-missing': '＋',
+    'keys-missing': '＋',
+    unreadable: '·',
   }
   L.push('')
   L.push(`[commitgate sync] vendored 계약 재동기화 ${apply ? '(--apply: 파일을 씁니다)' : '계획 (dry-run — 아무것도 쓰지 않습니다)'}`)
@@ -388,10 +651,15 @@ export function renderPlan(plan: SyncPlan, apply: boolean, persona: boolean, git
   if (!gitignore) {
     L.push('  ℹ️  workflow/.gitignore 는 미포함(--gitignore 로 opt-in). 기존 동작은 그대로입니다.')
   }
+  if (!scripts) {
+    // 🔴 "건드리지 않았다"를 **말한다**. 침묵하면 사용자는 sync 가 package.json 까지 봤다고 믿는다 —
+    //    실측에서 `변경 없음` 만 보고 명령 표면 skew 를 놓친 것이 이 REQ 의 출발점이다.
+    L.push('  ℹ️  package.json 의 req:* 는 미포함(--scripts 로 opt-in). 기본 동작은 미접촉 그대로입니다.')
+  }
   L.push('')
-  // 변경 건수 = 파일 복사(writes) + 행 추가(appends). 둘 다 없으면 "변경 없음".
-  const changes = plan.writes.length + plan.appends.length
-  const optIn = `${persona ? ' --persona' : ''}${gitignore ? ' --gitignore' : ''}`
+  // 변경 건수 = 파일 복사(writes) + 행 추가(appends) + req:* 키 삽입(scriptInsert). 전부 없으면 "변경 없음".
+  const changes = plan.writes.length + plan.appends.length + (plan.scriptInsert ? 1 : 0)
+  const optIn = `${persona ? ' --persona' : ''}${gitignore ? ' --gitignore' : ''}${scripts ? ' --scripts' : ''}`
   if (!apply) {
     if (changes > 0) {
       L.push(`  적용하려면: npx commitgate sync --apply${optIn}`)
@@ -403,6 +671,7 @@ export function renderPlan(plan: SyncPlan, apply: boolean, persona: boolean, git
     L.push(`  ✅ ${changes}개 파일 갱신. 다음: git diff 로 확인 후 커밋하십시오.`)
     for (const w of plan.writes) L.push(`     git add -- ${w.destRel}`)
     for (const a of plan.appends) L.push(`     git add -- ${a.destRel}`)
+    if (plan.scriptInsert) L.push(`     git add -- ${plan.scriptInsert.destRel}`)
   } else {
     L.push('  변경 없음 — 이미 동기화되어 있습니다(쓰기 0건).')
   }
@@ -418,6 +687,8 @@ const STATUS_LABEL: Record<AssetStatus, string> = {
   'unmanaged-custom': 'custom 경로(unmanaged)',
   'unmanaged-null': '비활성(unmanaged)',
   'rules-missing': 'kit 규칙 누락 → 말미에 추가(기존 행 미변경)',
+  'keys-missing': 'req:* 키 누락 → 없는 키만 삽입(기존 키 미변경)',
+  unreadable: '읽지 못함 → 미접촉',
 }
 
 /**
@@ -438,7 +709,14 @@ export function runSync(opts: SyncOptions, deps: SyncDeps = {}): SyncPlan {
     throw new Error('sync 대상이 CommitGate 패키지 자신입니다 — 소비 repo(commitgate를 devDependency로 설치한 곳)에서 실행하세요.')
 
   const cfg = loadConfig({ root: targetRoot }) // root 명시 → resolveRoot의 packageRoot fallback 안 탐
-  const plan = planSync(targetRoot, cfg, opts.persona, opts.gitignore === true, opts.personaApply === true)
+  const plan = planSync(
+    targetRoot,
+    cfg,
+    opts.persona,
+    opts.gitignore === true,
+    opts.personaApply === true,
+    opts.scripts === true,
+  )
 
   // ── persona 차이의 실제 내용 diff — 🔴 **쓰기보다 먼저** 인쇄한다(REQ-2026-050 D5) ──
   // dry-run에서도 낸다. 사용자가 적용 여부를 고르려면 적용 전에 봐야 한다.
@@ -489,9 +767,20 @@ export function runSync(opts: SyncOptions, deps: SyncDeps = {}): SyncPlan {
       const destAbs = join(targetRoot, a.destRel)
       writeFileSync(destAbs, appendIgnoreRules(readFileSync(destAbs, 'utf8'), a.missing), 'utf8')
     }
+    if (plan.scriptInsert) {
+      // 동일하게 confinement 재검증. 삽입은 **읽고-편집해-쓰기**이므로 원본을 다시 읽는다(TOCTOU 최소화).
+      statWritableDest(targetRoot, plan.scriptInsert.destRel)
+      const added = applyScriptInsert(targetRoot, plan.scriptInsert)
+      log(
+        added.length > 0
+          ? `  ➕ ${plan.scriptInsert.destRel}: req:* ${added.length}개 삽입(기존 키 미변경) — ${added.join(' , ')}`
+          : `  ℹ️  ${plan.scriptInsert.destRel}: 계획 이후 키가 이미 채워져 삽입할 것이 없습니다.`,
+      )
+    }
   }
 
-  for (const line of renderPlan(plan, opts.apply, opts.persona, opts.gitignore === true)) log(line)
+  for (const line of renderPlan(plan, opts.apply, opts.persona, opts.gitignore === true, opts.scripts === true))
+    log(line)
   if (plan.personaDiff && opts.personaApply !== true) {
     log('  ℹ️  persona 차이는 기본적으로 교체하지 않습니다 — 위 diff를 확인한 뒤')
     log('      `npx commitgate sync --apply --persona --persona-apply` 로만 교체됩니다(교체 전 .bak 백업).')
@@ -508,6 +797,7 @@ export function parseArgs(argv: string[]): SyncOptions {
   let persona = false
   let gitignore = false
   let personaApply = false
+  let scripts = false
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--dir') {
@@ -523,6 +813,8 @@ export function parseArgs(argv: string[]): SyncOptions {
       personaApply = true
     } else if (a === '--gitignore') {
       gitignore = true
+    } else if (a === '--scripts') {
+      scripts = true
     } else if (a === '--dry-run') {
       apply = false // 기본값이지만 명시 허용
     } else if (a === '-h' || a === '--help') {
@@ -532,7 +824,7 @@ export function parseArgs(argv: string[]): SyncOptions {
       throw new Error(`알 수 없는 인자: ${a}`)
     }
   }
-  return { dir: resolve(dir), apply, persona, gitignore, personaApply }
+  return { dir: resolve(dir), apply, persona, gitignore, personaApply, scripts }
 }
 
 function printHelp(): void {
@@ -544,6 +836,7 @@ function printHelp(): void {
   npx commitgate sync --apply --persona               스키마 + 페르소나(부재 복원 · 차이 시 diff 표시) 재동기화
   npx commitgate sync --apply --persona --persona-apply   위 + 페르소나 차이를 shipped 로 교체(.bak 백업 후)
   npx commitgate sync --apply --gitignore             스키마 + workflow/.gitignore 누락 kit 규칙 보강
+  npx commitgate sync --apply --scripts               스키마 + package.json 의 누락 req:* 스크립트 삽입
 
 하는 일:
   workflow/machine.schema.json · workflow/req.config.schema.json 을 설치된 패키지 사본으로 되돌립니다.
@@ -556,9 +849,15 @@ function printHelp(): void {
   --gitignore: workflow/.gitignore 에 없는 kit 규칙 행만 말미에 추가합니다(기존 행은 미변경·미재정렬).
     파일이 없으면 kit 템플릿 전체로 생성합니다. 이미 있는 규칙은 건너뜁니다(멱등).
     0.9.6 이하 설치본은 review-call 로그 규칙이 없어 첫 리뷰 뒤 D10 이 커밋을 막습니다 — 이 옵션이 그 백필입니다.
+  --scripts: package.json 의 scripts 에 **없는** req:* 키만 삽입합니다(기존 키는 값이 무엇이든 미변경).
+    릴리스가 새 verb 를 추가해도 기존 설치본에는 그 스크립트가 생기지 않아, req:next 가 안내한 명령이
+    실행 시점에 없는 상태가 됩니다(예: pnpm req:delegate → not found). 이 옵션이 그 백필입니다.
+    들여쓰기와 말미 개행을 보존해 diff 를 삽입한 키로 한정합니다. 이미 있는 키는 건너뜁니다(멱등).
+    무엇이 부족한지는 commitgate check(C6) · req:doctor(D33) 가 먼저 알려줍니다.
 
 하지 않는 일:
-  companion skills · package.json · req:* · req.config.json 은 건드리지 않습니다.
+  companion skills · req.config.json 은 건드리지 않습니다.
+  package.json 의 req:* 는 --scripts 를 명시할 때만 손대며, 그때도 **덮어쓰지 않고 없는 키만 삽입**합니다.
   workflow/.gitignore 는 --gitignore 를 명시할 때만 손대며, 그때도 **덮어쓰지 않고 누락 행만 추가**합니다.
   캐럿 범위(^0.x)는 자동으로 못 넘깁니다 — 업그레이드(0.x) 문서(github.com/sol5288/commitgate/blob/main/docs/upgrade.md)를 참고해 범위를 먼저 올리세요.
 `)

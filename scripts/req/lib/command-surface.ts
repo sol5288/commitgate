@@ -70,7 +70,7 @@ export function missingReqScripts(scripts: unknown): string[] {
  * 🔴 **소비자가 각자 읽지 않는다**(DEC-1). 파일 부재·파싱 실패·`scripts` 비객체를 여기서 한 번만
  *    `null` 로 접어, C6 와 D33 이 같은 입력을 본다.
  */
-export function readPackageScripts(root: string): Record<string, string> | null {
+export function readPackageScripts(root: string): Record<string, unknown> | null {
   const p = join(resolve(root), 'package.json')
   if (!existsSync(p)) return null
   let parsed: unknown
@@ -82,9 +82,13 @@ export function readPackageScripts(root: string): Record<string, string> | null 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
   const s = (parsed as { scripts?: unknown }).scripts
   if (typeof s !== 'object' || s === null || Array.isArray(s)) return null
-  const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(s as Record<string, unknown>)) if (typeof v === 'string') out[k] = v
-  return out
+  /**
+   * 🔴 **값으로 거르지 않는다**(phase-2 r02 P1). 예전에는 문자열 값만 남겼는데, 그러면
+   *    `"req:new": null` 같은 키가 **부재로 판정**되어 진단은 "누락"이라 말하고 백필은
+   *    `k in scripts` 로 건너뛴다 — 안내한 복구와 실제 동작이 갈라진다.
+   *    존재 판정은 `init` 의 `if (!(k in scripts))` 와 **같아야** 한다.
+   */
+  return { ...(s as Record<string, unknown>) }
 }
 
 /**

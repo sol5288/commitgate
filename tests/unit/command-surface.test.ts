@@ -92,9 +92,19 @@ describe('[command-surface] missingReqScripts — 부재만 본다', () => {
 })
 
 describe('[command-surface] readPackageScripts — 입력 획득도 한 곳에서', () => {
-  it('scripts 맵을 읽는다(문자열 값만)', () => {
+  /**
+   * 🔴 **값으로 거르지 않는다**(phase-2 r02 P1). 예전 구현은 문자열 값만 남겼는데, 그러면
+   *    `"req:new": null` 같은 키가 **부재로 판정**되어 진단은 "누락"이라 말하고 백필은
+   *    `k in scripts` 로 건너뛴다 — 안내와 실제가 갈라진다(이 REQ 가 고치는 병 그 자체).
+   */
+  it('scripts 맵을 값 종류와 무관하게 그대로 읽는다', () => {
     const dir = tmpRepo({ scripts: { 'req:new': 'commitgate req:new', bad: 1, build: 'vite build' } })
-    expect(readPackageScripts(dir)).toEqual({ 'req:new': 'commitgate req:new', build: 'vite build' })
+    expect(readPackageScripts(dir)).toEqual({ 'req:new': 'commitgate req:new', bad: 1, build: 'vite build' })
+  })
+
+  it('🔴 값이 null 인 req 키는 "부재"가 아니다 — 존재 판정은 init 의 `k in scripts` 와 같다', () => {
+    const dir = tmpRepo({ scripts: { 'req:delegate': null } })
+    expect(missingReqScripts(readPackageScripts(dir))).not.toContain('req:delegate')
   })
 
   it('package.json 이 없으면 null(= 판정 불가)', () => {
