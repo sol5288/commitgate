@@ -4,6 +4,70 @@
 
 ## Unreleased
 
+> **업그레이드해도 새 명령이 설치본에 생기지 않던 문제를 고칩니다 — 그리고 그 사실을 아무도 말하지
+> 않던 것을 고칩니다.**
+>
+> 🔴 **0.23.0 이전에 설치한 프로젝트라면**(= `init` 을 0.22.x 이하로 돌린 곳) 업그레이드 후 아래 한 줄을
+> 실행하십시오. `req:repolicy`·`req:delegate` 가 `package.json` 에 없습니다.
+> ```sh
+> npx commitgate sync --apply --scripts
+> ```
+
+- **fix: 릴리스가 추가한 `req:*` 명령이 기존 설치본에 생기지 않던 문제** — `req:*` 스크립트는 `init` 이
+  **설치 시점에** 주입합니다. 그래서 새 verb(`req:repolicy`·`req:delegate` — 둘 다 **0.23.0** 도입)가 추가돼도
+  기존 프로젝트의 `package.json` 에는 그 키가 없었고, 문서화된 업그레이드 절차
+  (`설치 → sync --apply → quickstart --apply → migrate`)에는 `init` 재실행이 없어 **절차를 정확히 따라도
+  도달할 수 없었습니다.**
+  - 드러나는 방식이 문제였습니다. `req:next` 가 통합 통제점에서 정확히 그 명령을 안내하는데:
+    ```
+    승인 후 실행: $ pnpm req:delegate --scope ticket:REQ-2026-242 … --run
+    → ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command "req:delegate" not found
+    ```
+    **사람 승인을 받은 직후, 통제점을 통과시키는 바로 그 명령이 실패**했습니다.
+  - 🔴 **어떤 진단도 말하지 않았습니다**: `commitgate check` 는 C1~C5 PASS, `req:doctor` 는
+    `OK D19: 설치 모드: Stage B`, `commitgate sync` 는 `변경 없음` 이었습니다.
+  - 이제 **`commitgate check` 의 C6** 와 **`req:doctor` 의 D33** 이 부족한 verb 를 **이름으로** 말하고
+    해소 명령을 안내합니다(둘 다 **WARN** — 커밋을 막지 않습니다). 개발 저장소(dogfood)는 점검하지 않습니다.
+  - 🔴 **D19 는 이 축을 판정할 수 없습니다.** D19 는 설치 *모드*(Stage A/B)를 5개 표본 키의 **값 형태**로
+    보고 부재 키는 걸러내므로, `req:delegate` 가 없어도 `OK D19: Stage B` 입니다. 질문이 다릅니다 —
+    그래서 D19 를 고치지 않고 **별도 체크**를 뒀습니다(한 체크에 두 질문을 섞으면 한쪽 답이 다른 쪽을 가립니다).
+  - 🔴 **0.23.1 이 이 상태를 만들지 않았습니다.** 0.23.0 이 verb 둘을 추가했고, 그 이전에 `init` 을 돌린
+    설치본은 **그때부터** 부족했습니다. 이번 릴리스가 하는 일은 그 사실을 **말하고 채울 수단을 주는 것**입니다.
+
+  확인할 파일: `scripts/req/lib/command-surface.ts`(판정·입력 획득·안내의 정본) ·
+  `bin/check.ts`(C6) · `scripts/req/req-doctor.ts`(D33) ·
+  `tests/unit/doctor-command-surface-wiring.test.ts`(배선 e2e — 순수 테스트가 못 잡는 축)
+
+- **feat: `commitgate sync --apply --scripts`** — `package.json` 의 `scripts` 에 **없는** `req:*` 키만
+  삽입합니다. `--persona`·`--gitignore` 와 같은 **opt-in 축**이라, 플래그가 없으면 `package.json` 을
+  **열지도 않습니다**(공표된 "sync 는 package.json 을 건드리지 않는다"가 기본 동작으로 그대로 유지됩니다).
+  - **기존 키는 값이 무엇이든 미변경**입니다. `req:new` 를 자기 래퍼로 바꿔 두었다면 그대로 남습니다.
+  - 🔴 **원문을 재직렬화하지 않습니다.** `JSON.stringify` 왕복은 기존 값의 표현을 바꿉니다
+    (`"node .\/build"` → `"node ./build"` · `1e+0` → `1`). 원문에 텍스트로 끼워 넣어 **들여쓰기 · 키 순서 ·
+    말미 공백과 빈 줄 · BOM · 개행 형태**를 보존하므로, diff 가 **삽입한 키로 한정**됩니다.
+  - 계획과 적용이 **같은 판정**을 씁니다: 존재 판정(`k in scripts` — 값이 `null` 이어도 부재가 아닙니다) ·
+    키를 JSON 의미로 디코드(`"scripts"` 도 `scripts`) · 중복 최상위 `scripts` 는 `JSON.parse` 가
+    채택하는 **마지막** 것.
+
+- **docs: `commitgate delivery` 묶음이 `stopGate: "merge"` 전용인 것처럼 적혀 있던 문제** — 코드의 정본은
+  `defersToIntegration`(`'merge' | 'auto'`)이고 `auto` 도 커밋 단계·종단 판정이 같습니다. 그래서 `auto`
+  사용자는 **정지 횟수를 가장 크게 줄이는 조합**(묶음)을 문서에서 볼 수 없었습니다.
+  - 티켓마다 개별 통합하면 사람이 멈추는 자리가 **티켓 수**만큼이지만, 묶음은 **3회로 고정**입니다 —
+    `seal` 확인 · `approve` 확인 · **통합 승인**(`I1`/`I2` 또는 `B1`). 멤버 수와 무관하고 `merge`·`auto` 가
+    같습니다. 티켓·phase 크기를 바꾸지 않으므로 **리뷰 면적은 그대로**입니다.
+  - 🔴 **HIGH member 는 예외**입니다: `delivery integrate` 전에 그 티켓의 `req:confirm --scope delivery`
+    가 따로 필요하며 `--high-risk` 위임으로도 대체되지 않습니다 → **3 + HIGH member 수**.
+  - 🔴 **묶음의 마지막 병합은 `auto` 여도 사람이 합니다.** `commitgate integrate` 는 feature→trunk 명령이라
+    기본 `branchPrefix`(`feat/req-`)에서 `delivery/<slug>` 는 전제에서 걸러집니다.
+  - 회귀 가드가 문자열만 보지 않습니다 — `planIntegration` 에 delivery 브랜치를 넣어 **전제가 실제로
+    거부함**을 확인하고 그 사실과 문서 서술을 함께 묶습니다.
+
+  확인할 파일: `docs/workflow.md`·`docs/workflow.en.md`(delivery 절) · `bin/delivery.ts`(help) ·
+  `tests/unit/delivery-stopgate-docs.test.ts`
+
+- **docs: 업그레이드 절차에 명령 표면 축 추가** — 요약이
+  `설치 → sync --apply --scripts → quickstart --apply → check` 로 바뀝니다(한/영).
+
 ## 0.23.1 (2026-08-15)
 
 > **`stopGate: "auto"` 의 통합 게이트를 세 군데에서 조입니다 — 그리고 설치 계약을 도구와 맞춥니다.**
