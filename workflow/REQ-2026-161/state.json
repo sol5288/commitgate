@@ -2,14 +2,14 @@
   "id": "REQ-2026-161",
   "branch": "feat/req-2026-161-install-command-surface-skew",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00b08-52ba-7023-9eff-bc15c6395bb5",
-  "review_base_sha": "011b13b7c8d178b41a17463800644b87830a5cde",
-  "review_diff_hash": "26c6e4922d49aecd32ecccfa0bd8988e41638c7c",
+  "codex_thread_id": "01a00b0d-d392-7051-b5b2-50864ce917f5",
+  "review_base_sha": "8598ffd62990b6d878f204d49aac0089f6147b6b",
+  "review_diff_hash": "a20df357d74ca2474df41936067c27cdb04f1131",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "d3f473dc85084e2a9be3af97acf272864d8bc0d125f08a112fa4820c14c3fa9e",
-  "current_phase": "phase-2-sync-scripts-optin",
+  "current_phase": "phase-3-check-c6",
   "phases": [
     {
       "id": "phase-1-command-surface-predicate",
@@ -29,7 +29,8 @@
       "id": "phase-3-check-c6",
       "title": "check C6 배선(dogfood skip 포함)",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     },
     {
       "id": "phase-4-doctor-d33",
@@ -91,16 +92,23 @@
       "phase_id": "phase-2-sync-scripts-optin",
       "attempts": 6,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-check-c6#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-check-c6",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-sync-scripts-optin",
+    "phase_id": "phase-3-check-c6",
     "outcome": "approved",
-    "compare_hash": "31baaaf454c651f202b8d36ae781801112b931ecf5f120d51e66e4a6adec9f01",
+    "compare_hash": "a98c6d918ce927ba1a14ea3075ea5b913694dcff0423a6f359f8dc6419fae80b",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T14:46:06.245Z",
+    "at": "2026-08-16T14:52:12.222Z",
     "findings": [],
     "elided_count": 0
   },
@@ -121,6 +129,12 @@
       "phase_id": "phase-2-sync-scripts-optin",
       "consumed_by_commit_sha": "7e5576c6043ea40dd206061e57c39e95d78fa722",
       "approval_consumed_at": "2026-08-16T14:46:37.464Z"
+    },
+    {
+      "approved_tree": "a20df357d74ca2474df41936067c27cdb04f1131",
+      "phase_id": "phase-3-check-c6",
+      "consumed_by_commit_sha": "ecfc28a179d62f09b44b20746deef2ed51ea74b5",
+      "approval_consumed_at": "2026-08-16T14:52:50.035Z"
     }
   ],
   "user_commit_confirmed": null,
