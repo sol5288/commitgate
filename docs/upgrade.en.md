@@ -21,10 +21,11 @@ npx commitgate sync                    # plan only (dry-run — see what would c
 npx commitgate sync --apply            # re-sync the schema axis
 npx commitgate sync --apply --persona  # persona too (restore if missing; if it differs, show a diff and preserve)
 npx commitgate sync --apply --persona --persona-apply  # after reviewing that diff, replace it (keeps a .bak)
+npx commitgate sync --apply --scripts  # insert only the req:* scripts missing from package.json
 ```
 
 - `sync` restores the **schema axis only** (contracts, always kept current). It does not touch companion skills,
-  `workflow/.gitignore`, `package.json`, or `req:*`.
+  `workflow/.gitignore`, or `req.config.json`, and it touches `req:*` in `package.json` **only with `--scripts`**.
 - The **persona (`review-persona.md`) is handled only with `--persona`**. It is restored when missing, and when it
   differs the tool **prints the real content diff before doing anything and preserves the file by default** (you see
   the diff in dry-run too).
@@ -36,6 +37,30 @@ npx commitgate sync --apply --persona --persona-apply  # after reviewing that di
 - To keep managing the persona yourself, point `reviewPersonaPath` in `req.config.json` at a separate file
   (`sync` then leaves it completely untouched).
 - `req:doctor`'s **D20** WARNs when the vendored schema drifts from the installed copy (it never blocks the commit).
+
+### Command surface — new verbs do not appear in existing installs by themselves
+
+`req:*` scripts are injected by `init` **at install time**. So when a release adds a verb (`req:delegate` in
+0.22.0, `req:repolicy` in 0.21.0), an existing project's `package.json` simply does not have that key. In that
+state the command `req:next` prints at a control point fails **when you run it**:
+
+```
+$ pnpm req:delegate --scope ticket:REQ-2026-242 … --run
+ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command "req:delegate" not found
+```
+
+```sh
+npx commitgate check                   # C6 names the missing verbs
+npx commitgate sync --apply --scripts  # inserts only the missing keys
+```
+
+- **Only missing keys are inserted.** An existing key is left alone whatever its value — if you replaced
+  `req:new` with your own wrapper, it stays. Indentation, key order, trailing whitespace, BOM and line endings
+  are preserved, so the diff is **limited to the inserted keys**.
+- `commitgate check`'s **C6** and `req:doctor`'s **D33** report the same verdict (both WARN — neither blocks a
+  commit). Development repos (dogfood) are not checked.
+- 🔴 **`req:doctor`'s D19 cannot tell you this.** D19 classifies the install *mode* (Stage A/B) from the **value
+  shape** of five sample keys, so it reports `OK D19: Stage B` even when `req:delegate` is absent. Different question.
 
 **③ If you are on an older (vendored) install**, follow up with the `migrate` step below to move to the Stage B runtime.
 
@@ -62,7 +87,8 @@ npx commitgate quickstart --apply      # inject/replace managed blocks only (pre
   breakage is named.
 - `req:doctor`'s **D21** WARNs about **which block** is missing or drifted in **which file** (it never blocks the commit).
 
-> In short: install `commitgate@latest` → `commitgate sync --apply` → `commitgate quickstart --apply` → (if needed) `commitgate migrate`.
+> In short: install `commitgate@latest` → `commitgate sync --apply --scripts` → `commitgate quickstart --apply`
+> → `commitgate check` (read C5 and C6) → (if needed) `commitgate migrate`.
 
 ## Per-version notes
 

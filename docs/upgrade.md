@@ -20,10 +20,11 @@ npx commitgate sync                  # 계획만 출력(dry-run — 무엇이 �
 npx commitgate sync --apply          # 스키마 축 재동기화
 npx commitgate sync --apply --persona  # 페르소나도 함께(부재면 복원, 다르면 diff만 보여주고 보존)
 npx commitgate sync --apply --persona --persona-apply  # 위 diff 확인 후 페르소나를 shipped 로 교체(.bak 백업)
+npx commitgate sync --apply --scripts  # package.json 에 없는 req:* 스크립트만 삽입(기존 키 미변경)
 ```
 
 - `sync`는 **스키마 축만** 되돌립니다(계약이라 항상 최신으로). companion skills·`workflow/.gitignore`·
-  `package.json`·`req:*`는 건드리지 않습니다.
+  `req.config.json`은 건드리지 않고, `package.json`의 `req:*`도 **`--scripts` 를 줄 때만** 손댑니다.
 - **페르소나(`review-persona.md`)는 `--persona`에서만** 다룹니다. 부재면 복원하고, 내용이 다르면
   **적용 전에 실제 내용 diff를 출력한 뒤 기본적으로는 보존**합니다(dry-run 에서도 diff 를 봅니다).
 - **리뷰 정책 업데이트를 받으려면** diff 를 확인한 뒤 `--persona-apply` 를 `--persona` 와 **함께** 주십시오.
@@ -33,6 +34,30 @@ npx commitgate sync --apply --persona --persona-apply  # 위 diff 확인 후 페
 - 페르소나를 계속 직접 관리하려면 `req.config.json`의 `reviewPersonaPath`를 별도 파일로 지정하세요
   (그 경우 `sync`는 완전히 미접촉입니다).
 - `req:doctor`의 **D20**이 vendored 스키마가 설치 사본과 어긋나면 **WARN**으로 알려 줍니다(커밋은 막지 않습니다).
+
+### 명령 표면 — 새 verb 는 기존 설치본에 저절로 생기지 않습니다
+
+`req:*` 스크립트는 `init` 이 **설치 시점에** 주입합니다. 그래서 릴리스가 새 verb 를 추가해도
+(예: 0.22.0 의 `req:delegate`·0.21.0 의 `req:repolicy`) 기존 프로젝트의 `package.json` 에는 그 키가
+없습니다. 이 상태에서는 `req:next` 가 통제점에서 안내한 명령이 **실행 시점에** 실패합니다:
+
+```
+$ pnpm req:delegate --scope ticket:REQ-2026-242 … --run
+ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command "req:delegate" not found
+```
+
+```sh
+npx commitgate check                 # C6 가 부족한 verb 이름을 알려 줍니다
+npx commitgate sync --apply --scripts  # 없는 키만 삽입합니다
+```
+
+- **없는 키만 넣습니다.** 값이 무엇이든 이미 있는 키는 건드리지 않습니다 — `req:new` 를 자기 래퍼로
+  바꿔 두었다면 그대로 남습니다. 들여쓰기·키 순서·말미 공백·BOM·개행 형태도 보존되므로 diff 는
+  **삽입한 키로 한정**됩니다.
+- `commitgate check` 의 **C6** 와 `req:doctor` 의 **D33** 이 같은 판정을 냅니다(둘 다 WARN — 커밋은
+  막지 않습니다). 개발 저장소(dogfood)에서는 점검하지 않습니다.
+- 🔴 **`req:doctor` 의 D19 로는 알 수 없습니다.** D19 는 설치 *모드*(Stage A/B)를 5개 표본 키의 **값
+  형태**로 판정하므로, `req:delegate` 가 없어도 `OK D19: Stage B` 입니다. 질문이 다릅니다.
 
 **③ 예전(vendored) 설치본이면** 이어서 아래 `migrate`로 Stage B 전환까지 하세요.
 
@@ -59,7 +84,8 @@ npx commitgate quickstart --apply      # 관리 블록만 주입/교체(블록 �
 - `req:doctor`의 **D21**이 어느 파일의 **어느 블록**이 없는지/드리프트인지 **WARN**으로 알려 줍니다
   (커밋은 막지 않습니다).
 
-> 정리: `commitgate@latest` 설치 → `commitgate sync --apply` → `commitgate quickstart --apply` → (필요 시) `commitgate migrate`.
+> 정리: `commitgate@latest` 설치 → `commitgate sync --apply --scripts` → `commitgate quickstart --apply`
+> → `commitgate check`(C5·C6 확인) → (필요 시) `commitgate migrate`.
 
 ## 버전별 주의사항
 

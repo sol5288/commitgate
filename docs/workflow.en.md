@@ -221,8 +221,36 @@ Single-line messages remain safe with `-m`. The measured breakdown is in
 ## delivery set — several REQs as one group
 
 Sometimes a requirement is too large for one REQ, or several design documents are implemented in sequence.
-`stopGate: "merge"` plus `commitgate delivery` groups those REQs together and defers the main-merge stop
-until **the whole group** is finished.
+`commitgate delivery` groups those REQs together and defers the main-merge stop until **the whole group**
+is finished.
+
+🔴 **Groups work under `merge` *and* `auto`.** The two values behave identically at commit time
+(`AUTO_APPROVE_OF` — LOW phases auto-commit) and the terminal verdict uses the same predicate
+(`defersToIntegration`).
+
+🔴 **The final `delivery/<slug>` → `main` merge is performed by a human under both values.**
+`commitgate integrate` is a **feature→trunk** command, and with the default `branchPrefix` (`feat/req-`)
+a `delivery/<slug>` branch fails its preflight (`the current branch is not a feature branch`). So the
+group's last merge happens at a control point (`I1`/`I2`, or `B1`) — `auto` does not remove that stop.
+(`req:delegate --scope delivery:<slug>` is only used for integration when `branchPrefix` is set to
+`delivery/`, a configuration that blocks ordinary `feat/req-*` integration and is therefore not recommended.)
+
+**Counted in stops:** integrating ticket by ticket puts a human stop at **every ticket**, while a group is
+**fixed at three** regardless of member count:
+
+`delivery seal` confirmation → `delivery approve` confirmation → **integration approval** (`I1`/`I2`, or `B1`).
+This is the same under `merge` and `auto` — what disappears is the integration stop **repeated per ticket**,
+not these three. Between members, `delivery integrate` (feature → group branch) runs without any human
+confirmation.
+
+🔴 **HIGH-risk members are an exception.** A member whose risk level is `HIGH` additionally requires
+`req:confirm --scope delivery` on that ticket before `delivery integrate` (the same under `merge` and
+`auto` — see the integration eligibility check in `bin/delivery.ts`). Issuing the delegation with
+`--high-risk` does not replace it. So the stop count is **three plus one per HIGH member**; the fixed
+three above holds **when every member is LOW**.
+
+This does not conflict with keeping tickets small: a group changes only the **merge path**, not ticket or
+phase size, so review surface is unchanged.
 
 ```sh
 npx commitgate delivery create payment-improvement --run       # delivery/payment-improvement branch + record
@@ -242,7 +270,7 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
   when code was committed after the approval**. There is no `--force` escape hatch.
 - After `seal` you cannot `begin`. Use `reopen` to undo it — the fact that an approval existed stays in the log.
 - 🔴 **The tool never merges `delivery` into `main`.** `approve` records the approval; the merge itself is
-  performed by a human at the existing control points (I1/I2/B1).
+  performed by a human at the existing control points (I1/I2/B1) — the same under `auto` (see above).
 - 🔴 **An approval is bound to the group's contents at that moment.** `approve` records the group branch tip
   as of just before it (`approval.base_sha`); if a commit touching anything **outside the delivery record**
   lands afterwards, the gate returns `AWAIT_HUMAN` again — what you approved is no longer what would merge.
@@ -251,15 +279,16 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
   Older records without this binding pass as before.
 - It does not depend on your current branch — the tool moves where it needs to and **returns you where you were**.
 
-With `stopGate: "merge"`, the `req:next` terminal also looks at the group: still open → `DONE` (you may open
+With `stopGate` set to `merge` or `auto`, the `req:next` terminal also looks at the group: still open → `DONE` (you may open
 the next REQ); sealed with every member terminal → `AWAIT_HUMAN`. `integrate` and `seal` emit the same verdict
 right after the transition they cause — someone who seals after the last `integrate` has no reason to call
 `req:next` again.
 
 🔴 **A REQ that belongs to no group stops exactly like `req` does**: the terminal is `AWAIT_HUMAN`
 (integrate feature→main), and a `HIGH` ticket must record `req:confirm --scope req` just before it.
-Choosing `merge` does not remove the stop — with no group, what comes after this REQ is not the next REQ
-but the **integration**.
+Choosing `merge` or `auto` does not remove the stop — with no group, what comes after this REQ is not the
+next REQ but the **integration**. (Under `auto` you are not asked again only when a valid pre-delegation
+covers that integration.)
 
 ## When an agent does not ask
 
