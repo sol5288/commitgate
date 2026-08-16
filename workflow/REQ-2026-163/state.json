@@ -2,14 +2,14 @@
   "id": "REQ-2026-163",
   "branch": "feat/req-2026-163-orphan-series-and-dogfood-verbs",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00b87-8235-7bf0-bfa4-965ad46e9203",
-  "review_base_sha": "7bdc194f41d33c4e48b0ff7d2d9172934d7e9f49",
-  "review_diff_hash": "7e0e72345b721893edd85ea393b1b12f5dac1360",
+  "codex_thread_id": "01a00b92-5e25-70f3-95b9-b09336688cd4",
+  "review_base_sha": "11d5c0acecace45705cf2788f6a8a55c084d8656",
+  "review_diff_hash": "4185b398c8b6f7fc3837be12f39f1a139d7f4aff",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "a7de05cbccf1c91f9c4fbd14f34da1f6a75d8e415dcd4daccce3a4e134b6cd2c",
-  "current_phase": "phase-4-dogfood-req-scripts",
+  "current_phase": "phase-5-changelog",
   "phases": [
     {
       "id": "phase-1-orphan-series-predicate",
@@ -43,7 +43,8 @@
       "id": "phase-5-changelog",
       "title": "CHANGELOG",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -87,16 +88,23 @@
       "phase_id": "phase-4-dogfood-req-scripts",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-changelog#1",
+      "review_kind": "phase",
+      "phase_id": "phase-5-changelog",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-4-dogfood-req-scripts",
+    "phase_id": "phase-5-changelog",
     "outcome": "approved",
-    "compare_hash": "6e60aee80943dd64dc552adc95376f2723ffdaac47d36b1ba323da3da3746ac9",
+    "compare_hash": "257867e75f08571d593068ae37b18fa7596c00645fe67011d78176791a29e837",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T17:04:29.910Z",
+    "at": "2026-08-16T17:16:14.504Z",
     "findings": [],
     "elided_count": 0
   },
@@ -166,6 +174,12 @@
       "phase_id": "phase-4-dogfood-req-scripts",
       "consumed_by_commit_sha": "fc5bf02a524dce92fd58f28d6c672741380e8757",
       "approval_consumed_at": "2026-08-16T17:04:47.284Z"
+    },
+    {
+      "approved_tree": "4185b398c8b6f7fc3837be12f39f1a139d7f4aff",
+      "phase_id": "phase-5-changelog",
+      "consumed_by_commit_sha": "4854f44dce3d1b7eb36deb36757b38eb2b112c92",
+      "approval_consumed_at": "2026-08-16T17:16:30.670Z"
     }
   ],
   "user_commit_confirmed": null
