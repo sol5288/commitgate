@@ -1,0 +1,146 @@
+{
+  "id": "REQ-2026-164",
+  "branch": "feat/req-2026-164-upgrade-axis-registry-and-docs",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a00bde-3fdd-71d0-9512-822c6e669e5e",
+  "review_base_sha": "e854bd0243e23ee93556fa4bead1579982337d43",
+  "review_diff_hash": "6384a0c085cb194e465e9c97565b1d382052be32",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "26ef4377271ebe412949d5bb0d5a55dd7064631420030e5fb6e07d41c9cc919d",
+  "current_phase": "phase-3-changelog",
+  "phases": [
+    {
+      "id": "phase-1-axis-registry",
+      "title": "축 등록부 + 정본 문서",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-readme-parity",
+      "title": "README 정합",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-3-changelog",
+      "title": "CHANGELOG",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-axis-registry#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-axis-registry",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-readme-parity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-readme-parity",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-changelog#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-changelog",
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-changelog",
+    "outcome": "approved",
+    "compare_hash": "4f14b5e5504ba48346242ddcb0b2c6e099c8aad0f22d71affbf5506c66ba17af",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-16T18:39:07.575Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "4893d315c30aa2df3532aac86d7f1467d5b4706c",
+    "design": "d4dba6e35e0d275e816bb465313993c6d41b4d80",
+    "plan": "1a0f8b916befb4a5fd94e0f3905ed9999c9870be"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-164/responses/design-r04-approved.json",
+    "response_sha256": "5abd8ab1dc8b0fcb72f13f3a17e3e3615e5a65348352d401883b9d69bd9a3305",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "a06dc90604199f0ea80bd4a07cb52ba0230b18e8",
+    "codex_thread_id": "01a00bcf-1701-70c3-accf-65b17ccb5e9c",
+    "machine_schema_version": "1.1",
+    "status": "COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-16T18:22:12.969Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-164/responses/design-r01-needs-fix.json",
+          "sha256": "8fd65c5866fdaf5bb85e92ea24defaa41526a98210a9e04d4d64208ce82e97f2"
+        },
+        {
+          "response_path": "workflow/REQ-2026-164/responses/design-r02-needs-fix.json",
+          "sha256": "64747e03e0bf83aa3738cefbc11bc196ab70448ace8fe387f552f9c798566701"
+        },
+        {
+          "response_path": "workflow/REQ-2026-164/responses/design-r03-needs-fix.json",
+          "sha256": "82128f3950b6f4be1b957e083f4b1ade8f0c3057c3964dd8300ef86441d2885e"
+        },
+        {
+          "response_path": "workflow/REQ-2026-164/responses/design-r04-approved.json",
+          "sha256": "5abd8ab1dc8b0fcb72f13f3a17e3e3615e5a65348352d401883b9d69bd9a3305"
+        }
+      ],
+      "inventory_sha256": "7458b85b896a7040a5f3102a3c4464cef603eb3109c4ce14d7e3641bb56c0742",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-164/responses/design-r04-approved.json"
+    },
+    "design_hash": "26ef4377271ebe412949d5bb0d5a55dd7064631420030e5fb6e07d41c9cc919d"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "fec0004bbac959bbfd8adff45b6552bccb84fcff",
+      "phase_id": "phase-1-axis-registry",
+      "consumed_by_commit_sha": "bd81869f28eaa4dc032531b82c8515b764dfaed4",
+      "approval_consumed_at": "2026-08-16T18:28:43.918Z"
+    },
+    {
+      "approved_tree": "521530341979dffeeeb38fc7ff0bf0affd85340b",
+      "phase_id": "phase-2-readme-parity",
+      "consumed_by_commit_sha": "98258476f19aa4a4a8dbd2f015a5ede1a2a9ecd3",
+      "approval_consumed_at": "2026-08-16T18:36:45.345Z"
+    },
+    {
+      "approved_tree": "6384a0c085cb194e465e9c97565b1d382052be32",
+      "phase_id": "phase-3-changelog",
+      "consumed_by_commit_sha": "9a01e59de7ec7f4c822c615f4d894f7b51a5c927",
+      "approval_consumed_at": "2026-08-16T18:39:22.410Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

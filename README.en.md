@@ -125,18 +125,21 @@ invalid-evidence, and unproven. Check C5 points out an old CommitGate contract l
 upgrade. Approval-evidence calculation in `report` improved from about 29.5 seconds to 1.2 seconds on this
 repository (the result varies with environment and history size).
 
-### Upgrading from 0.21.x
+### Upgrading
+
+<!-- commitgate:upgrade-summary -->
+
+After bumping the version, the command below aligns assets and the command surface.
 
 ```sh
-npm install -D commitgate@^0.22.0
-npx commitgate sync --apply --gitignore
-npx commitgate check
+npm i -D commitgate@<version>
+npx commitgate sync --apply --scripts --gitignore
 ```
 
-If C5 says WARN, do not replace `AGENTS.md` wholesale. Compare it with
-`node_modules/commitgate/AGENTS.template.md` and manually merge **only the CommitGate contract sections**.
-`sync` deliberately leaves `AGENTS.md` alone so project-specific instructions survive. See
-[Upgrading](https://github.com/sol5288/commitgate/blob/main/docs/upgrade.en.md) for the full procedure.
+How to check what remains and what to run for it (the **eight axes** with their diagnoses) lives in the canonical doc —
+[Upgrading](https://github.com/sol5288/commitgate/blob/main/docs/upgrade.en.md).
+
+<!-- /commitgate:upgrade-summary -->
 
 ## What it guarantees — and what it does not
 
@@ -336,7 +339,7 @@ More symptoms and answers are in **[Troubleshooting](https://github.com/sol5288/
 | `npx commitgate integrate` | Inspect the strict verification and local merge plan (dry-run by default) |
 | `npx commitgate integrate --run` | Merge locally after final confirmation (no push; GitHub CI skipped by default) |
 | `npx commitgate attest <sha> --reason "..." --run` | Record the reason for a legitimate exception that had no normal review |
-| `npx commitgate sync --apply --gitignore` | Apply upgraded assets and backfill local-log `.gitignore` rules |
+| `npx commitgate sync --apply --scripts --gitignore` | Apply upgraded assets and the `req:*` command surface, and backfill local-log `.gitignore` rules |
 | `npx commitgate uninstall` | Print a removal **plan only** (deletes nothing) |
 
 The full command list and `pnpm`/`yarn` forms are in the **[Workflow](https://github.com/sol5288/commitgate/blob/main/docs/workflow.en.md)**. Per-command options are available via `npx commitgate <verb> --help`.
