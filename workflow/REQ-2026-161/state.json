@@ -2,13 +2,13 @@
   "id": "REQ-2026-161",
   "branch": "feat/req-2026-161-install-command-surface-skew",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00ad7-1084-7630-a92a-bb148194b1e0",
-  "review_base_sha": "08a9823f6554180b8b270a3ae6d9a300c315ec1d",
-  "review_diff_hash": "572790632922a97313f4e8625347cf215dfd2077",
+  "codex_thread_id": "01a00ae7-edd2-7c33-8360-9166f2ea0aad",
+  "review_base_sha": "0a80f1192690eba56071e26b3de8d751d0c7d733",
+  "review_diff_hash": "388a64b238e08fd22aa0d45d291692da6d95a67f",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "2fd93a77833d2f90c844b001de34d1722bd51a134bf8cee3efcab11f08844829",
+  "design_approved_hash": "d3f473dc85084e2a9be3af97acf272864d8bc0d125f08a112fa4820c14c3fa9e",
   "current_phase": "phase-1-command-surface-predicate",
   "phases": [
     {
@@ -19,20 +19,20 @@
       "approved": true
     },
     {
-      "id": "phase-2-check-c6",
+      "id": "phase-2-sync-scripts-optin",
+      "title": "sync --scripts opt-in 백필",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-3-check-c6",
       "title": "check C6 배선(dogfood skip 포함)",
       "status": "pending",
       "max_files": 8
     },
     {
-      "id": "phase-3-doctor-d33",
+      "id": "phase-4-doctor-d33",
       "title": "doctor D33 배선 + 07 정본 표",
-      "status": "pending",
-      "max_files": 8
-    },
-    {
-      "id": "phase-4-sync-scripts-optin",
-      "title": "sync --scripts opt-in 백필",
       "status": "pending",
       "max_files": 8
     },
@@ -69,52 +69,37 @@
       "phase_id": "phase-1-command-surface-predicate",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-check-c6#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-check-c6",
+      "attempts": 2,
+      "closed_reason": null
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "phase",
-    "phase_id": "phase-1-command-surface-predicate",
+    "review_kind": "design",
+    "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "c3d95c04333fc096c485500afd37beb42fe8cf996f491fe7d2f3fb785cedd268",
+    "compare_hash": "26cbe757e05133a0e0f33bf0f0ac66c0c68a57d74ef954a8aad33273d354877c",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T13:52:41.836Z",
+    "at": "2026-08-16T14:11:41.077Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "f71701a94521c82b05044beb6c62db6b90881f98",
-    "design": "640f3893c76f36813d11757ff9434bf05ad9c4a9",
-    "plan": "1695420890df5edbe1e8c0569190402aa453b7f4"
-  },
-  "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-161/responses/design-r02-approved.json",
-    "response_sha256": "743f537688229418be91e1597dc73618a863ef28c5b436f88001105a7454d988",
-    "review_kind": "design",
-    "phase_id": null,
-    "review_base_sha": "9bc08be7b38c54d52b6ae86837d6d59fc2cbd78b",
-    "codex_thread_id": "01a00ad1-bac1-7a20-aa62-24fd907dbca7",
-    "machine_schema_version": "1.1",
-    "status": "STEP_COMPLETE",
-    "commit_approved": "yes",
-    "approved_at": "2026-08-16T13:46:58.515Z",
-    "archive_inventory": {
-      "items": [
-        {
-          "response_path": "workflow/REQ-2026-161/responses/design-r01-needs-fix.json",
-          "sha256": "091f068b55917af029f2e7f8c0d68d1fbbf3ea8c87eda4db338ae54b7b5186de"
-        },
-        {
-          "response_path": "workflow/REQ-2026-161/responses/design-r02-approved.json",
-          "sha256": "743f537688229418be91e1597dc73618a863ef28c5b436f88001105a7454d988"
-        }
-      ],
-      "inventory_sha256": "1e0ecc1b294ff201ff8de187ad52227ce65cdffe38a7696c42acef05e6be773f",
-      "review_kind": "design",
-      "phase_id": null,
-      "source_response_path": "workflow/REQ-2026-161/responses/design-r02-approved.json"
-    },
-    "design_hash": "2fd93a77833d2f90c844b001de34d1722bd51a134bf8cee3efcab11f08844829"
+    "design": "1b0f0d2f0e232a059b3f47415cdd840023730781",
+    "plan": "05b14b59383d19ce20b7b84f6d55d627483df651"
   },
   "consumed_approvals": [
     {
@@ -124,5 +109,38 @@
       "approval_consumed_at": "2026-08-16T13:53:58.362Z"
     }
   ],
-  "user_commit_confirmed": null
+  "user_commit_confirmed": null,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-161/responses/design-r03-approved.json",
+    "response_sha256": "cecf448926b140cc1d64c98cc0510323713d53ebe39ecbb289402fae47d526e5",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "2a41a2fcec23718ad5229d85af1aff1b7569c2ab",
+    "codex_thread_id": "01a00ae7-edd2-7c33-8360-9166f2ea0aad",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-16T14:11:41.077Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-161/responses/design-r01-needs-fix.json",
+          "sha256": "091f068b55917af029f2e7f8c0d68d1fbbf3ea8c87eda4db338ae54b7b5186de"
+        },
+        {
+          "response_path": "workflow/REQ-2026-161/responses/design-r02-approved.json",
+          "sha256": "743f537688229418be91e1597dc73618a863ef28c5b436f88001105a7454d988"
+        },
+        {
+          "response_path": "workflow/REQ-2026-161/responses/design-r03-approved.json",
+          "sha256": "cecf448926b140cc1d64c98cc0510323713d53ebe39ecbb289402fae47d526e5"
+        }
+      ],
+      "inventory_sha256": "c7577f5844408660ca7bf6297f7a63350a14a1c3e5462111de5c3f249e62b1f5",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-161/responses/design-r03-approved.json"
+    },
+    "design_hash": "d3f473dc85084e2a9be3af97acf272864d8bc0d125f08a112fa4820c14c3fa9e"
+  }
 }

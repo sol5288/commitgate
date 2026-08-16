@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"2a41a2fcec23718ad5229d85af1aff1b7569c2ab","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"수정된 설계를 기준으로 Phase 2(`sync --scripts` 복구 경로)부터 진행하세요.","observations":[]}
