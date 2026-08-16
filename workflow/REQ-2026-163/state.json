@@ -2,20 +2,21 @@
   "id": "REQ-2026-163",
   "branch": "feat/req-2026-163-orphan-series-and-dogfood-verbs",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00b68-7293-7703-adf6-33d08b358a94",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00b6e-8b0f-78c0-a656-fe032c91f1db",
+  "review_base_sha": "3308834ccda96a64eab6abc99e19d6d24c56d250",
+  "review_diff_hash": "fcfd0e67f51f44a2abcc2bb3a234052a23e0482e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "a7de05cbccf1c91f9c4fbd14f34da1f6a75d8e415dcd4daccce3a4e134b6cd2c",
-  "current_phase": null,
+  "current_phase": "phase-1-orphan-series-predicate",
   "phases": [
     {
       "id": "phase-1-orphan-series-predicate",
       "title": "orphan series 술어 + integrate 판정",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     },
     {
       "id": "phase-2-close-orphan",
@@ -55,16 +56,23 @@
       "phase_id": null,
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-orphan-series-predicate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-orphan-series-predicate",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-orphan-series-predicate",
     "outcome": "approved",
-    "compare_hash": "c99c543ccc9b95ed28b00b55067b9dcad9fba311fd01c72f54288215622ec46f",
+    "compare_hash": "7c6d4fa32f9fa8b88c9ea7e92092d600fc5c2b2f3e33cdf7eb4e2ca5d69bf0e9",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T16:30:39.637Z",
+    "at": "2026-08-16T16:37:40.386Z",
     "findings": [],
     "elided_count": 0
   },
@@ -109,5 +117,14 @@
       "source_response_path": "workflow/REQ-2026-163/responses/design-r04-approved.json"
     },
     "design_hash": "a7de05cbccf1c91f9c4fbd14f34da1f6a75d8e415dcd4daccce3a4e134b6cd2c"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "fcfd0e67f51f44a2abcc2bb3a234052a23e0482e",
+      "phase_id": "phase-1-orphan-series-predicate",
+      "consumed_by_commit_sha": "a3a6849358b4bbb539c80bb462152384f2c645a9",
+      "approval_consumed_at": "2026-08-16T16:38:00.950Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
