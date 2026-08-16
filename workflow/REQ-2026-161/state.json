@@ -80,7 +80,13 @@
       "review_kind": "phase",
       "phase_id": "phase-2-check-c6",
       "attempts": 2,
-      "closed_reason": null
+      "closed_reason": "human-resolution",
+      "human_resolution": {
+        "decision": "replace",
+        "method": "승인한다",
+        "decided_at": "2026-08-16T16:06:16.189Z",
+        "note": "phase 순서 정정으로 phase-3-check-c6 가 대체함"
+      }
     },
     {
       "series_id": "design:-#2",
