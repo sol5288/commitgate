@@ -2,19 +2,112 @@
   "id": "REQ-2026-163",
   "branch": "feat/req-2026-163-orphan-series-and-dogfood-verbs",
   "risk_level": "LOW",
-  "codex_thread_id": null,
+  "codex_thread_id": "01a00b68-7293-7703-adf6-33d08b358a94",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
-  "design_approved": false,
-  "design_approved_hash": null,
+  "design_approved": true,
+  "design_approved_hash": "a7de05cbccf1c91f9c4fbd14f34da1f6a75d8e415dcd4daccce3a4e134b6cd2c",
   "current_phase": null,
-  "phases": [],
+  "phases": [
+    {
+      "id": "phase-1-orphan-series-predicate",
+      "title": "orphan series 술어 + integrate 판정",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-2-close-orphan",
+      "title": "--close-orphan 종결 경로",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-3-doctor-d34",
+      "title": "doctor D34 + 07 정본 표",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-4-dogfood-req-scripts",
+      "title": "dogfood 명령 표면 보강",
+      "status": "pending",
+      "max_files": 8
+    },
+    {
+      "id": "phase-5-changelog",
+      "title": "CHANGELOG",
+      "status": "pending",
+      "max_files": 8
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
   "policy_snapshot": {
     "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "design",
+    "phase_id": null,
+    "outcome": "approved",
+    "compare_hash": "c99c543ccc9b95ed28b00b55067b9dcad9fba311fd01c72f54288215622ec46f",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-16T16:30:39.637Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "f087df904f8d9cd237f9e67fb0451fe47b065cb6",
+    "design": "6c37292585d06b24a77ace3f0d682d3ac5b81503",
+    "plan": "d0603bb34809767d7b31098bbb823bcb6a78ef00"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-163/responses/design-r04-approved.json",
+    "response_sha256": "2539f4cf5f0906d4a86828fb6a707ba0f310a8ad42b7127a72ba1b1481309a1e",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "51354d968113fc801accab916b20d43fd35b5628",
+    "codex_thread_id": "01a00b68-7293-7703-adf6-33d08b358a94",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-16T16:30:39.637Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-163/responses/design-r01-needs-fix.json",
+          "sha256": "a2165f5db8714efe11bcab1186ddae71c2ee3eac8693e10ab3f09f4000ae6a9a"
+        },
+        {
+          "response_path": "workflow/REQ-2026-163/responses/design-r02-needs-fix.json",
+          "sha256": "4fecefe3a98bafd33b92135ed20a516cef6572b97293e2ca0ffe47e7bf202115"
+        },
+        {
+          "response_path": "workflow/REQ-2026-163/responses/design-r03-needs-fix.json",
+          "sha256": "1af7b3842eb6005cd1aea3f8f74111459870574b156502d75ea8cfbdc94ca4db"
+        },
+        {
+          "response_path": "workflow/REQ-2026-163/responses/design-r04-approved.json",
+          "sha256": "2539f4cf5f0906d4a86828fb6a707ba0f310a8ad42b7127a72ba1b1481309a1e"
+        }
+      ],
+      "inventory_sha256": "2efbc577a5cf2034c415d34fe03050992ce23cc1d1cbcd548b90aeab8949807c",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-163/responses/design-r04-approved.json"
+    },
+    "design_hash": "a7de05cbccf1c91f9c4fbd14f34da1f6a75d8e415dcd4daccce3a4e134b6cd2c"
   }
 }
