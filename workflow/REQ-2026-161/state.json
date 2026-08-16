@@ -2,14 +2,14 @@
   "id": "REQ-2026-161",
   "branch": "feat/req-2026-161-install-command-surface-skew",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00b0d-d392-7051-b5b2-50864ce917f5",
-  "review_base_sha": "8598ffd62990b6d878f204d49aac0089f6147b6b",
-  "review_diff_hash": "a20df357d74ca2474df41936067c27cdb04f1131",
+  "codex_thread_id": "01a00b14-2aa7-7c13-8ee7-1d277d2b019e",
+  "review_base_sha": "2e3a017ac308ca7095454e9caeab435b8a5dcd8b",
+  "review_diff_hash": "1cd443681df074ed2038234fb8e0e21bfc47ebd9",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "d3f473dc85084e2a9be3af97acf272864d8bc0d125f08a112fa4820c14c3fa9e",
-  "current_phase": "phase-3-check-c6",
+  "current_phase": "phase-4-doctor-d33",
   "phases": [
     {
       "id": "phase-1-command-surface-predicate",
@@ -36,7 +36,8 @@
       "id": "phase-4-doctor-d33",
       "title": "doctor D33 배선 + 07 정본 표",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     },
     {
       "id": "phase-5-docs-parity",
@@ -99,16 +100,23 @@
       "phase_id": "phase-3-check-c6",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-doctor-d33#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4-doctor-d33",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-3-check-c6",
+    "phase_id": "phase-4-doctor-d33",
     "outcome": "approved",
-    "compare_hash": "a98c6d918ce927ba1a14ea3075ea5b913694dcff0423a6f359f8dc6419fae80b",
+    "compare_hash": "4e16578288dd4d1b6b52783ecd5ec955041c623e853c6b22ba9c3bacb377b872",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T14:52:12.222Z",
+    "at": "2026-08-16T14:58:31.147Z",
     "findings": [],
     "elided_count": 0
   },
@@ -135,6 +143,12 @@
       "phase_id": "phase-3-check-c6",
       "consumed_by_commit_sha": "ecfc28a179d62f09b44b20746deef2ed51ea74b5",
       "approval_consumed_at": "2026-08-16T14:52:50.035Z"
+    },
+    {
+      "approved_tree": "1cd443681df074ed2038234fb8e0e21bfc47ebd9",
+      "phase_id": "phase-4-doctor-d33",
+      "consumed_by_commit_sha": "f2840b1738d654f9daced13e5ecef653105e4adb",
+      "approval_consumed_at": "2026-08-16T14:59:11.666Z"
     }
   ],
   "user_commit_confirmed": null,
