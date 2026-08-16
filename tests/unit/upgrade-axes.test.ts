@@ -6,6 +6,9 @@ import {
   UPGRADE_AXES,
   AXES_TABLE_MARKER,
   diagnosisTokens,
+  UPGRADE_SUMMARY_COMMAND,
+  UPGRADE_CANONICAL_DOC,
+  SUMMARY_MARKER,
   type UpgradeAxis,
 } from '../../scripts/req/lib/upgrade-axes'
 import { D_CHECK_IDS } from '../../scripts/req/req-doctor'
@@ -113,4 +116,47 @@ describe.each(DOCS)('[upgrade-axes] 정본 문서 $rel 가 모든 축을 표에 
       expect(row, `${axis.id} 조치`).toContain(axis.remedyToken)
     })
   }
+})
+
+/**
+ * README 는 **요약 + 링크**다 (설계 DEC-3 · phase-2).
+ *
+ * 🔴 "옛 명령이 없다"만 검사하면 부족하다 — 다른 문자열로 바꾸거나, 링크 없이 절차를 다시 복제해도
+ *    green 이다(design r02 P1). 그래서 **구역의 구조**를 본다.
+ * 🔴 마커 유무가 아니라 **표 문법 자체**를 금지한다 — 마커만 빼고 축 표를 복제하면 앞의 검사들이
+ *    전부 green 이었다(design r03 P1).
+ */
+describe.each([
+  { rel: 'README.md', doc: UPGRADE_CANONICAL_DOC.ko },
+  { rel: 'README.en.md', doc: UPGRADE_CANONICAL_DOC.en },
+])('[upgrade-axes] $rel 는 요약 + 링크만 둔다', ({ rel, doc }) => {
+  const body = read(rel)
+  const i = body.indexOf(SUMMARY_MARKER.open)
+  const j = body.indexOf(SUMMARY_MARKER.close)
+  const region = i < 0 || j < 0 || j < i ? '' : body.slice(i + SUMMARY_MARKER.open.length, j)
+
+  it('마커 쌍과 구역이 있다', () => {
+    expect(region.trim().length).toBeGreaterThan(0)
+  })
+
+  it('🔴 정본 요약 명령을 그대로 담는다(상수가 유일 출처)', () => {
+    expect(region).toContain(UPGRADE_SUMMARY_COMMAND)
+  })
+
+  it('🔴 정본 문서 링크를 담는다 — 절차를 복제하지 않고 여기로 보낸다', () => {
+    expect(region).toContain(doc)
+  })
+
+  it('🔴 구역에 표가 없다 — 마커를 빼고 축 표를 복제해도 잡는다', () => {
+    expect(region).not.toMatch(/^\s*\|[\s|:-]+\|\s*$/m)
+  })
+
+  it('🔴 구역의 commitgate 명령이 요약 **하나뿐**이다(절차 재나열 금지 — 설계 DEC-3)', () => {
+    const found = [...region.matchAll(/npx commitgate [^\n`]*/g)].map((m) => m[0].trim())
+    expect(found).toEqual([UPGRADE_SUMMARY_COMMAND])
+  })
+
+  it('🔴 축 id 를 나열하지 않는다 — 축 목록은 정본에만 있다', () => {
+    for (const a of UPGRADE_AXES) expect(region, a.id).not.toContain(a.id)
+  })
 })

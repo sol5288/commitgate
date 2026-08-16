@@ -124,18 +124,21 @@ append-only 기록에 남겨 `verify-range`가 `attested`로 구분하게 합니
 `check`의 C5가 업그레이드 후 남은 옛 `AGENTS.md` 정책을 알려 줍니다. `report`의 승인 증거 계산은
 이 저장소 실측 기준 약 29.5초에서 1.2초로 빨라졌습니다(환경과 이력 크기에 따라 다릅니다).
 
-### 0.21.x에서 업그레이드한다면
+### 업그레이드
+
+<!-- commitgate:upgrade-summary -->
+
+버전을 올린 뒤 아래 한 줄로 자산·명령 표면을 맞춥니다.
 
 ```sh
-npm install -D commitgate@^0.22.0
-npx commitgate sync --apply --gitignore
-npx commitgate check
+npm i -D commitgate@<version>
+npx commitgate sync --apply --scripts --gitignore
 ```
 
-C5가 WARN이면 `AGENTS.md`를 통째로 교체하지 말고,
-`node_modules/commitgate/AGENTS.template.md`와 비교해 **CommitGate 계약 부분만** 수동으로 병합하세요.
-프로젝트 고유 지침을 보존하기 위해 `sync`는 `AGENTS.md`를 자동 수정하지 않습니다.
-자세한 절차는 [업그레이드](https://github.com/sol5288/commitgate/blob/main/docs/upgrade.md)에 있습니다.
+남은 축을 **무엇으로 확인하고 무엇을 실행하는지**(여덟 축의 진단·조치 표)는 정본 문서에 있습니다 —
+[업그레이드](https://github.com/sol5288/commitgate/blob/main/docs/upgrade.md).
+
+<!-- /commitgate:upgrade-summary -->
 
 ## 무엇을 보장하고, 무엇은 보장하지 않나
 
@@ -335,7 +338,7 @@ PASS — OK 5 · WARN 0
 | `npx commitgate integrate` | strict 검증과 로컬 머지 계획 확인 (기본: dry-run) |
 | `npx commitgate integrate --run` | 최종 확인 후 실제 로컬 머지 (push 안 함, GitHub CI 기본 미실행) |
 | `npx commitgate attest <sha> --reason "..." --run` | 정식 리뷰가 없었던 정당한 예외 사유 기록 |
-| `npx commitgate sync --apply --gitignore` | 업그레이드 자산 적용 + 로컬 로그의 `.gitignore` 규칙 백필 |
+| `npx commitgate sync --apply --scripts --gitignore` | 업그레이드 자산·`req:*` 명령 표면 적용 + 로컬 로그의 `.gitignore` 규칙 백필 |
 | `npx commitgate uninstall` | 제거 **계획만** 출력 (아무것도 지우지 않음) |
 
 전체 명령과 `pnpm`/`yarn` 표기는 **[워크플로](https://github.com/sol5288/commitgate/blob/main/docs/workflow.md)**에 있습니다. 각 명령의 옵션은 `npx commitgate <명령> --help`로 볼 수 있습니다.

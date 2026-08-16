@@ -53,6 +53,10 @@ export interface UpgradeAxis {
 /**
  * **정본 요약 명령**(설계 DEC-3). README 한/영이 이것을 **그대로** 담는다 — 문자열이 한 곳에서만 나오므로
  * 갈라질 자리가 없다.
+ *
+ * 🔴 **README 구역에는 이 명령 하나뿐이다.** `check` 로 남은 축을 확인하는 절차까지 README 에 적으면
+ *    그것이 곧 절차 복제이고, 축이 늘 때 또 갈라진다 — 확인 절차와 축 표는 **정본 문서**가 갖는다.
+ *    (phase-2 r01 P1: 이 계약을 임의로 넓혔다가 되돌렸다.)
  */
 export const UPGRADE_SUMMARY_COMMAND = 'npx commitgate sync --apply --scripts --gitignore'
 
