@@ -2,20 +2,21 @@
   "id": "REQ-2026-165",
   "branch": "feat/req-2026-165-check-reports-all-upgrade-axes",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00bec-4744-7e73-9404-27ab5098307c",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00bee-b60c-7340-8ac3-1a2005dce628",
+  "review_base_sha": "d095847f4b634acbe8ba9d7f67c0317d0fbac4f5",
+  "review_diff_hash": "c20ca761f6c34c78c67d5064bd7382edfadd618f",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "b5c0555852356c6c83745be9357bf7df43a68cb3567b1c407a19cb078a904a1b",
-  "current_phase": null,
+  "current_phase": "phase-1-install-shape-leaf",
   "phases": [
     {
       "id": "phase-1-install-shape-leaf",
       "title": "술어를 leaf 로",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     },
     {
       "id": "phase-2-upgrade-status",
@@ -47,6 +48,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-install-shape-leaf#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-install-shape-leaf",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -82,14 +90,23 @@
     "design_hash": "b5c0555852356c6c83745be9357bf7df43a68cb3567b1c407a19cb078a904a1b"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-install-shape-leaf",
     "outcome": "approved",
-    "compare_hash": "311803c8c9ea3a762dc56600f4e815fd917d65d24d007198786b0191e75751d3",
+    "compare_hash": "9ff575c27fc783c2626c321bf951f7225646b324732f5cce6a67e76f7633cfba",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T18:54:04.709Z",
+    "at": "2026-08-16T18:57:46.508Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "c20ca761f6c34c78c67d5064bd7382edfadd618f",
+      "phase_id": "phase-1-install-shape-leaf",
+      "consumed_by_commit_sha": "ea2d5b557f5b50473f4c19fea90d12a0c98096eb",
+      "approval_consumed_at": "2026-08-16T18:58:04.949Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
