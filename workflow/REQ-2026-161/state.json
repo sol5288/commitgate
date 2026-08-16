@@ -2,14 +2,14 @@
   "id": "REQ-2026-161",
   "branch": "feat/req-2026-161-install-command-surface-skew",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00b14-2aa7-7c13-8ee7-1d277d2b019e",
-  "review_base_sha": "2e3a017ac308ca7095454e9caeab435b8a5dcd8b",
-  "review_diff_hash": "1cd443681df074ed2038234fb8e0e21bfc47ebd9",
+  "codex_thread_id": "01a00b24-5a71-7413-b43e-5d6ee9551aca",
+  "review_base_sha": "bcf51ce8cf93e43ccd30c7882073ef01c39ede3b",
+  "review_diff_hash": "c13463146912a0b3458d7df5a62e330e002898a5",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "d3f473dc85084e2a9be3af97acf272864d8bc0d125f08a112fa4820c14c3fa9e",
-  "current_phase": "phase-4-doctor-d33",
+  "current_phase": "phase-5-docs-parity",
   "phases": [
     {
       "id": "phase-1-command-surface-predicate",
@@ -43,7 +43,8 @@
       "id": "phase-5-docs-parity",
       "title": "문서 정합(묶음 x auto · upgrade 절차)",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     },
     {
       "id": "phase-6-changelog",
@@ -107,16 +108,23 @@
       "phase_id": "phase-4-doctor-d33",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-5-docs-parity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-5-docs-parity",
+      "attempts": 5,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-4-doctor-d33",
+    "phase_id": "phase-5-docs-parity",
     "outcome": "approved",
-    "compare_hash": "4e16578288dd4d1b6b52783ecd5ec955041c623e853c6b22ba9c3bacb377b872",
+    "compare_hash": "85d47b4422286e1b4c22bb8a53791188c0425c376d4fe7a76e1c86a5dd72b37d",
     "count": 1,
     "errors": [],
-    "at": "2026-08-16T14:58:31.147Z",
+    "at": "2026-08-16T15:16:56.614Z",
     "findings": [],
     "elided_count": 0
   },
@@ -149,6 +157,12 @@
       "phase_id": "phase-4-doctor-d33",
       "consumed_by_commit_sha": "f2840b1738d654f9daced13e5ecef653105e4adb",
       "approval_consumed_at": "2026-08-16T14:59:11.666Z"
+    },
+    {
+      "approved_tree": "c13463146912a0b3458d7df5a62e330e002898a5",
+      "phase_id": "phase-5-docs-parity",
+      "consumed_by_commit_sha": "82447302848000c9d1a67a908974a0be52f37a4b",
+      "approval_consumed_at": "2026-08-16T15:17:28.711Z"
     }
   ],
   "user_commit_confirmed": null,
