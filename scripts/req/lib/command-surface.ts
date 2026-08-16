@@ -5,7 +5,7 @@
  *    생기지 않는다. `init` 이 주입하지만 문서화된 업그레이드 절차는 `init` 재실행을 부르지 않고
  *    (`설치 → sync --apply → quickstart --apply → migrate`), `sync` 는 설계상 `package.json` 을
  *    건드리지 않는다. 그래서 **`req:next` 가 안내한 명령이 실행 시점에 없는** 상태가 만들어진다.
- *    실측(0.23.1 설치본): `pnpm req:delegate` → `Command "req:delegate" not found`.
+ *    실측(0.23.1 설치본): 패키지매니저가 `req:delegate` 스크립트를 찾지 못해 `not found` 로 죽었다.
  *
  * 🔴 **왜 D19 가 못 잡는가**: `classifyInstallMode`는 5개 표본 키의 **값 형태**만 본다. 부재 키는
  *    `filter(isString)` 에서 조용히 떨어져 나가므로, 5개가 Stage B 형태이면 나머지가 없어도 `stage-b`

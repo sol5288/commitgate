@@ -1,0 +1,94 @@
+{
+  "id": "REQ-2026-162",
+  "branch": "feat/req-2026-162-pm-literal-in-source-comments",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a00b5a-e823-7d40-be8a-c50772f9ac7b",
+  "review_base_sha": "490bfbcdb2955ff85f9337456d96eeac7283d8e1",
+  "review_diff_hash": "fec6a1d1bf7ffd765e71eb6fcff65dc7be712c65",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "fdbfb07cf3f647d009ca1e6ce058b7e6edfae6bd9f671e05ae7a4b33b5da39af",
+  "current_phase": "phase-1-pm-neutral-comments",
+  "phases": [
+    {
+      "id": "phase-1-pm-neutral-comments",
+      "title": "주석 pm 중립화",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-pm-neutral-comments#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-pm-neutral-comments",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "635d020f14527aaa70ebfadb2f81af3103c4f1d9",
+    "design": "6b05d4fcb1f74d95a87c922dbb154cc4739422b7",
+    "plan": "a50c0ed9fca5aa9fca590c07b9877ce8b800dfa1"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-162/responses/design-r01-approved.json",
+    "response_sha256": "dc658a8196b2256cf760b7192ff62f30a83b58b4702c08e52b0dcb34f971c6ef",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "3bd197ec31f87b9b6f81155b9444d50604503ebd",
+    "codex_thread_id": "01a00b5a-12b5-70b3-b5b4-da2bd28c055a",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-16T16:14:48.503Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-162/responses/design-r01-approved.json",
+          "sha256": "dc658a8196b2256cf760b7192ff62f30a83b58b4702c08e52b0dcb34f971c6ef"
+        }
+      ],
+      "inventory_sha256": "bbeb2efe25fe14c93af0011ac878cb4a9baa5d6f73fdf30c5597da92e84bfeab",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-162/responses/design-r01-approved.json"
+    },
+    "design_hash": "fdbfb07cf3f647d009ca1e6ce058b7e6edfae6bd9f671e05ae7a4b33b5da39af"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-pm-neutral-comments",
+    "outcome": "approved",
+    "compare_hash": "fadceef9ac918b0e65cd17bd531bb35ac18d75efdc5664d6a9b6a7d6a25fee99",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-16T16:16:01.210Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "fec6a1d1bf7ffd765e71eb6fcff65dc7be712c65",
+      "phase_id": "phase-1-pm-neutral-comments",
+      "consumed_by_commit_sha": "19a0a9bedea136dceafc4edc832a12db03645120",
+      "approval_consumed_at": "2026-08-16T16:16:16.681Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}
