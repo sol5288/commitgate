@@ -87,6 +87,34 @@ npx commitgate quickstart --apply      # 관리 블록만 주입/교체(블록 �
 > 정리: `commitgate@latest` 설치 → `commitgate sync --apply --scripts` → `commitgate quickstart --apply`
 > → `commitgate check`(C5·C6 확인) → (필요 시) `commitgate migrate`.
 
+## 업그레이드 축 — 무엇을 확인하고 무엇을 실행하나
+
+버전을 올린 뒤 **아래 여덟 축을 전부** 확인합니다. 진단이 알려 주는 것과 그것을 해소하는 명령이 한 표에 있습니다.
+
+<!-- commitgate:upgrade-axes -->
+
+| 축 | 무엇이 어긋나나 | 진단 | 조치 |
+|---|---|---|---|
+| `caret-range` | 설치된 버전이 caret 범위(`^0.x`)에 갇혀 minor 를 넘지 못함 | `n/a` | `npm i -D commitgate@<version>` |
+| `req-scripts` | 릴리스가 추가한 `req:*` verb 가 `package.json` 에 없음 | `C6` · `D33` | `npx commitgate sync --apply --scripts` |
+| `vendored-schema` | vendored 스키마가 설치된 패키지 사본과 다름 | `D20` | `npx commitgate sync --apply` |
+| `workflow-gitignore` | `workflow/.gitignore` 에 kit 규칙이 빠져 다음 리뷰가 D10 에서 막힘 | `D22` | `npx commitgate sync --apply --gitignore` |
+| `managed-blocks` | always-loaded 파일의 commitgate 관리 블록이 설치된 버전과 다름 | `D21` | `npx commitgate quickstart --apply` |
+| `review-persona` | `review-persona.md` 가 부재하거나 배포본과 달라 리뷰 정책이 도달하지 않음 | `npx commitgate sync --persona` | `npx commitgate sync --apply --persona --persona-apply` |
+| `mixed-install` | `req:*` 에 Stage A(`tsx …`)와 Stage B(`commitgate <verb>`) 형태가 섞임 | `D19` | `npx commitgate migrate --apply` |
+| `contract-claims` | `AGENTS.md` 에 폐기된 CommitGate 서술이 남아 에이전트가 옛 계약을 따름 | `C5` | 수동 병합(`node_modules/commitgate/AGENTS.template.md` 와 대조) |
+
+<!-- /commitgate:upgrade-axes -->
+
+🔴 **`caret-range` 만 진단이 없습니다.** `^0.x` 는 소비자 `package.json` 에서 패키지매니저가 강제하므로
+도구가 감지·수정할 수 없습니다 — 버전을 명시해 설치하는 것이 유일한 수단입니다.
+
+🔴 **`mixed-install` 은 섞인 경우만 잡습니다.** 순수 Stage A(`tsx scripts/req/*.ts`)는 **지원되는 설치
+형태**라 `D19` 가 `OK` 를 냅니다. 전환이 필요한 것은 두 형태가 섞였을 때뿐입니다.
+
+🔴 **`contract-claims` 만 도구가 고치지 않습니다.** `AGENTS.md` 는 사용자 소유이고 프로젝트 고유 내용이
+섞여 있어 자동 교체가 그것을 지웁니다. `C5` 가 **찾은 문장을 그대로** 보여 주므로 그것만 손으로 병합하세요.
+
 ## 버전별 주의사항
 
 새 버전으로 넘어갈 때 **그 버전에서만** 챙겨야 하는 것을 여기 모읍니다. 지나온 버전의 절은 지우지 않으니,

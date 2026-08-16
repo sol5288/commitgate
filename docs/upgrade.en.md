@@ -90,6 +90,35 @@ npx commitgate quickstart --apply      # inject/replace managed blocks only (pre
 > In short: install `commitgate@latest` → `commitgate sync --apply --scripts` → `commitgate quickstart --apply`
 > → `commitgate check` (read C5 and C6) → (if needed) `commitgate migrate`.
 
+## Upgrade axes — what to check and what to run
+
+After bumping the version, go through **all eight axes** below. Each row pairs the diagnosis with the command that resolves it.
+
+<!-- commitgate:upgrade-axes -->
+
+| Axis | What drifts | Diagnosis | Remedy |
+|---|---|---|---|
+| `caret-range` | The installed version is pinned by the caret range (`^0.x`) and cannot cross a minor | `n/a` | `npm i -D commitgate@<version>` |
+| `req-scripts` | A `req:*` verb added by a release is missing from `package.json` | `C6` · `D33` | `npx commitgate sync --apply --scripts` |
+| `vendored-schema` | The vendored schema differs from the installed package copy | `D20` | `npx commitgate sync --apply` |
+| `workflow-gitignore` | `workflow/.gitignore` lacks kit rules, so the next review is blocked by D10 | `D22` | `npx commitgate sync --apply --gitignore` |
+| `managed-blocks` | Managed commitgate blocks in always-loaded files differ from the installed version | `D21` | `npx commitgate quickstart --apply` |
+| `review-persona` | `review-persona.md` is missing or differs from the shipped copy, so review policy never lands | `npx commitgate sync --persona` | `npx commitgate sync --apply --persona --persona-apply` |
+| `mixed-install` | `req:*` mixes Stage A (`tsx …`) and Stage B (`commitgate <verb>`) forms | `D19` | `npx commitgate migrate --apply` |
+| `contract-claims` | `AGENTS.md` still carries retired CommitGate claims, so agents follow the old contract | `C5` | Manual merge (compare with `node_modules/commitgate/AGENTS.template.md`) |
+
+<!-- /commitgate:upgrade-axes -->
+
+🔴 **Only `caret-range` has no diagnosis.** `^0.x` is enforced by the package manager in the consumer's
+`package.json`, so the tool cannot detect or fix it — installing an explicit version is the only lever.
+
+🔴 **`mixed-install` fires only on a mix.** A pure Stage A install (`tsx scripts/req/*.ts`) is a
+**supported** form and `D19` reports `OK`. Migration is needed only when the two forms are mixed.
+
+🔴 **Only `contract-claims` is not fixed by the tool.** `AGENTS.md` is user-owned and carries
+project-specific content, so automatic replacement would erase it. `C5` prints the offending sentences
+verbatim — merge just those by hand.
+
 ## Per-version notes
 
 Anything you only need to handle **for a specific version** lives here. Sections are never removed, so if you
