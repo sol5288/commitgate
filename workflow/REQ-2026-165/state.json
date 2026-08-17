@@ -2,14 +2,14 @@
   "id": "REQ-2026-165",
   "branch": "feat/req-2026-165-check-reports-all-upgrade-axes",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00d1c-0171-73d0-82f4-b71bb9eb139e",
-  "review_base_sha": "270a8cfffd37917b9a7a4ec43e917486bb9c37ed",
-  "review_diff_hash": "fca5afea22f208e20c140b386edaa8e7586b1893",
+  "codex_thread_id": "01a00d21-3bb0-70a1-a980-13996e7c42db",
+  "review_base_sha": "be454f623d7cc9ea78439f2af876228b41e458ff",
+  "review_diff_hash": "8b58c2cb6b5b92f7b40c5baf2554cbbcc4d8ab6e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "b5c0555852356c6c83745be9357bf7df43a68cb3567b1c407a19cb078a904a1b",
-  "current_phase": "phase-3-check-c7",
+  "current_phase": "phase-4-docs-changelog",
   "phases": [
     {
       "id": "phase-1-install-shape-leaf",
@@ -36,7 +36,8 @@
       "id": "phase-4-docs-changelog",
       "title": "문서 + CHANGELOG",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -73,6 +74,20 @@
       "phase_id": "phase-3-check-c7",
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-docs-changelog#1",
+      "review_kind": "phase",
+      "phase_id": "phase-4-docs-changelog",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-4-docs-changelog#2",
+      "review_kind": "phase",
+      "phase_id": "phase-4-docs-changelog",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -107,12 +122,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-3-check-c7",
+    "phase_id": "phase-4-docs-changelog",
     "outcome": "approved",
-    "compare_hash": "865f3b85f7eec5924c3952eba93155616d29f8344e6b46d91e2f31caf25904a7",
+    "compare_hash": "48173ed1467ab7557c8a43b69677cf08d9d68dbf89017f94dcd62b15ded58b31",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T00:26:38.682Z",
+    "at": "2026-08-17T00:31:59.296Z",
     "findings": [],
     "elided_count": 0
   },
@@ -134,6 +149,12 @@
       "phase_id": "phase-3-check-c7",
       "consumed_by_commit_sha": "b3cd5ade0f66bcf78773e44fec4e470712f4aa56",
       "approval_consumed_at": "2026-08-17T00:27:03.823Z"
+    },
+    {
+      "approved_tree": "8b58c2cb6b5b92f7b40c5baf2554cbbcc4d8ab6e",
+      "phase_id": "phase-4-docs-changelog",
+      "consumed_by_commit_sha": "a6a82865040a3f0a1519c1d657bae8dd84e33630",
+      "approval_consumed_at": "2026-08-17T00:32:17.546Z"
     }
   ],
   "user_commit_confirmed": null
