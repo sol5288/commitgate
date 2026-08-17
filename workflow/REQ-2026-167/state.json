@@ -2,13 +2,13 @@
   "id": "REQ-2026-167",
   "branch": "feat/req-2026-167-upgrade-docs-completeness",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00da6-b093-7d11-b7b2-3e1b11ebf41a",
-  "review_base_sha": "cd6de1c4cfc42bf4380f35d2eb3f0f72e0a812fe",
-  "review_diff_hash": "6cf7b8e6b832e7ebc059cd02b4938bf62c1623ae",
+  "codex_thread_id": "01a00e09-92a3-7ec2-88c3-fcfde8e6eee9",
+  "review_base_sha": "885953c03ed83e98d708d34edbb7b8aff7743c32",
+  "review_diff_hash": "42a17f85d2029987ed2fffa772a1568d4a4c5a07",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "879a179772e6d4cc0d4424de46a63f15bca5a62a490fc4ebf0bae75c7fc5d2c6",
+  "design_approved_hash": "1881640e5660db33cea278c5ccb4183cd2f93eeaa6eec865e7680109dbae6f5d",
   "current_phase": "phase-2-readme-entrypoint",
   "phases": [
     {
@@ -67,35 +67,65 @@
       "phase_id": "phase-2-readme-entrypoint",
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-release-notes#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-release-notes",
+      "attempts": 3,
+      "closed_reason": null,
+      "void_attempts": 3
+    },
+    {
+      "series_id": "design:-#3",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "phase",
-    "phase_id": "phase-2-readme-entrypoint",
+    "review_kind": "design",
+    "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "0beac0f9072d743e97ac6d0a30c261c48c049d3d69d6222059f6c00ceba365ee",
+    "compare_hash": "293248b832af02683bca486a5828ace3ca37c74f13cb41f0831157109d89e65c",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T02:58:09.716Z",
+    "at": "2026-08-17T04:45:50.839Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "772400d9e79aa21a1019838a5216cf381856c5f6",
-    "design": "cd592bcba1b4f834db73ab8764d526e7f16caab5",
-    "plan": "fa49be379a97e821546f44d27b5677fe831a7e30"
+    "design": "95ebb11930c74cf39427bf047027cbfbddd40537",
+    "plan": "39b97ebc2d0ef282949e59486b99d1c81d9fd0e5"
   },
+  "consumed_approvals": [
+    {
+      "approved_tree": "a8b924fdcd830def58c4d6c27a48563d1d3ee925",
+      "phase_id": "phase-1-procedure-canon",
+      "consumed_by_commit_sha": "e970a085ec714dfe4ecec9bedd95f2e93ea0d40b",
+      "approval_consumed_at": "2026-08-17T02:50:52.843Z"
+    },
+    {
+      "approved_tree": "6cf7b8e6b832e7ebc059cd02b4938bf62c1623ae",
+      "phase_id": "phase-2-readme-entrypoint",
+      "consumed_by_commit_sha": "dca90d0115fdb40bd804c4c3c11860f5600a318d",
+      "approval_consumed_at": "2026-08-17T02:58:24.120Z"
+    }
+  ],
+  "user_commit_confirmed": null,
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-167/responses/design-r08-approved.json",
-    "response_sha256": "b48d2475c0eb307ee0d4abc532f7ef4c59dddb64b8c7f6b7bda32c25b97c155c",
+    "response_path": "workflow/REQ-2026-167/responses/design-r10-approved.json",
+    "response_sha256": "6f639ae61b00a009dc2bcc56fba6f6a4b9191ca878de76fb90e71105e140e2dc",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "1ac6fa9812877380135a8d741b17dc965467b441",
-    "codex_thread_id": "01a00d9e-389a-7a81-9f68-2defcc4efbac",
+    "review_base_sha": "1fd61d0629ba23a52a296488b18e2eb10f30c0a2",
+    "codex_thread_id": "01a00e09-92a3-7ec2-88c3-fcfde8e6eee9",
     "machine_schema_version": "1.1",
     "status": "STEP_COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-08-17T02:48:21.862Z",
+    "approved_at": "2026-08-17T04:45:50.839Z",
     "archive_inventory": {
       "items": [
         {
@@ -129,28 +159,21 @@
         {
           "response_path": "workflow/REQ-2026-167/responses/design-r08-approved.json",
           "sha256": "b48d2475c0eb307ee0d4abc532f7ef4c59dddb64b8c7f6b7bda32c25b97c155c"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r09-needs-fix.json",
+          "sha256": "e168793b925a4c5e9f30f96dff7bb1647557921c0dd49f01420efdd8be987ef5"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r10-approved.json",
+          "sha256": "6f639ae61b00a009dc2bcc56fba6f6a4b9191ca878de76fb90e71105e140e2dc"
         }
       ],
-      "inventory_sha256": "8c0beea19af7eab04f972ed3dbe0675a72fd892ec378e07ebd32df733870300c",
+      "inventory_sha256": "50b6bae151984d07c35e8c1a15ca02fedacbcd7549806d0a7a46a43a280f2735",
       "review_kind": "design",
       "phase_id": null,
-      "source_response_path": "workflow/REQ-2026-167/responses/design-r08-approved.json"
+      "source_response_path": "workflow/REQ-2026-167/responses/design-r10-approved.json"
     },
-    "design_hash": "879a179772e6d4cc0d4424de46a63f15bca5a62a490fc4ebf0bae75c7fc5d2c6"
-  },
-  "consumed_approvals": [
-    {
-      "approved_tree": "a8b924fdcd830def58c4d6c27a48563d1d3ee925",
-      "phase_id": "phase-1-procedure-canon",
-      "consumed_by_commit_sha": "e970a085ec714dfe4ecec9bedd95f2e93ea0d40b",
-      "approval_consumed_at": "2026-08-17T02:50:52.843Z"
-    },
-    {
-      "approved_tree": "6cf7b8e6b832e7ebc059cd02b4938bf62c1623ae",
-      "phase_id": "phase-2-readme-entrypoint",
-      "consumed_by_commit_sha": "dca90d0115fdb40bd804c4c3c11860f5600a318d",
-      "approval_consumed_at": "2026-08-17T02:58:24.120Z"
-    }
-  ],
-  "user_commit_confirmed": null
+    "design_hash": "1881640e5660db33cea278c5ccb4183cd2f93eeaa6eec865e7680109dbae6f5d"
+  }
 }
