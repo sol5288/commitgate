@@ -68,6 +68,7 @@ const OPTS = (over: Partial<Opts> = {}): Opts => ({
   sentence: '통합을 사전 위임합니다',
   allowPush: false,
   allowBypass: false,
+  allowAttested: false,
   highRisk: false,
   ttlHours: DEFAULT_TTL_HOURS,
   revokeId: null,

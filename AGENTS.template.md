@@ -71,6 +71,10 @@
 ### 4. 커밋 정책
 - 각 phase는 의미 있는 커밋. "WIP" 금지.
 - 커밋 메시지 컨벤션: `test/feat/fix/refactor/docs/chore` 접두사. `[Codex]`/`[Claude]` 같은 메타 정보 금지(Reviewer 편향 방지).
+- 🔴 **부기 트레일러(`CommitGate-Bookkeeping: true`)를 손으로 붙이지 마라.** 그것은 도구가 자기
+  기록 커밋(원장·state·증거 아카이브)에만 붙이는 표식이다. 사람이 붙인 커밋이 그 밖의 파일
+  (예: `package.json`)을 바꾸면 검증이 **손상 증거**로 분류해 통합을 막고, 그 상태는 `attest` 로도
+  구제되지 않는다. 트레일러를 빼면 "미입증"으로 재분류되어 정상 경로(리뷰 또는 `attest`)로 처리된다.
 - HIGH 영향 phase가 커밋에서 멈추는 **지점은 `stopGate`가 정한다**(`state.user_commit_confirmed`로 기록).
 - **정지 지점은 `req.config.json`의 `stopGate` 하나가 정한다**(`userConfirmGate`):
   `phase`=매 phase 커밋 전 · `req`(기본값)=REQ를 끝내는 커밋 전 · `merge`=커밋에서는 멈추지 않음

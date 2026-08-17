@@ -12,7 +12,7 @@
  * 🔴 **`at`·`expires_at`·두 SHA 를 사람이 적을 자리가 없다.** 전부 도구가 읽는다(REQ-2026-019 폐기 사유).
  *
  * 사용:
- *   req:delegate --scope ticket:2026-140 --source <branch> --sentence "<문장>" [--allow-push] [--allow-bypass] [--high-risk] [--ttl-hours N] [--run]
+ *   req:delegate --scope ticket:2026-140 --source <branch> --sentence "<문장>" [--allow-push] [--allow-bypass] [--high-risk] [--allow-attested] [--ttl-hours N] [--run]
  *   req:delegate --revoke <id> --reason "<사유>" [--run]
  *   req:delegate --status [--scope ticket:2026-140]
  */
@@ -56,6 +56,8 @@ export interface Opts {
   allowPush: boolean
   allowBypass: boolean
   highRisk: boolean
+  /** 범위에 attested 커밋이 섞여 있어도 통합을 허용한다(REQ-2026-168). 기본 불허. */
+  allowAttested: boolean
   ttlHours: number
   revokeId: string | null
   reason: string | null
@@ -71,6 +73,7 @@ export const KNOWN_OPTIONS = [
   '--allow-push',
   '--allow-bypass',
   '--high-risk',
+  '--allow-attested',
   '--ttl-hours',
   '--revoke',
   '--reason',
@@ -107,6 +110,7 @@ export function parseArgs(argv: string[]): Opts {
     allowPush: false,
     allowBypass: false,
     highRisk: false,
+    allowAttested: false,
     ttlHours: DEFAULT_TTL_HOURS,
     revokeId: null,
     reason: null,
@@ -121,6 +125,7 @@ export function parseArgs(argv: string[]): Opts {
     else if (a === '--allow-push') o.allowPush = true
     else if (a === '--allow-bypass') o.allowBypass = true
     else if (a === '--high-risk') o.highRisk = true
+    else if (a === '--allow-attested') o.allowAttested = true
     else if (a === '--status') sawStatus = true
     else if (a === '--scope') o.scope = parseScopeArg(readFreeTextValue(argv, ++i, '--scope', KNOWN_OPTIONS))
     else if (a === '--source') o.source = readFreeTextValue(argv, ++i, '--source', KNOWN_OPTIONS)
@@ -258,6 +263,7 @@ function runIssue(o: Opts, deps: RunDeps): number {
     // 🔴 DEC-5a: 발급 자체가 local_merge 다. push·bypass 만 opt-in.
     permissions: { local_merge: true, origin_push: o.allowPush, bypass_protection: o.allowBypass },
     high_risk_ack: o.highRisk,
+    attested_ack: o.allowAttested,
     approval_sentence: (o.sentence as string).trim(),
   }
 
@@ -267,6 +273,9 @@ function runIssue(o: Opts, deps: RunDeps): number {
   deps.log(`  만료       : ${row.expires_at} (${o.ttlHours}시간)`)
   deps.log(`  허용 작업  : local merge${o.allowPush ? ' · origin push' : ''}${o.allowBypass ? ' · protection bypass' : ''}`)
   deps.log(`  HIGH 위험  : ${o.highRisk ? '위임함' : '위임하지 않음(HIGH 티켓이면 통합이 막힙니다)'}`)
+  deps.log(
+    `  attested   : ${o.allowAttested ? '함께 위임함(예외 승인 커밋이 실릴 수 있습니다)' : '위임하지 않음(범위에 attested 가 있으면 통합이 막힙니다)'}`,
+  )
   if (o.allowBypass) deps.log('  ⚠️ branch protection 우회를 위임했습니다 — 사용 시 원장과 최종 보고에 남습니다.')
 
   if (!o.run) {

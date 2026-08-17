@@ -38,7 +38,7 @@ import { awaitCiRun, createGhCiRunAdapter, type GithubCiRunPort, type CiRunResul
 import { deliveryApprovalBlock, deliveryRecordProblems, type DeliveryRecord } from '../scripts/req/lib/delivery'
 import { bookkeepingMessage } from '../scripts/req/lib/bookkeeping'
 import { collectDeepInput, type RunDeps as VerifyRunDeps } from './verify-range'
-import { attributeRange } from '../scripts/req/lib/range-attribution'
+import { attributeRange, type UnattributableCommit } from '../scripts/req/lib/range-attribution'
 // REQ-2026-163 DEC-4: series 판정의 정본. doctor 와 같은 술어를 쓴다(두 곳에서 각자 판정하면 갈라진다).
 import { hasInconclusiveSeries } from '../scripts/req/lib/review-series'
 import {
@@ -287,8 +287,14 @@ export interface AutoFacts {
    *    정책 판정을 거기에 묶으면 위임 없는 묶음 통합이 전부 막힌다.
    */
   memberPolicies: { id: string; snapshotStopGate: StopGate | null; stateUnreadable: boolean }[]
-  /** 🔴 delivery scope 인데 **묶음 레코드 자체**를 읽지 못했다 → 정책 판정 불가(fail-closed). */
-  policyMembersUnknown: boolean
+  /**
+   * 🔴 정책 대상을 확정하지 못한 **사유**. `null` 이면 확정됐다는 뜻이다.
+   *
+   * 예전에는 `policyMembersUnknown: boolean` 이었다. `boolean` 은 **무엇을 모르는지** 담을 수 없어,
+   * 귀속 불가 커밋(예: `attested`)으로 막힌 경우에도 *"묶음(delivery) 레코드를 읽지 못했다"* 고
+   * 말했다 — 묶음을 쓰지 않는 저장소에는 **실행 불가능한 안내**였다(REQ-2026-168, 소비자 리포트).
+   */
+  policyUnknown: PolicyUnknown | null
 }
 
 /**
@@ -313,7 +319,7 @@ export function collectAutoFacts(
       deliveryMembers: null,
       compositionChanged: false,
       memberPolicies: [{ id: scope.req_id, snapshotStopGate: t.snapshotStopGate, stateUnreadable: t.stateUnreadable }],
-      policyMembersUnknown: false,
+      policyUnknown: null,
     }
   }
 
@@ -345,8 +351,23 @@ export function collectAutoFacts(
     deliveryMembers: d.members,
     compositionChanged: d.compositionChanged,
     memberPolicies: policyEach.map((f) => ({ id: f.id, snapshotStopGate: f.snapshotStopGate, stateUnreadable: f.stateUnreadable })),
-    policyMembersUnknown: policyMembers === null,
+    policyUnknown: policyMembers === null ? { reason: 'delivery-unreadable', slug: scope.slug } : null,
   }
+}
+
+/**
+ * 이 scope 의 **유효 위임 하나**가 `--allow-attested` 를 담고 있는가(REQ-2026-168, 읽기 전용).
+ *
+ * 🔴 유효 위임이 정확히 하나가 아니면 `false` 다 — 여러 개(`ambiguous-active`)이거나 없으면 그 자체가
+ *    거부 사유이고, 그 판정은 `delegationGate` 가 한다. 여기서 관대하게 읽을 이유가 없다.
+ */
+export function activeDelegationAck(
+  deps: Pick<RunDeps, 'readDelegationLedger'>,
+  scope: DelegationScope,
+): boolean {
+  const { rows } = parseDelegationLedger(deps.readDelegationLedger())
+  const active = foldDelegations(rows, scope).active
+  return active.length === 1 && (active[0] as DelegationIssued).attested_ack
 }
 
 export function delegationGate(
@@ -676,12 +697,35 @@ export function failClosedBlockers(facts: Pick<AutoFacts, 'riskLevel' | 'budgetH
   return out
 }
 
+/** 정책 대상을 확정하지 못한 사유(구조로 든다 — 호출부가 사실대로 말할 수 있게). */
+export type PolicyUnknown =
+  /** 범위에 귀속을 판정할 수 없는 커밋이 있다. delivery 와 **무관하다**. */
+  | { reason: 'unattributable'; commits: readonly UnattributableCommit[] }
+  /** 묶음 레코드를 결속된 SHA 에서 읽지 못했다. 이때**만** 묶음을 말한다. */
+  | { reason: 'delivery-unreadable'; slug: string }
+
+/** 정책 대상 확정 결과. */
+export type PolicyTargets = { ok: true; ids: string[] } | { ok: false; unknown: PolicyUnknown }
+
 export function policyTargetIds(
-  attribution: { tickets: readonly string[]; deliveries?: readonly string[]; unattributableCommits: readonly unknown[] },
+  attribution: {
+    tickets: readonly string[]
+    deliveries?: readonly string[]
+    unattributableCommits: readonly UnattributableCommit[]
+  },
   scope: DelegationScope | null,
   deliveryMembersOf: (slug: string) => string[] | null,
-): string[] | null {
-  if (attribution.unattributableCommits.length > 0) return null
+  /**
+   * 사람이 **미리** 위임에 명시한 `--allow-attested`(REQ-2026-168 DEC-3). 기본 `false`.
+   * 🔴 `attested` 만 면제한다 — 다른 범주가 하나라도 섞이면 이 값과 무관하게 판정 불가다.
+   */
+  attestedAck = false,
+): PolicyTargets {
+  // 🔴 **사유를 구분해 낸다.** 여기서 뭉개면 호출부가 사실대로 말할 방법이 없다.
+  const blocking = attestedAck
+    ? attribution.unattributableCommits.filter((c) => c.category !== 'attested')
+    : attribution.unattributableCommits
+  if (blocking.length > 0) return { ok: false, unknown: { reason: 'unattributable', commits: blocking } }
   const ids = new Set<string>(attribution.tickets)
   const slugs = new Set<string>(attribution.deliveries ?? [])
   // 🔴 브랜치에서 확정된 대상도 **합친다** — 귀속이 놓친 티켓을 잃지 않기 위해서다(더 좁게 읽지 않는다).
@@ -689,28 +733,57 @@ export function policyTargetIds(
   if (scope !== null && scope.kind === 'delivery') slugs.add(scope.slug)
   for (const slug of slugs) {
     const members = deliveryMembersOf(slug)
-    if (members === null) return null
+    if (members === null) return { ok: false, unknown: { reason: 'delivery-unreadable', slug } }
     for (const m of members) ids.add(m)
   }
-  return [...ids]
+  return { ok: true, ids: [...ids] }
 }
 
+/** 대화형 최종 확인이 있다는 사실 — 있는 탈출구를 감추지 않는다(REQ-2026-160 r01·r02 P1). */
+const INTERACTIVE_HINT = '    대화형 세션이라면 아래 최종 확인에서 사람이 직접 승인할 수 있습니다(기본 No).'
+
+/**
+ * 정책 판정 불가의 **사유별** 안내(REQ-2026-168 DEC-2, 순수).
+ *
+ * 🔴 **`delivery` 라는 말은 `delivery-unreadable` 에서만 나온다.** 예전에는 사유가 무엇이든 묶음
+ *    레코드를 지목했고, 묶음을 쓰지 않는 저장소는 *"없는 묶음의 레코드를 커밋하라"* 는 **실행 불가능한
+ *    안내**를 받았다(소비자 리포트 · 재현 완료).
+ */
+export function policyUnknownLines(unknown: PolicyUnknown): string[] {
+  if (unknown.reason === 'delivery-unreadable')
+    return [
+      `묶음(delivery) 레코드 '${unknown.slug}' 를 결속된 SHA 에서 읽지 못해 구성 티켓의 정책을 판정할 수 없습니다.`,
+      '  통합은 되돌리기 비싼 단계라 판정 불가에서 진행하지 않습니다(fail-closed).',
+      `  해소: 묶음 레코드(\`<ticketRoot>/delivery/${unknown.slug}.json\`)가 통합 대상 SHA 의 트리에 있어야 합니다.`,
+      '    레코드를 커밋한 뒤 다시 실행하세요.',
+      INTERACTIVE_HINT,
+    ]
+
+  const shown = unknown.commits.slice(0, MAX_SHOWN_COMMITS)
+  const lines = [
+    `병합 범위에 귀속을 판정할 수 없는 커밋 ${unknown.commits.length}건이 있어 어느 티켓의 정책이 지배하는지 판정할 수 없습니다.`,
+    '  통합은 되돌리기 비싼 단계라 판정 불가에서 진행하지 않습니다(fail-closed).',
+    ...shown.map((c) => `    - ${c.sha.slice(0, 8)} [${c.category ?? '분류 없음'}] ${c.subject} — ${c.why}`),
+  ]
+  // 🔴 잘라낸 사실을 숨기지 않는다 — 조용한 절단은 "전부 봤다"로 읽힌다.
+  if (unknown.commits.length > shown.length)
+    lines.push(`    … 외 ${unknown.commits.length - shown.length}건(같은 목록은 verify-range 로 전부 볼 수 있습니다)`)
+  if (unknown.commits.some((c) => c.category === 'attested'))
+    lines.push(
+      '  🔴 attested 커밋은 **의도적으로** 자율 통합 대상이 아닙니다 — 정식 리뷰 없이 사람이 예외 승인한',
+      '     커밋이라 어느 티켓의 정책도 그것을 검증하지 않았습니다.',
+    )
+  lines.push(INTERACTIVE_HINT)
+  return lines
+}
+
+/** 안내에 나열하는 커밋 최대 수 — 넘으면 남은 수를 함께 밝힌다. */
+const MAX_SHOWN_COMMITS = 5
+
 export function resolveIntegrationPolicy(facts: AutoFacts, cfgStopGate: StopGate): IntegrationPolicy {
-  // 🔴 묶음의 **멤버 목록 자체**를 결속된 SHA 에서 읽지 못하면 어느 티켓들이 들어가는지 모른다.
-  //    "모르니까 통과"로 읽으면 그것이 곧 구멍이다.
-  if (facts.policyMembersUnknown)
-    return {
-      kind: 'indeterminate',
-      lines: [
-        '묶음(delivery) 레코드를 결속된 SHA 에서 읽지 못해 구성 티켓의 정책을 판정할 수 없습니다.',
-        '  통합은 되돌리기 비싼 단계라 판정 불가에서 진행하지 않습니다(fail-closed).',
-        '  해소: 묶음 레코드(`<ticketRoot>/delivery/<slug>.json`)가 통합 대상 SHA 의 트리에 있어야 합니다.',
-        '    레코드를 커밋한 뒤 다시 실행하세요.',
-        // 🔴 **안내는 실행 가능한 것만 적는다**(r01·r02 P1). 대화형 승인 경로는 아래 배선이 **실제로**
-        //    제공한다 — 없는 탈출구를 적으면 안 되고, 있는 탈출구를 감춰서도 안 된다.
-        '    대화형 세션이라면 아래 최종 확인에서 사람이 직접 승인할 수 있습니다(기본 No).',
-      ],
-    }
+  // 🔴 정책 대상을 확정하지 못하면 진행하지 않는다. "모르니까 통과"로 읽으면 그것이 곧 구멍이다.
+  //    다만 **왜 모르는지**를 사실대로 말한다 — 사유가 둘인데 하나로 뭉개면 안내가 거짓이 된다.
+  if (facts.policyUnknown !== null) return { kind: 'indeterminate', lines: policyUnknownLines(facts.policyUnknown) }
 
   const unreadable = facts.memberPolicies.filter((m) => m.stateUnreadable)
   if (unreadable.length > 0)
@@ -844,7 +917,7 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
           deliveryMembers: null,
           compositionChanged: false,
           memberPolicies: [],
-          policyMembersUnknown: false,
+          policyUnknown: null,
         }
   /**
    * 🔴 **정책 대상은 브랜치 이름에 의존하지 않는다**(phase-3 P1). `branchPrefix` 만 만족하고 REQ 번호
@@ -852,30 +925,54 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
    *    config 로 폴백했고, 그것이 `auto` 스냅샷을 약화시키는 우회로였다.
    *    이제 **결속된 범위의 커밋 귀속**에서도 대상을 찾는다(위임 권한 판정은 그대로 브랜치 scope 만).
    */
-  const policyIds = ((): string[] | null => {
+  /**
+   * 🔴 **사람이 미리 명시한 `--allow-attested`**(REQ-2026-168 DEC-3). 위임 행에서 읽는다 — 실행 중
+   *    판정을 덮는 플래그가 아니라 **통합 전에** 결정되어 원장에 남은 사실이다.
+   *
+   * 🔴 여기서 이 값을 쓴다고 게이트가 헐거워지지 않는다: 정책이 `resolved` 로 바뀌면 그 다음에
+   *    `delegationGate` 가 **그 위임의 유효성 전체**(trunk 이동·source·만료·소비·범위)를 다시 본다.
+   *    무효한 위임이면 거기서 거부된다.
+   */
+  const attestedAck = scopeForFacts === null ? false : activeDelegationAck(deps, scopeForFacts)
+  const attribution = ((): ReturnType<typeof attributeRange> => {
     const deepInput = collectDeepInput(deps.git, deps.readBlobs, prepared.trunkHeadSha, prepared.featureHeadSha, deps.ticketRoot)
     const report = verifyRangeDeep(deepInput)
-    const att = attributeRange({
+    return attributeRange({
       commits: deepInput.commits,
       entries: report.entries,
       manifests: deepInput.manifests,
       ticketRoot: deps.ticketRoot,
     })
-    return policyTargetIds(att, scopeForFacts, (slug) =>
-      readDeliveryMembersAt(deps.readBlobs, deps.ticketRoot, slug, prepared.featureHeadSha),
-    )
   })()
-  const policyFacts: AutoFacts =
-    policyIds === null
-      ? { ...ticketFacts, policyMembersUnknown: true }
-      : {
-          ...ticketFacts,
-          memberPolicies: policyIds.map((id) => {
-            const f = readTicketFacts(deps.readBlobs, prepared.featureHeadSha, deps.ticketRoot, id, deps.reviewHardCap)
-            return { id, snapshotStopGate: f.snapshotStopGate, stateUnreadable: f.stateUnreadable }
-          }),
-          policyMembersUnknown: ticketFacts.policyMembersUnknown,
-        }
+  const policyIds = policyTargetIds(
+    attribution,
+    scopeForFacts,
+    (slug) => readDeliveryMembersAt(deps.readBlobs, deps.ticketRoot, slug, prepared.featureHeadSha),
+    attestedAck,
+  )
+  /**
+   * 🔴 **무엇을 태웠는지 사후에도 보여야 한다**(설계 DEC-3). `--allow-attested` 로 실린 커밋을
+   *    이름으로 남기지 않으면, 그 위임이 실제로 무엇을 통과시켰는지 아무도 되짚을 수 없다.
+   */
+  const carriedAttested = attestedAck ? attribution.unattributableCommits.filter((c) => c.category === 'attested') : []
+  /**
+   * 🔴 **면제를 쓰면 그 위임을 반드시 평가한다**(phase-2 r01 P1). 앞선 판에서는 `activeDelegationAck`
+   *    가 원장의 미소비 행만 보고 정책을 풀었는데, `stopGate` 가 `merge` 면 `delegationRequired` 가
+   *    `false` 라 `delegationGate` 가 **아예 돌지 않았다** — 만료·trunk 이동·source 불일치 위임으로도
+   *    비대화형 통합이 열렸다. 면제를 쓰는 것 자체가 **위임된 행위**이므로 게이트를 강제한다.
+   *    (게이트가 만료·SHA·범위·HIGH·hardCap·증거를 전부 다시 본다.)
+   */
+  const attestedWaiverUsed = carriedAttested.length > 0
+  const policyFacts: AutoFacts = !policyIds.ok
+    ? { ...ticketFacts, policyUnknown: policyIds.unknown }
+    : {
+        ...ticketFacts,
+        memberPolicies: policyIds.ids.map((id) => {
+          const f = readTicketFacts(deps.readBlobs, prepared.featureHeadSha, deps.ticketRoot, id, deps.reviewHardCap)
+          return { id, snapshotStopGate: f.snapshotStopGate, stateUnreadable: f.stateUnreadable }
+        }),
+        policyUnknown: ticketFacts.policyUnknown,
+      }
   /**
    * 🔴 **scope 미판정 경로의 위험 사실**(REQ-2026-160 DEC-1a). scope 를 못 읽으면 `ticketFacts` 는
    *    허용값(`riskLevel: null` 등)이라 HIGH·`hardCap`·미판정 리뷰가 **평가되지 않는다**.
@@ -889,9 +986,9 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
    *    **자리표시자**로 돌려준다 — 그것은 "위험하다"가 아니라 "모른다"는 뜻이다. 자리표시자를 실제
    *    사실처럼 쓰면 두 가지가 동시에 망가진다: ① 사용자에게 "HIGH 라서 막혔다"고 **거짓 사유**를
    *    말하고, ② REQ-2026-159 가 만든 **"판정 불가는 사람이 확인할 수 있다"** 경로를 영구히 닫는다.
-   *    모른다는 사실은 `policyMembersUnknown`·`stateUnreadable` 이 이미 정책 판정으로 옮긴다.
+   *    모른다는 사실은 `policyUnknown`·`stateUnreadable` 이 이미 정책 판정으로 옮긴다.
    */
-  const readableRisk = (policyIds ?? [])
+  const readableRisk = (policyIds.ok ? policyIds.ids : [])
     .map((id) => readTicketFacts(deps.readBlobs, prepared.featureHeadSha, deps.ticketRoot, id, deps.reviewHardCap))
     .filter((f) => !f.stateUnreadable)
   const readableFacts = {
@@ -944,13 +1041,21 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
   if (policy.kind === 'resolved')
     deps.log(`정책: ${policy.basis} → 사전 위임 ${policy.delegationRequired ? '필요' : '불필요'}`)
   /**
+   * 🔴 `--allow-attested` 로 **실제로 실린** 커밋을 이름으로 남긴다(REQ-2026-168 DEC-3). 이 축은
+   *    "그 티켓에 귀속되지 않는 변경"을 함께 나를 수 있으므로, 무엇을 태웠는지 감추지 않는다.
+   */
+  if (carriedAttested.length > 0) {
+    deps.log(`attested 위임: ${carriedAttested.length}건이 함께 실립니다(--allow-attested).`)
+    for (const c of carriedAttested) deps.log(`  - ${c.sha.slice(0, 8)} ${c.subject}`)
+  }
+  /**
    * 🔴 판정 불가 + 대화형이면 위임 게이트를 **평가하지 않는다** — 평가할 입력이 없기 때문이다.
    *    `not-required` 로 두면 아래 최종 확인이 반드시 돈다(`gate.kind !== 'allowed'` 조건).
    */
   const gate: DelegationGateResult =
     policy.kind === 'indeterminate'
       ? { kind: 'not-required' }
-      : delegationGate(deps, prepared, gateFacts, policy.delegationRequired)
+      : delegationGate(deps, prepared, gateFacts, policy.delegationRequired || attestedWaiverUsed)
   if (gate.kind === 'denied') {
     deps.log('commitgate integrate — 차단:')
     for (const l of gate.lines) deps.log(`  ${l}`)

@@ -42,6 +42,7 @@ const ISSUED = (over: Partial<DelegationIssued> = {}): DelegationIssued => ({
   expires_at: '2026-08-14T00:00:00.000Z',
   permissions: PERMS(),
   high_risk_ack: false,
+  attested_ack: false,
   approval_sentence: '통합 승인합니다',
   ...over,
 })
