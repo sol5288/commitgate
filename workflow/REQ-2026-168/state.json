@@ -2,21 +2,21 @@
   "id": "REQ-2026-168",
   "branch": "feat/req-2026-168-integrate-indeterminate-cause-split",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00f22-4fe7-71f1-87f7-a1797d881a1c",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00f2a-44f2-7680-b8bb-66ea5f0e6aba",
+  "review_base_sha": "c96c562c470976f237e1e8eef87b9ebcce36c676",
+  "review_diff_hash": "e7654ca78f44e2a0d812e35c38020c3c81057d92",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "103924552cdbbb1c57b98941f5eec5e2013f7ae4a032a6f92e72be2b1226433c",
-  "current_phase": null,
+  "current_phase": "phase-1-indeterminate-cause",
   "phases": [
     {
       "id": "phase-1-indeterminate-cause",
       "title": "판정 불가 사유 분리",
       "status": "pending",
       "max_files": 8,
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-allow-attested",
@@ -44,6 +44,13 @@
       "series_id": "design:-#1",
       "review_kind": "design",
       "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-indeterminate-cause#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-indeterminate-cause",
       "attempts": 1,
       "closed_reason": "approved"
     }
@@ -79,14 +86,23 @@
     "design_hash": "103924552cdbbb1c57b98941f5eec5e2013f7ae4a032a6f92e72be2b1226433c"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-indeterminate-cause",
     "outcome": "approved",
-    "compare_hash": "6daf247fc8cb9841013f8fe22a9d65385badab36a9b23b73171287861b354bf0",
+    "compare_hash": "baa421d9494eb6abe1966d9390bee5c5dd34dce9fae33439ab769ddfed30c6c7",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T09:53:41.203Z",
+    "at": "2026-08-17T10:00:42.178Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "e7654ca78f44e2a0d812e35c38020c3c81057d92",
+      "phase_id": "phase-1-indeterminate-cause",
+      "consumed_by_commit_sha": "285fbab867ec08966f7f0c0943d08f8f81e74f42",
+      "approval_consumed_at": "2026-08-17T10:00:58.113Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
