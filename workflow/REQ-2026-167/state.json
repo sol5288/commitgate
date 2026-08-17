@@ -2,14 +2,14 @@
   "id": "REQ-2026-167",
   "branch": "feat/req-2026-167-upgrade-docs-completeness",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00d9e-ede3-7571-9573-a873566b2240",
-  "review_base_sha": "75a13677619c95409db3b4aa87231406c8f98477",
-  "review_diff_hash": "a8b924fdcd830def58c4d6c27a48563d1d3ee925",
+  "codex_thread_id": "01a00da6-b093-7d11-b7b2-3e1b11ebf41a",
+  "review_base_sha": "cd6de1c4cfc42bf4380f35d2eb3f0f72e0a812fe",
+  "review_diff_hash": "6cf7b8e6b832e7ebc059cd02b4938bf62c1623ae",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "879a179772e6d4cc0d4424de46a63f15bca5a62a490fc4ebf0bae75c7fc5d2c6",
-  "current_phase": "phase-1-procedure-canon",
+  "current_phase": "phase-2-readme-entrypoint",
   "phases": [
     {
       "id": "phase-1-procedure-canon",
@@ -23,7 +23,7 @@
       "title": "README 진입점",
       "status": "pending",
       "max_files": 8,
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-release-notes",
@@ -60,16 +60,23 @@
       "phase_id": "phase-1-procedure-canon",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-readme-entrypoint#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-readme-entrypoint",
+      "attempts": 3,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-procedure-canon",
+    "phase_id": "phase-2-readme-entrypoint",
     "outcome": "approved",
-    "compare_hash": "4d31cdce6aba93f0e02c4c2ccf9112cd02f3fa9b6f1349521dc7c56cf0a8d559",
+    "compare_hash": "0beac0f9072d743e97ac6d0a30c261c48c049d3d69d6222059f6c00ceba365ee",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T02:50:40.039Z",
+    "at": "2026-08-17T02:58:09.716Z",
     "findings": [],
     "elided_count": 0
   },
@@ -137,6 +144,12 @@
       "phase_id": "phase-1-procedure-canon",
       "consumed_by_commit_sha": "e970a085ec714dfe4ecec9bedd95f2e93ea0d40b",
       "approval_consumed_at": "2026-08-17T02:50:52.843Z"
+    },
+    {
+      "approved_tree": "6cf7b8e6b832e7ebc059cd02b4938bf62c1623ae",
+      "phase_id": "phase-2-readme-entrypoint",
+      "consumed_by_commit_sha": "dca90d0115fdb40bd804c4c3c11860f5600a318d",
+      "approval_consumed_at": "2026-08-17T02:58:24.120Z"
     }
   ],
   "user_commit_confirmed": null
