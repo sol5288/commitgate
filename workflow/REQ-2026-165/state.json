@@ -2,14 +2,14 @@
   "id": "REQ-2026-165",
   "branch": "feat/req-2026-165-check-reports-all-upgrade-axes",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00d13-2f7b-71e1-adda-486e5c1d8b2e",
-  "review_base_sha": "44c855c6a2ebbde3e89aa91f4672ca9f1d709336",
-  "review_diff_hash": "4783755acfb455d00bfbdd0bfdcecafbb2d85f0e",
+  "codex_thread_id": "01a00d1c-0171-73d0-82f4-b71bb9eb139e",
+  "review_base_sha": "270a8cfffd37917b9a7a4ec43e917486bb9c37ed",
+  "review_diff_hash": "fca5afea22f208e20c140b386edaa8e7586b1893",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "b5c0555852356c6c83745be9357bf7df43a68cb3567b1c407a19cb078a904a1b",
-  "current_phase": "phase-2-upgrade-status",
+  "current_phase": "phase-3-check-c7",
   "phases": [
     {
       "id": "phase-1-install-shape-leaf",
@@ -29,7 +29,8 @@
       "id": "phase-3-check-c7",
       "title": "check C7 배선",
       "status": "pending",
-      "max_files": 8
+      "max_files": 8,
+      "approved": true
     },
     {
       "id": "phase-4-docs-changelog",
@@ -63,6 +64,13 @@
       "series_id": "phase:phase-2-upgrade-status#1",
       "review_kind": "phase",
       "phase_id": "phase-2-upgrade-status",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-check-c7#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-check-c7",
       "attempts": 2,
       "closed_reason": "approved"
     }
@@ -99,12 +107,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-upgrade-status",
+    "phase_id": "phase-3-check-c7",
     "outcome": "approved",
-    "compare_hash": "f6ad8551fcc53a9f4b187faa734818fb4d4f99c652d69e35ff1ab96b82c0f065",
+    "compare_hash": "865f3b85f7eec5924c3952eba93155616d29f8344e6b46d91e2f31caf25904a7",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T00:17:17.603Z",
+    "at": "2026-08-17T00:26:38.682Z",
     "findings": [],
     "elided_count": 0
   },
@@ -120,6 +128,12 @@
       "phase_id": "phase-2-upgrade-status",
       "consumed_by_commit_sha": "7875a6ef6eed3471df3e64a6a3cd515d8d18c428",
       "approval_consumed_at": "2026-08-17T00:17:42.324Z"
+    },
+    {
+      "approved_tree": "fca5afea22f208e20c140b386edaa8e7586b1893",
+      "phase_id": "phase-3-check-c7",
+      "consumed_by_commit_sha": "b3cd5ade0f66bcf78773e44fec4e470712f4aa56",
+      "approval_consumed_at": "2026-08-17T00:27:03.823Z"
     }
   ],
   "user_commit_confirmed": null
