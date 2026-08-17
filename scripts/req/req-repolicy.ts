@@ -25,6 +25,7 @@ import { commitStateCheckpoint } from './lib/state-checkpoint'
 import { stateWriteBlockedReason, recoveryWindowProblem, buildCheckpointWindowFacts, type CheckpointWindowFacts } from './lib/recovery-window'
 import { loadState, writeState, type WorkflowState } from './review-codex'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
+import { helpGate } from './lib/verb-help'
 
 export interface Opts {
   reqId: string | null
@@ -125,6 +126,8 @@ const cpFacts = (root: string, rel: string): CheckpointWindowFacts =>
   })
 
 export function main(argv: string[] = process.argv.slice(2), deps: Deps = defaultDeps): void {
+  // 🔴 사용법은 어떤 파싱·설정 읽기보다 **앞**이다(REQ-2026-166 DEC-2).
+  if (helpGate('req:repolicy', argv)) return
   const o = parseArgs(argv)
   // setup 완료 게이트 — 다른 state 변경 verb 와 동일하게 가장 앞이다.
   assertSetupComplete({ root: o.root })

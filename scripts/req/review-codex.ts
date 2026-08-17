@@ -74,6 +74,7 @@ import type { ReviewKind, ApprovalEvidence, PinnedArchiveInventory } from './lib
 import { nonConvergenceReport } from './lib/nonconvergence'
 import { hardBlockedInput, toTicketRel } from './lib/hardblocked-facts'
 import { stateWriteBlockedReason, recoveryWindowProblem, buildCheckpointWindowFacts } from './lib/recovery-window'
+import { helpGate } from './lib/verb-help'
 
 // codex JSONL thread 파싱은 어댑터 모듈 정본(re-export로 기존 import 호환).
 export { parseThreadId } from './lib/adapters'
@@ -2769,6 +2770,9 @@ export function main(
   argv: string[] = process.argv.slice(2),
   opts2?: { reviewer?: ReviewerAdapter; probes?: ReviewerProbes },
 ): void {
+  // 🔴 사용법은 어떤 파싱·설정 읽기보다 **앞**이다(REQ-2026-166 DEC-2). 이 verb 는 옵션 파싱 前
+  //    인자 검사("REQ id 또는 --ticket 필요")에서 죽으므로, 뒤에 두면 `--help` 가 여전히 오류가 된다.
+  if (helpGate('req:review-codex', argv)) return
   // REQ-2026-027 D3: 주입한 reviewer는 이 호출에만 유효해야 한다 — 모듈 전역에 잔존하면 이후 인자 없는
   // main()도 그것을 쓴다(리뷰어 observation). CLI는 프로세스당 1회라 무해하나, programmatic 다중 호출
   // (near-e2e 테스트 등)에선 오염된다. finally로 기본값을 복원한다.

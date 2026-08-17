@@ -25,6 +25,7 @@ import { assertSetupComplete } from './lib/setup-gate'
 import { isValidHumanResolution } from './review-codex'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
+import { helpGate } from './lib/verb-help'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
 /**
@@ -132,6 +133,8 @@ function renderPlan(reqId: string, plan: ReconstructPlan): string {
 }
 
 export function main(argv: string[] = process.argv.slice(2)): void {
+  // 🔴 사용법은 어떤 파싱·설정 읽기보다 **앞**이다(REQ-2026-166 DEC-2).
+  if (helpGate('req:reconstruct', argv)) return
   const o = parseArgs(argv)
   // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
   assertSetupComplete({ root: o.root })
