@@ -2,15 +2,37 @@
   "id": "REQ-2026-166",
   "branch": "feat/req-2026-166-upgrade-axis-false-action-and-help",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00d59-3fc6-7202-93b4-e02c1dad4d76",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00d5b-230d-7510-bfc8-acc0d2347d8d",
+  "review_base_sha": "e39a128d367ca82de812790e0c11eabde56c590a",
+  "review_diff_hash": "0dc58e81d44a18f2f4b39cceed29a9b0595bb78c",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "a2c78846dabfb8bb701a2b5b3fc04f2729f2671f07fcf8f5bca931c99e49236d",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-install-signal-prelude",
+  "phases": [
+    {
+      "id": "phase-1-install-signal-prelude",
+      "title": "자산 축의 설치 신호 전제",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-req-verb-help",
+      "title": "req:* 사용법 표면",
+      "status": "pending",
+      "max_files": 8,
+      "approved": false
+    },
+    {
+      "id": "phase-3-release-notes",
+      "title": "배포 부기",
+      "status": "pending",
+      "max_files": 8,
+      "approved": false
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -31,6 +53,13 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-install-signal-prelude#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-install-signal-prelude",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -39,13 +68,13 @@
     "plan": "834a42bc98bae954720a9abf1d120ce9c2cdfd8f"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-install-signal-prelude",
     "outcome": "approved",
     "compare_hash": "961969b2872d7bef0ea7da1746b8b29d4639d61b515f3a1f6ceaeb602dc54133",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T01:33:44.993Z",
+    "at": "2026-08-17T01:35:39.036Z",
     "findings": [],
     "elided_count": 0
   },
@@ -85,5 +114,14 @@
       "source_response_path": "workflow/REQ-2026-166/responses/design-r04-approved.json"
     },
     "design_hash": "a2c78846dabfb8bb701a2b5b3fc04f2729f2671f07fcf8f5bca931c99e49236d"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "0dc58e81d44a18f2f4b39cceed29a9b0595bb78c",
+      "phase_id": "phase-1-install-signal-prelude",
+      "consumed_by_commit_sha": "5a4709f685e7ad0aaff578f715e5df5f7feba341",
+      "approval_consumed_at": "2026-08-17T01:36:01.728Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
