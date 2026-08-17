@@ -4,6 +4,27 @@
 
 ## Unreleased
 
+- **feat: `commitgate check` 가 업그레이드 축 여덟 개를 집계해 보고합니다(`C7`)** — 업그레이드 후
+  무엇을 확인하고 무엇을 실행할지가 **한 명령**으로 끝납니다. 여덟 축을 전부 세고, **정상이 아닌 축만**
+  사유·조치와 함께 나열합니다(전부 정상이면 집계 한 줄).
+  ```
+  [WARN] C7: 업그레이드 축 8개 — 조치 1 · 정상 6 · 사람 확인 1 · 판정 불가 0
+    - caret-range  : 진단 없음 — 설치 범위를 사람이 확인
+    - req-scripts  : 없는 verb 2개: req:delegate · req:repolicy → npx commitgate sync --apply --scripts
+  ```
+  - 🔴 **왜 `check` 인가**: 티켓 없이 돌릴 수 있는 **유일한** 명령입니다. 나머지 축을 보던 `req:doctor` 는
+    REQ id 를 요구해서 **업그레이드 직후**(티켓이 없을 수 있는 시점, 정확히 축을 봐야 할 때)에 쓸 수
+    없었습니다. 그때 `check` 는 8축 중 2축만 봤습니다.
+  - **WARN 상한이고 exit 계약은 그대로입니다** — 업그레이드가 안 끝났다는 이유로 CI·에이전트가 죽지
+    않습니다. 판정 불가·사람 확인은 조치로 세지 않습니다(모르는 것을 결함으로 말하지 않습니다).
+  - 축은 REQ-2026-164 의 등록부에서 나옵니다 — 축을 늘리면 출력이 자동으로 따라오고, 판정기를 빠뜨리면
+    "판정기 미등록"으로 **드러납니다**.
+  - 판정은 기존 술어(`missingReqScripts`·`classifyInstallMode`·`unprotectedRepoRootScratch`·`planSync`)를
+    **재사용**합니다 — `check` 가 자기 판정을 새로 쓰면 `doctor` 와 갈라집니다.
+
+  확인할 파일: `bin/check.ts`(C7) · `scripts/req/lib/upgrade-status.ts`(순수 판정) ·
+  `scripts/req/lib/install-shape.ts`(leaf 로 내린 설치 형태 술어)
+
 - **fix: 업그레이드 절차가 문서마다 갈라지던 문제** — 조치가 필요한 축은 **여덟 개**인데(caret 범위 ·
   `req:*` 명령 표면 · vendored 스키마 · `workflow/.gitignore` · 관리 블록 · review persona · 혼합 설치 ·
   `AGENTS.md` 계약 문구) 진단은 `check` C5·C6 와 `doctor` D19~D33 에 흩어져 있고, **id 가 아예 없는 축도
