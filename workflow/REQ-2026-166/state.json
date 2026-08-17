@@ -2,14 +2,14 @@
   "id": "REQ-2026-166",
   "branch": "feat/req-2026-166-upgrade-axis-false-action-and-help",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00d68-d9b4-7b32-b60e-745e1c5b8da2",
-  "review_base_sha": "482bb05d0d2ffa7600740842da934b860677939c",
-  "review_diff_hash": "7b39dd70148b377e707cffc67e890a50d91304a7",
+  "codex_thread_id": "01a00d6b-a9b9-7132-96c5-e40fd5fd76d1",
+  "review_base_sha": "97efe1e7a573cff896af7db42a4ebb0e85f07e68",
+  "review_diff_hash": "5414c57b2cf740edb5ea52e166a6246b62228ea3",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "a2c78846dabfb8bb701a2b5b3fc04f2729f2671f07fcf8f5bca931c99e49236d",
-  "current_phase": "phase-2-req-verb-help",
+  "current_phase": "phase-3-release-notes",
   "phases": [
     {
       "id": "phase-1-install-signal-prelude",
@@ -30,7 +30,7 @@
       "title": "배포 부기",
       "status": "pending",
       "max_files": 8,
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -67,6 +67,13 @@
       "phase_id": "phase-2-req-verb-help",
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-release-notes#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-release-notes",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -76,12 +83,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-req-verb-help",
+    "phase_id": "phase-3-release-notes",
     "outcome": "approved",
-    "compare_hash": "7b5b3809116c9e1c7e552bf6dd2dd51b8d7ab834361a7162a339223e9c6a94c8",
+    "compare_hash": "fb696c3a7fb94dfe60961c791b341dae43f5fca578a478c385218da63ad8ee69",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T01:51:43.068Z",
+    "at": "2026-08-17T01:53:07.216Z",
     "findings": [],
     "elided_count": 0
   },
@@ -134,6 +141,12 @@
       "phase_id": "phase-2-req-verb-help",
       "consumed_by_commit_sha": "724b4e063ff321b889370546af94cd90f487a011",
       "approval_consumed_at": "2026-08-17T01:51:57.950Z"
+    },
+    {
+      "approved_tree": "5414c57b2cf740edb5ea52e166a6246b62228ea3",
+      "phase_id": "phase-3-release-notes",
+      "consumed_by_commit_sha": "9ce8737655c007db7e1e478e5532c14518616925",
+      "approval_consumed_at": "2026-08-17T01:53:27.344Z"
     }
   ],
   "user_commit_confirmed": null
