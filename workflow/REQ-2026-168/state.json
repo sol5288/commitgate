@@ -2,14 +2,14 @@
   "id": "REQ-2026-168",
   "branch": "feat/req-2026-168-integrate-indeterminate-cause-split",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00f2a-44f2-7680-b8bb-66ea5f0e6aba",
-  "review_base_sha": "c96c562c470976f237e1e8eef87b9ebcce36c676",
-  "review_diff_hash": "e7654ca78f44e2a0d812e35c38020c3c81057d92",
+  "codex_thread_id": "01a00f3c-cdee-7992-949f-8387ab90e07e",
+  "review_base_sha": "dd1a59850e7d70ebe9fd586b2863d51e484fde83",
+  "review_diff_hash": "8434a005d8bd23af31928f9490e5e2a8b48c313e",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "103924552cdbbb1c57b98941f5eec5e2013f7ae4a032a6f92e72be2b1226433c",
-  "current_phase": "phase-1-indeterminate-cause",
+  "current_phase": "phase-2-allow-attested",
   "phases": [
     {
       "id": "phase-1-indeterminate-cause",
@@ -23,7 +23,7 @@
       "title": "--allow-attested 사전 위임",
       "status": "pending",
       "max_files": 8,
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-3-docs-release",
@@ -52,6 +52,13 @@
       "review_kind": "phase",
       "phase_id": "phase-1-indeterminate-cause",
       "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-allow-attested#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-allow-attested",
+      "attempts": 2,
       "closed_reason": "approved"
     }
   ],
@@ -87,12 +94,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-indeterminate-cause",
+    "phase_id": "phase-2-allow-attested",
     "outcome": "approved",
-    "compare_hash": "baa421d9494eb6abe1966d9390bee5c5dd34dce9fae33439ab769ddfed30c6c7",
+    "compare_hash": "b78f1cbc9b8245f6eecb118d0260c603639ec3b4925e120cd16d1f281b3730ea",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T10:00:42.178Z",
+    "at": "2026-08-17T10:22:05.342Z",
     "findings": [],
     "elided_count": 0
   },
@@ -102,6 +109,12 @@
       "phase_id": "phase-1-indeterminate-cause",
       "consumed_by_commit_sha": "285fbab867ec08966f7f0c0943d08f8f81e74f42",
       "approval_consumed_at": "2026-08-17T10:00:58.113Z"
+    },
+    {
+      "approved_tree": "8434a005d8bd23af31928f9490e5e2a8b48c313e",
+      "phase_id": "phase-2-allow-attested",
+      "consumed_by_commit_sha": "9fc115ff4d57568ad130a88928318ada55a2db09",
+      "approval_consumed_at": "2026-08-17T10:22:18.194Z"
     }
   ],
   "user_commit_confirmed": null
