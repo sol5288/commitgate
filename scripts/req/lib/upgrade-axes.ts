@@ -150,3 +150,112 @@ export function diagnosisTokens(d: AxisDiagnosis): string {
 
 /** 진단이 없는 축이 표에 적는 **언어 독립** 토큰. */
 export const NO_DIAGNOSIS_TOKEN = 'n/a'
+
+// ───────────────────────────────────────── 업그레이드 절차 정본 (REQ-2026-167) ──
+
+/**
+ * 절차 구역을 감싸는 마커. 절차는 문서 여기저기 흩어져 있었고 그래서 어긋났다 —
+ * `check` 가 "정리" 줄의 **맨 뒤**에 있었고(진단인데), 반복·수용 기준·companion 확인은 아예 없었다.
+ */
+export const PROCEDURE_MARKER = {
+  open: '<!-- commitgate:upgrade-procedure -->',
+  close: '<!-- /commitgate:upgrade-procedure -->',
+} as const
+
+/**
+ * 절차 구역에 **이 순서로** 나와야 하는 명령.
+ *
+ * 🔴 첫 항목이 `check` 인 것이 요점이다 — 무엇을 실행할지는 축마다 다르고 **그것을 아는 것은 도구다**.
+ *    마지막도 `check` 다: 고친 뒤 **다시 물어** 조치가 0 인지 확인한다. 첫 `check` 만 강제하면
+ *    고치고 나서 다시 묻지 않는 문서가 통과하고, 조치가 남아도 사용자는 끝났다고 읽는다.
+ *    순서 검사가 커서를 전진시키므로 이 마지막 항목은 **companion 대조 뒤의 또 다른 출현**이어야 한다.
+ */
+export const PROCEDURE_STEPS: readonly string[] = [
+  'npx commitgate check',
+  'npx commitgate sync --apply --scripts --gitignore',
+  'npx commitgate quickstart --apply',
+  'diff -rq .claude/skills node_modules/commitgate/skills',
+  'npx commitgate check',
+]
+
+export type ProcedureAnchor = 'repeat' | 'search' | 'acceptance' | 'companion'
+
+/**
+ * 규범 서술을 여는 앵커. 가드는 **이 앵커가 여는 블록 안**을 본다 — 토큰이 구역 어딘가에만 있으면
+ * 통과하는 느슨한 검사가 아니다.
+ */
+export const PROCEDURE_ANCHORS: Record<ProcedureAnchor, string> = {
+  repeat: '<!-- procedure:repeat -->',
+  search: '<!-- procedure:search -->',
+  acceptance: '<!-- procedure:acceptance -->',
+  companion: '<!-- procedure:companion -->',
+}
+
+/**
+ * 🔴 **규범 문장** — 문서가 **글자 그대로** 실어야 하는 한 줄들. 정본은 여기 하나다.
+ *
+ * 왜 문장까지 고정하나(design r02 P1): 앵커 뒤 블록에 `C5`·`C7` 같은 토큰만 요구하면
+ * *"`C5` 를 확인하고 `check` 를 다시 실행"* · *"`C7` 을 확인"* 처럼 **종료 조건과 수용 기준이 빠진**
+ * 문장으로 바꿔도 통과한다. 그러면 첫 병합 뒤 조치가 남은 사용자가 다시 완료로 오인한다 —
+ * 이 REQ 가 고치려는 바로 그 상태다.
+ *
+ * 왜 문서 전체를 고정하지 않나: 한/영 두 벌의 산문이라 사소한 수정마다 red 가 되면 사람이 가드를 끈다.
+ * 그래서 **문장만** 고정하고 주변 설명은 자유롭게 둔다.
+ */
+export const PROCEDURE_ASSERTIONS: Record<ProcedureAnchor, { ko: readonly string[]; en: readonly string[] }> = {
+  repeat: {
+    ko: ['`C5` 가 아무것도 지적하지 않을 때까지 이 과정을 **반복합니다** — 한 번 고치고 끝내지 마십시오.'],
+    en: ['**Repeat** this until `C5` reports nothing — do not stop after a single fix.'],
+  },
+  search: {
+    ko: ['인용된 문장을 **그대로 검색하면 찾지 못할 수 있습니다** — 강조·코드 표시 문자를 뺀 짧은 조각으로 찾으십시오.'],
+    en: ['**Searching for the quoted sentence verbatim may find nothing** — search for a short fragment with the emphasis/code characters removed.'],
+  },
+  acceptance: {
+    ko: ['`C7` 의 **조치가 0** 이면 끝입니다(`caret-range` 의 "사람 확인"은 남아도 됩니다).'],
+    en: ['You are done when `C7` reports **0 actions** (the `caret-range` "human check" may remain).'],
+  },
+  companion: {
+    ko: [
+      '이 축은 `check` 도 `sync` 도 보지 않습니다 — **직접 대조**해야 합니다.',
+      '직접 수정한 파일은 **그대로 두십시오** — 이 대조는 무엇이 달라졌는지 알기 위한 것이지 덮어쓰기가 아닙니다.',
+    ],
+    en: [
+      'Neither `check` nor `sync` looks at this axis — you must **compare it yourself**.',
+      'Leave files you edited yourself **as they are** — this comparison tells you what changed; it is not an overwrite.',
+    ],
+  },
+}
+
+/**
+ * companion 자산의 대조 쌍(실측으로 확인). "대조하라"만 적으면 무엇을 무엇과 비교하는지 사람마다 다르다.
+ *
+ * 🔴 `req.config.json` 은 **여기 없다** — 사용자 소유 설정이라 `req.config.json.sample` 과 다른 것이
+ *    정상이다(실측에서도 다르다). 새 설정 축은 버전별 절이 알린다.
+ */
+export const COMPANION_PAIRS: readonly { consumer: string; packaged: string }[] = [
+  { consumer: '.claude/skills', packaged: 'skills' },
+  { consumer: '.claude/commands/req.md', packaged: 'templates/claude-command.md' },
+  { consumer: '.claude/skills/commitgate/SKILL.md', packaged: 'templates/claude-skill.md' },
+  { consumer: '.cursor/rules/commitgate.mdc', packaged: 'templates/cursor-rule.mdc' },
+]
+
+/** 소비 프로젝트가 문서에서 보는 형태(설치된 패키지 기준 경로). */
+export function packagedPathForDocs(packaged: string): string {
+  return `node_modules/commitgate/${packaged}`
+}
+
+/**
+ * `diff -rq .claude/skills …` 를 돌리면 **정상인데도** 나오는 비대칭 둘. 문서가 이 둘을 적지 않으면
+ * 사용자가 결함으로 읽는다(실측).
+ */
+export const COMPANION_EXPECTED_ASYMMETRY: readonly string[] = ['ATTRIBUTION.md', '.claude/skills/commitgate']
+
+/** 대조 대상이 **아닌** 것 — 사용자 소유라 다른 것이 정상이다. */
+export const COMPANION_NOT_COMPARED: readonly string[] = ['req.config.json']
+
+/**
+ * 폐기 서술 대조 전에 도는 정규화 함수의 이름(`lib/retired-claims`).
+ * 🔴 문서가 이 이름을 적고, 가드가 **그 심볼의 실재**까지 확인한다 — 죽은 심볼을 가리키는 문서를 만들지 않는다.
+ */
+export const CLAIM_SCAN_FN = 'normalizeForClaimScan'
