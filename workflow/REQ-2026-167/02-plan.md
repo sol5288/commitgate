@@ -64,13 +64,37 @@ npx vitest run tests/unit/upgrade-axes.test.ts tests/unit/upgrade-procedure.test
 
 **Exit**: typecheck0 · 그린 · Codex phase 리뷰 승인.
 
-## Phase 3 — 배포 부기 (`phase-3-release-notes`)
+## Phase 3 — 배포 부기 + 리뷰어 스키마 안내 공백 (`phase-3-release-notes`)
 
-**산출물**: `CHANGELOG.md` · `package.json`/`package-lock.json`(patch bump).
+**책임**: 사용자에게 보이는 변화를 CHANGELOG 에 적고 버전을 올린다. 그리고 이 phase 를 실제로 막았던
+**리뷰어 출력 스키마의 안내 공백**을 닫는다(설계 DEC-4).
+
+**입력**(실측): 이 phase 의 첫 리뷰가 자기모순 응답 3회로 `BLOCKED` 됐다 — `status=STEP_COMPLETE` 인데
+`merge_ready=yes`. `workflow/machine.schema.json` 의 `status`·`merge_ready` 에만 `description` 이 없어
+교차 규칙이 리뷰어에게 전달되지 않는다(`commit_approved` 에는 있다).
+
+**산출물**
+| 파일 | 변경 |
+|---|---|
+| `workflow/machine.schema.json` | `status`·`merge_ready` 에 `description` 추가(교차 규칙 · 마지막 phase 여도 `no`) |
+| `tests/unit/upgrade-procedure.test.ts` | 교차 검사 3필드의 설명 존재 · 설명이 도구의 실제 검사와 같은 것을 말하는지 |
+| `CHANGELOG.md` | 0.25.2 항목 |
+| `package.json` · `package-lock.json` | patch bump |
+
+🔴 **검증 규칙은 바꾸지 않는다.** `review-codex.ts:652-655` 의 교차 검사는 그대로다 — 바뀌는 것은 그
+규칙이 리뷰어에게 **전달되는가**뿐이다.
+🔴 스키마는 vendored 자산이라 소비 프로젝트는 `npx commitgate sync --apply` 로 받는다.
 
 **선행 조건**: phase-1·2 승인.
 
-**Exit**: typecheck0 · Codex phase 리뷰 승인.
+**독립 검증**
+```
+npx tsc --noEmit -p tsconfig.json
+npx vitest run tests/unit/upgrade-procedure.test.ts
+node -e "console.log(require('./workflow/machine.schema.json').properties.merge_ready.description)"
+```
+
+**Exit**: typecheck0 · 그린 · Codex phase 리뷰 승인.
 
 ## 완료
 - 게이트 해당분(typecheck·해당 시 lint) · **통합 직전 전체 스위트 1회** · 사용자 main 머지(별도 승인).

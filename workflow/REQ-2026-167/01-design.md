@@ -90,6 +90,37 @@ Only in .claude/skills: commitgate                          ← templates/claude
 사람에게는 안내가 없다**. 짧게 더한다 — `check` 가 8축을 집계하게 된 것(0.25.0), 설치가 아닌 곳의 거짓
 조치와 `req:*` 사용법(0.25.1).
 
+## DEC-4 — 리뷰어 출력 스키마의 안내 공백을 닫는다 (구현 중 실측)
+
+이 REQ 의 phase-3 리뷰가 **자기모순 응답 3회**로 `BLOCKED` 됐다(`--fresh-thread` 회복 포함).
+
+```
+status = STEP_COMPLETE
+merge_ready = yes      → 모순: merge_ready=yes 인데 status≠COMPLETE  (review-codex.ts:652)
+```
+
+원인은 판정이 아니라 **안내**다. `workflow/machine.schema.json` 의 필드별 `description` 실측:
+
+```
+commit_approved   desc      ← 모순 규칙까지 상세히 적혀 있다
+merge_ready       NO-DESC   ← 🔴 교차 규칙이 어디에도 전달되지 않는다
+```
+
+교차 규칙은 `docs/ssot-design/03-domain-and-data-model.md:137` 에 있지만 **리뷰어가 받는 스키마에는 없다**.
+그래서 REQ 의 **마지막 phase** 에서 리뷰어가 "이제 병합 가능"이라 판단하면 필연적으로 거부된다 —
+무작위가 아니라 마지막 phase 마다 재현되는 구조다.
+
+**무엇을 한다**: `merge_ready` 에 `description` 을 넣는다. 담을 것은 (a) 이 필드가 묻는 것은 *이 리뷰의
+통과 여부가 아니라 **티켓 전체의 병합 준비***라는 것, (b) `yes` 는 `status="COMPLETE"` +
+`commit_approved="yes"` 일 때만 유효하다는 것, (c) **마지막 phase 여도** `STEP_COMPLETE` 면 `no` 라는 것 —
+통합은 이 리뷰가 결정하지 않는 별개 통제점이다.
+
+🔴 **검증 규칙은 손대지 않는다.** 게이트는 옳게 거부했다. 바뀌는 것은 규칙이 **전달되는가**뿐이다.
+
+🔴 **왜 이 REQ 안에서 고치는가**: `req:review-exception` 은 **예산 소진** 전용이라 이 상태에 열리지 않는다
+(실측: *"아직 예외 불요(판정 회차 0 < autoBudget 5)"* — 무효 응답은 판정 회차로 세지 않는다).
+즉 이 phase 를 통과시킬 다른 경로가 없다. 근본 원인이 한 줄이고, 고치면 막힌 자리가 그대로 열린다.
+
 ## 가드
 
 `lib/upgrade-axes` 에 등록부를 둔다(문서가 정본을 참조하게 — 손으로 두 벌 적지 않는다).
@@ -218,7 +249,7 @@ export const CLAIM_SCAN_FN = 'normalizeForClaimScan'
 |---|---|
 | 1 | 등록부(`PROCEDURE_*`·`COMPANION_PAIRS`) + 정본 문서 ko/en 절차 구역 + 0.25.x 절 + G1~G5·G7 |
 | 2 | README ko/en 진입점 정정(`UPGRADE_SUMMARY_COMMAND`) + G6 갱신 |
-| 3 | CHANGELOG · 버전 |
+| 3 | **`machine.schema.json` 의 `status`·`merge_ready` description(DEC-4)** + 그 가드 + CHANGELOG · 버전 |
 
 ## 비목표
 

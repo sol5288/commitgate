@@ -193,3 +193,43 @@ describe.each(DOCS)('[upgrade-procedure] $rel', ({ rel, lang }) => {
     })
   })
 })
+
+/**
+ * REQ-2026-167 DEC-4 — 리뷰어 출력 스키마의 **안내 공백**.
+ *
+ * 🔴 실측: 이 REQ 의 phase-3 리뷰가 자기모순 응답 3회로 BLOCKED 됐다 —
+ *    `status=STEP_COMPLETE` 인데 `merge_ready=yes`. 교차 규칙(`review-codex.ts` 의 `validateVerdict`)은
+ *    있었지만 **리뷰어가 받는 스키마에 그 규칙이 없었다**. `merge_ready` 만 `description` 이 없었다.
+ *
+ * 🔴 검증 규칙은 손대지 않는다. 게이트는 옳게 거부했다 — 바뀌는 것은 규칙이 **전달되는가**뿐이다.
+ */
+describe('[machine-schema] 🔴 판정에 쓰이는 필드는 리뷰어에게 규칙을 알려 준다', () => {
+  const schema = JSON.parse(read('workflow/machine.schema.json')) as {
+    properties: Record<string, { description?: string; enum?: string[] }>
+  }
+
+  it('오라클이 공허하지 않다 — 스키마에 필드가 실재한다', () => {
+    expect(Object.keys(schema.properties).length).toBeGreaterThan(5)
+  })
+
+  it('🔴 교차 검사에 쓰이는 필드에 description 이 있다', () => {
+    // `validateVerdict` 가 서로 모순을 보는 세 필드. 규칙을 아는 쪽과 답하는 쪽이 갈리면 안 된다.
+    for (const field of ['commit_approved', 'merge_ready', 'status'])
+      expect(schema.properties[field]?.description?.trim().length ?? 0, `${field} description`).toBeGreaterThan(40)
+  })
+
+  it('🔴 merge_ready 설명이 교차 규칙과 "마지막 phase 여도 no" 를 말한다', () => {
+    const d = schema.properties['merge_ready']?.description ?? ''
+    expect(d).toContain('COMPLETE')
+    expect(d).toContain('commit_approved')
+    // 이 REQ 를 막은 정확한 상황 — 마지막 phase 의 STEP_COMPLETE.
+    expect(d).toContain('STEP_COMPLETE')
+    expect(d.toLowerCase()).toContain('last phase')
+  })
+
+  it('🔴 그 규칙이 도구의 실제 검사와 같은 것을 말한다', () => {
+    const src = read('scripts/req/review-codex.ts')
+    expect(src).toContain("v.merge_ready === 'yes' && v.status !== 'COMPLETE'")
+    expect(src).toContain("v.merge_ready === 'yes' && v.commit_approved !== 'yes'")
+  })
+})
