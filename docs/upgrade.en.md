@@ -92,6 +92,11 @@ npx commitgate quickstart --apply      # inject/replace managed blocks only (pre
 
 ## Upgrade axes — what to check and what to run
 
+🔴 **One command does the checking: `npx commitgate check`.** Its `C7` item **counts all eight axes below**
+(action · ok · manual · unknown) and lists **only the ones that are not ok**, each with its cause and remedy —
+when everything is fine you get just the count line. It runs without a ticket (`req:doctor` requires a REQ id).
+The table below explains which axes can appear in that output.
+
 After bumping the version, go through **all eight axes** below. Each row pairs the diagnosis with the command that resolves it.
 
 <!-- commitgate:upgrade-axes -->

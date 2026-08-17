@@ -11,6 +11,8 @@ import {
   collectContracts,
   collectInputs,
   printHelp,
+  CHECK_SCRATCH_PATHS,
+  UPGRADE_DOC_URL,
   CONTRACT_FILES,
   TEMPLATE_COMPARE_PATH,
   HelpRequested,
@@ -20,6 +22,9 @@ import {
 import { expectedReqScripts, commandSurfaceGuidance } from '../../scripts/req/lib/command-surface'
 import { parseArgs as syncParseArgs } from '../../bin/sync'
 import { packageRoot } from '../../scripts/req/lib/config'
+import { UPGRADE_AXES } from '../../scripts/req/lib/upgrade-axes'
+import { DOCTOR_RUN_LOG_REL } from '../../scripts/req/req-doctor'
+import { REVIEW_CALL_LOG_REL } from '../../scripts/req/review-codex'
 import { RETIRED_CLAIMS, retiredClaimsIn } from '../../scripts/req/lib/retired-claims'
 import { I2_APPROVAL } from '../../scripts/req/lib/control-points'
 import { readFileSync, existsSync, statSync } from 'node:fs'
@@ -63,12 +68,12 @@ describe('[check] 전부 정상 → ok', () => {
     const r = runChecks(inputs())
     expect(r.ok).toBe(true)
     // C5 추가(0.22.0)·C6 추가(REQ-2026-161)는 **additive** 다 — 기존 C1~C4 의 의미·등급은 그대로다.
-    expect(r.summary).toEqual({ ok: 6, warn: 0, fail: 0 })
+    expect(r.summary).toEqual({ ok: 7, warn: 0, fail: 0 })
   })
 
-  it('항목 id는 C1~C6 순서로 고정된다(에이전트 소비 안정성)', () => {
+  it('항목 id는 C1~C7 순서로 고정된다(에이전트 소비 안정성)', () => {
     // 🔴 순서가 계약이다. 새 검사는 **뒤에만** 붙는다 — 기존 인덱스를 밀면 소비자가 깨진다.
-    expect(runChecks(inputs()).checks.map((c) => c.id)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'])
+    expect(runChecks(inputs()).checks.map((c) => c.id)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7'])
   })
 })
 
@@ -651,5 +656,89 @@ describe('[check] C6 가 안내하는 복구 명령이 실재한다', () => {
     expect(msg).toContain('--scripts')
     // 문자열이 아니라 **동작**으로 확인한다 — 옵션이 없으면 parseArgs 가 throw 한다.
     expect(syncParseArgs(['--apply', '--scripts']).scripts).toBe(true)
+  })
+})
+
+/**
+ * C7 — 업그레이드 축 전체 (REQ-2026-165 phase-3).
+ *
+ * 🔴 **왜 `check` 인가**: 티켓 없이 돌릴 수 있는 유일한 명령이다. `req:doctor` 는 REQ id 를 요구해
+ *    **업그레이드 직후**(티켓이 없을 수 있는 시점)에 쓸 수 없다 — 그때가 정확히 축을 봐야 할 때다.
+ */
+describe('[check] C7 — 업그레이드 축', () => {
+  const axisReport = (id: string, kind: 'ok' | 'action' | 'unknown' | 'manual', detail = 'd') => {
+    const axis = UPGRADE_AXES.find((a) => a.id === id) as (typeof UPGRADE_AXES)[number]
+    return { axis, state: { kind, detail } as never }
+  }
+
+  it('미수집이면 점검 불요', () => {
+    expect(byId(runChecks(inputs()), 'C7')?.level).toBe('OK')
+    expect(byId(runChecks(inputs()), 'C7')?.msg).toContain('미계산')
+  })
+
+  it('조치가 없으면 OK(요약만)', () => {
+    const c = byId(runChecks(inputs({ upgradeAxes: [axisReport('req-scripts', 'ok')] })), 'C7')
+    expect(c?.level).toBe('OK')
+    expect(c?.msg).toContain('조치 0')
+  })
+
+  it('🔴 조치가 있으면 WARN + 축 이름 + 그 축의 remedy', () => {
+    const c = byId(runChecks(inputs({ upgradeAxes: [axisReport('req-scripts', 'action', '없는 verb 2개')] })), 'C7')
+    expect(c?.level).toBe('WARN')
+    expect(c?.msg).toContain('req-scripts')
+    expect(c?.msg).toContain('없는 verb 2개')
+    expect(c?.msg).toContain('npx commitgate sync --apply --scripts') // 축의 remedy
+  })
+
+  it('🔴 판정 불가·사람 확인은 조치로 세지 않는다(WARN 이 아니다)', () => {
+    const c = byId(
+      runChecks(inputs({ upgradeAxes: [axisReport('caret-range', 'manual'), axisReport('req-scripts', 'unknown')] })),
+      'C7',
+    )
+    expect(c?.level).toBe('OK')
+    expect(c?.msg).toContain('사람 확인 1')
+    expect(c?.msg).toContain('판정 불가 1')
+  })
+
+  it('🔴 exit 계약 불변 — 축 WARN 만으로 ok=false 가 되지 않는다', () => {
+    const r = runChecks(inputs({ upgradeAxes: [axisReport('req-scripts', 'action')] }))
+    expect(r.ok).toBe(true)
+    expect(r.summary.fail).toBe(0)
+  })
+
+  /**
+   * 🔴 **소비자 repo 에서 도달 가능한 주소여야 한다**(phase-3 r01 P1). `docs/` 는 npm 패키지에 없으므로
+   *    repo-상대 경로를 찍으면 소비자 프로젝트에 **없는 파일**을 가리킨다 — 이 REQ 가 고치려는
+   *    "안내가 도달하지 않는다" 를 스스로 재현한다.
+   */
+  it('🔴 정본 표를 URL 로 낸다(경로가 아니라)', () => {
+    const c = byId(runChecks(inputs({ upgradeAxes: [axisReport('req-scripts', 'action')] })), 'C7')
+    expect(c?.msg).toContain(UPGRADE_DOC_URL)
+    expect(UPGRADE_DOC_URL.startsWith('https://')).toBe(true)
+  })
+
+  it('🔴 그 URL 을 동봉 README 가 담는다 — 주소가 갈라지지 않는다', () => {
+    const repoRoot = packageRoot()
+    const readme = readFileSync(join(repoRoot, 'README.md'), 'utf8')
+    expect(readme).toContain(UPGRADE_DOC_URL)
+  })
+
+  it('🔴 docs/ 는 패키지에 없다 — URL 로 내는 근거를 사실로 고정한다', () => {
+    const pkg = JSON.parse(readFileSync(join(packageRoot(), 'package.json'), 'utf8')) as { files: string[] }
+    expect(pkg.files).not.toContain('docs')
+  })
+})
+
+/**
+ * 🔴 **스크래치 경로 사본이 정본과 어긋나지 않는가**(설계 DEC-4).
+ *
+ * `check` 는 `DOCTOR_RUN_LOG_REL`(req-doctor)·`REVIEW_CALL_LOG_REL`(review-codex)을 import 하지 않는다 —
+ * 그러면 그 두 모듈의 그래프를 통째로 끌어온다. 대신 사본을 두고 **이 테스트가 정본과 대조**한다.
+ * 축이 늘면 양쪽을 함께 늘려야 red 가 풀린다.
+ */
+describe('[check] repo-root 스크래치 경로 사본 ↔ 정본', () => {
+  it('doctor 의 D22 대상과 정확히 같은 집합이다', () => {
+    expect(new Set(CHECK_SCRATCH_PATHS)).toEqual(new Set([REVIEW_CALL_LOG_REL, DOCTOR_RUN_LOG_REL]))
+    expect(CHECK_SCRATCH_PATHS.length).toBe(2)
   })
 })
