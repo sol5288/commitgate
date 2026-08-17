@@ -4,6 +4,38 @@
 
 ## Unreleased
 
+## 0.25.1 (2026-08-17)
+
+도그푸드 검증(0.22.0 → 0.25.0 실제 업그레이드 재현)에서 찾은 결함 두 건입니다.
+
+- **fix: CommitGate 설치가 아닌 디렉터리에서 `check` 가 거짓 조치를 안내하던 것을 고쳤습니다** —
+  `package.json` 도 `workflow/` 도 없는 곳에서 `C7` 이 이렇게 말했습니다.
+  ```
+  - review-persona : persona 부재 — 리뷰가 fail-closed 로 멈춘다
+                     → npx commitgate sync --apply --persona --persona-apply
+  ```
+  CommitGate 프로젝트가 아닌 곳에 파일을 만들라는 안내입니다.
+  - 원인: `sync` 는 persona 부재를 **복원 대상**으로 보고하고 그것은 설치본이든 아니든 같습니다. 다른
+    자산 축이 안전했던 것은 입력이 비어 자연히 "판정 불가"가 된 **우연**이었습니다.
+  - 이제 자산 축 다섯(`req-scripts`·`vendored-schema`·`workflow-gitignore`·`managed-blocks`·
+    `review-persona`)은 **설치 신호**를 전제로 판정합니다. 신호가 하나도 없으면 조치도 정상도 아닌
+    **판정 불가**입니다 — 모르는 것을 결함으로도, 정상으로도 말하지 않습니다.
+  - 판정은 `req:doctor` D24 가 쓰는 술어를 그대로 씁니다(재구현 아님). 문턱은 신호 **1개**라
+    부분 설치 프로젝트의 진짜 조치는 그대로 보입니다.
+
+  확인할 파일: `scripts/req/lib/upgrade-status.ts` · `bin/check.ts`
+
+- **feat: `req:*` verb 전부가 `-h`/`--help` 로 사용법을 냅니다** — 실측하면 12개 중 **11개**가
+  `commitgate: 알 수 없는 옵션: --help` 로 거부했습니다(`bin/*` 9종은 전부 냈습니다). 그 안에
+  `req:confirm`(HIGH 확인)·`req:rebind`·`req:review-exception` 같은 **사람 전용 통제점 명령**이
+  있었습니다 — 사람이 `--help` 를 칠 가능성이 가장 높은 자리입니다.
+  - 사용법은 **모든 게이트보다 앞**입니다. setup 이 끝나지 않은 디렉터리에서도 사용법은 나옵니다.
+  - 정본은 `lib/verb-help` 한 곳입니다. `req:delegate` 가 갖고 있던 본문도 그리로 옮겼습니다.
+  - 적힌 옵션은 **파서가 실제로 해석하는 것뿐**입니다 — 각 플래그를 그 verb 의 파서에 넣어 파싱 결과가
+    바뀌는지로 가드가 고정합니다. 새 verb 를 추가하고 사용법을 빠뜨리면 가드가 red 입니다.
+
+  확인할 파일: `scripts/req/lib/verb-help.ts` · `tests/e2e/verb-help-cli.test.ts`
+
 ## 0.25.0 (2026-08-17)
 
 - **feat: `commitgate check` 가 업그레이드 축 여덟 개를 집계해 보고합니다(`C7`)** — 업그레이드 후
