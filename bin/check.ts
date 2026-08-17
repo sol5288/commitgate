@@ -13,9 +13,34 @@
  */
 import { resolve, join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
-import { loadConfig, packageRoot, type ResolvedConfig } from '../scripts/req/lib/config'
+import { createHash } from 'node:crypto'
+import { loadConfig, packageRoot, DEFAULTS, type ResolvedConfig } from '../scripts/req/lib/config'
+import { createGitAdapter } from '../scripts/req/lib/adapters'
+import { planSync } from './sync'
 // 🔴 명령 표면 판정·입력 획득·안내 문장의 **정본**(REQ-2026-161 DEC-1/DEC-4). D33과 같은 것을 쓴다.
 import { missingReqScripts, readPackageScripts, commandSurfaceMessage } from '../scripts/req/lib/command-surface'
+// 🔴 REQ-2026-165: 업그레이드 축 판정. `check` 는 티켓 없이 도는 유일한 명령이라 **8축 전부**를 여기서 낸다
+//    (`req:doctor` 는 REQ id 를 요구해 업그레이드 직후엔 쓸 수 없다).
+import {
+  evaluateUpgradeAxes,
+  countByKind,
+  unprotectedRepoRootScratch,
+  type AxisReport,
+  type UpgradeStatusInput,
+} from '../scripts/req/lib/upgrade-status'
+import { UPGRADE_CANONICAL_DOC } from '../scripts/req/lib/upgrade-axes'
+
+/**
+ * 🔴 **소비자 repo 에서 도달 가능한** 정본 표 주소(phase-3 r01 P1).
+ *
+ * `docs/` 는 npm 패키지에 **넣지 않는다**(설계 DEC-5 — 설치 사본이 stale 해질 새 축을 만들지 않는다).
+ * 그래서 repo-상대 경로(`docs/upgrade.md`)를 그대로 찍으면 **소비자 프로젝트에는 없는 파일**을
+ * 가리킨다 — 이 REQ 가 고치려는 "안내가 도달하지 않는다" 를 스스로 재현하는 셈이다. URL 로 낸다.
+ *
+ * 🔴 README(패키지에 동봉됨)가 같은 URL 을 담는지 **테스트가 대조**한다 — 주소가 갈라지지 않게.
+ */
+export const UPGRADE_DOC_URL = `https://github.com/sol5288/commitgate/blob/main/${UPGRADE_CANONICAL_DOC.ko}`
+import { quickstartBackfillTargets } from './quickstart'
 // 🔴 폐기 주장 목록·매칭 로직의 **정본**을 그대로 쓴다. 사본을 만들면 한쪽만 갱신돼 조용히 거짓이 된다.
 import { retiredClaimsIn, type RetiredClaim } from '../scripts/req/lib/retired-claims'
 import { I2_APPROVAL } from '../scripts/req/lib/control-points'
@@ -31,7 +56,7 @@ import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 export type CheckLevel = 'OK' | 'WARN' | 'FAIL'
 
 export interface CheckItem {
-  id: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6'
+  id: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6' | 'C7'
   level: CheckLevel
   msg: string
 }
@@ -87,6 +112,14 @@ export interface CheckInputs {
    * `undefined` = 미계산 → 점검 불요.
    */
   packageRootDiffers?: boolean
+  /**
+   * C7 입력 — 업그레이드 축 판정 결과(REQ-2026-165).
+   *
+   * 🔴 판정은 `lib/upgrade-status` 가 **순수하게** 하고, 파일·git 접근은 `collectUpgradeStatusInput` 이
+   *    한다. `runChecks` 는 지금처럼 순수하게 남는다.
+   * `undefined` = 미수집 → 점검 불요.
+   */
+  upgradeAxes?: AxisReport[]
 }
 
 /**
@@ -205,6 +238,30 @@ export function runChecks(inp: CheckInputs): CheckReport {
     })
   }
 
+  // C7 — 업그레이드 축 전체(REQ-2026-165).
+  //
+  // 🔴 **축마다 항목 id 를 만들지 않는다.** 항목 id 는 에이전트가 소비하는 안정 계약이고(기존 테스트가
+  //    순서를 고정한다), 축은 등록부에서 늘어난다 — id 를 축에 묶으면 축을 늘릴 때마다 소비자 계약이 깨진다.
+  // 🔴 **WARN 상한.** 업그레이드가 안 끝났다는 이유로 exit 1 이 되면 CI·에이전트가 죽는다.
+  // 🔴 `unknown`(판정 불가)은 조치로 세지 않는다 — 모르는 것을 결함으로 말하지 않는다.
+  if (inp.upgradeAxes === undefined) {
+    checks.push({ id: 'C7', level: 'OK', msg: '업그레이드 축 점검 불요(미계산)' })
+  } else {
+    const n = countByKind(inp.upgradeAxes)
+    const lines = inp.upgradeAxes
+      .filter((r) => r.state.kind !== 'ok')
+      .map((r) => `  - ${r.axis.id.padEnd(20)}: ${r.state.detail}${r.state.kind === 'action' ? ` → ${r.axis.remedy}` : ''}`)
+    const head = `업그레이드 축 ${inp.upgradeAxes.length}개 — 조치 ${n.action} · 정상 ${n.ok} · 사람 확인 ${n.manual} · 판정 불가 ${n.unknown}`
+    checks.push({
+      id: 'C7',
+      level: n.action > 0 ? 'WARN' : 'OK',
+      msg:
+        lines.length === 0
+          ? head
+          : [head, ...lines, `  전체 표: ${UPGRADE_DOC_URL}`].join('\n'),
+    })
+  }
+
   const summary = {
     ok: checks.filter((c) => c.level === 'OK').length,
     warn: checks.filter((c) => c.level === 'WARN').length,
@@ -289,6 +346,75 @@ export function collectContracts(dir: string): ContractFile[] {
   })
 }
 
+
+/**
+ * 🔴 repo-root 런타임 스크래치 경로. **정본은 `req:doctor` 의 D22 배열**이고 여기는 사본이다 —
+ *    `DOCTOR_RUN_LOG_REL`(req-doctor)·`REVIEW_CALL_LOG_REL`(review-codex)을 import 하면 `check` 가
+ *    그 두 모듈의 그래프를 통째로 끌어온다(설계 DEC-4 가 금한 것). 대신 **테스트가 정본과 대조**해
+ *    드리프트를 red 로 만든다 — 축이 늘면 양쪽을 함께 늘려야 한다.
+ */
+export const CHECK_SCRATCH_PATHS: readonly string[] = ['workflow/.review-calls.jsonl', 'workflow/.doctor-runs.jsonl']
+
+/**
+ * 업그레이드 축 판정 입력을 모은다(IO). 판정 자체는 `evaluateUpgradeAxes`(순수)가 한다 — 설계 DEC-2.
+ *
+ * 🔴 **하나라도 실패해서 죽지 않는다.** 진단이 도구를 깨뜨리면 안 되므로, 못 읽은 축은 값을 비워
+ *    `unknown` 으로 흐르게 둔다("부족"이 아니다).
+ */
+export function collectUpgradeStatusInput(dir: string): UpgradeStatusInput {
+  const root = resolve(dir)
+  const cfgRes = loadConfigResult(root)
+  const cfg = cfgRes.ok ? cfgRes.cfg : null
+  const git = createGitAdapter(root)
+
+  const sha = (abs: string): string | null => {
+    try {
+      return createHash('sha256').update(readFileSync(abs)).digest('hex')
+    } catch {
+      return null
+    }
+  }
+  const safe = <T,>(f: () => T): T | undefined => {
+    try {
+      return f()
+    } catch {
+      return undefined
+    }
+  }
+
+  return {
+    packageRootDiffers: packageRoot() !== root,
+    packageScripts: readPackageScripts(root),
+    packagedSchemaSha: sha(join(packageRoot(), 'workflow', 'machine.schema.json')),
+    vendoredSchemaSha: cfg ? sha(cfg.schemaPathAbs) : null,
+    schemaPathIsDefault: cfg ? cfg.schemaPathAbs === resolve(root, DEFAULTS.schemaPath) : undefined,
+    unprotectedScratch: safe(() => unprotectedRepoRootScratch(CHECK_SCRATCH_PATHS, (a) => git.exec(a))),
+    quickstartBackfill: safe(() => quickstartBackfillTargets(root)),
+    personaState: cfg ? personaStateOf(root, cfg) : undefined,
+    contractClaimFiles: collectContracts(root)
+      .filter((f) => f.content !== null && retiredClaimsIn(f.content).length > 0)
+      .map((f) => f.rel),
+  }
+}
+
+/**
+ * persona 축 상태. 🔴 `sync` 의 자산 판정을 **재구현하지 않는다** — 같은 규칙(기본 경로 여부·존재·내용
+ * 일치)을 `planSync` 결과에서 읽는다.
+ */
+function personaStateOf(root: string, cfg: ResolvedConfig): UpgradeStatusInput['personaState'] {
+  try {
+    const plan = planSync(root, cfg, true)
+    const p = plan.assets.find((a) => a.axis === 'persona')
+    if (!p) return null
+    if (p.status === 'unmanaged-custom' || p.status === 'unmanaged-null') return 'unmanaged'
+    if (p.status === 'new') return 'missing'
+    if (p.status === 'in-sync') return 'in-sync'
+    return 'differs'
+  } catch {
+    return null
+  }
+}
+
 export function collectInputs(dir: string, probes = createReviewerProbes()): CheckInputs {
   return {
     config: loadConfigResult(dir),
@@ -298,6 +424,8 @@ export function collectInputs(dir: string, probes = createReviewerProbes()): Che
     // 🔴 C6 입력 수집(REQ-2026-161). 읽기는 `readPackageScripts` 하나가 하고, 판정은 `runChecks`가 한다.
     packageScripts: readPackageScripts(dir),
     packageRootDiffers: packageRoot() !== resolve(dir),
+    // REQ-2026-165: 8축 전부. `req:doctor` 는 REQ id 를 요구해 업그레이드 직후엔 쓸 수 없다.
+    upgradeAxes: evaluateUpgradeAxes(collectUpgradeStatusInput(dir)),
   }
 }
 
@@ -324,7 +452,12 @@ export function printHelp(): void {
        \`sync --apply --scripts\` 로 없는 키만 채우도록 안내만 합니다.
        dev repo/dogfood(packageRoot === 대상 root)에서는 점검하지 않습니다)
 
-exit: FAIL이 하나라도 있으면 1, 아니면 0. (C5 · C6 WARN 은 exit 0 입니다)
+  C7  업그레이드 축 8종의 현재 상태(자산·명령 표면·관리 블록·persona·설치 형태·계약 문구·caret 범위)
+      조치가 필요한 축은 그 명령과 함께 냅니다 = WARN — 커밋을 막지 않습니다.
+      🔴 티켓 없이 도는 유일한 명령이라 여기서 전부 봅니다(req:doctor 는 REQ id 를 요구합니다).
+      업그레이드 후에는 이 항목이 시키는 대로만 하면 됩니다.
+
+exit: FAIL이 하나라도 있으면 1, 아니면 0. (C5 · C6 · C7 WARN 은 exit 0 입니다)
 
 하지 않는 일:
   질문 · 파일 쓰기 · 자동 수정 · 로그인 실행(대화형이라 \`commitgate setup\` 소관) ·
