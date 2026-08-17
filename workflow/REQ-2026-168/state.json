@@ -2,14 +2,14 @@
   "id": "REQ-2026-168",
   "branch": "feat/req-2026-168-integrate-indeterminate-cause-split",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00f3c-cdee-7992-949f-8387ab90e07e",
-  "review_base_sha": "dd1a59850e7d70ebe9fd586b2863d51e484fde83",
-  "review_diff_hash": "8434a005d8bd23af31928f9490e5e2a8b48c313e",
+  "codex_thread_id": "01a00f3f-556c-7462-bc72-bbb0573bf666",
+  "review_base_sha": "44020b1f74b7cf551738fdee3602706632522be0",
+  "review_diff_hash": "8bc176e61b5580d439837d723c4eede9a543bbbd",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "103924552cdbbb1c57b98941f5eec5e2013f7ae4a032a6f92e72be2b1226433c",
-  "current_phase": "phase-2-allow-attested",
+  "current_phase": "phase-3-docs-release",
   "phases": [
     {
       "id": "phase-1-indeterminate-cause",
@@ -30,7 +30,7 @@
       "title": "계약 문서 + 배포 부기",
       "status": "pending",
       "max_files": 8,
-      "approved": false
+      "approved": true
     }
   ],
   "approval_evidence_required": true,
@@ -59,6 +59,13 @@
       "review_kind": "phase",
       "phase_id": "phase-2-allow-attested",
       "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-docs-release#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-docs-release",
+      "attempts": 1,
       "closed_reason": "approved"
     }
   ],
@@ -94,12 +101,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-2-allow-attested",
+    "phase_id": "phase-3-docs-release",
     "outcome": "approved",
-    "compare_hash": "b78f1cbc9b8245f6eecb118d0260c603639ec3b4925e120cd16d1f281b3730ea",
+    "compare_hash": "b58f5e03287f41cbf99cf27189253cba9a8d21327a98b5df2981e88518735b1c",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T10:22:05.342Z",
+    "at": "2026-08-17T10:24:04.991Z",
     "findings": [],
     "elided_count": 0
   },
@@ -115,6 +122,12 @@
       "phase_id": "phase-2-allow-attested",
       "consumed_by_commit_sha": "9fc115ff4d57568ad130a88928318ada55a2db09",
       "approval_consumed_at": "2026-08-17T10:22:18.194Z"
+    },
+    {
+      "approved_tree": "8bc176e61b5580d439837d723c4eede9a543bbbd",
+      "phase_id": "phase-3-docs-release",
+      "consumed_by_commit_sha": "67edd662f3d7378c935efb8a6abbc92b14c12f72",
+      "approval_consumed_at": "2026-08-17T10:24:39.437Z"
     }
   ],
   "user_commit_confirmed": null
