@@ -70,6 +70,7 @@ import { loadConfig, packageRoot, stripBom, DEFAULTS, effectiveStopGate, isStopG
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { quickstartBackfillTargets, type QuickstartBackfillTarget } from '../../bin/quickstart'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
+import { helpGate } from './lib/verb-help'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — config 부재 시 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -1690,6 +1691,8 @@ export function appendDoctorRun(rootAbs: string, row: DoctorRunRow): void {
 }
 
 export function main(argv: string[] = process.argv.slice(2)): void {
+  // 🔴 사용법은 어떤 파싱·설정 읽기보다 **앞**이다(REQ-2026-166 DEC-2).
+  if (helpGate('req:doctor', argv)) return
   const opts = parseArgs(argv)
   const cfg = loadConfig({ root: opts.root })
   gitAdapter = createGitAdapter(cfg.root) // 모든 git 호출 cwd = config.root

@@ -45,6 +45,18 @@ export interface UpgradeStatusInput {
    * 🔴 `false`(dogfood)면 설치 자산 축은 점검 불요다 — `doctor` D20/D21/D22 와 **같은 기준**.
    */
   packageRootDiffers?: boolean
+  /**
+   * 이 디렉터리가 **CommitGate 설치본이라는 신호**(`setup-gate.collectInstallSignals` 산출).
+   *
+   * 🔴 **왜 필요한가**(REQ-2026-166 DEC-1): 설치가 아닌 디렉터리에서 `review-persona` 가 조치를 냈다 —
+   *    `planSync` 는 persona 부재를 설치본이든 아니든 "복원 대상"으로 보고하기 때문이다. 나머지 자산 축이
+   *    안전했던 것은 입력이 비어 자연히 `unknown` 이 된 **우연**이지 설계가 아니었다. 전제를 명시한다.
+   *
+   * 🔴 문턱은 **1 이상**이다. `setup-gate.MIN_INSTALL_SIGNALS`(=2)를 쓰지 않는다 — 그것은 "setup 이
+   *    끝났는가"라는 더 강한 질문이고, 여기 질문은 "여기가 CommitGate 프로젝트이긴 한가"다. 2를 쓰면
+   *    신호가 하나뿐인 부분 설치 프로젝트의 **진짜 조치가 unknown 뒤로 숨는다**.
+   */
+  installSignals?: readonly string[] | null
   /** `package.json` 의 `scripts`(`readPackageScripts` 산출). */
   packageScripts?: Record<string, unknown> | null
   /** 설치된 패키지의 스키마 sha256. */
@@ -69,9 +81,22 @@ const unknown = (detail: string): AxisState => ({ kind: 'unknown', detail })
 const ok = (detail: string): AxisState => ({ kind: 'ok', detail })
 const action = (detail: string): AxisState => ({ kind: 'action', detail })
 
-/** 설치 자산 축의 공통 전제 — dogfood 면 점검 불요. `undefined` 면 미수집. */
+/**
+ * 설치 자산 축의 공통 전제.
+ *
+ * 🔴 **설치 신호가 하나도 없으면 판정 대상이 아니다**(REQ-2026-166 DEC-1). "여기는 정상"도 아니고
+ *    "조치가 필요하다"도 아니다 — **모른다**. 엉뚱한 디렉터리에서 `check` 를 돌린 사람에게
+ *    CommitGate 프로젝트가 아닌 곳에 파일을 만들라고 말하지 않는다.
+ *
+ * 🔴 새 필드의 `undefined` 를 **하위호환 통과로 읽지 않는다**. 이 모듈이 스스로 선언한 법
+ *    (`undefined` = 미수집 → `unknown`)을 새 필드에서만 어길 이유가 없다 — REQ-2026-165 phase-2
+ *    r01 P1 이 `schemaPathIsDefault` 에서 정확히 그 자리에 있었다.
+ */
 function assetPrelude(i: UpgradeStatusInput): AxisState | null {
   if (i.packageRootDiffers === undefined) return unknown('미수집')
+  if (i.installSignals === undefined) return unknown('미수집')
+  if (i.installSignals === null) return unknown('설치 신호를 읽지 못함')
+  if (i.installSignals.length === 0) return unknown('CommitGate 설치 신호 없음 — 판정 대상이 아니다')
   if (i.packageRootDiffers === false) return ok('점검 불요(dev repo/dogfood)')
   return null
 }

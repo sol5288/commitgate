@@ -22,6 +22,7 @@ import { scanIntake, type IntakeTicketResult } from './lib/intake'
 import { assertSetupComplete } from './lib/setup-gate'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
+import { helpGate } from './lib/verb-help'
 
 // 모든 git 호출은 GitAdapter 경유(D-017-3). main()이 loadConfig 후 config.root로 재생성(기본 = packageRoot — 현재 동작 보존).
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -197,6 +198,8 @@ export function parseArgs(argv: string[]): Opts {
 }
 
 export function main(argv: string[] = process.argv.slice(2)): void {
+  // 🔴 사용법은 어떤 파싱·설정 읽기보다 **앞**이다(REQ-2026-166 DEC-2).
+  if (helpGate('req:new', argv)) return
   const o = parseArgs(argv)
   // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
   assertSetupComplete({ root: o.root })

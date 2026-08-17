@@ -15,6 +15,7 @@ import { resolve, join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { loadConfig, packageRoot, DEFAULTS, type ResolvedConfig } from '../scripts/req/lib/config'
+import { collectInstallSignals } from '../scripts/req/lib/setup-gate'
 import { createGitAdapter } from '../scripts/req/lib/adapters'
 import { planSync } from './sync'
 // 🔴 명령 표면 판정·입력 획득·안내 문장의 **정본**(REQ-2026-161 DEC-1/DEC-4). D33과 같은 것을 쓴다.
@@ -384,6 +385,9 @@ export function collectUpgradeStatusInput(dir: string): UpgradeStatusInput {
 
   return {
     packageRootDiffers: packageRoot() !== root,
+    // 🔴 자산 축의 전제(REQ-2026-166 DEC-1). `setup-gate` 의 술어를 **그대로** 부른다 — 재구현하면
+    //    `req:doctor` D24 와 갈라져 "doctor 는 설치로 보는데 check 는 아니라는" 상태가 생긴다.
+    installSignals: safe(() => collectInstallSignals(root, cfg?.ticketRoot ?? DEFAULTS.ticketRoot)) ?? null,
     packageScripts: readPackageScripts(root),
     packagedSchemaSha: sha(join(packageRoot(), 'workflow', 'machine.schema.json')),
     vendoredSchemaSha: cfg ? sha(cfg.schemaPathAbs) : null,

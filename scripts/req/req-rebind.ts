@@ -27,6 +27,7 @@ import { computeDevCompleteProof } from './req-commit'
 import { appendCloseProofRowToDisk, loadState, readPhases } from './review-codex'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
+import { helpGate } from './lib/verb-help'
 
 export interface Opts {
   reqId: string | null
@@ -108,6 +109,8 @@ export function planRebind(manifest: string, phaseId: string): RebindPlan {
 }
 
 export function main(argv: string[] = process.argv.slice(2)): void {
+  // 🔴 사용법은 어떤 파싱·설정 읽기보다 **앞**이다(REQ-2026-166 DEC-2).
+  if (helpGate('req:rebind', argv)) return
   const o = parseArgs(argv)
   // 🔴 setup 완료 게이트 — 다른 상태 변경 verb와 동일하게 **가장 앞**이다.
   assertSetupComplete({ root: o.root })

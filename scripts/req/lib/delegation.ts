@@ -14,6 +14,15 @@
  */
 
 /** 커밋되는 위임 원장. 🔴 `.` 로 시작하지 않는다 = gitignore 대상이 아니다(권한 근거는 추적돼야 한다). */
+
+/**
+ * 사전 위임 만료(시간). 🔴 `req:delegate` 의 파서·사용법이 **같은 값을 읽는다** — REQ-2026-166 에서
+ * 사용법을 `lib/verb-help` 로 옮기며 여기로 내렸다. verb 모듈에 두면 lib 가 verb 를 import 하는
+ * 순환이 된다.
+ */
+export const DEFAULT_TTL_HOURS = 12
+export const MAX_TTL_HOURS = 72
+
 export const DELEGATION_LEDGER_REL = 'workflow/delegations.jsonl'
 
 /** 위임 대상. 티켓 하나 또는 delivery 묶음 하나. */

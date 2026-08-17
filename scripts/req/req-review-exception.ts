@@ -54,6 +54,7 @@ import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 // REQ-2026-141: 열린 attempt 해소. 판정은 순수 모듈이 하고 여기서는 IO 만 한다.
 import { ledgerPath, parseLedger } from './lib/review-ledger'
 import { planStaleClose } from './lib/stale-attempt'
+import { helpGate } from './lib/verb-help'
 import { appendLedgerRowToDisk } from './review-codex'
 
 let gitAdapter: GitAdapter = createGitAdapter(packageRoot())
@@ -202,6 +203,8 @@ export function planReviewException(state: WorkflowState, kind: ReviewKind, phas
 }
 
 export function main(argv: string[] = process.argv.slice(2)): void {
+  // 🔴 사용법은 어떤 파싱·설정 읽기보다 **앞**이다(REQ-2026-166 DEC-2).
+  if (helpGate('req:review-exception', argv)) return
   const o = parseArgs(argv)
   // 🔴 setup 완료 게이트(REQ-2026-062 DEC-6) — **가장 앞**이다. 다른 어떤 IO·판정보다 먼저여야 부분 상태가 남지 않는다.
   assertSetupComplete({ root: o.root })

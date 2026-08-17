@@ -25,7 +25,10 @@ import { assertSetupComplete } from './lib/setup-gate'
 import { bookkeepingMessage } from './lib/bookkeeping'
 import { humanDecisionProblem, PLACEHOLDER_REASON } from './lib/placeholders'
 import { makeRunCli, isEntrypoint, readFreeTextValue } from './lib/cli-boundary'
+import { helpGate, renderVerbHelp } from './lib/verb-help'
 import {
+  DEFAULT_TTL_HOURS,
+  MAX_TTL_HOURS,
   DELEGATION_LEDGER_REL,
   foldDelegations,
   parseDelegationLedger,
@@ -42,8 +45,8 @@ import {
  * 🔴 **상한이 있는 것이 요점이다.** 위임은 사람 없이 main 을 바꿀 권한이라, "무기한"은 곧 상시 권한이다.
  *    기본을 짧게 두고 상한을 걸어, 길게 쓰려면 **의식적으로 값을 적게** 만든다.
  */
-export const DEFAULT_TTL_HOURS = 12
-export const MAX_TTL_HOURS = 72
+/** 🔴 정본은 `lib/delegation` 이다(사용법 등록부와 공유해야 해서 내렸다). 기존 import 경로 보존용 re-export. */
+export { DEFAULT_TTL_HOURS, MAX_TTL_HOURS }
 
 export interface Opts {
   mode: 'issue' | 'revoke' | 'status'
@@ -335,37 +338,14 @@ function runStatus(o: Opts, deps: RunDeps): number {
   return 0
 }
 
+/** 🔴 본문 정본은 `lib/verb-help` 하나다(REQ-2026-166 DEC-2) — 두 곳에 두면 다시 갈라진다. */
 export function printHelp(): void {
-  console.log(`commitgate req:delegate — stopGate:"auto" 의 사전 위임 발급·철회·조회
-
-🔴 판단은 사람이 하고 실행은 도구가 합니다. 승인 문장을 그대로 --sentence 에 넘기세요.
-   시각·SHA·만료는 도구가 읽습니다(사람이 적을 자리가 없습니다).
-
-사용법:
-  npx commitgate req:delegate --scope ticket:<REQ> --source <branch> --sentence "<승인 문장>" \\
-      [--allow-push] [--allow-bypass] [--high-risk] [--ttl-hours N] [--run]
-  npx commitgate req:delegate --revoke <id> --reason "${PLACEHOLDER_REASON}" [--run]
-  npx commitgate req:delegate --status [--scope ticket:<REQ>]
-
-옵션:
-  --scope        ticket:<REQ> 또는 delivery:<slug> — 위임 대상(접두 필수)
-  --source       통합 소스 브랜치. 이 브랜치에서만 통합할 수 있습니다
-  --sentence     사람이 말한 승인 문장 그대로. 비면 발급하지 않습니다
-  --allow-push   origin push 를 함께 위임(기본 불허)
-  --allow-bypass branch protection 우회를 함께 위임(기본 불허 — 사용 시 원장·보고에 남습니다)
-  --high-risk    HIGH 위험 티켓의 별도 위임(없으면 HIGH 는 통합이 막힙니다)
-  --ttl-hours N  만료(기본 ${DEFAULT_TTL_HOURS}시간 · 최대 ${MAX_TTL_HOURS}시간)
-  --run          실제 기록(기본은 DRY-RUN)
-
-권한은 **정확히 한 번** 소비됩니다. 소비·철회·만료된 위임은 되살릴 수 없고 다시 발급해야 합니다.
-hardCap 도달·HIGH 미위임·BLOCKED 리뷰·증거 불일치는 위임이 있어도 통합을 막습니다.`)
+  console.log(renderVerbHelp('req:delegate'))
 }
 
 export function main(argv: string[]): void {
-  if (argv.includes('-h') || argv.includes('--help')) {
-    printHelp()
-    return
-  }
+  // 🔴 사용법은 어떤 파싱·설정 읽기보다 **앞**이다(REQ-2026-166 DEC-2).
+  if (helpGate('req:delegate', argv)) return
   const o = parseArgs(argv)
   const cfg = loadConfig({ root: o.root })
   assertSetupComplete(cfg)

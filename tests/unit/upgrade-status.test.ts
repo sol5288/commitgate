@@ -28,6 +28,7 @@ const healthy = (over: Partial<UpgradeStatusInput> = {}): UpgradeStatusInput => 
   quickstartBackfill: [],
   personaState: 'in-sync',
   contractClaimFiles: [],
+  installSignals: ['req.config.json', 'machine.schema.json'],
   ...over,
 })
 
@@ -129,6 +130,15 @@ describe('[upgrade-status] mixed-install — 순수 Stage A 는 결함이 아니
 })
 
 describe('[upgrade-status] 🔴 판정 불가는 action 이 아니다', () => {
+  it('🔴 새 필드(installSignals) 미수집도 unknown — 하위호환 통과로 읽지 않는다', () => {
+    // REQ-2026-166 DEC-1. `undefined` 를 "가드 통과"로 읽으면 미수집을 기본값으로 읽는 것이고,
+    // 그것이 phase-2 r01 P1 에서 잡힌 결함이다.
+    const reports = evaluateUpgradeAxes(healthy({ installSignals: undefined }))
+    expect(axesNeedingAction(reports)).toEqual([])
+    for (const id of ['req-scripts', 'vendored-schema', 'workflow-gitignore', 'managed-blocks', 'review-persona'])
+      expect(reports.find((r) => r.axis.id === id)?.state.kind, id).toBe('unknown')
+  })
+
   it('미수집(undefined)은 unknown', () => {
     const bare: UpgradeStatusInput = {}
     const reports = evaluateUpgradeAxes(bare)
@@ -174,5 +184,49 @@ describe('[upgrade-status] 🔴 dogfood 는 설치 자산 축을 점검하지 �
 
   it('🔴 계약 문서 축은 dogfood 여도 본다 — 자산이 아니라 문구다', () => {
     expect(state(healthy({ packageRootDiffers: false, contractClaimFiles: ['AGENTS.md'] }), 'contract-claims')?.kind).toBe('action')
+  })
+})
+
+/**
+ * REQ-2026-166 DEC-1 — 설치가 아닌 곳에서 자산 축은 **모른다**고 말한다.
+ *
+ * 🔴 실측 결함: 빈 디렉터리에서 `check` 가 `review-persona : persona 부재 → sync --persona` 를 냈다.
+ *    `planSync` 는 persona 부재를 설치본이든 아니든 복원 대상으로 보고하기 때문이다. 나머지 축이
+ *    안전했던 것은 입력이 비어 자연히 unknown 이 된 **우연**이었다.
+ */
+describe('[upgrade-status] 🔴 설치 신호가 없으면 자산 축은 판정 대상이 아니다', () => {
+  const ASSET_AXES = ['req-scripts', 'vendored-schema', 'workflow-gitignore', 'managed-blocks', 'review-persona']
+
+  it('🔴 신호 0 — 자산 축 다섯이 전부 unknown 이고 조치가 없다', () => {
+    // persona 부재까지 실려 있어도(= 실측 재현 입력) 조치가 되어선 안 된다.
+    const reports = evaluateUpgradeAxes(healthy({ installSignals: [], personaState: 'missing' }))
+    expect(axesNeedingAction(reports)).toEqual([])
+    for (const id of ASSET_AXES) {
+      const s = reports.find((r) => r.axis.id === id)?.state
+      expect(s?.kind, id).toBe('unknown')
+      expect(s?.detail, id).toContain('설치 신호 없음')
+    }
+  })
+
+  it('🔴 신호 1개면 판정한다 — MIN_INSTALL_SIGNALS(2)를 쓰지 않는다(부분 설치를 숨기지 않는다)', () => {
+    const s = state(healthy({ installSignals: ['req.config.json'], personaState: 'missing' }), 'review-persona')
+    expect(s?.kind).toBe('action')
+  })
+
+  it('🔴 과잉 완화가 아니다 — 신호가 있으면 persona 부재는 **여전히** 조치다', () => {
+    const reports = evaluateUpgradeAxes(healthy({ personaState: 'missing' }))
+    expect(axesNeedingAction(reports).map((r) => r.axis.id)).toEqual(['review-persona'])
+  })
+
+  it('읽지 못함(null)은 "신호 없음"과 구분해 말한다', () => {
+    const s = state(healthy({ installSignals: null }), 'review-persona')
+    expect(s?.kind).toBe('unknown')
+    expect(s?.detail).toContain('읽지 못함')
+  })
+
+  it('자산이 아닌 두 축은 이 전제를 두지 않는다 — 조건 자체가 설치를 함의한다', () => {
+    const bare = healthy({ installSignals: [], contractClaimFiles: ['AGENTS.md'] })
+    expect(state(bare, 'contract-claims')?.kind).toBe('action')
+    expect(state(bare, 'mixed-install')?.kind).toBe('ok')
   })
 })
