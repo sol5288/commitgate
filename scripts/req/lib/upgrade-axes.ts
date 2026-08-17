@@ -54,11 +54,15 @@ export interface UpgradeAxis {
  * **정본 요약 명령**(설계 DEC-3). README 한/영이 이것을 **그대로** 담는다 — 문자열이 한 곳에서만 나오므로
  * 갈라질 자리가 없다.
  *
- * 🔴 **README 구역에는 이 명령 하나뿐이다.** `check` 로 남은 축을 확인하는 절차까지 README 에 적으면
- *    그것이 곧 절차 복제이고, 축이 늘 때 또 갈라진다 — 확인 절차와 축 표는 **정본 문서**가 갖는다.
- *    (phase-2 r01 P1: 이 계약을 임의로 넓혔다가 되돌렸다.)
+ * 🔴 **README 구역에는 이 명령 하나뿐이다.** 절차까지 README 에 적으면 그것이 곧 절차 복제이고,
+ *    축이 늘 때 또 갈라진다 — 확인 절차와 축 표는 **정본 문서**가 갖는다.
+ *    (REQ-2026-164 phase-2 r01 P1: 이 계약을 임의로 넓혔다가 되돌렸다.)
+ *
+ * 🔴 **그 하나는 고치는 명령이 아니라 진단이다**(REQ-2026-167 DEC-2). 0.22.0 → 0.25.1 실측에서
+ *    `sync --apply --scripts --gitignore` 만으로는 `managed-blocks`·`contract-claims` 가 남았다.
+ *    README 가 완결된 절차를 보여 주는 척하면 안 된다 — 무엇이 남았는지는 `check` 가 말해 준다.
  */
-export const UPGRADE_SUMMARY_COMMAND = 'npx commitgate sync --apply --scripts --gitignore'
+export const UPGRADE_SUMMARY_COMMAND = 'npx commitgate check'
 
 /** README 가 가리켜야 하는 정본 문서(절차를 복제하지 않고 여기로 보낸다). */
 export const UPGRADE_CANONICAL_DOC = {

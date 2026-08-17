@@ -129,14 +129,17 @@ repository (the result varies with environment and history size).
 
 <!-- commitgate:upgrade-summary -->
 
-After bumping the version, the command below aligns assets and the command surface.
+After bumping the version, **ask the tool what drifted before you fix anything.**
 
 ```sh
 npm i -D commitgate@<version>
-npx commitgate sync --apply --scripts --gitignore
+npx commitgate check
 ```
 
-How to check what remains and what to run for it (the **eight axes** with their diagnoses) lives in the canonical doc —
+`C7` counts all eight axes and names **only the ones that are not OK**, with the reason. The remedy command is
+appended **only for axes that need action** (axes the tool cannot judge show the reason alone).
+What to run differs per axis, so no command list is repeated here — the **ordered procedure** and the
+eight-axis table live in the canonical doc —
 [Upgrading](https://github.com/sol5288/commitgate/blob/main/docs/upgrade.en.md).
 
 <!-- /commitgate:upgrade-summary -->

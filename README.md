@@ -128,14 +128,16 @@ append-only 기록에 남겨 `verify-range`가 `attested`로 구분하게 합니
 
 <!-- commitgate:upgrade-summary -->
 
-버전을 올린 뒤 아래 한 줄로 자산·명령 표면을 맞춥니다.
+버전을 올린 뒤 **도구에게 무엇이 어긋났는지 먼저 묻습니다.**
 
 ```sh
 npm i -D commitgate@<version>
-npx commitgate sync --apply --scripts --gitignore
+npx commitgate check
 ```
 
-남은 축을 **무엇으로 확인하고 무엇을 실행하는지**(여덟 축의 진단·조치 표)는 정본 문서에 있습니다 —
+`C7` 이 여덟 축을 집계하고 **정상이 아닌 축만** 사유와 함께 알려 줍니다. 실행할 명령은 **조치가 필요한
+축에만** 붙습니다(도구가 판정할 수 없는 축은 사유만 나옵니다). 무엇을 실행할지는 축마다
+다르므로, 여기 명령을 늘어놓지 않습니다 — **순서가 있는 절차와 여덟 축의 진단·조치 표**는 정본 문서에 있습니다 —
 [업그레이드](https://github.com/sol5288/commitgate/blob/main/docs/upgrade.md).
 
 <!-- /commitgate:upgrade-summary -->
