@@ -2,21 +2,21 @@
   "id": "REQ-2026-167",
   "branch": "feat/req-2026-167-upgrade-docs-completeness",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00d9e-389a-7a81-9f68-2defcc4efbac",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a00d9e-ede3-7571-9573-a873566b2240",
+  "review_base_sha": "75a13677619c95409db3b4aa87231406c8f98477",
+  "review_diff_hash": "a8b924fdcd830def58c4d6c27a48563d1d3ee925",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "879a179772e6d4cc0d4424de46a63f15bca5a62a490fc4ebf0bae75c7fc5d2c6",
-  "current_phase": null,
+  "current_phase": "phase-1-procedure-canon",
   "phases": [
     {
       "id": "phase-1-procedure-canon",
       "title": "절차 정본 구역",
       "status": "pending",
       "max_files": 8,
-      "approved": false
+      "approved": true
     },
     {
       "id": "phase-2-readme-entrypoint",
@@ -53,16 +53,23 @@
       "phase_id": null,
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-procedure-canon#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-procedure-canon",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-procedure-canon",
     "outcome": "approved",
     "compare_hash": "4d31cdce6aba93f0e02c4c2ccf9112cd02f3fa9b6f1349521dc7c56cf0a8d559",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T02:48:21.862Z",
+    "at": "2026-08-17T02:50:40.039Z",
     "findings": [],
     "elided_count": 0
   },
@@ -123,5 +130,14 @@
       "source_response_path": "workflow/REQ-2026-167/responses/design-r08-approved.json"
     },
     "design_hash": "879a179772e6d4cc0d4424de46a63f15bca5a62a490fc4ebf0bae75c7fc5d2c6"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "a8b924fdcd830def58c4d6c27a48563d1d3ee925",
+      "phase_id": "phase-1-procedure-canon",
+      "consumed_by_commit_sha": "e970a085ec714dfe4ecec9bedd95f2e93ea0d40b",
+      "approval_consumed_at": "2026-08-17T02:50:52.843Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
