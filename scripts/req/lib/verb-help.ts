@@ -217,7 +217,7 @@ export const REQ_VERB_HELP: Record<string, VerbHelp> = {
     ],
     usage: [
       'req:delegate --scope ticket:<REQ> --source <branch> --sentence "<승인 문장>" \\',
-      '    [--allow-push] [--allow-bypass] [--high-risk] [--ttl-hours N] [--run]',
+      '    [--allow-push] [--allow-bypass] [--high-risk] [--allow-attested] [--ttl-hours N] [--run]',
       `req:delegate --revoke <id> --reason "${PLACEHOLDER_REASON}" [--run]`,
       'req:delegate --status [--scope ticket:<REQ>]',
     ],

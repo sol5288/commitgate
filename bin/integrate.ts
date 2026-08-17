@@ -355,6 +355,21 @@ export function collectAutoFacts(
   }
 }
 
+/**
+ * 이 scope 의 **유효 위임 하나**가 `--allow-attested` 를 담고 있는가(REQ-2026-168, 읽기 전용).
+ *
+ * 🔴 유효 위임이 정확히 하나가 아니면 `false` 다 — 여러 개(`ambiguous-active`)이거나 없으면 그 자체가
+ *    거부 사유이고, 그 판정은 `delegationGate` 가 한다. 여기서 관대하게 읽을 이유가 없다.
+ */
+export function activeDelegationAck(
+  deps: Pick<RunDeps, 'readDelegationLedger'>,
+  scope: DelegationScope,
+): boolean {
+  const { rows } = parseDelegationLedger(deps.readDelegationLedger())
+  const active = foldDelegations(rows, scope).active
+  return active.length === 1 && (active[0] as DelegationIssued).attested_ack
+}
+
 export function delegationGate(
   deps: Pick<RunDeps, 'readDelegationLedger' | 'now' | 'branchPrefix' | 'ticketRoot' | 'git' | 'readBlobs'>,
   prepared: PreparedIntegration,
@@ -700,10 +715,17 @@ export function policyTargetIds(
   },
   scope: DelegationScope | null,
   deliveryMembersOf: (slug: string) => string[] | null,
+  /**
+   * 사람이 **미리** 위임에 명시한 `--allow-attested`(REQ-2026-168 DEC-3). 기본 `false`.
+   * 🔴 `attested` 만 면제한다 — 다른 범주가 하나라도 섞이면 이 값과 무관하게 판정 불가다.
+   */
+  attestedAck = false,
 ): PolicyTargets {
   // 🔴 **사유를 구분해 낸다.** 여기서 뭉개면 호출부가 사실대로 말할 방법이 없다.
-  if (attribution.unattributableCommits.length > 0)
-    return { ok: false, unknown: { reason: 'unattributable', commits: attribution.unattributableCommits } }
+  const blocking = attestedAck
+    ? attribution.unattributableCommits.filter((c) => c.category !== 'attested')
+    : attribution.unattributableCommits
+  if (blocking.length > 0) return { ok: false, unknown: { reason: 'unattributable', commits: blocking } }
   const ids = new Set<string>(attribution.tickets)
   const slugs = new Set<string>(attribution.deliveries ?? [])
   // 🔴 브랜치에서 확정된 대상도 **합친다** — 귀속이 놓친 티켓을 잃지 않기 위해서다(더 좁게 읽지 않는다).
@@ -903,19 +925,44 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
    *    config 로 폴백했고, 그것이 `auto` 스냅샷을 약화시키는 우회로였다.
    *    이제 **결속된 범위의 커밋 귀속**에서도 대상을 찾는다(위임 권한 판정은 그대로 브랜치 scope 만).
    */
-  const policyIds = ((): PolicyTargets => {
+  /**
+   * 🔴 **사람이 미리 명시한 `--allow-attested`**(REQ-2026-168 DEC-3). 위임 행에서 읽는다 — 실행 중
+   *    판정을 덮는 플래그가 아니라 **통합 전에** 결정되어 원장에 남은 사실이다.
+   *
+   * 🔴 여기서 이 값을 쓴다고 게이트가 헐거워지지 않는다: 정책이 `resolved` 로 바뀌면 그 다음에
+   *    `delegationGate` 가 **그 위임의 유효성 전체**(trunk 이동·source·만료·소비·범위)를 다시 본다.
+   *    무효한 위임이면 거기서 거부된다.
+   */
+  const attestedAck = scopeForFacts === null ? false : activeDelegationAck(deps, scopeForFacts)
+  const attribution = ((): ReturnType<typeof attributeRange> => {
     const deepInput = collectDeepInput(deps.git, deps.readBlobs, prepared.trunkHeadSha, prepared.featureHeadSha, deps.ticketRoot)
     const report = verifyRangeDeep(deepInput)
-    const att = attributeRange({
+    return attributeRange({
       commits: deepInput.commits,
       entries: report.entries,
       manifests: deepInput.manifests,
       ticketRoot: deps.ticketRoot,
     })
-    return policyTargetIds(att, scopeForFacts, (slug) =>
-      readDeliveryMembersAt(deps.readBlobs, deps.ticketRoot, slug, prepared.featureHeadSha),
-    )
   })()
+  const policyIds = policyTargetIds(
+    attribution,
+    scopeForFacts,
+    (slug) => readDeliveryMembersAt(deps.readBlobs, deps.ticketRoot, slug, prepared.featureHeadSha),
+    attestedAck,
+  )
+  /**
+   * 🔴 **무엇을 태웠는지 사후에도 보여야 한다**(설계 DEC-3). `--allow-attested` 로 실린 커밋을
+   *    이름으로 남기지 않으면, 그 위임이 실제로 무엇을 통과시켰는지 아무도 되짚을 수 없다.
+   */
+  const carriedAttested = attestedAck ? attribution.unattributableCommits.filter((c) => c.category === 'attested') : []
+  /**
+   * 🔴 **면제를 쓰면 그 위임을 반드시 평가한다**(phase-2 r01 P1). 앞선 판에서는 `activeDelegationAck`
+   *    가 원장의 미소비 행만 보고 정책을 풀었는데, `stopGate` 가 `merge` 면 `delegationRequired` 가
+   *    `false` 라 `delegationGate` 가 **아예 돌지 않았다** — 만료·trunk 이동·source 불일치 위임으로도
+   *    비대화형 통합이 열렸다. 면제를 쓰는 것 자체가 **위임된 행위**이므로 게이트를 강제한다.
+   *    (게이트가 만료·SHA·범위·HIGH·hardCap·증거를 전부 다시 본다.)
+   */
+  const attestedWaiverUsed = carriedAttested.length > 0
   const policyFacts: AutoFacts = !policyIds.ok
     ? { ...ticketFacts, policyUnknown: policyIds.unknown }
     : {
@@ -994,13 +1041,21 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
   if (policy.kind === 'resolved')
     deps.log(`정책: ${policy.basis} → 사전 위임 ${policy.delegationRequired ? '필요' : '불필요'}`)
   /**
+   * 🔴 `--allow-attested` 로 **실제로 실린** 커밋을 이름으로 남긴다(REQ-2026-168 DEC-3). 이 축은
+   *    "그 티켓에 귀속되지 않는 변경"을 함께 나를 수 있으므로, 무엇을 태웠는지 감추지 않는다.
+   */
+  if (carriedAttested.length > 0) {
+    deps.log(`attested 위임: ${carriedAttested.length}건이 함께 실립니다(--allow-attested).`)
+    for (const c of carriedAttested) deps.log(`  - ${c.sha.slice(0, 8)} ${c.subject}`)
+  }
+  /**
    * 🔴 판정 불가 + 대화형이면 위임 게이트를 **평가하지 않는다** — 평가할 입력이 없기 때문이다.
    *    `not-required` 로 두면 아래 최종 확인이 반드시 돈다(`gate.kind !== 'allowed'` 조건).
    */
   const gate: DelegationGateResult =
     policy.kind === 'indeterminate'
       ? { kind: 'not-required' }
-      : delegationGate(deps, prepared, gateFacts, policy.delegationRequired)
+      : delegationGate(deps, prepared, gateFacts, policy.delegationRequired || attestedWaiverUsed)
   if (gate.kind === 'denied') {
     deps.log('commitgate integrate — 차단:')
     for (const l of gate.lines) deps.log(`  ${l}`)

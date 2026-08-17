@@ -47,6 +47,7 @@ const ISSUED = (over: Partial<DelegationIssued> = {}): DelegationIssued => ({
   expires_at: '2026-08-11T00:00:00.000Z',
   permissions: { local_merge: true, origin_push: false, bypass_protection: false },
   high_risk_ack: false,
+  attested_ack: false,
   approval_sentence: '통합을 사전 위임합니다',
   ...over,
 })

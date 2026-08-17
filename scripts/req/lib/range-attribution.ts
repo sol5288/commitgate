@@ -196,6 +196,9 @@ export function attributeRange(input: AttributionInput): AttributionDetail {
     tickets: [...tickets].sort(),
     deliveries: [...deliveries].sort(),
     unattributable: unattributableCommits.length,
+    // 🔴 REQ-2026-168: `--allow-attested` 가 **전부 attested 인가**를 물을 수 있게 함께 센다.
+    //    여기서 세는 이유는 호출부가 `why`(산문)를 파싱하지 않게 하기 위해서다.
+    unattributableAttested: unattributableCommits.filter((c) => c.category === 'attested').length,
     unattributableCommits,
     repoLevelBookkeeping,
   }

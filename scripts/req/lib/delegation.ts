@@ -54,6 +54,18 @@ export interface DelegationIssued {
   permissions: DelegationPermissions
   /** HIGH 위험 티켓에 필요한 **별도** 위임. 일반 발급으로 HIGH 가 딸려오지 않는다. */
   high_risk_ack: boolean
+  /**
+   * 범위에 **attested 커밋**이 섞여 있어도 통합을 허용하는가(REQ-2026-168 DEC-3).
+   *
+   * 🔴 기본은 `false` 다. `attested` 는 정식 리뷰 없이 사람이 예외 승인한 커밋이라 **어느 티켓의
+   *    정책도 그것을 검증하지 않았다** — 그래서 자율 통합 대상이 아니다. 이 축은 그 사실을 없애지
+   *    않고, **사람이 통합 전에 한 번 더 명시**하게 한다(`attest` 자체가 이미 사유를 요구하는
+   *    사람 결정이므로 두 번의 결정이 겹친다).
+   *
+   * 🔴 **`attested` 외에는 아무것도 열지 않는다.** `unproven`·`invalid-evidence`·분류 미상이 하나라도
+   *    섞이면 이 값과 무관하게 거부한다 — 그것들은 증거가 깨진 상태이지 사람이 승인한 상태가 아니다.
+   */
+  attested_ack: boolean
   /** 사람이 말한 승인 문장 **그대로**. 비어 있으면 발급 자체가 거부된다(권한 근거 없는 권한 금지). */
   approval_sentence: string
 }
@@ -203,6 +215,13 @@ function parseRow(o: Record<string, unknown>): DelegationRow | null {
       !isStr(o.approval_sentence)
     )
       return null
+    /**
+     * 🔴 **옛 행에는 이 키가 없다**(REQ-2026-168 · 설계 리뷰 관찰). 필수로 두면 업그레이드 순간
+     *    기존 원장이 통째로 **손상 판정**되어 무관한 자율 통합이 전부 막힌다. 부재 = `false`(불허)로
+     *    읽는다 — 안전한 쪽 기본값이다. 값이 있는데 형태가 틀리면 그때는 손상이 맞다.
+     *    (같은 파일의 `performed` → `authorized` 개명이 같은 이유로 옛 키를 계속 받는다.)
+     */
+    if (o.attested_ack !== undefined && !isBool(o.attested_ack)) return null
     return {
       kind: 'issued',
       id: o.id,
@@ -215,6 +234,7 @@ function parseRow(o: Record<string, unknown>): DelegationRow | null {
       expires_at: o.expires_at,
       permissions,
       high_risk_ack: o.high_risk_ack,
+      attested_ack: o.attested_ack === undefined ? false : o.attested_ack,
       approval_sentence: o.approval_sentence,
     }
   }
@@ -374,6 +394,13 @@ export interface RangeAttribution {
   tickets: string[]
   unattributable: number
   /**
+   * 그중 범주가 **`attested`** 인 커밋 수(REQ-2026-168). `unattributable` 과 같으면 "전부 attested" 다.
+   *
+   * 🔴 부재(`undefined`)는 **0 이 아니라 "모름"** 이다 — 옛 호출부가 채우지 않을 수 있으므로,
+   *    모르면 `attested_ack` 를 적용하지 않는다(안전한 쪽).
+   */
+  unattributableAttested?: number
+  /**
    * 범위가 건드린 **delivery 레코드의 슬러그**(`<ticketRoot>/delivery/<slug>.json`).
    *
    * 🔴 티켓 위임으로 delivery 상태를 옮기면 안 되므로 별도 축으로 둔다(phase-4a 리뷰 r03).
@@ -462,7 +489,7 @@ export function delegationVerdict(input: DelegationCheckInput): DelegationVerdic
   if (row.source_branch !== input.sourceBranch)
     return deny('source-mismatch', `위임된 소스는 '${row.source_branch}' 인데 병합 소스는 '${input.sourceBranch}' 다`)
 
-  const scopeProblem = scopeRangeProblem(input.scope, input.rangeAttribution, input.deliveryMembers)
+  const scopeProblem = scopeRangeProblem(input.scope, input.rangeAttribution, input.deliveryMembers, row.attested_ack)
   if (scopeProblem !== null) return deny('scope-out-of-range', scopeProblem)
 
   if (input.compositionChanged) return deny('composition-changed', '위임 발급 이후 delivery 구성이 바뀌었다')
@@ -485,12 +512,33 @@ export function delegationVerdict(input: DelegationCheckInput): DelegationVerdic
  * 🔴 **판정 불가가 하나라도 있으면 거부**다. 자율 통합의 권한 판정에서 "모르겠음"을 통과로 읽으면
  *    그게 곧 구멍이다. (진단·조회 지점의 "모르면 판단 안 함" 과 다르다 — 여기는 **차단 지점**이다.)
  */
+/**
+ * 귀속 불가가 **전부 `attested`** 이고 사람이 그것을 미리 위임에 명시했는가(REQ-2026-168 DEC-3, 순수).
+ *
+ * 🔴 **세 조건이 모두** 필요하다.
+ *   1. `attestedAck` — 사람이 `--allow-attested` 로 미리 명시했다.
+ *   2. `unattributableAttested` 가 **수집됐다** — `undefined` 는 0 이 아니라 "모름"이고, 모르면 적용하지 않는다.
+ *   3. 그 수가 귀속 불가 **전체와 같다** — 하나라도 다른 범주가 섞이면(`unproven`·`invalid-evidence`·
+ *      분류 미상) 열지 않는다. 그것들은 사람이 승인한 상태가 아니라 **증거가 깨진** 상태다.
+ */
+export function attestedOnlyAndAcked(attribution: RangeAttribution, attestedAck: boolean): boolean {
+  if (!attestedAck) return false
+  const attested = attribution.unattributableAttested
+  if (attested === undefined) return false
+  return attribution.unattributable > 0 && attested === attribution.unattributable
+}
+
 export function scopeRangeProblem(
   scope: DelegationScope,
   attribution: RangeAttribution,
   deliveryMembers: string[] | null,
+  /**
+   * 사람이 **미리** 위임에 명시한 `--allow-attested`(REQ-2026-168). 기본 `false`.
+   * 🔴 이 인자는 **`attested` 만** 면제한다 — 아래 조건이 그것을 강제한다.
+   */
+  attestedAck = false,
 ): string | null {
-  if (attribution.unattributable > 0)
+  if (attribution.unattributable > 0 && !attestedOnlyAndAcked(attribution, attestedAck))
     return `병합 범위에 귀속을 판정할 수 없는 커밋 ${attribution.unattributable}건이 있다`
   const allowed = scope.kind === 'ticket' ? [scope.req_id] : (deliveryMembers ?? [])
   if (scope.kind === 'delivery' && deliveryMembers === null) return 'delivery 멤버 목록을 읽지 못했다'
