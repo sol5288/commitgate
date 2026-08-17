@@ -84,13 +84,106 @@ npx commitgate quickstart --apply      # 관리 블록만 주입/교체(블록 �
 - `req:doctor`의 **D21**이 어느 파일의 **어느 블록**이 없는지/드리프트인지 **WARN**으로 알려 줍니다
   (커밋은 막지 않습니다).
 
-> 정리: `commitgate@latest` 설치 → `commitgate sync --apply --scripts` → `commitgate quickstart --apply`
-> → `commitgate check`(C5·C6 확인) → (필요 시) `commitgate migrate`.
+> 위 절들은 **각 축이 왜 있는지**를 설명합니다. 실제로 무엇을 어떤 순서로 실행하는지는 바로 아래
+> **업그레이드 절차**에 한 곳으로 모여 있습니다. (예전 설치본이면 이어서 `commitgate migrate`.)
+
+## 업그레이드 절차 — 이대로 따라가면 끝납니다
+
+<!-- commitgate:upgrade-procedure -->
+
+### 1. 올리고, **무엇이 어긋났는지 도구에게 묻습니다**
+
+```sh
+npm i -D commitgate@<version>     # caret 은 0.x minor 를 넘지 않습니다 — 버전을 명시하십시오
+npx commitgate check
+```
+
+`C7` 이 여덟 축을 전부 집계하고, **정상이 아닌 축만** 사유와 함께 나열합니다. 그중 **조치가 필요한 축에만**
+실행할 명령이 `→` 뒤에 붙습니다(사람 확인·판정 불가 축은 사유만 나옵니다). 티켓이 없어도 돕니다.
+
+🔴 **진단이 먼저입니다.** 무엇을 실행할지는 축마다 다르고, 그것을 아는 것은 도구입니다.
+`check` 가 말하지 않은 파일은 손대지 마십시오.
+
+### 2. 도구가 고치는 축 — 명령 둘
+
+```sh
+npx commitgate sync --apply --scripts --gitignore
+npx commitgate quickstart --apply
+```
+
+- `sync` — vendored 스키마 재동기화 · `package.json` 의 **없는** `req:*` 키 삽입 · `workflow/.gitignore`
+  누락 kit 규칙 보강. 기존 키·기존 행은 덮지 않습니다(멱등).
+- `quickstart` — `AGENTS.md`·`CLAUDE.md` 의 관리 블록(`<!-- commitgate:… -->`) 백필. 블록 밖은 보존합니다.
+- `review-persona` 축이 조치로 나왔을 때만 추가로 `npx commitgate sync --apply --persona`
+  (내용이 다르면 diff 만 보여 주고 보존 → 확인 뒤 `--persona-apply`).
+
+### 3. 도구가 고치지 않는 축 — `contract-claims`
+
+`AGENTS.md` 는 사용자 소유이고 프로젝트 고유 내용이 섞여 있어, 자동 교체는 그것을 지웁니다.
+`C5` 가 **찾은 문장과 왜 폐기됐는지**를 그대로 보여 주므로 그 자리만 손으로 병합합니다.
+
+<!-- procedure:search -->
+인용된 문장을 **그대로 검색하면 찾지 못할 수 있습니다** — 강조·코드 표시 문자를 뺀 짧은 조각으로 찾으십시오.
+대조 전에 `` * _ ` ~ `` 를 제거하고 공백을 압축하기 때문입니다(`normalizeForClaimScan`). 실측:
+
+```sh
+$ grep -n "무관하게 항상 존재" AGENTS.md     # (없음) — 파일에는 강조가 섞여 있습니다
+$ grep -n "무관하게" AGENTS.md               # 57행에서 찾습니다
+```
+
+`node_modules/commitgate/AGENTS.template.md` 의 대응 서술을 찾아 **그 문장/문단만** 교체하십시오.
+파일을 통째로 덮어쓰지 마십시오.
+
+<!-- procedure:repeat -->
+`C5` 가 아무것도 지적하지 않을 때까지 이 과정을 **반복합니다** — 한 번 고치고 끝내지 마십시오.
+같은 종류의 폐기 서술이 문서의 **여러 자리**에 있을 수 있습니다. 실측에서 `AGENTS.md` 한 파일에 두 자리가
+있었고, 첫 자리를 고친 뒤 `npx commitgate check` 를 다시 돌려서야 두 번째가 나왔습니다.
+
+### 4. 도구가 보지 않는 축 — companion 자산
+
+<!-- procedure:companion -->
+이 축은 `check` 도 `sync` 도 보지 않습니다 — **직접 대조**해야 합니다.
+
+```sh
+diff -rq .claude/skills node_modules/commitgate/skills
+diff .claude/commands/req.md            node_modules/commitgate/templates/claude-command.md
+diff .claude/skills/commitgate/SKILL.md node_modules/commitgate/templates/claude-skill.md
+diff .cursor/rules/commitgate.mdc       node_modules/commitgate/templates/cursor-rule.mdc
+```
+
+첫 명령은 **정상인데도** 아래 둘을 냅니다. 결함이 아닙니다.
+
+```
+Only in node_modules/commitgate/skills: ATTRIBUTION.md   ← 패키지에만 있는 것이 정상
+Only in .claude/skills: commitgate                       ← templates/claude-skill.md 에서 온 것이 정상
+```
+
+`req.config.json` 은 **대조 대상이 아닙니다** — 사용자 소유 설정이라 `req.config.json.sample` 과 다른 것이
+정상입니다. 새 설정 축은 아래 **버전별 주의사항**이 알립니다.
+
+직접 수정한 파일은 **그대로 두십시오** — 이 대조는 무엇이 달라졌는지 알기 위한 것이지 덮어쓰기가 아닙니다.
+
+### 5. 끝났는지 확인
+
+```sh
+npx commitgate check
+```
+
+<!-- procedure:acceptance -->
+`C7` 의 **조치가 0** 이면 끝입니다(`caret-range` 의 "사람 확인"은 남아도 됩니다).
+`caret-range` 는 소비자 `package.json` 에서 패키지매니저가 강제하는 축이라 도구가 판정할 수 없습니다 —
+1단계에서 버전을 명시해 설치했다면 충족된 것입니다.
+
+마지막으로 `git diff` 로 변경을 눈으로 확인하고 커밋하십시오. 특히 `AGENTS.md` — 프로젝트 고유 내용이
+지워지지 않았는지 보십시오.
+
+<!-- /commitgate:upgrade-procedure -->
 
 ## 업그레이드 축 — 무엇을 확인하고 무엇을 실행하나
 
 🔴 **확인은 `npx commitgate check` 한 번이면 됩니다.** `C7` 이 아래 여덟 축을 **전부 집계**하고
-(조치 · 정상 · 사람 확인 · 판정 불가 개수), **정상이 아닌 축만** 사유·조치 명령과 함께 나열합니다 —
+(조치 · 정상 · 사람 확인 · 판정 불가 개수), **정상이 아닌 축만** 사유와 함께 나열합니다. 실행할 명령은
+**조치가 필요한 축에만** `→` 뒤에 붙습니다 —
 전부 정상이면 집계 한 줄로 끝납니다. 티켓이 없어도 돌아갑니다(`req:doctor` 는 REQ id 를 요구합니다).
 아래 표는 그 출력에 나오는 축이 무엇인지에 대한 설명입니다.
 
@@ -124,6 +217,27 @@ npx commitgate quickstart --apply      # 관리 블록만 주입/교체(블록 �
 
 새 버전으로 넘어갈 때 **그 버전에서만** 챙겨야 하는 것을 여기 모읍니다. 지나온 버전의 절은 지우지 않으니,
 예전 버전에서 올라온다면 **자기 버전 이후의 절을 순서대로** 읽으세요.
+
+### 0.23.1 → 0.25.x — 확인이 `check` 한 번으로 끝납니다
+
+**caret 범위 밖이므로 버전을 명시해 설치하십시오**(`^0.23.x` 는 0.24/0.25 로 넘어가지 않습니다).
+
+```sh
+npm i -D commitgate@^0.25.0
+npx commitgate check
+```
+
+- **0.25.0 — `check` 의 `C7` 이 업그레이드 축 여덟 개를 집계합니다.** 그전에는 나머지 축을 보려면
+  `req:doctor` 가 필요했고 그것은 REQ id 를 요구했습니다 — 업그레이드 **직후**, 정확히 축을 봐야 할 때
+  티켓이 없을 수 있습니다. 이제 위 **업그레이드 절차**가 `check` 하나로 시작해 `check` 하나로 끝납니다.
+- **0.25.1 — 설치가 아닌 디렉터리에서 나던 거짓 조치를 고쳤습니다.** `package.json` 도 `workflow/` 도
+  없는 곳에서 `C7` 이 persona 조치를 안내했습니다. 이제 설치 신호가 없으면 조치도 정상도 아닌
+  **판정 불가**입니다.
+- **0.25.1 — `req:*` verb 전부가 `-h`/`--help` 로 사용법을 냅니다.** 그전에는 12개 중 11개가
+  `알 수 없는 옵션: --help` 로 거부했고, 그 안에 `req:confirm`·`req:rebind`·`req:review-exception`
+  같은 사람 전용 통제점 명령이 있었습니다.
+
+동작이 바뀌는 설정은 없습니다 — 이 구간은 **진단과 안내**의 변화입니다.
 
 ### 0.23.0 → 0.23.1 — `auto` 를 쓰신다면 올리세요(패치)
 

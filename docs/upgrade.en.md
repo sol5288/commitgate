@@ -87,13 +87,108 @@ npx commitgate quickstart --apply      # inject/replace managed blocks only (pre
   breakage is named.
 - `req:doctor`'s **D21** WARNs about **which block** is missing or drifted in **which file** (it never blocks the commit).
 
-> In short: install `commitgate@latest` → `commitgate sync --apply --scripts` → `commitgate quickstart --apply`
-> → `commitgate check` (read C5 and C6) → (if needed) `commitgate migrate`.
+> The sections above explain **why each axis exists**. What to actually run, and in what order, is collected
+> in one place right below in **The upgrade procedure**. (For an older install, follow up with `commitgate migrate`.)
+
+## The upgrade procedure — follow this and you are done
+
+<!-- commitgate:upgrade-procedure -->
+
+### 1. Install, then **ask the tool what drifted**
+
+```sh
+npm i -D commitgate@<version>     # caret does not cross 0.x minors — name the version
+npx commitgate check
+```
+
+`C7` counts all eight axes and lists **only the ones that are not OK**, with the reason. The remedy command is
+appended after `→` **only for axes that need action** (human-check and undetermined axes show the reason alone).
+It runs without a ticket.
+
+🔴 **Diagnose first.** What to run differs per axis, and the tool is what knows.
+Do not touch files `check` did not name.
+
+### 2. Axes the tool fixes — two commands
+
+```sh
+npx commitgate sync --apply --scripts --gitignore
+npx commitgate quickstart --apply
+```
+
+- `sync` — re-syncs the vendored schema, inserts the `req:*` keys that are **missing** from `package.json`,
+  and backfills missing kit rules in `workflow/.gitignore`. Existing keys and lines are never overwritten (idempotent).
+- `quickstart` — backfills the managed blocks (`<!-- commitgate:… -->`) in `AGENTS.md` and `CLAUDE.md`.
+  Content outside the blocks is preserved.
+- Only if the `review-persona` axis asks for action, add `npx commitgate sync --apply --persona`
+  (if the content differs it shows a diff and preserves your file → then `--persona-apply`).
+
+### 3. The axis the tool does not fix — `contract-claims`
+
+`AGENTS.md` is yours and mixes in project-specific rules, so replacing it automatically would erase them.
+`C5` prints **the sentence it found and why it was retired**, so merge just that spot by hand.
+
+<!-- procedure:search -->
+**Searching for the quoted sentence verbatim may find nothing** — search for a short fragment with the emphasis/code characters removed.
+Before matching, `` * _ ` ~ `` are stripped and whitespace is collapsed (`normalizeForClaimScan`). Measured:
+
+```sh
+$ grep -n "무관하게 항상 존재" AGENTS.md     # (nothing) — the file has emphasis markers inside
+$ grep -n "무관하게" AGENTS.md               # found on line 57
+```
+
+Find the matching passage in `node_modules/commitgate/AGENTS.template.md` and replace **only that
+sentence/paragraph**. Do not overwrite the whole file.
+
+<!-- procedure:repeat -->
+**Repeat** this until `C5` reports nothing — do not stop after a single fix.
+The same kind of retired claim can sit in **several places**. In our measurement one `AGENTS.md` had two of
+them, and the second only surfaced after fixing the first and running `npx commitgate check` again.
+
+### 4. The axis no diagnosis looks at — companion assets
+
+<!-- procedure:companion -->
+Neither `check` nor `sync` looks at this axis — you must **compare it yourself**.
+
+```sh
+diff -rq .claude/skills node_modules/commitgate/skills
+diff .claude/commands/req.md            node_modules/commitgate/templates/claude-command.md
+diff .claude/skills/commitgate/SKILL.md node_modules/commitgate/templates/claude-skill.md
+diff .cursor/rules/commitgate.mdc       node_modules/commitgate/templates/cursor-rule.mdc
+```
+
+The first command reports the two lines below **even when everything is fine**. They are not defects.
+
+```
+Only in node_modules/commitgate/skills: ATTRIBUTION.md   ← package-only is normal
+Only in .claude/skills: commitgate                       ← comes from templates/claude-skill.md, normal
+```
+
+`req.config.json` is **not compared** — it is your configuration, so differing from
+`req.config.json.sample` is normal. New configuration axes are announced in **Per-version notes** below.
+
+Leave files you edited yourself **as they are** — this comparison tells you what changed; it is not an overwrite.
+
+### 5. Confirm you are done
+
+```sh
+npx commitgate check
+```
+
+<!-- procedure:acceptance -->
+You are done when `C7` reports **0 actions** (the `caret-range` "human check" may remain).
+`caret-range` is enforced by your package manager in your own `package.json`, so the tool cannot judge it —
+if you named the version in step 1, it is satisfied.
+
+Finally, read the change with `git diff` and commit. Look at `AGENTS.md` in particular — make sure no
+project-specific content was erased.
+
+<!-- /commitgate:upgrade-procedure -->
 
 ## Upgrade axes — what to check and what to run
 
 🔴 **One command does the checking: `npx commitgate check`.** Its `C7` item **counts all eight axes below**
-(action · ok · manual · unknown) and lists **only the ones that are not ok**, each with its cause and remedy —
+(action · ok · manual · unknown) and lists **only the ones that are not ok**, each with its cause. The remedy
+command is appended after `→` **only for axes that need action** (manual/unknown axes show the cause alone) —
 when everything is fine you get just the count line. It runs without a ticket (`req:doctor` requires a REQ id).
 The table below explains which axes can appear in that output.
 
@@ -128,6 +223,27 @@ verbatim — merge just those by hand.
 
 Anything you only need to handle **for a specific version** lives here. Sections are never removed, so if you
 are coming from an older version, read **every section after yours, in order**.
+
+### 0.23.1 → 0.25.x — one `check` is the whole verification
+
+**Name the version** (`^0.23.x` does not cross into 0.24/0.25).
+
+```sh
+npm i -D commitgate@^0.25.0
+npx commitgate check
+```
+
+- **0.25.0 — `check`'s `C7` counts all eight upgrade axes.** Before that the remaining axes needed
+  `req:doctor`, which requires a REQ id — and right after an upgrade, exactly when you need the axes,
+  there may be no ticket. **The upgrade procedure** above now starts with one `check` and ends with one.
+- **0.25.1 — fixed a false action in directories that are not installs.** With no `package.json` and no
+  `workflow/`, `C7` used to advise a persona remedy. Missing install signals now yield **undetermined**,
+  which is neither an action nor an all-clear.
+- **0.25.1 — every `req:*` verb prints usage for `-h`/`--help`.** Previously 11 of 12 rejected it with
+  `unknown option: --help`, including human-only control-point commands such as `req:confirm`,
+  `req:rebind` and `req:review-exception`.
+
+No behaviour-changing settings in this range — it is a **diagnostics and guidance** change.
 
 ### 0.23.0 → 0.23.1 — upgrade if you use `auto` (patch)
 

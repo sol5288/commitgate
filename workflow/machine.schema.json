@@ -14,13 +14,21 @@
   "properties": {
     "machine_schema_version": { "type": "string", "enum": ["1.1"] },
     "review_base_sha": { "type": "string" },
-    "status": { "type": "string", "enum": ["NEEDS_FIX", "STEP_COMPLETE", "COMPLETE"] },
+    "status": {
+      "type": "string",
+      "enum": ["NEEDS_FIX", "STEP_COMPLETE", "COMPLETE"],
+      "description": "Verdict for THIS review. \"NEEDS_FIX\" = blocking findings remain. \"STEP_COMPLETE\" = this phase is done and may be committed; use it for every phase review, including the last phase of a ticket. \"COMPLETE\" = the whole ticket is finished AND ready to merge into the trunk; it is the only status that permits merge_ready=\"yes\". When in doubt between STEP_COMPLETE and COMPLETE, choose STEP_COMPLETE - integration is a separate control point that this review does not decide."
+    },
     "commit_approved": {
       "type": "string",
       "enum": ["yes", "no"],
       "description": "Gate approval for this review. For review_kind=design, yes means the design is approved to proceed (nothing is committed); approve a good design with commit_approved=yes and merge_ready=no. For review_kind=phase, yes means the staged tree is approved to commit. Approve (yes) ONLY when findings is empty: any finding is a blocking signal, so commit_approved=yes with a non-empty findings array is a contradiction and is rejected. Conversely, returning no with an empty findings array is also a contradiction and is rejected as BLOCKED — if you have no findings you must approve. Minor/non-blocking remarks do NOT belong in findings; put them in observations and still approve."
     },
-    "merge_ready": { "type": "string", "enum": ["yes", "no"] },
+    "merge_ready": {
+      "type": "string",
+      "enum": ["yes", "no"],
+      "description": "Whether the ENTIRE ticket is ready to merge into the trunk — not whether this review passed. It is valid as \"yes\" ONLY when status=\"COMPLETE\" and commit_approved=\"yes\"; any other combination is a contradiction and the response is rejected as invalid. For a phase review that finishes a step, status is \"STEP_COMPLETE\", so merge_ready MUST be \"no\" even when it is the last phase of the ticket and nothing else appears to remain — integration is a separate control point that this review does not decide. For review_kind=design, always \"no\" (nothing is committed)."
+    },
     "risk_level": {
       "type": "string",
       "enum": ["LOW", "HIGH"],

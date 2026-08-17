@@ -1,0 +1,192 @@
+{
+  "id": "REQ-2026-167",
+  "branch": "feat/req-2026-167-upgrade-docs-completeness",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a00e0c-4af8-7452-95e3-fcb9643782a7",
+  "review_base_sha": "e2d5a37125634dad9348223356bacbfc32b7eb7e",
+  "review_diff_hash": "9b688c15d753079f40ce6af1344ba4a745980b17",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "1881640e5660db33cea278c5ccb4183cd2f93eeaa6eec865e7680109dbae6f5d",
+  "current_phase": "phase-3-release-notes",
+  "phases": [
+    {
+      "id": "phase-1-procedure-canon",
+      "title": "절차 정본 구역",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-readme-entrypoint",
+      "title": "README 진입점",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-3-release-notes",
+      "title": "배포 부기",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-procedure-canon#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-procedure-canon",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-readme-entrypoint#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-readme-entrypoint",
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-release-notes#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-release-notes",
+      "attempts": 4,
+      "closed_reason": "approved",
+      "void_attempts": 3
+    },
+    {
+      "series_id": "design:-#3",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-release-notes#2",
+      "review_kind": "phase",
+      "phase_id": "phase-3-release-notes",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-release-notes",
+    "outcome": "approved",
+    "compare_hash": "6555592102e1fd282840f1dbc9a9de40bb16a30686c0586bd051ebd707b801f9",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-17T04:48:59.153Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "772400d9e79aa21a1019838a5216cf381856c5f6",
+    "design": "95ebb11930c74cf39427bf047027cbfbddd40537",
+    "plan": "39b97ebc2d0ef282949e59486b99d1c81d9fd0e5"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "a8b924fdcd830def58c4d6c27a48563d1d3ee925",
+      "phase_id": "phase-1-procedure-canon",
+      "consumed_by_commit_sha": "e970a085ec714dfe4ecec9bedd95f2e93ea0d40b",
+      "approval_consumed_at": "2026-08-17T02:50:52.843Z"
+    },
+    {
+      "approved_tree": "6cf7b8e6b832e7ebc059cd02b4938bf62c1623ae",
+      "phase_id": "phase-2-readme-entrypoint",
+      "consumed_by_commit_sha": "dca90d0115fdb40bd804c4c3c11860f5600a318d",
+      "approval_consumed_at": "2026-08-17T02:58:24.120Z"
+    },
+    {
+      "approved_tree": "9b688c15d753079f40ce6af1344ba4a745980b17",
+      "phase_id": "phase-3-release-notes",
+      "consumed_by_commit_sha": "dc702c5f60cc0788bc673e8289b16480f91cc02e",
+      "approval_consumed_at": "2026-08-17T04:49:14.400Z"
+    }
+  ],
+  "user_commit_confirmed": null,
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-167/responses/design-r10-approved.json",
+    "response_sha256": "6f639ae61b00a009dc2bcc56fba6f6a4b9191ca878de76fb90e71105e140e2dc",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "1fd61d0629ba23a52a296488b18e2eb10f30c0a2",
+    "codex_thread_id": "01a00e09-92a3-7ec2-88c3-fcfde8e6eee9",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-17T04:45:50.839Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r01-needs-fix.json",
+          "sha256": "1c971801452839f13c51beff04ef45bef7f33a5d64e77c9a83ad3497a3198471"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r02-needs-fix.json",
+          "sha256": "129e969745b464115b8dff3b56332fc08bbe8acca7f7924c9f7c7e8918e6fdff"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r03-needs-fix.json",
+          "sha256": "b0587d2e538bea419e2976276517576ffd6fa3fc102111d96910fa8ae4d52384"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r04-approved.json",
+          "sha256": "5e877aa1fe8d714c149d7255fb7bc4fd6b22c0158694770aeff2cadee1e31da1"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r05-needs-fix.json",
+          "sha256": "7f36bec74c51b58ec003d1de8426e878fd431837a357ff3c564f98729f21d8f3"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r06-needs-fix.json",
+          "sha256": "63330f0f741837aba8184b4998d6ad61af5bb05930bbb2da86ebec082b695798"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r07-needs-fix.json",
+          "sha256": "98a084782204d79e04b66c36ca6acb3be1d1a922ec0768d69c3240bbc8186ad5"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r08-approved.json",
+          "sha256": "b48d2475c0eb307ee0d4abc532f7ef4c59dddb64b8c7f6b7bda32c25b97c155c"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r09-needs-fix.json",
+          "sha256": "e168793b925a4c5e9f30f96dff7bb1647557921c0dd49f01420efdd8be987ef5"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r10-approved.json",
+          "sha256": "6f639ae61b00a009dc2bcc56fba6f6a4b9191ca878de76fb90e71105e140e2dc"
+        }
+      ],
+      "inventory_sha256": "50b6bae151984d07c35e8c1a15ca02fedacbcd7549806d0a7a46a43a280f2735",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-167/responses/design-r10-approved.json"
+    },
+    "design_hash": "1881640e5660db33cea278c5ccb4183cd2f93eeaa6eec865e7680109dbae6f5d"
+  }
+}
