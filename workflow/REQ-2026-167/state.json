@@ -2,13 +2,13 @@
   "id": "REQ-2026-167",
   "branch": "feat/req-2026-167-upgrade-docs-completeness",
   "risk_level": "LOW",
-  "codex_thread_id": "01a00d94-e22c-7852-8f67-200f1bb2c67d",
+  "codex_thread_id": "01a00d9e-389a-7a81-9f68-2defcc4efbac",
   "review_base_sha": null,
   "review_diff_hash": null,
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
-  "design_approved_hash": "7c7b181f096babd8185e429fe61d192c9cf40ce110b70e90437df108af1b760d",
+  "design_approved_hash": "879a179772e6d4cc0d4424de46a63f15bca5a62a490fc4ebf0bae75c7fc5d2c6",
   "current_phase": null,
   "phases": [
     {
@@ -46,35 +46,42 @@
       "phase_id": null,
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "design:-#2",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 4,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "design",
     "phase_id": null,
     "outcome": "approved",
-    "compare_hash": "604b8f28797a8aa786414bf30ba9d437a6eaa88bff4deafeed94ebef20e0d858",
+    "compare_hash": "4d31cdce6aba93f0e02c4c2ccf9112cd02f3fa9b6f1349521dc7c56cf0a8d559",
     "count": 1,
     "errors": [],
-    "at": "2026-08-17T02:37:55.495Z",
+    "at": "2026-08-17T02:48:21.862Z",
     "findings": [],
     "elided_count": 0
   },
   "design_baseline": {
     "requirement": "772400d9e79aa21a1019838a5216cf381856c5f6",
-    "design": "3421f9b3376d8842b057d209b02149a588dae9fd",
+    "design": "cd592bcba1b4f834db73ab8764d526e7f16caab5",
     "plan": "fa49be379a97e821546f44d27b5677fe831a7e30"
   },
   "design_approval_evidence": {
-    "response_path": "workflow/REQ-2026-167/responses/design-r04-approved.json",
-    "response_sha256": "5e877aa1fe8d714c149d7255fb7bc4fd6b22c0158694770aeff2cadee1e31da1",
+    "response_path": "workflow/REQ-2026-167/responses/design-r08-approved.json",
+    "response_sha256": "b48d2475c0eb307ee0d4abc532f7ef4c59dddb64b8c7f6b7bda32c25b97c155c",
     "review_kind": "design",
     "phase_id": null,
-    "review_base_sha": "013570e79e0736e9e414624d5878a1ed0b96268a",
-    "codex_thread_id": "01a00d94-e22c-7852-8f67-200f1bb2c67d",
+    "review_base_sha": "1ac6fa9812877380135a8d741b17dc965467b441",
+    "codex_thread_id": "01a00d9e-389a-7a81-9f68-2defcc4efbac",
     "machine_schema_version": "1.1",
     "status": "STEP_COMPLETE",
     "commit_approved": "yes",
-    "approved_at": "2026-08-17T02:37:55.495Z",
+    "approved_at": "2026-08-17T02:48:21.862Z",
     "archive_inventory": {
       "items": [
         {
@@ -92,13 +99,29 @@
         {
           "response_path": "workflow/REQ-2026-167/responses/design-r04-approved.json",
           "sha256": "5e877aa1fe8d714c149d7255fb7bc4fd6b22c0158694770aeff2cadee1e31da1"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r05-needs-fix.json",
+          "sha256": "7f36bec74c51b58ec003d1de8426e878fd431837a357ff3c564f98729f21d8f3"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r06-needs-fix.json",
+          "sha256": "63330f0f741837aba8184b4998d6ad61af5bb05930bbb2da86ebec082b695798"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r07-needs-fix.json",
+          "sha256": "98a084782204d79e04b66c36ca6acb3be1d1a922ec0768d69c3240bbc8186ad5"
+        },
+        {
+          "response_path": "workflow/REQ-2026-167/responses/design-r08-approved.json",
+          "sha256": "b48d2475c0eb307ee0d4abc532f7ef4c59dddb64b8c7f6b7bda32c25b97c155c"
         }
       ],
-      "inventory_sha256": "1470598aade5e3693f9829c18a36e23275891e2a4c6e255c9fd57b7d545fe7ba",
+      "inventory_sha256": "8c0beea19af7eab04f972ed3dbe0675a72fd892ec378e07ebd32df733870300c",
       "review_kind": "design",
       "phase_id": null,
-      "source_response_path": "workflow/REQ-2026-167/responses/design-r04-approved.json"
+      "source_response_path": "workflow/REQ-2026-167/responses/design-r08-approved.json"
     },
-    "design_hash": "7c7b181f096babd8185e429fe61d192c9cf40ce110b70e90437df108af1b760d"
+    "design_hash": "879a179772e6d4cc0d4424de46a63f15bca5a62a490fc4ebf0bae75c7fc5d2c6"
   }
 }
