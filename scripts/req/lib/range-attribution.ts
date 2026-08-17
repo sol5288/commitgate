@@ -55,10 +55,26 @@ export interface AttributionInput {
   ticketRoot: string
 }
 
+/**
+ * 귀속을 판정하지 못한 커밋 하나.
+ *
+ * 🔴 `category` 는 `verify-range` 의 분류를 **그대로 옮긴 것**이다(재해석하지 않는다). 분류 결과에
+ *    없는 커밋이면 `null` — "모른다"를 어떤 범주로도 읽지 않는다.
+ *
+ * 🔴 **`why`(산문)를 파싱해 사유를 추정하지 않는다**(REQ-2026-168 DEC-1). 산문은 다듬을 수 있고,
+ *    다듬는 순간 판정이 바뀐다. 호출부가 *"전부 attested 인가"* 를 물으려면 기계가 읽는 축이 필요하다.
+ */
+export interface UnattributableCommit {
+  sha: string
+  subject: string
+  why: string
+  category: string | null
+}
+
 /** 상세 결과 — 왜 판정 불가인지 사람에게 말하기 위해 남긴다. */
 export interface AttributionDetail extends RangeAttribution {
   /** 귀속을 판정하지 못한 커밋(요약). */
-  unattributableCommits: { sha: string; subject: string; why: string }[]
+  unattributableCommits: UnattributableCommit[]
   /** 티켓에 속하지 않지만 정상인 **repo 수준 부기**(예: 위임 원장). */
   repoLevelBookkeeping: number
 }
@@ -93,7 +109,7 @@ export function attributeRange(input: AttributionInput): AttributionDetail {
   for (const c of input.commits) {
     const category = byCategory.get(c.sha)
     if (category === undefined) {
-      unattributableCommits.push({ sha: c.sha, subject: c.subject, why: '분류 결과에 없는 커밋' })
+      unattributableCommits.push({ sha: c.sha, subject: c.subject, why: '분류 결과에 없는 커밋', category: null })
       continue
     }
     if (category === 'merge') continue
@@ -102,13 +118,14 @@ export function attributeRange(input: AttributionInput): AttributionDetail {
       const rows = consumed.get(c.sha) ?? []
       const rels = new Set(rows.map((r) => r.ticketRel))
       if (rels.size === 0) {
-        unattributableCommits.push({ sha: c.sha, subject: c.subject, why: '승인 커밋인데 소비 행을 찾지 못함' })
+        unattributableCommits.push({ sha: c.sha, subject: c.subject, why: '승인 커밋인데 소비 행을 찾지 못함', category })
         continue
       }
       // 🔴 한 커밋을 여러 티켓이 소비했다면 그 **전부**를 귀속으로 본다(더 좁게 읽지 않는다).
       for (const rel of rels) {
         const id = rel.split('/')[1]
-        if (id === undefined) unattributableCommits.push({ sha: c.sha, subject: c.subject, why: `매니페스트 경로 해석 실패: ${rel}` })
+        if (id === undefined)
+          unattributableCommits.push({ sha: c.sha, subject: c.subject, why: `매니페스트 경로 해석 실패: ${rel}`, category })
         else tickets.add(id)
       }
       continue
@@ -122,7 +139,7 @@ export function attributeRange(input: AttributionInput): AttributionDetail {
        *    한 경로라도 설명되지 않으면 이 커밋은 판정되지 않은 것이다.
        */
       if (c.changedPaths.length === 0) {
-        unattributableCommits.push({ sha: c.sha, subject: c.subject, why: '변경 경로가 없는 부기 커밋' })
+        unattributableCommits.push({ sha: c.sha, subject: c.subject, why: '변경 경로가 없는 부기 커밋', category })
         continue
       }
       const owners = new Set<string>()
@@ -148,6 +165,7 @@ export function attributeRange(input: AttributionInput): AttributionDetail {
             sha: c.sha,
             subject: c.subject,
             why: `도구 부기인데 티켓을 판정할 수 없는 경로가 있다(제목에 chore(REQ-…) 없음): ${unclassified.slice(0, 2).join(', ')}`,
+            category,
           })
           continue
         }
@@ -170,6 +188,7 @@ export function attributeRange(input: AttributionInput): AttributionDetail {
         category === 'attested'
           ? 'attested(정식 리뷰 없이 예외 승인된 커밋) — 자율 통합 대상이 아니다'
           : `${category} — 승인 증거로 귀속을 판정할 수 없다`,
+      category,
     })
   }
 

@@ -11,6 +11,7 @@ import {
   type AutoFacts,
   type RunDeps,
 } from '../../bin/integrate'
+import type { UnattributableCommit } from '../../scripts/req/lib/range-attribution'
 import { makeDeps, integrateOpts, fakeGit, fakeReadBlobs, BASE, HEAD, MERGE_SHA, SRC, TRUNK } from '../support/integrate-fakes'
 import {
   DELEGATION_LEDGER_REL,
@@ -87,7 +88,7 @@ const FACTS_OK: AutoFacts = {
   compositionChanged: false,
   // REQ-2026-159: 정책 해소용 멤버 사실. 이 스위트는 `delegationGate` 자체를 보므로 빈 목록이면 충분하다.
   memberPolicies: [],
-  policyMembersUnknown: false,
+  policyUnknown: null,
 }
 
 describe('[REQ-2026-140] delegationGate — auto 가 아니면 아무것도 하지 않는다', () => {
@@ -939,26 +940,40 @@ describe('[REQ-2026-159] 브랜치 이름으로 정책을 약화시킬 수 없�
  */
 describe('[REQ-2026-159] policyTargetIds', () => {
   const noDelivery = (): string[] | null => null
+  const commit = (over: Partial<UnattributableCommit> = {}): UnattributableCommit => ({
+    sha: 'abc12345',
+    subject: 's',
+    why: 'w',
+    category: null,
+    ...over,
+  })
 
-  it('🔴 귀속되지 않은 커밋이 하나라도 있으면 모름(null)이다', () => {
-    expect(policyTargetIds({ tickets: ['REQ-2026-001'], unattributableCommits: [{}] }, null, noDelivery)).toBeNull()
+  it('🔴 귀속되지 않은 커밋이 하나라도 있으면 모름이다 — 사유는 unattributable', () => {
+    const r = policyTargetIds({ tickets: ['REQ-2026-001'], unattributableCommits: [commit()] }, null, noDelivery)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.unknown.reason).toBe('unattributable')
   })
 
   it('브랜치 scope 와 귀속을 **합친다**(더 좁게 읽지 않는다)', () => {
-    const ids = policyTargetIds(
+    const r = policyTargetIds(
       { tickets: ['REQ-2026-001'], unattributableCommits: [] },
       { kind: 'ticket', req_id: 'REQ-2026-999' },
       noDelivery,
     )
-    expect(ids?.slice().sort()).toEqual(['REQ-2026-001', 'REQ-2026-999'])
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.ids.slice().sort()).toEqual(['REQ-2026-001', 'REQ-2026-999'])
   })
 
-  it('🔴 묶음 멤버를 읽지 못하면 모름(null)이다', () => {
-    expect(policyTargetIds({ tickets: [], deliveries: ['s'], unattributableCommits: [] }, null, noDelivery)).toBeNull()
+  it('🔴 묶음 멤버를 읽지 못하면 모름이다 — 사유는 delivery-unreadable 이고 슬러그를 담는다', () => {
+    const r = policyTargetIds({ tickets: [], deliveries: ['s'], unattributableCommits: [] }, null, noDelivery)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.unknown).toEqual({ reason: 'delivery-unreadable', slug: 's' })
   })
 
   it('대상이 없으면 빈 배열이다 — 호출부가 판정 불가로 다룬다', () => {
-    expect(policyTargetIds({ tickets: [], unattributableCommits: [] }, null, noDelivery)).toEqual([])
+    const r = policyTargetIds({ tickets: [], unattributableCommits: [] }, null, noDelivery)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.ids).toEqual([])
   })
 })
 
@@ -969,7 +984,7 @@ describe('[REQ-2026-159] policyTargetIds', () => {
  * **판정 불가로 이어지는지**는 아무도 보지 않아, 폴백을 되돌려도 전부 green 이었다.
  */
 describe('[REQ-2026-159] resolveIntegrationPolicy — 대상이 비면 판정 불가', () => {
-  const empty: AutoFacts = { ...FACTS_OK, memberPolicies: [], policyMembersUnknown: false }
+  const empty: AutoFacts = { ...FACTS_OK, memberPolicies: [], policyUnknown: null }
 
   for (const sg of ['phase', 'req', 'merge', 'auto'] as const) {
     it(`🔴 config ${sg} 에서도 indeterminate 다(폴백 없음)`, () => {
