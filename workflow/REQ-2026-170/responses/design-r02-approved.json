@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"125c57cb1523d1b85d3f382b27a3b1d93b3da4eb","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"Implement phase 1 as specified, including the adapter option-capture regression test, then request phase review.","observations":[]}
