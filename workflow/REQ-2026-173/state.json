@@ -2,15 +2,37 @@
   "id": "REQ-2026-173",
   "branch": "feat/req-2026-173-trunk-advance-authorized",
   "risk_level": "LOW",
-  "codex_thread_id": "01a02940-f785-79c3-a4f5-8f1a0545b105",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a02963-40f6-7b00-a1da-e5cab473ae44",
+  "review_base_sha": "7eb75dd024fba1bbf1145be502c138098afafbcd",
+  "review_diff_hash": "8506def03f70d3159911aa40ad0d2da9c77a8dc8",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "dc2dd86e8859d95b09e1a050e78b049939fb65152e02afaacecf0f73ac31342f",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-authorize",
+  "phases": [
+    {
+      "id": "phase-1-authorize",
+      "title": "인가된 trunk 이동 판정(순수+사실 계산)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-wire-integrate",
+      "title": "integrate 배선 + 정직한 기록",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-3-next-guidance",
+      "title": "req:next 안내 정합",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -23,6 +45,13 @@
       "review_kind": "design",
       "phase_id": null,
       "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-authorize#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-authorize",
+      "attempts": 4,
       "closed_reason": "approved"
     }
   ],
@@ -57,14 +86,23 @@
     "design_hash": "dc2dd86e8859d95b09e1a050e78b049939fb65152e02afaacecf0f73ac31342f"
   },
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-authorize",
     "outcome": "approved",
-    "compare_hash": "4177938581432edaf6e27ba5c4c2b5ced496f2ae38003622141aefd9bcd9f8ab",
+    "compare_hash": "02e3a6b0cdf148e61c013d93296ce883bda70a5a26bf94ca3ea9ba7b2c8216a4",
     "count": 1,
     "errors": [],
-    "at": "2026-08-22T11:36:07.021Z",
+    "at": "2026-08-22T12:14:43.702Z",
     "findings": [],
     "elided_count": 0
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "8506def03f70d3159911aa40ad0d2da9c77a8dc8",
+      "phase_id": "phase-1-authorize",
+      "consumed_by_commit_sha": "5e3d65c956f30ffa94e8fcf6dce058ee764187f8",
+      "approval_consumed_at": "2026-08-22T12:15:02.448Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
