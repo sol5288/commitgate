@@ -2,15 +2,30 @@
   "id": "REQ-2026-169",
   "branch": "feat/req-2026-169-intake-batch-scan",
   "risk_level": "LOW",
-  "codex_thread_id": "01a02733-0bce-7af3-a76b-74ea206915a5",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a0273c-0584-7392-bd86-6b45793c0764",
+  "review_base_sha": "32fc3259bf5e5cc0c6421fe6bfd96ad03c100616",
+  "review_diff_hash": "aef70a34236b0e4c88cc19ece1fa8a22d5a38647",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "27852785f7cf9805df094286e341e1afda5aca4dd308ab985181e6900991efbd",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-batch-ports",
+  "phases": [
+    {
+      "id": "phase-1-batch-ports",
+      "title": "배치 리더 + 배치 포트(배선 없음)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-wire-and-count",
+      "title": "scanIntake 배선 + 계수·동등성 오라클",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +39,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-batch-ports#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-batch-ports",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-batch-ports",
     "outcome": "approved",
-    "compare_hash": "32c18c1809a31a30cc3a8964df1f5acf9b1198e2ecfcf96aaea75224caa1f918",
+    "compare_hash": "db3dd2933d05d57abe4dbf6bd73370cf613bb5bcecabe469a2966850e35f8419",
     "count": 1,
     "errors": [],
-    "at": "2026-08-22T02:02:43.862Z",
+    "at": "2026-08-22T02:12:02.951Z",
     "findings": [],
     "elided_count": 0
   },
@@ -70,5 +92,14 @@
       "source_response_path": "workflow/REQ-2026-169/responses/design-r02-approved.json"
     },
     "design_hash": "27852785f7cf9805df094286e341e1afda5aca4dd308ab985181e6900991efbd"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "aef70a34236b0e4c88cc19ece1fa8a22d5a38647",
+      "phase_id": "phase-1-batch-ports",
+      "consumed_by_commit_sha": "49a0a4d8894c837ffce54fd5147612fc4b0dfb49",
+      "approval_consumed_at": "2026-08-22T02:12:55.552Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
