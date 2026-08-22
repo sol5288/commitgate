@@ -1,0 +1,98 @@
+{
+  "id": "REQ-2026-170",
+  "branch": "feat/req-2026-170-intake-spawn-boundary",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a02789-9896-73c1-8c09-ae60ae1cf504",
+  "review_base_sha": "3c910a89ca42b63819b6f7d1b76f0c1c29a3e2e2",
+  "review_diff_hash": "f5337b45e8c481c2b3c4a06101ae0182e689db77",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "4daad5d2a2500cc2e1873ca9f0247968d2485687869c94b7f6638d77fa6cb8e4",
+  "current_phase": "phase-1-boundary",
+  "phases": [
+    {
+      "id": "phase-1-boundary",
+      "title": "안전 spawn 경계 경유 + maxBuffer 계약 고정",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-boundary#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-boundary",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-boundary",
+    "outcome": "approved",
+    "compare_hash": "88de326bbbb7e5a026f97cef7223dd4205c4eae3a7fe151874379c17c4b02814",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-22T03:36:40.767Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "d7e60ac97621b3d74496edd0c4aa2c703445489a",
+    "design": "8464c42e241bcc4626c6ec9625851be7940d4bc8",
+    "plan": "f35050d48838e4576473ecb0a842c460fbbf7f97"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-170/responses/design-r02-approved.json",
+    "response_sha256": "2e0004445981d95a76d3e5c8db26c3167071d0f9cb7efb42257451fce4d4a7f9",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "125c57cb1523d1b85d3f382b27a3b1d93b3da4eb",
+    "codex_thread_id": "01a02784-c75b-7223-9d83-cb0538242e51",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-22T03:31:44.993Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-170/responses/design-r01-needs-fix.json",
+          "sha256": "2b603d2d755690021d782f7a847f6918d97f4123f224e7d6b3d11714efa8e9ed"
+        },
+        {
+          "response_path": "workflow/REQ-2026-170/responses/design-r02-approved.json",
+          "sha256": "2e0004445981d95a76d3e5c8db26c3167071d0f9cb7efb42257451fce4d4a7f9"
+        }
+      ],
+      "inventory_sha256": "a1b53be1c9bc03cef063daae4b00308c3e265a914933a6a44d3fb6befb720513",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-170/responses/design-r02-approved.json"
+    },
+    "design_hash": "4daad5d2a2500cc2e1873ca9f0247968d2485687869c94b7f6638d77fa6cb8e4"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "f5337b45e8c481c2b3c4a06101ae0182e689db77",
+      "phase_id": "phase-1-boundary",
+      "consumed_by_commit_sha": "d6dde2a14b0e32fad3a31b922c7e13b0cf7b8a75",
+      "approval_consumed_at": "2026-08-22T03:36:58.143Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

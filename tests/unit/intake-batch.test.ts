@@ -1,4 +1,26 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+/**
+ * REQ-2026-170 DEC-5 — 경계에 **실제로 전달된 옵션**을 관측한다.
+ *
+ * 🔴 `safeSpawnSyncStatus` 의 `maxBuffer` 기본값은 64 MiB 인데 `ls-tree -r` 열거는 256 MiB 를 요구한다.
+ *    명시가 빠지면 상한이 조용히 1/4 로 줄어 큰 저장소에서 지금 되던 스캔이 실패한다 — 주석으로는
+ *    다음 사람이 지우므로 **호출 인자 자체**를 단정한다. 감싸는 구현은 실물에 그대로 위임한다.
+ */
+const { boundaryCalls } = vi.hoisted(() => ({
+  boundaryCalls: [] as { args: readonly string[]; opts: Record<string, unknown> }[],
+}))
+
+vi.mock('../../scripts/req/lib/adapters', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../scripts/req/lib/adapters')>()
+  return {
+    ...actual,
+    safeSpawnSyncStatus: (file: string, args: readonly string[], opts: Record<string, unknown> = {}) => {
+      boundaryCalls.push({ args, opts })
+      return (actual.safeSpawnSyncStatus as (...a: unknown[]) => unknown)(file, args, opts)
+    },
+  }
+})
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -319,5 +341,39 @@ describe('실 git — readBlobsByOid(DEC-4) · listHeadTreeEntries(DEC-5)', () =
 
   it('🔴 배치 읽기 실패는 **throw** 한다 — 빈 뷰로 흡수하면 게이트가 통째로 우회된다', () => {
     expect(() => readBlobsByOid(join(tmpdir(), 'cg-nonexistent-dir-for-intake-batch'), [OID(1)])).toThrow()
+  })
+})
+
+describe('[REQ-2026-170 DEC-5] 경계에 넘기는 옵션 — maxBuffer 가 조용히 줄지 않는다', () => {
+  it('🔴 ls-tree 열거는 maxBuffer 256 MiB 를 **명시**한다(경계 기본값은 64 MiB)', () => {
+    const repo = newRepo()
+    writeFileSync(join(repo, 'a.txt'), 'x\n', 'utf8')
+    g(repo, ['add', '-A'])
+    g(repo, ['commit', '-q', '-m', 'seed'])
+
+    boundaryCalls.length = 0
+    listHeadTreeEntries(repo, 'workflow')
+
+    const lsTree = boundaryCalls.find((c) => c.args[0] === 'ls-tree')
+    expect(lsTree, 'ls-tree 가 안전 경계를 지나지 않았습니다').toBeDefined()
+    expect(lsTree?.opts.maxBuffer).toBe(256 * 1024 * 1024)
+  })
+
+  it('🔴 열거는 직접 스폰하지 않고 **경계를 지난다**(감싼 호출이 관측된다)', () => {
+    const repo = newRepo()
+    writeFileSync(join(repo, 'a.txt'), 'x\n', 'utf8')
+    g(repo, ['add', '-A'])
+    g(repo, ['commit', '-q', '-m', 'seed'])
+
+    boundaryCalls.length = 0
+    listHeadTreeEntries(repo, 'workflow')
+    expect(boundaryCalls.map((c) => c.args[0])).toEqual(['ls-tree'])
+  })
+
+  it('rev-parse 폴백도 경계를 지난다(커밋 없는 저장소)', () => {
+    const repo = newRepo() // 커밋 없음 → ls-tree 실패 → rev-parse 로 "커밋 있는가" 확인
+    boundaryCalls.length = 0
+    expect(listHeadTreeEntries(repo, 'workflow')).toEqual([])
+    expect(boundaryCalls.map((c) => c.args[0])).toEqual(['ls-tree', 'rev-parse'])
   })
 })

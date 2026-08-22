@@ -22,11 +22,15 @@
  * 그래서 `ls-tree -r` 한 번으로 요청 가능한 경로의 **상위집합**을 미리 알 수 있다.
  *
  * ## leaf 유지
- * 이 모듈은 `evidence`(타입)·`scratch`·`git-batch` 만 의존한다. `review-codex`·`req-commit`·`req-doctor`·
- * `intake` 를 import 하지 않는다.
+ * 이 모듈은 `evidence`(타입)·`scratch`·`git-batch`·`adapters`(안전 spawn 경계) 만 의존한다.
+ * `review-codex`·`req-commit`·`req-doctor`·`intake` 를 import 하지 않는다.
+ *
+ * 🔴 **직접 스폰하지 않는다.** git 호출은 `adapters.safeSpawnSyncStatus`(shell 없는 cross-spawn 단일 경로)를
+ *    쓴다 — `external-call-boundary.test.ts` 가 지키는 스폰 경계이고, exit code 를 보존해야 실패와
+ *    "티켓 없음"을 가를 수 있다. 새 스폰 경로를 만들 이유가 없다.
  */
 import { createHash } from 'node:crypto'
-import spawn from 'cross-spawn'
+import { safeSpawnSyncStatus } from './adapters'
 import { readBlobsByOid } from './git-batch'
 import { isArchiveFileName } from './scratch'
 import type { EvidencePorts } from './evidence'
@@ -134,13 +138,13 @@ export function parseLsTreeZ(out: string): HeadTreeEntry[] {
  */
 export function listHeadTreeEntries(cwd: string, ticketRootRel: string, ref = 'HEAD'): HeadTreeEntry[] {
   const dir = normalizeDirRel(ticketRootRel)
-  const res = spawn.sync('git', ['ls-tree', '-r', '-z', ref, '--', enumeratePathspec(dir)], {
+  // 🔴 `safeSpawnSyncStatus` 는 stdout 을 **가공하지 않는다** — `-z` 프레이밍이 보존된다.
+  //    (`GitAdapter.exec` 는 후행 공백을 제거하므로 여기서 쓸 수 없다 — DEC-5.)
+  const res = safeSpawnSyncStatus('git', ['ls-tree', '-r', '-z', ref, '--', enumeratePathspec(dir)], {
     cwd,
-    encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
   })
-  if (res.error) throw res.error
-  if (res.status === 0) return parseLsTreeZ(String(res.stdout ?? ''))
+  if (res.status === 0) return parseLsTreeZ(res.stdout)
   // 여기부터는 **실패 경로**다 — 추가 git 호출이 정상 경로 계약에 영향을 주지 않는다.
   //
   // 🔴 묻는 것은 "**저장소에 커밋이 하나라도 있는가**"이지 "그 ref 가 푸는가"가 아니다.
@@ -148,14 +152,13 @@ export function listHeadTreeEntries(cwd: string, ticketRootRel: string, ref = 'H
   //    말하는 경로가 열린다. 커밋이 하나도 없으면 티켓도 있을 수 없으므로 `[]` 는 삼킴이 아니라 **사실**이다.
   if (!repoHasAnyCommit(cwd)) return []
   throw new Error(
-    `git ls-tree 실패(exit=${res.status ?? 'null'}) — 저장소에 커밋이 있는데 '${ref}' 를 열거하지 못했다: ${String(res.stderr ?? '').trim() || '(stderr 없음)'}`,
+    `git ls-tree 실패(exit=${res.status ?? 'null'}) — 저장소에 커밋이 있는데 '${ref}' 를 열거하지 못했다: ${res.stderr.trim() || '(stderr 없음)'}`,
   )
 }
 
 /** 저장소에 커밋이 하나라도 있는가. 🔴 **실패 경로 전용** — 정상 경로에서는 호출되지 않는다. */
 function repoHasAnyCommit(cwd: string): boolean {
-  const res = spawn.sync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { cwd, encoding: 'utf8' })
-  return !res.error && res.status === 0
+  return safeSpawnSyncStatus('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { cwd }).status === 0
 }
 
 /** `<ticketRoot>/<seg>/…` 의 `<seg>` — 티켓 디렉터리가 아니거나 하위 파일이 아니면 `null`(순수). */
