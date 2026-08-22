@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CONFIG_SCHEMA } from '../../scripts/req/lib/config'
+import { autonomyEnumerationProblem, autonomyRuleParagraph, backtickTokens } from '../helpers/autonomy-enumeration'
 
 /**
  * REQ-2026-131 — **에이전트 자율 진행 계약**이 배포 템플릿에 살아 있는지.
@@ -190,5 +191,78 @@ describe('[REQ-2026-160] 계약이 대화형 예외의 경계를 말한다', () 
 
   it('🔴 이 경로는 push 하지 않는다는 것도 적는다(권한이 없다)', () => {
     expect(template()).toContain('push 도 하지 않는다')
+  })
+})
+
+/**
+ * REQ-2026-171 — **자율 규칙이 `stopGate` 값 전체를 덮는가.**
+ *
+ * 🔴 옛 문장은 `req`·`merge` 만 허가하고 `phase` 만 제외해서 **`auto` 가 어느 쪽에도 없었다**.
+ *    가장 자율적인 값을 고른 사용자가 계약상 자율 허가를 못 받았다.
+ *
+ * 🔴 판정은 `tests/helpers/autonomy-enumeration` 의 순수 함수다 — 이 파일 안에 두면 오라클이
+ *    자기 자신을 검사한다(REQ-2026-158 교훈).
+ */
+describe('[REQ-2026-171] 자율 규칙이 stopGate 값 전체를 열거한다', () => {
+  /** 🔴 스키마 enum 에서 파생 — 위 describe 의 `stopGateValues` 와 **같은 원천**이다. */
+  const allStopGates = (): string[] => {
+    const props = (CONFIG_SCHEMA as { properties?: Record<string, { enum?: unknown }> }).properties
+    const en = props?.stopGate?.enum
+    expect(Array.isArray(en), 'CONFIG_SCHEMA 에 stopGate enum 이 없다').toBe(true)
+    return en as string[]
+  }
+
+  it('🔴 실물: 계약이 phase 를 제외한 모든 값을 열거한다', () => {
+    expect(autonomyEnumerationProblem(template(), allStopGates())).toBeNull()
+  })
+
+  it('🔴 문단 경계를 좁게 잡는다 — 규칙 문단 밖을 주워 오지 않는다', () => {
+    const para = autonomyRuleParagraph(template())
+    expect(para, '자율 규칙 문단을 찾지 못했다').not.toBeNull()
+    // 이 문단은 규칙만 담는다. 통합 승인·예외표 같은 이웃 절이 섞이면 오라클이 헐거워진다.
+    expect(para).not.toContain('통합 승인')
+    expect(para).not.toContain('예외 —')
+    expect(backtickTokens(para as string)).toContain('auto')
+  })
+
+  /**
+   * 🔴 **파생 증명**(design-r01 P1). "enum 을 늘리면 red" 변이로는 증명되지 않는다 —
+   *    위 describe 의 `stopGate 는 네 값이다` 단정이 **먼저** red 가 되기 때문이다.
+   *    그래서 실제 템플릿도 실제 enum 도 건드리지 않는 **합성 입력**으로 이 함수를 직접 태운다.
+   *    판정이 고정 문자열이라면 이 케이스가 통과해 버리므로 여기서 red 로 잡힌다.
+   */
+  it('🔴 파생 증명: 값이 하나 늘고 계약이 그대로면 problem 을 낸다(합성 fixture)', () => {
+    const synthetic = [
+      '**통제점이 아닌 판단은 권장안으로 진행한다.** `stopGate`가 **`phase`를 제외한 모든 값**',
+      '(`req`·`merge`·`auto`)일 때 계속한다. `stopGate: "phase"`에서는 적용하지 않는다.',
+      '',
+      '다른 문단. 여기에는 `newgate` 가 있다 — 문단 경계를 넓게 잡으면 이것이 오라클을 대신 만족시킨다.',
+    ].join('\n')
+
+    // 실제 값 목록으로는 문제가 없다.
+    expect(autonomyEnumerationProblem(synthetic, ['phase', 'req', 'merge', 'auto'])).toBeNull()
+    // 🔴 값이 하나 늘면(계약은 그대로) 반드시 problem 이다.
+    const problem = autonomyEnumerationProblem(synthetic, ['phase', 'req', 'merge', 'auto', 'newgate'])
+    expect(problem, '값이 늘었는데 problem 이 없다 — 판정이 파생이 아니라 고정 문자열이다').not.toBeNull()
+    expect(problem).toContain('newgate')
+  })
+
+  it('🔴 제외 값을 말하지 않으면 problem 이다', () => {
+    const noExclusion = '**통제점이 아닌 판단은 권장안으로 진행한다.** `req`·`merge`·`auto` 에서 계속한다.'
+    expect(autonomyEnumerationProblem(noExclusion, ['phase', 'req', 'merge', 'auto'])).toContain('phase')
+  })
+
+  it('🔴 규칙 문단이 아예 없으면 problem 이다(가드가 조용히 죽지 않는다)', () => {
+    expect(autonomyEnumerationProblem('아무 내용도 없음', ['phase', 'req'])).toContain('찾지 못했다')
+  })
+
+  /** 🔴 같은 주장의 복제본에 옛 열거가 남아 있지 않다(DEC-3). */
+  it('🔴 문서 복제본에 req·merge 만 열거한 자율 문장이 남아 있지 않다', () => {
+    for (const rel of ['docs/workflow.md', 'docs/workflow.en.md']) {
+      const md = readFileSync(join(ROOT, rel), 'utf8')
+      expect(md, `${rel}: 자율 규칙에 auto 가 없다`).not.toMatch(
+        /(권장안을|recommended option)[\s\S]{0,200}?`req`(·| or )`merge`(?![^\n]*auto)/,
+      )
+    }
   })
 })

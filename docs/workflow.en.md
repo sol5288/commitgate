@@ -80,7 +80,7 @@ on a re-review round; the latter governs the human confirmation at integration. 
 [Configuration](configuration.en.md#stopgate-auto--automatic-integration-of-verified-changes-within-a-delegated-scope).
 🔴 **Neither of them opens `hardCap`.**
 
-If you set `stopGate` to `req` or `merge` for autonomous runs, look at this axis too: a budget stop cuts in
+If you set `stopGate` to `req`, `merge`, or `auto` for autonomous runs, look at this axis too: a budget stop cuts in
 **regardless** of where `stopGate` says you stop, so opening only one of the two still leaves the workflow
 interrupted.
 
@@ -297,8 +297,8 @@ The `kind` from `req:next` decides whether to stop. On `RUN`, `AGENT`, and `DONE
 stop points you configured would otherwise multiply from session to session.
 
 Judgements that are not tool control points (design options, implementation approach) are resolved by the agent
-picking the recommended option and recording the grounds in `01-design.md`, when `stopGate` is `req` or `merge`.
-If you chose `phase`, this autonomy rule does not apply.
+picking the recommended option and recording the grounds in `01-design.md`, for **every `stopGate` value except
+`phase`** (`req`, `merge`, `auto`). If you chose `phase`, this autonomy rule does not apply.
 
 The places it does stop are fixed: the control-point table (I1/I2/B1, R1/R2/R3), HIGH confirmation, destructive
 operations, a change of design **scope**, a `BLOCKED` review, unmet prerequisites, `AWAIT_HUMAN`/`BLOCKED`,

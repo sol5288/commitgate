@@ -76,7 +76,7 @@ main에 반영하는 경로는 **PR 경유(선택)**와 **direct push** 둘 다 
 통합을 진행합니다 — 상세는 [설정](configuration.md#stopgate-auto--사전-위임-범위-안의-검증된-변경만-자동-통합합니다)에 있습니다.
 🔴 **둘 다 `hardCap`을 열지 않습니다.**
 
-`stopGate`를 `req`·`merge`로 두어 자율 진행을 설정했다면 이 축도 함께 보십시오. 예산 정지는
+`stopGate`를 `req`·`merge`·`auto`로 두어 자율 진행을 설정했다면 이 축도 함께 보십시오. 예산 정지는
 `stopGate`가 정한 지점과 **무관하게** 끼어들기 때문에, 한쪽만 열어 두면 워크플로가 여전히 끊깁니다.
 
 ## 관측 요약 — commitgate report
@@ -276,8 +276,9 @@ npx commitgate delivery approve --slug payment-improvement --confirm "approve pa
 그대로 진행합니다. 묻고 기다리는 것은 멈추는 것과 같은 효과라, 설정으로 정한 정지 지점이 세션마다
 늘어나기 때문입니다.
 
-도구 통제점이 아닌 판단(설계 선택지·구현 방식)은 `stopGate`가 `req`·`merge`일 때 에이전트가 권장안을
-택하고 그 근거를 `01-design.md`에 남긴 뒤 계속합니다. `phase`를 고르셨다면 이 자율 규칙은 적용되지 않습니다.
+도구 통제점이 아닌 판단(설계 선택지·구현 방식)은 `stopGate`가 **`phase`를 제외한 모든 값**
+(`req`·`merge`·`auto`)일 때 에이전트가 권장안을 택하고 그 근거를 `01-design.md`에 남긴 뒤 계속합니다.
+`phase`를 고르셨다면 이 자율 규칙은 적용되지 않습니다.
 
 멈추는 자리는 정해져 있습니다: 통제점표(I1/I2/B1·R1/R2/R3), HIGH 확인, destructive 작업, 설계 **범위**
 변경, 리뷰 `BLOCKED`, 전제 미충족, `AWAIT_HUMAN`/`BLOCKED`, `commitgate setup`,
