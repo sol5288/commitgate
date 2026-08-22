@@ -64,7 +64,7 @@ import { helpGate } from './lib/verb-help'
 // 🔴 REQ-2026-172 phase-3: 위임 안내가 요구 플래그를 알려면 `req:delegate` 와 **같은 판정**이 필요하다.
 import { preflightDelegation } from './lib/delegation-preflight'
 import { collectPreflightFacts } from './lib/delegation-preflight-facts'
-import { readBlobsAtRef } from './lib/git-batch'
+import { readBlobsAtRef, readBlobsByOid } from './lib/git-batch'
 import {
   scopeOfBranch,
   delegationVerdict,
@@ -1349,6 +1349,7 @@ export function probeDelegationAcks(
   const ports = {
     git: createGitAdapter(cfg.root),
     readBlobs: (ref: string, paths: readonly string[]) => readBlobsAtRef(cfg.root, ref, paths),
+    readBlobsByOid: (oids: readonly string[]) => readBlobsByOid(cfg.root, oids),
     ticketRoot: cfg.ticketRoot,
     reviewHardCap: cfg.reviewBudget.hardCap,
   }

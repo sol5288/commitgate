@@ -9,7 +9,7 @@ import {
   firstParentAuthorizationProblem,
   parseFirstParentChain,
 } from '../../scripts/req/lib/trunk-advance'
-import { readBlobsAtRef } from '../../scripts/req/lib/git-batch'
+import { readBlobsAtRef, readBlobsByOid } from '../../scripts/req/lib/git-batch'
 import { delegationVerdict, type DelegationRow, type DelegationCheckInput } from '../../scripts/req/lib/delegation'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
 
@@ -170,7 +170,15 @@ function mkRepo(): { dir: string; ports: Parameters<typeof authorizeTrunkAdvance
   g(dir, 'add', '.')
   g(dir, 'commit', '-q', '-m', 'base')
   const git: GitAdapter = { exec: (args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }) }
-  return { dir, ports: { git, readBlobs: (ref, paths) => readBlobsAtRef(dir, ref, paths), ticketRoot: 'workflow' } }
+  return {
+    dir,
+    ports: {
+      git,
+      readBlobs: (ref, paths) => readBlobsAtRef(dir, ref, paths),
+      readBlobsByOid: (oids) => readBlobsByOid(dir, oids),
+      ticketRoot: 'workflow',
+    },
+  }
 }
 
 /**

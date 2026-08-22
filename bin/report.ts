@@ -15,7 +15,7 @@ import { createGitAdapter } from '../scripts/req/lib/adapters'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 import { buildReport, type Report, type EvidenceRange, type VerifyRangeOutcome } from '../scripts/req/lib/report'
 import { verifyRangeDeep, type DeepVerifyReport } from '../scripts/req/lib/verify-range'
-import { readBlobsAtRef } from '../scripts/req/lib/git-batch'
+import { readBlobsAtRef, readBlobsByOid } from '../scripts/req/lib/git-batch'
 import { collectDeepInput } from './verify-range'
 
 export interface Opts {
@@ -125,7 +125,14 @@ function tryVerifyRange(rootAbs: string, ticketRoot: string, trunkBranch: string
   }
 
   try {
-    const report = verifyRangeDeep(collectDeepInput(git, (ref, paths) => readBlobsAtRef(rootAbs, ref, paths), baseSha, headSha, ticketRoot))
+    const report = verifyRangeDeep(collectDeepInput(
+        git,
+        (ref, paths) => readBlobsAtRef(rootAbs, ref, paths),
+        baseSha,
+        headSha,
+        ticketRoot,
+        (oids) => readBlobsByOid(rootAbs, oids),
+      ))
     return {
       ok: true,
       report,

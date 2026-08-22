@@ -23,7 +23,7 @@
  *
  * 🔴 **판정 불가는 통과가 아니다.** 여기는 차단 지점이므로 모르면 막는다.
  */
-import { verifyRangeDeep, type ReadBlobsPort } from './verify-range'
+import { verifyRangeDeep, type ReadBlobsPort, type ReadBlobsByOidPort } from './verify-range'
 import { collectDeepInput } from './verify-range'
 import type { GitAdapter } from './adapters'
 import type { DelegationRow, TrunkAdvanceVerdict } from './delegation'
@@ -31,6 +31,8 @@ import type { DelegationRow, TrunkAdvanceVerdict } from './delegation'
 export interface TrunkAdvancePorts {
   git: GitAdapter
   readBlobs: ReadBlobsPort
+  /** 🔴 REQ-2026-176: OID 요청 경로. */
+  readBlobsByOid: ReadBlobsByOidPort
   ticketRoot: string
 }
 
@@ -137,7 +139,7 @@ export function authorizeTrunkAdvance(
   // ── 조건 4: 수집·분류가 성공해야 한다 ──
   let deepInput: ReturnType<typeof collectDeepInput>
   try {
-    deepInput = collectDeepInput(ports.git, ports.readBlobs, fromSha, toSha, ports.ticketRoot)
+    deepInput = collectDeepInput(ports.git, ports.readBlobs, fromSha, toSha, ports.ticketRoot, ports.readBlobsByOid)
   } catch (err) {
     return { authorized: false, reason: `trunk 이동 범위를 읽지 못했다: ${err instanceof Error ? err.message : String(err)}` }
   }

@@ -22,7 +22,7 @@ import { DELEGATION_LEDGER_REL, parseDelegationLedger, type DelegationIssued } f
 import { BOOKKEEPING_TRAILER } from '../../scripts/req/lib/bookkeeping'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
 import { main as delegateMain } from '../../scripts/req/req-delegate'
-import { readBlobsAtRef } from '../../scripts/req/lib/git-batch'
+import { readBlobsAtRef, readBlobsByOid } from '../../scripts/req/lib/git-batch'
 import type { PreflightFactPorts } from '../../scripts/req/lib/delegation-preflight-facts'
 
 /**
@@ -336,6 +336,7 @@ describe('[REQ-2026-172] req:delegate preflight 배선', () => {
   const ports = (dir: string): PreflightFactPorts => ({
     git: { exec: (args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }) },
     readBlobs: (ref, paths) => readBlobsAtRef(dir, ref, paths),
+    readBlobsByOid: (oids) => readBlobsByOid(dir, oids),
     ticketRoot: 'workflow',
     reviewHardCap: 8,
   })
