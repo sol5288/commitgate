@@ -50,6 +50,37 @@ export function parseCatFileBatchOutput(out: Buffer, requests: readonly string[]
 }
 
 /**
+ * **OID 로** 배치 읽기(REQ-2026-169 DEC-4). 반환 Map 의 키는 요청한 oid.
+ *
+ * 🔴 **왜 `<ref>:<path>` 가 아니라 oid 인가**: `<ref>:<path>` 는 요청마다 트리를 되짚으므로 요청 수가
+ *    많아지면 비용이 급격히 는다. 같은 저장소·같은 1,608 blob 을 읽는 데:
+ *
+ *    | 요청 형식 | `cat-file --batch` 소요 |
+ *    |---|---|
+ *    | `HEAD:<path>` (`readBlobsAtRef`) | 5,859 ms |
+ *    | oid (`ls-tree -r` 가 준 값)      |   199 ms |
+ *
+ *    intake 스캔은 `ls-tree -r` 로 이미 oid 를 들고 있으므로 추가 비용 없이 이 경로를 쓴다.
+ *    경로만 아는 호출부(`verify-range`·`report`·`integrate`)는 계속 `readBlobsAtRef` 를 쓴다 —
+ *    그쪽은 요청 집합이 작아 이 REQ 의 대상이 아니다.
+ *
+ * 🔴 **중복 oid 는 미리 접는다.** 같은 내용의 파일이 여러 경로에 있으면 oid 가 같다. 접지 않아도
+ *    프로토콜상 요청 수만큼 응답이 오므로 파싱은 맞지만, 같은 blob 을 여러 번 전송받을 이유가 없다.
+ */
+export function readBlobsByOid(cwd: string, oids: readonly string[]): Map<string, Buffer | null> {
+  const unique = [...new Set(oids)]
+  if (unique.length === 0) return new Map()
+  const res = spawn.sync('git', ['cat-file', '--batch'], {
+    cwd,
+    input: `${unique.join('\n')}\n`,
+    maxBuffer: 256 * 1024 * 1024,
+  })
+  if (res.error) throw res.error
+  if (res.status !== 0) throw new Error(`git cat-file --batch 실패(exit=${res.status ?? 'null'})`)
+  return parseCatFileBatchOutput(res.stdout as Buffer, unique)
+}
+
+/**
  * `<ref>:<path>`들을 배치로 읽는다. 반환 Map의 키는 **요청한 path**(repo-상대·POSIX 구분자).
  * missing·오류 경로는 null. spawn 실패(git 부재 등)는 throw(호출부가 검증 불가로 처리).
  */
