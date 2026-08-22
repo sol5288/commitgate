@@ -322,6 +322,46 @@ describe('req:new — 레거시 scratch만 허용하는 clean-tree 판정', () =
     }
   }, 60_000)
 
+  /**
+   * REQ-2026-169 phase-2 r01 P1 — repo-root ticketRoot 에서 **intake 게이트가 실제로 발화**하는가.
+   *
+   * 🔴 이 자리는 두 결함이 겹쳐 있었다:
+   *   1. 옛 열거가 pathspec 을 `'/'` 로 만들어 exit 128 → `catch → []` → 게이트가 **조용히 꺼져** 있었다.
+   *   2. 그것을 고치자 티켓 경로 결합이 `'/REQ-…'` 가 되어 배치 뷰에 하나도 적중하지 않았다.
+   * 그래서 "명령이 성공한다"가 아니라 **"미종결 티켓이면 차단된다"** 를 단정한다.
+   */
+  it("🔴 ticketRoot='.'에서 committed 미종결 durable 티켓이 있으면 req:new --run이 차단된다", () => {
+    const dir = fixture()
+    try {
+      writeRel(dir, 'req.config.json', JSON.stringify({ ...SETUP_OK, packageManager: 'npm', ticketRoot: '.' }) + '\n')
+      const year = new Date().getFullYear()
+      const openTicket = `REQ-${year}-001`
+      // durable marker 는 있는데 증거가 없다 → developing → intake block.
+      writeRel(dir, `${openTicket}/state.json`, JSON.stringify({ id: openTicket, review_series_model_version: 1, phases: [], evidence_durability_required: true }) + '\n')
+      git(dir, ['add', '--', 'req.config.json', `${openTicket}/state.json`])
+      git(dir, ['commit', '-qm', 'root ticket config + open ticket'])
+
+      // 🔴 브랜치 **이름을 가정하지 않는다**(fixture 의 `git init` 기본값은 환경마다 다르다).
+      //    단정하는 것은 "차단되면 아무것도 만들지 않는다" 이므로 **실행 전후가 같다**를 본다.
+      const branchBefore = git(dir, ['branch', '--show-current']).trim()
+      const headBefore = git(dir, ['rev-parse', 'HEAD']).trim()
+
+      const result = spawnSync(process.execPath, [TSX_CLI, REQ_NEW_CLI, 'root-blocked', '--root', dir, '--run'], {
+        cwd: PACKAGE_ROOT,
+        encoding: 'utf8',
+      })
+      expect(result.status).not.toBe(0)
+      expect(`${result.stdout}${result.stderr}`).toContain(openTicket)
+      expect(`${result.stdout}${result.stderr}`).toContain('미종결 durable 티켓')
+      // 차단이면 브랜치도 티켓도 생기지 않는다(생성 전 fail-closed).
+      expect(git(dir, ['branch', '--show-current']).trim()).toBe(branchBefore)
+      expect(git(dir, ['rev-parse', 'HEAD']).trim()).toBe(headBefore)
+      expect(existsSync(join(dir, `REQ-${year}-002`))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it("실제 req:new --run은 ticketRoot='.'도 canonical Git 경로로 판정한다", () => {
     const dir = fixture()
     try {

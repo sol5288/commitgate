@@ -283,7 +283,25 @@ describe('실 git — readBlobsByOid(DEC-4) · listHeadTreeEntries(DEC-5)', () =
     writeFileSync(join(repo, 'a.txt'), 'x\n', 'utf8')
     g(repo, ['add', '-A'])
     g(repo, ['commit', '-q', '-m', 'seed'])
+    // 🔴 이 경로는 git 이 **exit 0 + 빈 출력**을 내므로 실패 판별을 태우지 않는다(실측).
     expect(listHeadTreeEntries(repo, 'workflow')).toEqual([])
+  })
+
+  it('커밋이 하나도 없으면(unborn HEAD) 빈 열거 — 티켓이 있을 수 없으므로 **사실**이다', () => {
+    const repo = newRepo() // init 만 — 커밋 없음
+    expect(listHeadTreeEntries(repo, 'workflow')).toEqual([])
+  })
+
+  it('🔴 커밋이 있는데 ref 를 열거하지 못하면 **throw** — 실패를 "티켓 없음"으로 삼키면 게이트가 우회된다', () => {
+    const repo = newRepo()
+    writeFileSync(join(repo, 'a.txt'), 'x\n', 'utf8')
+    g(repo, ['add', '-A'])
+    g(repo, ['commit', '-q', '-m', 'seed'])
+    expect(() => listHeadTreeEntries(repo, 'workflow', 'NO-SUCH-REF')).toThrow(/열거하지 못했다/)
+  })
+
+  it('🔴 저장소가 아닌 경로도 throw(조용한 빈 목록 금지)', () => {
+    expect(() => listHeadTreeEntries(join(tmpdir(), 'cg-nonexistent-repo-for-intake-batch'), 'workflow')).toThrow()
   })
 
   it('존재하지 않는 oid → null(요청 순서 유지)', () => {

@@ -31,6 +31,15 @@ import {
 } from './evidence'
 import { parseLedger } from './review-ledger'
 import { createEvidencePorts } from './evidence-ports'
+import type { EvidencePorts } from './evidence'
+import {
+  buildIntakeBatchView,
+  ticketIdsFromEntries,
+  withBatchedHeadReads,
+  ticketRelOf,
+  DEFAULT_INTAKE_BATCH_DEPS,
+  type IntakeBatchDeps,
+} from './intake-batch'
 
 export type IntakeVerdict = 'pass' | 'block' | 'legacy'
 
@@ -147,8 +156,19 @@ function recoveryHints(facts: IntakeFacts): string[] {
 /**
  * 한 티켓의 HEAD 사실을 모아 판정(IO — git 조회만, read-only). `ports`가 HEAD blob 접근 정본.
  */
-export function scanTicketIntake(root: string, ticketRel: string, ticketId: string): IntakeTicketResult {
-  const ports = createEvidencePorts(root, `${ticketRel}/responses`)
+export function scanTicketIntake(
+  root: string,
+  ticketRel: string,
+  ticketId: string,
+  /**
+   * 🔴 **선택 인자로만** 확장한다(REQ-2026-169 phase-2). `req:commit`·`req:doctor` 는 티켓 **하나**만
+   *    보므로 배치할 것이 없고(이득 0), 3인자 호출을 그대로 두면 그 두 명령의 동작 표면이 넓어지지 않는다.
+   *    `scanIntake`(전량 스캔)만 배치 뷰를 넘긴다.
+   */
+  portsOverride?: (base: EvidencePorts) => EvidencePorts,
+): IntakeTicketResult {
+  const base = createEvidencePorts(root, `${ticketRel}/responses`)
+  const ports = portsOverride ? portsOverride(base) : base
   const durabilityRequired = isDurabilityRequired(ports.headText(`${ticketRel}/state.json`))
   if (!durabilityRequired)
     return classifyIntake({ ticketId, ticketRel, durabilityRequired: false, manifestText: null, manifestProblems: [], closeParsed: { rows: [], problems: [] }, evidenceIntegrityProblems: [], ledgerHasApprovedClose: false, committedEvidenceComplete: false, committedDesignRef: null, evidencedPhaseIds: [], evidencedPhaseIdsAll: [], rebindablePhaseIds: [] })
@@ -206,11 +226,21 @@ export function listHeadTicketIds(workflowDirRel: string, gitFn: (a: string[]) =
 export function scanIntake(
   root: string,
   workflowDirRel: string,
-  gitFn: (a: string[]) => string,
   excludeTicketId?: string | null,
+  /** 🔴 계수 오라클(DEC-7-2)이 **모든** git 접근을 관측하기 위한 주입점. 기본은 실물이다. */
+  deps: IntakeBatchDeps = DEFAULT_INTAKE_BATCH_DEPS,
 ): { tickets: IntakeTicketResult[]; blocked: IntakeTicketResult[] } {
-  const ticketIds = listHeadTicketIds(workflowDirRel, gitFn).filter((id) => id !== excludeTicketId)
   const dir = workflowDirRel.replace(/\\/g, '/').replace(/\/+$/, '')
-  const tickets = ticketIds.map((id) => scanTicketIntake(root, `${dir}/${id}`, id))
+  /**
+   * 🔴 열거는 **하나뿐**이다(DEC-8). 예전에는 `listHeadTicketIds()` 가 `ls-tree -d` 를 따로 돌려
+   *    정상 경로가 3 프로세스였다(design-r01 P1). 재귀 열거 하나에서 티켓 목록과 프리페치 대상을
+   *    **함께** 파생한다 — git 은 빈 디렉터리를 추적하지 않으므로 두 열거의 결과 집합은 같다.
+   *    (`listHeadTicketIds` 자체는 `req:reconstruct` 가 계속 쓰므로 남아 있다.)
+   */
+  const { entries, view } = buildIntakeBatchView(root, dir, 'HEAD', deps)
+  const ticketIds = ticketIdsFromEntries(entries, dir).filter((id) => id !== excludeTicketId)
+  // 🔴 경로 결합은 `ticketRelOf` 가 한다 — repo-root(`ticketRoot: "."`)에서 `/REQ-…` 가 되면
+  //    배치 뷰 키(`REQ-…`)와 어긋나 그 티켓의 증거가 통째로 부재로 읽힌다(phase-2 리뷰 r01 P1).
+  const tickets = ticketIds.map((id) => scanTicketIntake(root, ticketRelOf(dir, id), id, (base) => withBatchedHeadReads(base, view)))
   return { tickets, blocked: tickets.filter((t) => t.verdict === 'block') }
 }

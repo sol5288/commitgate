@@ -342,7 +342,7 @@ describe('[REQ-2026-052 phase-3b] req:new intake gate — HEAD durable 증거만
       const head0 = g(repo, ['rev-parse', 'HEAD'])
       const tree0 = g(repo, ['write-tree'])
       const status0 = g(repo, ['status', '--porcelain'])
-      const res = scanIntake(repo, 'workflow', (a) => g(repo, a))
+      const res = scanIntake(repo, 'workflow')
       expect(res.blocked.map((t) => t.ticketId)).toEqual(['REQ-2026-002'])
       expect(g(repo, ['rev-parse', 'HEAD'])).toBe(head0) // 새 커밋 없음
       expect(g(repo, ['write-tree'])).toBe(tree0) // index 불변
@@ -357,10 +357,10 @@ describe('[REQ-2026-052 phase-3b] req:new intake gate — HEAD durable 증거만
       commitTicket(repo, 'REQ-2026-002', {}) // block(developing)
       commitTicket(repo, 'REQ-2026-003', { durable: false }) // legacy
       expect(listHeadTicketIds('workflow', (a) => g(repo, a))).toEqual(['REQ-2026-001', 'REQ-2026-002', 'REQ-2026-003'])
-      const all = scanIntake(repo, 'workflow', (a) => g(repo, a))
+      const all = scanIntake(repo, 'workflow')
       expect(all.blocked.map((t) => t.ticketId)).toEqual(['REQ-2026-002'])
       // 부모(REQ-2026-002)를 replace로 종결 중이면 제외 → 차단 없음.
-      const excl = scanIntake(repo, 'workflow', (a) => g(repo, a), 'REQ-2026-002')
+      const excl = scanIntake(repo, 'workflow', 'REQ-2026-002')
       expect(excl.blocked).toEqual([])
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })

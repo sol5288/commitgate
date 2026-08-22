@@ -240,7 +240,10 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   // 🔴 REQ-2026-052 phase-3b: intake 게이트 — HEAD-committed durable 증거만으로 기존 티켓을 스캔(read-only).
   //    대체될 부모(successor)는 정규 replace 흐름으로 종결되므로 제외한다(부모 replace 검증은 위에서 끝났다).
   //    미종결(developing/needs-recovery)·손상 티켓이 있으면 아래에서 fail-closed. 스캔 자체는 write 없음.
-  const intake = scanIntake(cfg.root, ticketRootRel, (args) => git(args), parentTerminal?.parentId ?? null)
+  //    🔴 REQ-2026-169: 스캔은 자체 배치 IO(재귀 열거 1 + blob 배치 읽기 1)를 쓴다 — `gitFn` 을 넘기지
+  //    않는다. `GitAdapter.exec` 는 후행 공백을 제거하고 문자열만 내는데, `-z` 열거와 blob 바이트는
+  //    **다른 계약**이 필요하다(`evidence-ports` 의 `headBlobSha256` 이 같은 이유로 어댑터를 우회한다).
+  const intake = scanIntake(cfg.root, ticketRootRel, parentTerminal?.parentId ?? null)
   const intakeSummary = renderIntakeSummary(intake.tickets)
 
   if (!o.run) {

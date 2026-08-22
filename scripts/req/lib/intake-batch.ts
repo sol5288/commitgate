@@ -25,8 +25,8 @@
  * 이 모듈은 `evidence`(타입)·`scratch`·`git-batch` 만 의존한다. `review-codex`·`req-commit`·`req-doctor`·
  * `intake` 를 import 하지 않는다.
  */
-import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import spawn from 'cross-spawn'
 import { readBlobsByOid } from './git-batch'
 import { isArchiveFileName } from './scratch'
 import type { EvidencePorts } from './evidence'
@@ -49,6 +49,45 @@ export function normalizeDirRel(dirRel: string): string {
 }
 
 /**
+ * 티켓 루트가 **저장소 루트 자신**인가(`ticketRoot: "."` → `relative()` 가 `''` 를 낸다).
+ * `scratch.ts` 가 같은 사실을 적어 두었다: *"ticketRoot='.' 또는 canonical repo-root('')도 유효하다.
+ * 이때 Git 경로에는 './' 접두사가 없다."*
+ */
+function isRepoRoot(normalizedDir: string): boolean {
+  return normalizedDir === '' || normalizedDir === '.'
+}
+
+/**
+ * 열거에 쓸 pathspec.
+ *
+ * 🔴 **`${dir}/` 를 무조건 쓰면 안 된다**(REQ-2026-169 phase-2 실측). `dir` 이 `''`(repo-root)이면
+ *    `'/'` 가 되는데, Git for Windows 는 그것을 **절대경로**로 해석해
+ *    `fatal: 'C:/Program Files/Git/' is outside repository` 로 exit 128 을 낸다.
+ *    옛 `listHeadTicketIds` 는 그 실패를 `catch → []` 로 삼켰으므로, **`ticketRoot: "."` 설치본에서는
+ *    intake 게이트가 조용히 꺼져 있었다.** 실패를 삼키지 않기로 한 이상 이 자리를 바로 만들어야 한다.
+ */
+function enumeratePathspec(normalizedDir: string): string {
+  return isRepoRoot(normalizedDir) ? '.' : `${normalizedDir}/`
+}
+
+/** 티켓 경로 판정에 쓰는 접두. repo-root 면 빈 문자열(git 경로에 `./` 가 붙지 않는다). */
+function rootPrefixOf(dirRel: string): string {
+  const dir = normalizeDirRel(dirRel)
+  return isRepoRoot(dir) ? '' : `${dir}/`
+}
+
+/**
+ * 티켓 id → **git 이 내는 그대로의** repo-상대 경로(phase-2 리뷰 r01 P1).
+ *
+ * 🔴 `${dir}/${id}` 를 그냥 쓰면 repo-root(`dir === ''`)에서 `'/REQ-…'` 가 되어 **선행 슬래시**가 붙는다.
+ *    배치 뷰의 키는 git 이 낸 `'REQ-…'` 이므로 하나도 적중하지 않고, 그 티켓은 증거가 통째로 없는 것처럼
+ *    읽혀 **판정이 통째로 틀린다**. 접두를 만드는 곳과 경로를 만드는 곳이 **같은 규칙**을 쓰게 한다.
+ */
+export function ticketRelOf(ticketRootRel: string, ticketId: string): string {
+  return `${rootPrefixOf(ticketRootRel)}${ticketId}`
+}
+
+/**
  * `git ls-tree -r -z` 출력 파싱(순수).
  *
  * 프레임: `<mode> SP <type> SP <oid> TAB <path> NUL`
@@ -68,29 +107,55 @@ export function parseLsTreeZ(out: string): HeadTreeEntry[] {
 }
 
 /**
- * `<ticketRoot>/` 하위 **전량 재귀 열거**(git 1회). 🔴 `GitAdapter.exec` 를 쓰지 않는다(DEC-5).
+ * `<ticketRoot>/` 하위 **전량 재귀 열거**(정상 경로 git 1회). 🔴 `GitAdapter.exec` 를 쓰지 않는다(DEC-5).
  *
  * 그 어댑터는 계약상 결과의 **후행 공백을 제거**한다(`git status --porcelain` 의 선행 공백 보존이 목적).
  * `-z` 출력의 마지막 NUL 이 잘리면 프레이밍이 달라진다. `evidence-ports.ts` 의 `headBlobSha256` 이
  * **같은 이유로** 이미 어댑터를 우회한다 — 우회가 아니라 **다른 계약**이 필요해서다.
  *
- * 🔴 후행 슬래시(`<dir>/`)는 여기서도 의미가 있다: pathspec 이 디렉터리를 가리켜야 그 하위를 연다.
- * HEAD 에 그 경로가 없으면(첫 REQ 등) 빈 배열 — 스캔 대상 없음이다.
+ * 🔴 pathspec 은 `enumeratePathspec` 이 만든다 — repo-root(`ticketRoot: "."`)에서 `'/'` 를 내던 옛
+ *    형태가 Git for Windows 에서 exit 128 이었고, 그 실패가 삼켜져 **게이트가 꺼져 있었다.**
+ *
+ * ## 🔴 실패를 "티켓 없음"으로 삼키지 않는다 (phase-1 리뷰 r01 observation)
+ *
+ * 이 함수의 결과는 **게이트 입력**이다 — 여기서 나온 티켓 id 목록이 비면 intake 는 검사할 것이 없다고
+ * 판단한다. 그래서 모든 실패를 `[]` 로 바꾸면 **git 이 한 번 삐끗한 것이 게이트 통과와 구별되지 않는다.**
+ * 실측한 git 동작으로 두 경우를 정확히 가른다:
+ *
+ * | 상황 | git | 판정 |
+ * |---|---|---|
+ * | HEAD 에 `<ticketRoot>/` 가 없음(첫 REQ) | **exit 0** · 빈 출력 | 티켓 없음 — 정상 |
+ * | 커밋이 하나도 없음(unborn HEAD) | exit 128 · `Not a valid object name` | 티켓 없음 — 정상(커밋이 없으니 사실이다) |
+ * | 그 밖의 실패(오타 ref·손상·권한·git 부재 등) | exit ≠ 0 | 🔴 **throw** — 모르면 멈춘다 |
+ *
+ * 🔴 **stderr 문구로 가르지 않는다.** git 메시지는 지역화될 수 있어 문자열 판별은 언어 설정 하나로
+ *    무너진다. 대신 **저장소에 커밋이 하나라도 있는지**를 `rev-parse` 로 묻는다. 이 추가 호출은
+ *    **실패 경로에서만** 일어나므로 정상 경로의 "git 2회" 계약은 그대로다.
  */
 export function listHeadTreeEntries(cwd: string, ticketRootRel: string, ref = 'HEAD'): HeadTreeEntry[] {
   const dir = normalizeDirRel(ticketRootRel)
-  let out: string
-  try {
-    out = execFileSync('git', ['ls-tree', '-r', '-z', ref, '--', `${dir}/`], {
-      cwd,
-      encoding: 'utf8',
-      maxBuffer: 256 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'ignore'], // 부재가 정상 — stderr 노이즈 억제
-    })
-  } catch {
-    return []
-  }
-  return parseLsTreeZ(out)
+  const res = spawn.sync('git', ['ls-tree', '-r', '-z', ref, '--', enumeratePathspec(dir)], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+  })
+  if (res.error) throw res.error
+  if (res.status === 0) return parseLsTreeZ(String(res.stdout ?? ''))
+  // 여기부터는 **실패 경로**다 — 추가 git 호출이 정상 경로 계약에 영향을 주지 않는다.
+  //
+  // 🔴 묻는 것은 "**저장소에 커밋이 하나라도 있는가**"이지 "그 ref 가 푸는가"가 아니다.
+  //    후자로 물으면 **오타 난 ref 도 빈 목록**이 되어, 잘못된 대상을 스캔하고 "티켓 없음" 이라고
+  //    말하는 경로가 열린다. 커밋이 하나도 없으면 티켓도 있을 수 없으므로 `[]` 는 삼킴이 아니라 **사실**이다.
+  if (!repoHasAnyCommit(cwd)) return []
+  throw new Error(
+    `git ls-tree 실패(exit=${res.status ?? 'null'}) — 저장소에 커밋이 있는데 '${ref}' 를 열거하지 못했다: ${String(res.stderr ?? '').trim() || '(stderr 없음)'}`,
+  )
+}
+
+/** 저장소에 커밋이 하나라도 있는가. 🔴 **실패 경로 전용** — 정상 경로에서는 호출되지 않는다. */
+function repoHasAnyCommit(cwd: string): boolean {
+  const res = spawn.sync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { cwd, encoding: 'utf8' })
+  return !res.error && res.status === 0
 }
 
 /** `<ticketRoot>/<seg>/…` 의 `<seg>` — 티켓 디렉터리가 아니거나 하위 파일이 아니면 `null`(순수). */
@@ -116,7 +181,7 @@ function ticketSegOf(path: string, rootPrefix: string): string | null {
  *    실 git 테스트가 `listHeadTicketIds` 와 대조해 고정한다.
  */
 export function ticketIdsFromEntries(entries: readonly HeadTreeEntry[], ticketRootRel: string): string[] {
-  const rootPrefix = `${normalizeDirRel(ticketRootRel)}/`
+  const rootPrefix = rootPrefixOf(ticketRootRel)
   const ids = new Set<string>()
   for (const e of entries) {
     const seg = ticketSegOf(e.path, rootPrefix)
@@ -137,7 +202,7 @@ export function intakePrefetchEntries(
   entries: readonly HeadTreeEntry[],
   ticketRootRel: string,
 ): HeadTreeEntry[] {
-  const rootPrefix = `${normalizeDirRel(ticketRootRel)}/`
+  const rootPrefix = rootPrefixOf(ticketRootRel)
   return entries.filter((e) => {
     if (e.type !== 'blob') return false
     const seg = ticketSegOf(e.path, rootPrefix)
@@ -164,7 +229,7 @@ export function createBatchView(
   blobsByOid: ReadonlyMap<string, Buffer | null>,
   ticketRootRel: string,
 ): BatchView {
-  const rootPrefix = `${normalizeDirRel(ticketRootRel)}/`
+  const rootPrefix = rootPrefixOf(ticketRootRel)
   const treePaths = new Set<string>()
   const byPath = new Map<string, Buffer>()
   for (const e of entries) {
@@ -245,19 +310,34 @@ export function withBatchedHeadReads(base: EvidencePorts, view: BatchView): Evid
 }
 
 /**
- * 열거 1회 + 배치 읽기 1회로 뷰를 만든다(git **정확히 2회**).
+ * 뷰를 만드는 데 쓰는 **git 접근 전부**. 🔴 계수 오라클(DEC-7-2)이 **두 경로를 모두** 관측할 수 있어야
+ * 하므로 한 묶음으로 주입한다 — 한쪽만 세면 다른 쪽이 티켓마다 스폰해도 테스트가 녹색이다.
+ */
+export interface IntakeBatchDeps {
+  listEntries(cwd: string, ticketRootRel: string, ref: string): HeadTreeEntry[]
+  readBlobs(cwd: string, oids: readonly string[]): Map<string, Buffer | null>
+}
+
+export const DEFAULT_INTAKE_BATCH_DEPS: IntakeBatchDeps = {
+  listEntries: listHeadTreeEntries,
+  readBlobs: readBlobsByOid,
+}
+
+/**
+ * 열거 1회 + 배치 읽기 1회로 뷰를 만든다(정상 경로 git **정확히 2회**).
  *
- * 🔴 **실패는 삼키지 않는다.** 배치 읽기가 실패하면 throw 한다 — 조용히 빈 뷰로 계속하면 모든 티켓이
- *    "HEAD 에 없음 = legacy" 로 보여 **게이트가 통째로 우회된다.** 읽지 못한 것은 "없음"이 아니라
- *    "모름"이고, 모르면 멈춘다.
+ * 🔴 **실패는 삼키지 않는다.** 열거·배치 읽기가 실패하면 throw 한다 — 조용히 빈 뷰로 계속하면 모든
+ *    티켓이 "HEAD 에 없음 = legacy" 로 보여 **게이트가 통째로 우회된다.** 읽지 못한 것은 "없음"이
+ *    아니라 "모름"이고, 모르면 멈춘다.
  */
 export function buildIntakeBatchView(
   cwd: string,
   ticketRootRel: string,
   ref = 'HEAD',
+  deps: IntakeBatchDeps = DEFAULT_INTAKE_BATCH_DEPS,
 ): { entries: HeadTreeEntry[]; view: BatchView } {
-  const entries = listHeadTreeEntries(cwd, ticketRootRel, ref)
+  const entries = deps.listEntries(cwd, ticketRootRel, ref)
   const prefetch = intakePrefetchEntries(entries, ticketRootRel)
-  const blobs = readBlobsByOid(cwd, prefetch.map((e) => e.oid))
+  const blobs = deps.readBlobs(cwd, prefetch.map((e) => e.oid))
   return { entries, view: createBatchView(entries, blobs, ticketRootRel) }
 }
