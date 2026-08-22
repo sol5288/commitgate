@@ -2,15 +2,23 @@
   "id": "REQ-2026-171",
   "branch": "feat/req-2026-171-autonomy-auto-parity",
   "risk_level": "LOW",
-  "codex_thread_id": "01a027dd-b489-7261-8a8d-80d40d28d8d5",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a0280e-07fc-7ba2-b9a0-b6a365e40c8d",
+  "review_base_sha": "51f2b92b13d57e600f808f4e4848da5a8570180c",
+  "review_diff_hash": "88396f4e1262d20ca2a9d9bb7deb621c05ef05f0",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "7f6ea25964244d80843bae2df287673b7ec926eb3d8164f6ff1b9071fec1c493",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-auto-parity",
+  "phases": [
+    {
+      "id": "phase-1-auto-parity",
+      "title": "자율 계약·문서에 auto 반영 + 파생 가드",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +32,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-auto-parity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-auto-parity",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-auto-parity",
     "outcome": "approved",
-    "compare_hash": "5cd19e0fafc8f8ec8f163d68fcaeb42eb5c57b1599e066cdfecd72172be5e6dc",
+    "compare_hash": "7b98ced308b858488aa5b569133403ce5271ab607d00d7287a5acd88efdc0ece",
     "count": 1,
     "errors": [],
-    "at": "2026-08-22T05:07:49.419Z",
+    "at": "2026-08-22T06:01:25.737Z",
     "findings": [],
     "elided_count": 0
   },
@@ -70,5 +85,14 @@
       "source_response_path": "workflow/REQ-2026-171/responses/design-r02-approved.json"
     },
     "design_hash": "7f6ea25964244d80843bae2df287673b7ec926eb3d8164f6ff1b9071fec1c493"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "88396f4e1262d20ca2a9d9bb7deb621c05ef05f0",
+      "phase_id": "phase-1-auto-parity",
+      "consumed_by_commit_sha": "cc492835c57662f51a4d032d575c9621a3fbcf96",
+      "approval_consumed_at": "2026-08-22T06:01:47.951Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
