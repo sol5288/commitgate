@@ -20,6 +20,7 @@ import { createGitAdapter, safeSpawnSync, assertNotTestEnv, type GitAdapter } fr
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 import {
   verifyRangeDeep,
+  collectDeepInput,
   computeExit,
   type CiOutcome,
   type DeepCommitMeta,
@@ -207,142 +208,11 @@ export interface RunDeps {
   /** head tree blob 배치 읽기(REQ-2026-127 — cat-file --batch 1프로세스). 테스트는 fake 주입. */
   readBlobs: (ref: string, paths: readonly string[]) => Map<string, Buffer | null>
 }
-
-// ───────────────────────── 심층 수집(REQ-2026-127 — 프로세스 수 상한 계약) ──
-//
-// git 프로세스: log×2(메타·name-only) + ls-tree×1 + diff-tree×(merge 수) + readBlobs 배치 ≤2회.
-// manifest·아카이브 수 N에 비례한 프로세스를 만들지 않는다(완료 기준 7 — fake 호출 기록 오라클).
-
-export function collectDeepInput(
-  git: GitAdapter,
-  readBlobs: RunDeps['readBlobs'],
-  base: string,
-  head: string,
-  ticketRoot: string,
-): DeepVerifyInput {
-  // 1) 커밋 메타(+tree — attestation identity 대조용).
-  const raw = git.exec(['log', `--format=%H%x1f%T%x1f%P%x1f%B%x00`, `${base}..${head}`])
-  const metas: (DeepCommitMeta & { tree: string; changedPaths: string[]; ccPaths: string[] })[] = raw
-    .split('\0')
-    .map((r) => r.replace(/^\n+/, ''))
-    .filter((r) => r !== '')
-    .map((rec) => {
-      const i1 = rec.indexOf('\x1f')
-      const i2 = rec.indexOf('\x1f', i1 + 1)
-      const i3 = rec.indexOf('\x1f', i2 + 1)
-      const sha = rec.slice(0, i1)
-      const tree = rec.slice(i1 + 1, i2)
-      const parents = rec.slice(i2 + 1, i3).trim()
-      const message = rec.slice(i3 + 1)
-      return {
-        sha,
-        tree,
-        parentCount: parents === '' ? 0 : parents.split(' ').length,
-        subject: message.split('\n')[0] ?? '',
-        message,
-        changedPaths: [],
-        ccPaths: [],
-      }
-    })
-  const bySha = new Map(metas.map((m) => [m.sha, m]))
-
-  // 2) non-merge 변경 경로 — name-only 1회(merge는 기본 diff 미출력 → 빈 목록 유지).
-  const nameOnly = git.exec(['log', `--format=%x01%H`, '--name-only', `${base}..${head}`])
-  for (const block of nameOnly.split('\x01')) {
-    const lines = block.split('\n').map((l) => l.trim())
-    const sha = lines[0] ?? ''
-    const m = bySha.get(sha)
-    if (m === undefined) continue
-    m.changedPaths = lines.slice(1).filter(Boolean)
-  }
-
-  // 3) merge의 conflict resolution/evil-merge 경로 — merge 커밋당 diff-tree --cc 1회(소수).
-  for (const m of metas) {
-    if (m.parentCount < 2) continue
-    const cc = git.exec(['diff-tree', '--cc', '--name-only', m.sha])
-    m.ccPaths = cc
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l !== '' && l !== m.sha)
-  }
-
-  // 4) head tree 경로 목록 1회 → manifest·state·attestations·아카이브 실재 판정의 공통 원천.
-  const treePaths = new Set(
-    git
-      .exec(['ls-tree', '-r', '--name-only', head, '--', ticketRoot])
-      .split('\n')
-      .map((s2) => s2.trim())
-      .filter(Boolean),
-  )
-  const manifestPaths = [...treePaths].filter((p) => p.endsWith('/responses/approvals.jsonl'))
-  const ticketRels = manifestPaths.map((p) => p.split('/').slice(0, 2).join('/'))
-  const statePaths = ticketRels.map((t) => `${t}/state.json`).filter((p) => treePaths.has(p))
-  const attPath = attestationsPath(ticketRoot)
-  const wantAtt = treePaths.has(attPath)
-
-  // 5) 배치 1회차: manifest + state + attestations.
-  const batch1 = readBlobs(head, [...manifestPaths, ...statePaths, ...(wantAtt ? [attPath] : [])])
-  const manifests = manifestPaths.map((p) => ({ path: p, content: batch1.get(p)?.toString('utf8') ?? '' }))
-
-  const statePhases = new Map<string, readonly string[] | null>()
-  for (const t of ticketRels) {
-    const buf = batch1.get(`${t}/state.json`)
-    if (buf === undefined || buf === null) {
-      statePhases.set(t, null)
-      continue
-    }
-    try {
-      const st = JSON.parse(buf.toString('utf8')) as { phases?: { id?: unknown }[] }
-      const ids = Array.isArray(st.phases)
-        ? st.phases.map((ph) => ph.id).filter((id): id is string => typeof id === 'string')
-        : null
-      statePhases.set(t, ids)
-    } catch {
-      statePhases.set(t, null)
-    }
-  }
-
-  const attParsed = wantAtt ? parseAttestations(batch1.get(attPath)?.toString('utf8') ?? '') : { rows: [], problems: 0 }
-
-  // 6) 배치 2회차: 소비 행이 참조하는 아카이브만 읽어 SHA-256 산출. 실재 여부는 treePaths가 판정
-  //    (map에 없음=트리 부재=invalid · 값 null=읽기 실패=검증 불가).
-  const rangeShas = new Set(metas.map((m) => m.sha))
-  const referenced = new Set<string>()
-  for (const mf of manifests) {
-    for (const line of mf.content.split('\n')) {
-      if (line.trim() === '') continue
-      try {
-        const row = JSON.parse(line) as { consumed_by_commit_sha?: unknown; response_path?: unknown }
-        if (
-          typeof row.consumed_by_commit_sha === 'string' &&
-          rangeShas.has(row.consumed_by_commit_sha) &&
-          typeof row.response_path === 'string'
-        )
-          referenced.add(row.response_path)
-      } catch {
-        /* 손상 행은 코어가 센다 */
-      }
-    }
-  }
-  const inTree = [...referenced].filter((p) => treePaths.has(p))
-  const batch2 = inTree.length > 0 ? readBlobs(head, inTree) : new Map<string, Buffer | null>()
-  const archiveSha256 = new Map<string, string | null>()
-  for (const p2 of inTree) {
-    const buf = batch2.get(p2)
-    archiveSha256.set(p2, buf === null || buf === undefined ? null : createHash('sha256').update(buf).digest('hex'))
-  }
-
-  return {
-    commits: metas,
-    manifests,
-    ticketRoot,
-    statePhases,
-    attestations: attParsed.rows,
-    attestationProblems: attParsed.problems,
-    commitTrees: new Map(metas.map((m) => [m.sha, m.tree])),
-    archiveSha256,
-  }
-}
+// 🔴 REQ-2026-172 DEC-3: `collectDeepInput` 은 `lib/verify-range` 로 이관됐다(공유 대상).
+//    `req:delegate` 의 발급 시점 preflight 가 같은 범위 사실을 필요로 하는데, scripts CLI 가
+//    bin CLI 를 끌어오는 모양을 만들지 않기 위해서다. 여기 re-export 는 기존 import 경로
+//    (`bin/integrate.ts`·테스트)를 깨지 않기 위한 것이다 — 동작은 바뀌지 않았다.
+export { collectDeepInput }
 
 export interface RunResult {
   exit: 0 | 1
