@@ -58,7 +58,15 @@ import { helpGate } from './lib/verb-help'
 import { preflightDelegation } from './lib/delegation-preflight'
 import { collectPreflightFacts } from './lib/delegation-preflight-facts'
 import { readBlobsAtRef } from './lib/git-batch'
-import { scopeOfBranch, DELEGATION_LEDGER_REL, type DelegationIssued } from './lib/delegation'
+import {
+  scopeOfBranch,
+  delegationVerdict,
+  foldDelegations,
+  parseDelegationLedger,
+  DELEGATION_LEDGER_REL,
+  type DelegationIssued,
+} from './lib/delegation'
+import { authorizeTrunkAdvance } from './lib/trunk-advance'
 
 // ─────────────────────────────────────────────── 읽기 전용 git 경계 (D6-1) ──
 
@@ -165,6 +173,14 @@ export type AckProbe =
   | { kind: 'blocked'; detail: string }
   /** 범위를 읽지 못했다 — 🔴 **추측하지 않는다**. 모른다고 말한다. */
   | { kind: 'unknown'; reason: string }
+  /**
+   * 🔴 **이미 유효한 위임이 이 통합을 덮는다**(REQ-2026-173 phase-3).
+   *    그런데도 "발급하라"고 안내하면 두 가지가 잘못된다:
+   *      ① 사람이 **이미 준 승인**을 또 받는다 — `auto` 를 고른 이유가 사라진다.
+   *      ② 안내대로 발급하면 유효 위임이 둘이 되어 `ambiguous-active` 로 **막힌다**.
+   *    특히 trunk 이동이 인가된 뒤(REQ-2026-173)에는 이 상황이 정상 경로가 된다.
+   */
+  | { kind: 'already-valid'; delegationId: string }
 
 export interface NextInput {
   /**
@@ -1172,6 +1188,26 @@ function autoDelegationAction(input: NextInput, prefix: string): NextAction {
    *    preflight 와 **같은 판정**을 돌린다 — `req:next` 가 자기 판정을 따로 가지면 안내와 발급이 갈라진다.
    */
   const probe = input.requiredDelegationAcks?.()
+
+  /**
+   * 🔴 **이미 사람이 승인한 것을 또 묻지 않는다**(REQ-2026-173 phase-3). 유효한 위임이 이 통합을 덮으면
+   *    다음 행동은 **발급이 아니라 통합**이다 — 이것이 `auto` 의 요점이다.
+   *
+   * 🔴 게이트가 약해지지 않는다: 판정은 `integrate` 와 **같은 함수**이고, `integrate` 가 실행 시점에
+   *    그 위임의 유효성 전체(만료·소비·범위·trunk 이동 인가)를 **다시** 본다.
+   *    특히 trunk 이동이 인가된 뒤(REQ-2026-173)에는 이 상황이 정상 경로가 된다 —
+   *    그때 "발급하라"고 안내하면 유효 위임이 둘이 되어 `ambiguous-active` 로 막힌다.
+   */
+  if (probe?.kind === 'already-valid')
+    return {
+      kind: 'RUN',
+      detail:
+        prefix +
+        `이미 유효한 사전 위임(${probe.delegationId.slice(0, 8)})이 이 통합을 덮는다 — 다시 발급하지 않는다. ` +
+        '통합을 실행하라. 실행 시점에 위임의 유효성(만료·소비·범위·trunk 이동 인가)을 도구가 다시 검증한다.',
+      command: 'npx commitgate integrate --run',
+    }
+
   const flags: DelegateFlags =
     probe?.kind === 'acks'
       ? { highRisk: high || probe.acks.highRiskAck, allowAttested: probe.acks.attestedAck }
@@ -1181,7 +1217,9 @@ function autoDelegationAction(input: NextInput, prefix: string): NextAction {
       ? []
       : probe.kind === 'blocked'
         ? [`🔴 지금 이 범위로는 통합이 열리지 않는다 — ${probe.detail}. 위임을 발급해도 거부된다.`]
-        : [`이 범위가 요구하는 플래그를 판정하지 못했다(${probe.reason}) — \`req:delegate\` 가 발급 시점에 알려 준다.`]
+        : probe.kind === 'unknown'
+          ? [`이 범위가 요구하는 플래그를 판정하지 못했다(${probe.reason}) — \`req:delegate\` 가 발급 시점에 알려 준다.`]
+          : [] // already-valid 는 위에서 조기 반환된다.
   // 🔴 열리지 않는 것이 확실하면 **명령을 만들지 않는다** — 실행하면 거부당할 명령을 주지 않는다.
   const command = probe?.kind === 'blocked' ? undefined : delegateCommand(input, flags)
   const renderable = command !== undefined
@@ -1271,6 +1309,37 @@ export function probeDelegationAcks(
   if (collected.kind === "unavailable") return { kind: "unknown", reason: collected.reason }
 
   const nowIso = new Date().toISOString()
+  const ledgerText = readDelegationLedgerText(cfg.root)
+
+  /**
+   * 🔴 **이미 유효한 위임이 있으면 발급을 권하지 않는다**(REQ-2026-173 phase-3).
+   *    그것이 `auto` 의 요점이다 — 사람은 한 번만 말한다. 두 번째 발급은 `ambiguous-active` 로 막히기까지 한다.
+   *    판정은 `integrate` 와 **같은 함수**(`delegationVerdict`)이고, trunk 이동 인가도 같은 방식으로 본다.
+   */
+  {
+    const parsed = parseDelegationLedger(ledgerText)
+    const active = parsed.problems.length === 0 ? foldDelegations(parsed.rows, scope).active : []
+    if (active.length === 1) {
+      const row = active[0] as DelegationIssued
+      const trunkAdvance =
+        row.trunk_sha === trunkSha
+          ? undefined
+          : authorizeTrunkAdvance(ports, parsed.rows, row.trunk_sha, trunkSha, trunkBranch)
+      const verdict = delegationVerdict({
+        ledgerText: ledgerText ?? '',
+        scope,
+        now: nowIso,
+        trunkBranch,
+        trunkSha,
+        sourceBranch: branch,
+        requested: { local_merge: true, origin_push: false, bypass_protection: false },
+        ...collected.facts,
+        trunkAdvance,
+      })
+      if (verdict.ok) return { kind: "already-valid", delegationId: verdict.row.id }
+    }
+  }
+
   const candidate: DelegationIssued = {
     kind: "issued",
     id: "PROBE",
@@ -1289,7 +1358,7 @@ export function probeDelegationAcks(
   }
 
   const result = preflightDelegation({
-    ledgerText: readDelegationLedgerText(cfg.root),
+    ledgerText,
     candidate,
     now: nowIso,
     trunkSha,

@@ -11,7 +11,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import {
@@ -217,5 +217,120 @@ describe('[REQ-2026-172] probeDelegationAcks (실 git)', () => {
     // 그 브랜치는 존재하지 않는다 → rev-parse 실패
     const r = probeDelegationAcks(cfgFor(dir), st, gitOf(dir))
     expect(r.kind).toBe('unknown')
+  })
+})
+
+/**
+ * REQ-2026-173 phase-3 — **이미 유효한 위임이 있으면 또 묻지 않는다**.
+ *
+ * 🔴 지금까지 `auto` 종단은 위임의 존재와 무관하게 **무조건 "발급하라"** 고 안내했다. 그 안내는
+ *    두 가지로 잘못된다:
+ *      ① 사람이 **이미 준 승인**을 또 받는다 — `auto` 를 고른 이유가 사라진다.
+ *      ② 안내대로 발급하면 유효 위임이 둘이 되어 `ambiguous-active` 로 **막힌다**.
+ *    trunk 이동이 인가되기 시작하면(REQ-2026-173) 이 상황이 **정상 경로**가 된다.
+ */
+describe('[REQ-2026-173] 유효한 위임이 이미 있으면 발급을 권하지 않는다', () => {
+  const alreadyValid = (id = 'D-1234abcd'): AckProbe => ({ kind: 'already-valid', delegationId: id })
+
+  it('🔴 AWAIT_HUMAN 이 아니라 RUN 이다(사람 개입이 사라진다)', () => {
+    const a = act({ requiredDelegationAcks: () => alreadyValid() })
+    expect(a.kind).toBe('RUN')
+  })
+
+  it('🔴 다음 명령은 **발급이 아니라 통합**이다', () => {
+    const a = act({ requiredDelegationAcks: () => alreadyValid() })
+    expect(a.command).toContain('integrate')
+    expect(a.command, '발급을 권하면 ambiguous-active 로 막힌다').not.toContain('req:delegate')
+  })
+
+  it('어느 위임이 덮는지 말한다(추적 가능성)', () => {
+    const a = act({ requiredDelegationAcks: () => alreadyValid('D-abcd1234') })
+    expect(a.detail).toContain('D-abcd12')
+  })
+
+  it('🔴 게이트가 사라지지 않는다는 것을 안내가 말한다', () => {
+    const a = act({ requiredDelegationAcks: () => alreadyValid() })
+    expect(a.detail).toContain('다시 검증')
+  })
+
+  it('공급자가 already-valid 를 내지 않으면 종전대로 발급 안내다(무회귀)', () => {
+    const a = act({ requiredDelegationAcks: () => acks(false, false) })
+    expect(a.kind).toBe('AWAIT_HUMAN')
+    expect(a.command).toContain('req:delegate')
+  })
+})
+
+/**
+ * 🔴 **`already-valid` 판정 자체를 실 git 으로 태운다**. 위 테스트들은 공급자를 손으로 주입하므로
+ *    `probeDelegationAcks` 가 그 분기를 내지 않아도 전부 green 이다(변이 검사로 확인했다).
+ */
+describe('[REQ-2026-173] probeDelegationAcks — already-valid (실 git)', () => {
+  const TICKET = 'REQ-2026-001'
+  const FEAT = 'feat/req-2026-001-x'
+
+  function repoWithValidDelegation(): { dir: string; state: Parameters<typeof probeDelegationAcks>[1] } {
+    const dir = mkdtempSync(join(tmpdir(), 'cg-alreadyvalid-'))
+    const gg = (...a: string[]): string => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+    gg('init', '-q', '-b', 'main')
+    gg('config', 'user.email', 'p@example.com')
+    gg('config', 'user.name', 'P')
+    mkdirSync(join(dir, 'workflow', TICKET, 'responses'), { recursive: true })
+    writeFileSync(
+      join(dir, 'workflow', TICKET, 'state.json'),
+      JSON.stringify({ id: TICKET, risk_level: 'LOW', review_series: [] }),
+    )
+    gg('add', '.')
+    gg('commit', '-q', '-m', 'base')
+    const trunkSha = gg('rev-parse', 'HEAD').trim()
+
+    // feature 에 부기 커밋 하나 — 범위 귀속이 이 티켓 하나가 된다.
+    gg('checkout', '-q', '-b', FEAT)
+    writeFileSync(join(dir, 'workflow', TICKET, 'responses', 'note.txt'), 'n\n')
+    gg('add', '.')
+    gg('commit', '-q', '-m', 'chore: work\n\nCommitGate-Bookkeeping: true')
+
+    // 🔴 유효한 위임을 원장에 둔다(발급 시점 trunk = 현재 main).
+    const row = {
+      kind: 'issued',
+      id: 'D-VALID-1',
+      at: '2026-08-22T00:00:00.000Z',
+      scope: { kind: 'ticket', req_id: TICKET },
+      trunk_branch: 'main',
+      trunk_sha: trunkSha,
+      source_branch: FEAT,
+      base_sha: gg('rev-parse', 'HEAD').trim(),
+      expires_at: '2126-01-01T00:00:00.000Z',
+      permissions: { local_merge: true, origin_push: false, bypass_protection: false },
+      high_risk_ack: false,
+      attested_ack: false,
+      approval_sentence: '통합을 사전 위임합니다',
+    }
+    writeFileSync(join(dir, 'workflow', 'delegations.jsonl'), JSON.stringify(row) + '\n')
+
+    const state = { id: TICKET, branch: FEAT } as unknown as Parameters<typeof probeDelegationAcks>[1]
+    return { dir, state }
+  }
+
+  const cfgOf = (dir: string): ProbeConfig => ({
+    root: dir,
+    ticketRoot: 'workflow',
+    trunkBranch: 'main',
+    branchPrefix: 'feat/req-',
+    reviewBudget: { hardCap: 8 },
+  })
+  const gitOf2 = (dir: string) => (args: string[]): string => execFileSync('git', args, { cwd: dir, encoding: 'utf8' })
+
+  it('🔴 유효한 위임이 있으면 already-valid 를 낸다(발급을 권하지 않는다)', () => {
+    const { dir, state } = repoWithValidDelegation()
+    const r = probeDelegationAcks(cfgOf(dir), state, gitOf2(dir))
+    expect(r.kind, `기대: already-valid · 실제: ${JSON.stringify(r)}`).toBe('already-valid')
+    if (r.kind !== 'already-valid') return
+    expect(r.delegationId).toBe('D-VALID-1')
+  })
+
+  it('🔴 위임이 없으면 already-valid 가 아니다(종전 경로)', () => {
+    const { dir, state } = repoWithValidDelegation()
+    writeFileSync(join(dir, 'workflow', 'delegations.jsonl'), '')
+    expect(probeDelegationAcks(cfgOf(dir), state, gitOf2(dir)).kind).not.toBe('already-valid')
   })
 })
