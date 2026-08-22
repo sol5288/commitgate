@@ -1,0 +1,118 @@
+{
+  "id": "REQ-2026-169",
+  "branch": "feat/req-2026-169-intake-batch-scan",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a02759-37ca-7891-9297-8461c76b6fdf",
+  "review_base_sha": "ba739fcccfb0de3c7baaded061bacb832baa054e",
+  "review_diff_hash": "20867f781e5eebe4c5ee2ada65887fe0e908384a",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "27852785f7cf9805df094286e341e1afda5aca4dd308ab985181e6900991efbd",
+  "current_phase": "phase-2-wire-and-count",
+  "phases": [
+    {
+      "id": "phase-1-batch-ports",
+      "title": "배치 리더 + 배치 포트(배선 없음)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-wire-and-count",
+      "title": "scanIntake 배선 + 계수·동등성 오라클",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-batch-ports#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-batch-ports",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-wire-and-count#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-wire-and-count",
+      "attempts": 2,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-2-wire-and-count",
+    "outcome": "approved",
+    "compare_hash": "bda4752040243ef60ec1666becff804b17734bacdc6a262fb15919425aef3603",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-22T02:43:48.147Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "6c33b71ed2d5720e0942b0a30a71c39b910b8482",
+    "design": "38e2aa5a657a5df0896c04dc7bb8fb661ca40b1c",
+    "plan": "fafba0df1649857975ba9004b771ff30c9a0958b"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-169/responses/design-r02-approved.json",
+    "response_sha256": "94f7d8cc66f41ca59ff9a1c7ebb7c5469cf2c1b7822cd1637df19e833f01f90b",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "eaa6866f92f3bfb587dea5314b52a3c9206474fd",
+    "codex_thread_id": "01a02733-0bce-7af3-a76b-74ea206915a5",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-22T02:02:43.862Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-169/responses/design-r01-needs-fix.json",
+          "sha256": "7139b7c3c76538b56a26e65c1b3dd495f349cbd9b020e17285c485d39218f411"
+        },
+        {
+          "response_path": "workflow/REQ-2026-169/responses/design-r02-approved.json",
+          "sha256": "94f7d8cc66f41ca59ff9a1c7ebb7c5469cf2c1b7822cd1637df19e833f01f90b"
+        }
+      ],
+      "inventory_sha256": "f9e880e25d7282e1549371ad1e7346d7d5bb31e23a7ddf6ba58f62932c3f5c50",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-169/responses/design-r02-approved.json"
+    },
+    "design_hash": "27852785f7cf9805df094286e341e1afda5aca4dd308ab985181e6900991efbd"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "aef70a34236b0e4c88cc19ece1fa8a22d5a38647",
+      "phase_id": "phase-1-batch-ports",
+      "consumed_by_commit_sha": "49a0a4d8894c837ffce54fd5147612fc4b0dfb49",
+      "approval_consumed_at": "2026-08-22T02:12:55.552Z"
+    },
+    {
+      "approved_tree": "20867f781e5eebe4c5ee2ada65887fe0e908384a",
+      "phase_id": "phase-2-wire-and-count",
+      "consumed_by_commit_sha": "351dfb7e5c7447fedd4019a3958c32be0e26276c",
+      "approval_consumed_at": "2026-08-22T02:44:18.543Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}
