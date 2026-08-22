@@ -2,15 +2,37 @@
   "id": "REQ-2026-172",
   "branch": "feat/req-2026-172-delegate-preflight",
   "risk_level": "LOW",
-  "codex_thread_id": "01a0283a-1f07-7a41-8c38-f73a13c6a761",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a028ee-8319-79d2-a7ab-8feeb6a88821",
+  "review_base_sha": "481c413f3781eaef6baa6a53f65288435e040fe0",
+  "review_diff_hash": "b0ee1ccc3fc95ebf03657a2e18ef4783ac1b19ba",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "9671ea4f5849a3fd80b900354ce2f0bd5844dee61e8080688ea299e8dc12cdb3",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-relocate",
+  "phases": [
+    {
+      "id": "phase-1-relocate",
+      "title": "공유 코드 lib 재배치(동작 변경 0)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-preflight",
+      "title": "preflight 판정 + req:delegate 배선",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-3-next-hint",
+      "title": "req:next 안내 정합(지연 공급자)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +46,23 @@
       "phase_id": null,
       "attempts": 3,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-relocate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-relocate",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-relocate",
     "outcome": "approved",
-    "compare_hash": "bd14a46f25b81e2bdf49d191a467c67ff3df89caee88b2d18c095cd5b459af94",
+    "compare_hash": "70491143e5596583163ef48a00cce6a788a14a8169360873a2be51f7b626e28b",
     "count": 1,
     "errors": [],
-    "at": "2026-08-22T06:48:40.276Z",
+    "at": "2026-08-22T10:06:31.450Z",
     "findings": [],
     "elided_count": 0
   },
@@ -74,5 +103,14 @@
       "source_response_path": "workflow/REQ-2026-172/responses/design-r03-approved.json"
     },
     "design_hash": "9671ea4f5849a3fd80b900354ce2f0bd5844dee61e8080688ea299e8dc12cdb3"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "b0ee1ccc3fc95ebf03657a2e18ef4783ac1b19ba",
+      "phase_id": "phase-1-relocate",
+      "consumed_by_commit_sha": "9514bed055c9cef6c008436537408a9494b86a8b",
+      "approval_consumed_at": "2026-08-22T10:06:45.190Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
