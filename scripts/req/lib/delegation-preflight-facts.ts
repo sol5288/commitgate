@@ -9,7 +9,12 @@
  *    허용하되 그 사실을 말한다**. 발급은 조기 경보이고 **진짜 게이트는 `integrate` 에 그대로 있다** —
  *    모른다고 발급을 막으면 정상 흐름이 죽는다. (통합 지점의 "모르면 멈춘다"와 층이 다르다.)
  */
-import { verifyRangeDeep, collectDeepInput, type ReadBlobsPort } from './verify-range'
+import {
+  verifyRangeDeep,
+  collectDeepInput,
+  type ReadBlobsPort,
+  type ReadBlobsByOidPort,
+} from './verify-range'
 import { attributeRange, type AttributionDetail } from './range-attribution'
 import { readTicketFacts } from './integration-facts'
 import type { GitAdapter } from './adapters'
@@ -18,6 +23,8 @@ import type { DelegationScope } from './delegation'
 export interface PreflightFactPorts {
   git: GitAdapter
   readBlobs: ReadBlobsPort
+  /** 🔴 REQ-2026-176: OID 요청 경로. 필수라서 구성 지점이 잊을 수 없다. */
+  readBlobsByOid: ReadBlobsByOidPort
   ticketRoot: string
   reviewHardCap: number
 }
@@ -69,7 +76,7 @@ export function collectPreflightFacts(
 ): PreflightFactsResult {
   let deepInput: ReturnType<typeof collectDeepInput>
   try {
-    deepInput = collectDeepInput(ports.git, ports.readBlobs, trunkSha, sourceSha, ports.ticketRoot)
+    deepInput = collectDeepInput(ports.git, ports.readBlobs, trunkSha, sourceSha, ports.ticketRoot, ports.readBlobsByOid)
   } catch (err) {
     return { kind: 'unavailable', reason: `범위를 읽지 못했습니다: ${err instanceof Error ? err.message : String(err)}` }
   }

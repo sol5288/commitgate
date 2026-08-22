@@ -61,8 +61,13 @@ export function parseCatFileBatchOutput(out: Buffer, requests: readonly string[]
  *    | oid (`ls-tree -r` 가 준 값)      |   199 ms |
  *
  *    intake 스캔은 `ls-tree -r` 로 이미 oid 를 들고 있으므로 추가 비용 없이 이 경로를 쓴다.
- *    경로만 아는 호출부(`verify-range`·`report`·`integrate`)는 계속 `readBlobsAtRef` 를 쓴다 —
- *    그쪽은 요청 집합이 작아 이 REQ 의 대상이 아니다.
+ *
+ * 🔴 **정정(REQ-2026-176)**: REQ-2026-169 당시 이 자리에 *"경로만 아는 호출부
+ *    (`verify-range`·`report`·`integrate`)는 요청 집합이 작아 대상이 아니다"* 라고 적었다.
+ *    **실측이 반증했다.** 그쪽이 요청하는 경로 수는 `누적 티켓 수 × 2`(manifest + state)이고
+ *    범위 크기와 무관하다 — 이 저장소 166티켓에서 332경로, 581ms 대 88ms(6.6배·콜드 17.9배).
+ *    그래서 `collectDeepInput` 도 OID 로 읽는다. 세지 않고 "작다"고 적으면 다음 사람이
+ *    같은 오판을 물려받는다.
  *
  * 🔴 **중복 oid 는 미리 접는다.** 같은 내용의 파일이 여러 경로에 있으면 oid 가 같다. 접지 않아도
  *    프로토콜상 요청 수만큼 응답이 오므로 파싱은 맞지만, 같은 blob 을 여러 번 전송받을 이유가 없다.

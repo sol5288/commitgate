@@ -133,6 +133,11 @@ function makeDeps(over?: Partial<RunDeps> & { ci?: GithubCiPort & { calls: strin
     trunkBranch: over?.trunkBranch === undefined ? TRUNK : over.trunkBranch,
     ticketRoot: 'workflow',
     readBlobs: over?.readBlobs ?? fakeReadBlobs(),
+    // 🔴 REQ-2026-176: 이 fake 의 `ls-tree` 는 `--name-only` 형식(OID 없음)이므로 OID 경로는
+    //    **쓰이면 안 된다**. 던지게 둬서 그 사실 자체를 오라클로 삼는다.
+    readBlobsByOid: over?.readBlobsByOid ?? ((): never => {
+      throw new Error('fake: OID 경로가 예상치 않게 쓰였다(ls-tree 가 OID 를 주지 않는다)')
+    }),
     logs,
     rows,
     asked,

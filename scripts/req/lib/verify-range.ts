@@ -263,8 +263,14 @@ function deepApprovedProblems(rows: ConsumedRow[], input: DeepVerifyInput, reduc
 //    scripts CLI 가 bin CLI 를 끌어오는 모양이 된다. 공유되는 것은 lib 에 둔다.
 //    동작은 한 줄도 바뀌지 않았다 — 위치와 `readBlobs` 타입 표기만 바뀌었다.
 
-/** blob 배치 읽기 포트. `lib/git-batch` 의 `readBlobsAtRef`·`readBlobsByOid` 가 이 모양이다. */
+/** blob 배치 읽기 포트. `lib/git-batch` 의 `readBlobsAtRef` 가 이 모양이다. */
 export type ReadBlobsPort = (ref: string, paths: readonly string[]) => Map<string, Buffer | null>
+
+/**
+ * **OID 로** blob 을 읽는 포트(REQ-2026-176). 반환 Map 의 키는 요청한 oid.
+ * `lib/git-batch` 의 `readBlobsByOid` 가 이 모양이다.
+ */
+export type ReadBlobsByOidPort = (oids: readonly string[]) => Map<string, Buffer | null>
 
 
 // ───────────────────────── 심층 수집(REQ-2026-127 — 프로세스 수 상한 계약) ──
@@ -278,6 +284,12 @@ export function collectDeepInput(
   base: string,
   head: string,
   ticketRoot: string,
+  /**
+   * 🔴 **필수**다(REQ-2026-176 DEC-2). 선택 인자로 두면 `(ref, paths) => …` 람다가 조용히
+   *    떨어뜨린다 — 이 저장소가 최근 작업에서만 다섯 번 만든 사각지대다.
+   *    필수면 tsc 가 호출부 전부에서 멈춘다: 컴파일러가 배선 검사를 대신한다.
+   */
+  readByOid: ReadBlobsByOidPort,
 ): DeepVerifyInput {
   // 1) 커밋 메타(+tree — attestation identity 대조용).
   const raw = git.exec(['log', `--format=%H%x1f%T%x1f%P%x1f%B%x00`, `${base}..${head}`])
@@ -325,14 +337,47 @@ export function collectDeepInput(
       .filter((l) => l !== '' && l !== m.sha)
   }
 
-  // 4) head tree 경로 목록 1회 → manifest·state·attestations·아카이브 실재 판정의 공통 원천.
-  const treePaths = new Set(
-    git
-      .exec(['ls-tree', '-r', '--name-only', head, '--', ticketRoot])
-      .split('\n')
-      .map((s2) => s2.trim())
-      .filter(Boolean),
-  )
+  // 4) head tree 목록 1회 → manifest·state·attestations·아카이브 실재 판정의 공통 원천.
+  //
+  // 🔴 REQ-2026-176: `--name-only` 를 **뗐다**. `<mode> <type> <oid>\t<path>` 가 나오므로
+  //    같은 한 번의 호출에서 **경로와 OID 를 함께** 얻는다 — git 프로세스는 늘지 않는다.
+  //    OID 로 요청하면 `cat-file --batch` 가 트리를 되짚지 않는다(이 저장소 실측 6.6배 · 콜드 17.9배).
+  //    파싱 규칙은 종전 그대로다(`-z` 아님) — 바꾸면 `treePaths` 판정이 움직여 게이트가 달라진다.
+  const oidByPath = new Map<string, string>()
+  const treePaths = new Set<string>()
+  for (const line of git.exec(['ls-tree', '-r', head, '--', ticketRoot]).split('\n')) {
+    // 🔴 탭이 없는 줄도 **경로로 받는다**. `treePaths` 는 실재 판정의 원천이고, 한 줄이라도
+    //    빠지면 있는 증거가 '트리에 없음 = invalid' 로 뒤집힌다. OID 만 없는 것으로 취급하고
+    //    읽기는 폴백이 책임진다(DEC-3) — 느려질 뿐 판정은 종전과 같다.
+    const tab = line.indexOf('\t')
+    const path = (tab === -1 ? line : line.slice(tab + 1)).trim()
+    if (path === '') continue
+    treePaths.add(path)
+    if (tab === -1) continue
+    const oid = line.slice(0, tab).split(' ')[2]
+    if (oid !== undefined && oid !== '') oidByPath.set(path, oid)
+  }
+
+  /**
+   * 경로 목록을 **OID 로** 읽고 결과를 다시 **경로 키**로 돌려준다(반환 모양은 종전과 동일).
+   *
+   * 🔴 OID 를 못 얻은 경로는 **옛 경로 요청으로 반드시 읽는다**(DEC-3). 빠뜨리면 그 blob 이 조용히
+   *    `null` 이 되고, `null` 은 "읽기 실패 = 검증 불가"로 해석돼 **정상 커밋이 미입증으로 떨어진다**.
+   *    읽지 못한 것을 사실로 쓰지 않는다(REQ-2026-160).
+   */
+  const readByPathViaOid = (paths: readonly string[]): Map<string, Buffer | null> => {
+    if (paths.length === 0) return new Map()
+    const withOid: string[] = []
+    const withoutOid: string[] = []
+    for (const p of paths) (oidByPath.has(p) ? withOid : withoutOid).push(p)
+    const out = new Map<string, Buffer | null>()
+    if (withOid.length > 0) {
+      const byOid = readByOid(withOid.map((p) => oidByPath.get(p) as string))
+      for (const p of withOid) out.set(p, byOid.get(oidByPath.get(p) as string) ?? null)
+    }
+    if (withoutOid.length > 0) for (const [p, buf] of readBlobs(head, withoutOid)) out.set(p, buf)
+    return out
+  }
   const manifestPaths = [...treePaths].filter((p) => p.endsWith('/responses/approvals.jsonl'))
   const ticketRels = manifestPaths.map((p) => p.split('/').slice(0, 2).join('/'))
   const statePaths = ticketRels.map((t) => `${t}/state.json`).filter((p) => treePaths.has(p))
@@ -340,7 +385,7 @@ export function collectDeepInput(
   const wantAtt = treePaths.has(attPath)
 
   // 5) 배치 1회차: manifest + state + attestations.
-  const batch1 = readBlobs(head, [...manifestPaths, ...statePaths, ...(wantAtt ? [attPath] : [])])
+  const batch1 = readByPathViaOid([...manifestPaths, ...statePaths, ...(wantAtt ? [attPath] : [])])
   const manifests = manifestPaths.map((p) => ({ path: p, content: batch1.get(p)?.toString('utf8') ?? '' }))
 
   const statePhases = new Map<string, readonly string[] | null>()
@@ -384,7 +429,7 @@ export function collectDeepInput(
     }
   }
   const inTree = [...referenced].filter((p) => treePaths.has(p))
-  const batch2 = inTree.length > 0 ? readBlobs(head, inTree) : new Map<string, Buffer | null>()
+  const batch2 = inTree.length > 0 ? readByPathViaOid(inTree) : new Map<string, Buffer | null>()
   const archiveSha256 = new Map<string, string | null>()
   for (const p2 of inTree) {
     const buf = batch2.get(p2)

@@ -41,7 +41,7 @@ import {
 } from './lib/delegation'
 import { preflightDelegation, ACK_FOR, type PreflightResult } from './lib/delegation-preflight'
 import { collectPreflightFacts, type PreflightFactPorts } from './lib/delegation-preflight-facts'
-import { readBlobsAtRef } from './lib/git-batch'
+import { readBlobsAtRef, readBlobsByOid } from './lib/git-batch'
 import { DENY_GUIDANCE } from './lib/delegation'
 
 /**
@@ -459,6 +459,7 @@ export function main(argv: string[]): void {
     preflightPorts: {
       git,
       readBlobs: (ref, paths) => readBlobsAtRef(cfg.root, ref, paths),
+      readBlobsByOid: (oids) => readBlobsByOid(cfg.root, oids),
       ticketRoot: cfg.ticketRoot,
       reviewHardCap: cfg.reviewBudget.hardCap,
     },

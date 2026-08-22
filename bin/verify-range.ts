@@ -28,7 +28,7 @@ import {
   type DeepVerifyReport,
 } from '../scripts/req/lib/verify-range'
 import { attestationsPath, parseAttestations } from '../scripts/req/lib/attestations'
-import { readBlobsAtRef } from '../scripts/req/lib/git-batch'
+import { readBlobsAtRef, readBlobsByOid } from '../scripts/req/lib/git-batch'
 import { createHash } from 'node:crypto'
 
 // ───────────────────────────────── 인자 파싱(fail-closed — check.ts 관례) ──
@@ -207,6 +207,8 @@ export interface RunDeps {
   ticketRoot: string
   /** head tree blob 배치 읽기(REQ-2026-127 — cat-file --batch 1프로세스). 테스트는 fake 주입. */
   readBlobs: (ref: string, paths: readonly string[]) => Map<string, Buffer | null>
+  /** 🔴 REQ-2026-176: 같은 blob 을 **OID 로** 읽는 경로(경로 요청은 트리를 되짚어 비싸다). */
+  readBlobsByOid: (oids: readonly string[]) => Map<string, Buffer | null>
 }
 // 🔴 REQ-2026-172 DEC-3: `collectDeepInput` 은 `lib/verify-range` 로 이관됐다(공유 대상).
 //    `req:delegate` 의 발급 시점 preflight 가 같은 범위 사실을 필요로 하는데, scripts CLI 가
@@ -236,7 +238,7 @@ export async function runVerifyRange(opts: Opts, deps: RunDeps): Promise<RunResu
   }
 
   // 1. 로컬 검증 — CI 선택과 무관하게 **항상** 수행한다(완료 기준 8). REQ-2026-127: 심층 6범주.
-  const report = verifyRangeDeep(collectDeepInput(deps.git, deps.readBlobs, baseSha, headSha, deps.ticketRoot))
+  const report = verifyRangeDeep(collectDeepInput(deps.git, deps.readBlobs, baseSha, headSha, deps.ticketRoot, deps.readBlobsByOid))
 
   // 2. GitHub CI opt-in — 선택은 이번 실행에만 유효하고 저장하지 않는다(설계 DEC-4).
   let mode = decideCiMode(opts, deps.interactive)
@@ -404,6 +406,7 @@ export async function runCli(argv: string[]): Promise<void> {
       trunkBranch: cfg.trunkBranch,
       ticketRoot: cfg.ticketRoot,
       readBlobs: (ref, paths) => readBlobsAtRef(cfg.root, ref, paths),
+      readBlobsByOid: (oids) => readBlobsByOid(cfg.root, oids),
     })
     console.log(opts.json ? renderJson(result) : renderHuman(result, opts.strict))
     if (result.exit !== 0) process.exitCode = result.exit

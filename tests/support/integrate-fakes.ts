@@ -198,6 +198,11 @@ export function makeDeps(over?: Partial<RunDeps> & { git?: ReturnType<typeof fak
     githubCi: over?.githubCi === undefined ? null : over.githubCi,
     gitStateExists: over?.gitStateExists ?? (() => false),
     readBlobs: over?.readBlobs ?? fakeReadBlobs(),
+    // 🔴 REQ-2026-176: 이 fake 의 `ls-tree` 는 `--name-only` 형식(OID 없음)이므로 OID 경로는
+    //    **쓰이면 안 된다**. 던지게 둬서 그 사실 자체를 오라클로 삼는다.
+    readBlobsByOid: over?.readBlobsByOid ?? ((): never => {
+      throw new Error('fake: OID 경로가 예상치 않게 쓰였다(ls-tree 가 OID 를 주지 않는다)')
+    }),
     /**
      * 🔴 기본값은 **현행 동작**이다(REQ-2026-140). `auto` 가 아니면 사전 위임 축이 아무것도 하지 않으므로,
      *    기존 integrate 테스트가 그대로 유효하다 — 무회귀가 이 기본값에 걸려 있다.

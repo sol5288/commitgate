@@ -26,7 +26,7 @@ import { loadConfig } from '../scripts/req/lib/config'
 import { createGitAdapter, type GitAdapter } from '../scripts/req/lib/adapters'
 import { isEntrypoint } from '../scripts/req/lib/cli-boundary'
 import { verifyRangeDeep } from '../scripts/req/lib/verify-range'
-import { readBlobsAtRef } from '../scripts/req/lib/git-batch'
+import { readBlobsAtRef, readBlobsByOid } from '../scripts/req/lib/git-batch'
 import { readTicketFacts } from '../scripts/req/lib/integration-facts'
 import { decideCiRun, type IntegrationPlan } from '../scripts/req/lib/merge-gate'
 import {
@@ -172,6 +172,8 @@ export interface RunDeps {
   gitStateExists: (name: string) => boolean
   /** head tree blob 배치 읽기(REQ-2026-127 — verify-range와 같은 심층 수집 공유). 테스트는 fake 주입. */
   readBlobs: VerifyRunDeps['readBlobs']
+  /** 🔴 REQ-2026-176: 같은 blob 을 **OID 로** 읽는 경로(경로 요청은 트리를 되짚어 비싸다). */
+  readBlobsByOid: VerifyRunDeps['readBlobsByOid']
   /**
    * 이 저장소의 정지 정책(REQ-2026-140). `'auto'` 일 때만 **사전 위임을 요구**한다.
    * 🔴 다른 값에서는 이 축이 아무것도 바꾸지 않는다 — 무회귀가 이 한 줄에 걸려 있다.
@@ -196,7 +198,7 @@ export function makeCoordinatorDeps(deps: RunDeps): CoordinatorDeps {
     trunkBranch: deps.trunkBranch,
     branchPrefix: deps.branchPrefix,
     verify: (base, head): VerifySummary | null => {
-      const report = verifyRangeDeep(collectDeepInput(deps.git, deps.readBlobs, base, head, deps.ticketRoot))
+      const report = verifyRangeDeep(collectDeepInput(deps.git, deps.readBlobs, base, head, deps.ticketRoot, deps.readBlobsByOid))
       return { counts: report.counts, manifestProblems: report.manifestProblems, unproven: report.unproven, invalid: report.invalid }
     },
   }
@@ -316,7 +318,7 @@ export interface AutoFacts {
  *    거부 사유이므로(`absent`·`ambiguous-active`), 여기서는 보수적 기본값을 돌려주고 판정은 verdict 에 맡긴다.
  */
 export function collectAutoFacts(
-  deps: Pick<RunDeps, 'readDelegationLedger' | 'ticketRoot' | 'readBlobs' | 'reviewHardCap'>,
+  deps: Pick<RunDeps, 'readDelegationLedger' | 'ticketRoot' | 'readBlobs' | 'readBlobsByOid' | 'reviewHardCap'>,
   prepared: PreparedIntegration,
   scope: DelegationScope,
 ): AutoFacts {
@@ -383,7 +385,10 @@ export function activeDelegationAck(
 }
 
 export function delegationGate(
-  deps: Pick<RunDeps, 'readDelegationLedger' | 'now' | 'branchPrefix' | 'ticketRoot' | 'git' | 'readBlobs'>,
+  deps: Pick<
+    RunDeps,
+    'readDelegationLedger' | 'now' | 'branchPrefix' | 'ticketRoot' | 'git' | 'readBlobs' | 'readBlobsByOid'
+  >,
   prepared: PreparedIntegration,
   ticketFacts: AutoFacts,
   /**
@@ -425,7 +430,14 @@ export function delegationGate(
     }
   }
   // 범위 귀속(DEC-4a) — `verifyRangeDeep` 과 **같은 입력**으로 계산한다(분류기 이원화 금지).
-  const deepInput = collectDeepInput(deps.git, deps.readBlobs, prepared.trunkHeadSha, prepared.featureHeadSha, deps.ticketRoot)
+  const deepInput = collectDeepInput(
+    deps.git,
+    deps.readBlobs,
+    prepared.trunkHeadSha,
+    prepared.featureHeadSha,
+    deps.ticketRoot,
+    deps.readBlobsByOid,
+  )
   const report = verifyRangeDeep(deepInput)
   const attribution = attributeRange({
     commits: deepInput.commits,
@@ -450,7 +462,7 @@ export function delegationGate(
     const row = active[0] as DelegationIssued
     if (row.trunk_sha === prepared.trunkHeadSha) return undefined // 움직이지 않았다.
     return authorizeTrunkAdvance(
-      { git: deps.git, readBlobs: deps.readBlobs, ticketRoot: deps.ticketRoot },
+      { git: deps.git, readBlobs: deps.readBlobs, readBlobsByOid: deps.readBlobsByOid, ticketRoot: deps.ticketRoot },
       parsed.rows,
       row.trunk_sha,
       prepared.trunkHeadSha,
@@ -911,7 +923,14 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
    */
   const attestedAck = scopeForFacts === null ? false : activeDelegationAck(deps, scopeForFacts)
   const attribution = ((): ReturnType<typeof attributeRange> => {
-    const deepInput = collectDeepInput(deps.git, deps.readBlobs, prepared.trunkHeadSha, prepared.featureHeadSha, deps.ticketRoot)
+    const deepInput = collectDeepInput(
+    deps.git,
+    deps.readBlobs,
+    prepared.trunkHeadSha,
+    prepared.featureHeadSha,
+    deps.ticketRoot,
+    deps.readBlobsByOid,
+  )
     const report = verifyRangeDeep(deepInput)
     return attributeRange({
       commits: deepInput.commits,
@@ -1343,6 +1362,7 @@ export async function runCli(argv: string[]): Promise<void> {
       githubCi: cfg.githubCi,
       gitStateExists: (name) => existsSync(resolve(cfg.root, gitDir, name)),
       readBlobs: (ref, paths) => readBlobsAtRef(cfg.root, ref, paths),
+      readBlobsByOid: (oids) => readBlobsByOid(cfg.root, oids),
       stopGate: cfg.stopGate,
       reviewHardCap: cfg.reviewBudget.hardCap,
       readDelegationLedger: () => {
