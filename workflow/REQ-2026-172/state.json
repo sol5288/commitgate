@@ -2,14 +2,14 @@
   "id": "REQ-2026-172",
   "branch": "feat/req-2026-172-delegate-preflight",
   "risk_level": "LOW",
-  "codex_thread_id": "01a028ee-8319-79d2-a7ab-8feeb6a88821",
-  "review_base_sha": "481c413f3781eaef6baa6a53f65288435e040fe0",
-  "review_diff_hash": "b0ee1ccc3fc95ebf03657a2e18ef4783ac1b19ba",
+  "codex_thread_id": "01a02901-6deb-7f33-a7f0-6f4830cb0ff6",
+  "review_base_sha": "3284965c5eb828536a4100d969aff51ad417292f",
+  "review_diff_hash": "5a4a1ad651fbd157eaf8b684af0dd61a9a1b1e67",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "9671ea4f5849a3fd80b900354ce2f0bd5844dee61e8080688ea299e8dc12cdb3",
-  "current_phase": "phase-1-relocate",
+  "current_phase": "phase-2-preflight",
   "phases": [
     {
       "id": "phase-1-relocate",
@@ -53,16 +53,23 @@
       "phase_id": "phase-1-relocate",
       "attempts": 1,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-preflight#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-preflight",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-relocate",
+    "phase_id": "phase-2-preflight",
     "outcome": "approved",
-    "compare_hash": "70491143e5596583163ef48a00cce6a788a14a8169360873a2be51f7b626e28b",
+    "compare_hash": "0d72b816205c5a94044a4e23e154467bbfec4a0448c252561d5b88cf75b8688c",
     "count": 1,
     "errors": [],
-    "at": "2026-08-22T10:06:31.450Z",
+    "at": "2026-08-22T10:27:26.887Z",
     "findings": [],
     "elided_count": 0
   },
@@ -110,6 +117,12 @@
       "phase_id": "phase-1-relocate",
       "consumed_by_commit_sha": "9514bed055c9cef6c008436537408a9494b86a8b",
       "approval_consumed_at": "2026-08-22T10:06:45.190Z"
+    },
+    {
+      "approved_tree": "5a4a1ad651fbd157eaf8b684af0dd61a9a1b1e67",
+      "phase_id": "phase-2-preflight",
+      "consumed_by_commit_sha": "a88d44c05eda12eeb0a9ee587bc92fe6df3be98d",
+      "approval_consumed_at": "2026-08-22T10:27:40.472Z"
     }
   ],
   "user_commit_confirmed": null
