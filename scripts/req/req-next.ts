@@ -54,6 +54,11 @@ import type { ReviewBudget, PhaseCommitPolicy, StopGate } from './lib/config'
 import { assertSetupComplete } from './lib/setup-gate'
 import { makeRunCli, isEntrypoint } from './lib/cli-boundary'
 import { helpGate } from './lib/verb-help'
+// 🔴 REQ-2026-172 phase-3: 위임 안내가 요구 플래그를 알려면 `req:delegate` 와 **같은 판정**이 필요하다.
+import { preflightDelegation } from './lib/delegation-preflight'
+import { collectPreflightFacts } from './lib/delegation-preflight-facts'
+import { readBlobsAtRef } from './lib/git-batch'
+import { scopeOfBranch, DELEGATION_LEDGER_REL, type DelegationIssued } from './lib/delegation'
 
 // ─────────────────────────────────────────────── 읽기 전용 git 경계 (D6-1) ──
 
@@ -146,7 +151,28 @@ export function nextExitCode(kind: NextKind): number {
 
 // ────────────────────────────────────────────────────── 순수 판정 코어 ──
 
+/**
+ * 위임 안내가 필요로 하는 **범위 사실**(REQ-2026-172 phase-3).
+ *
+ * 🔴 `req:next` 는 티켓 state·branch 만 알기 때문에, 범위에 `attested` 커밋이 있는지를 **모른다**.
+ *    그 상태로 `--allow-attested` 없는 명령을 내면 사용자가 그대로 실행하고 `req:delegate` 가 거부한다
+ *    — 안내가 실행 불가가 되는, 이 저장소가 반복해 데인 결함이다.
+ */
+export type AckProbe =
+  /** 이 범위로 통합이 열린다(또는 아래 ack 를 명시하면 열린다). */
+  | { kind: 'acks'; acks: { attestedAck: boolean; highRiskAck: boolean } }
+  /** 플래그로 열리지 않는다 — 명령을 내지 않고 사유를 말한다. */
+  | { kind: 'blocked'; detail: string }
+  /** 범위를 읽지 못했다 — 🔴 **추측하지 않는다**. 모른다고 말한다. */
+  | { kind: 'unknown'; reason: string }
+
 export interface NextInput {
+  /**
+   * 🔴 **지연 공급자**(REQ-2026-172 phase-3). `auto` 종단 분기에서만 호출한다 —
+   *    범위 수집은 git log + blob 배치라 값싼 명령인 `req:next` 의 다른 경로가 그 비용을 내면 안 된다.
+   *    `undefined` 면 옛 동작(플래그를 티켓 위험도만으로 판단)이다.
+   */
+  requiredDelegationAcks?: () => AckProbe
   /** 후속 명령이 대상으로 삼을 티켓. `--ticket`으로 읽었으면 그대로 보존된다(R5). */
   target: NextTarget
   state: WorkflowState
@@ -1053,7 +1079,7 @@ export function terminalIntegrationAction(input: NextInput, opts: { prefix?: str
               //    넘어도 되는 것이 아니다. 대신 **두 단계임을 여기서 미리 말한다**. 다음 단계가 있다는 것을
               //    모른 채 확인만 하면, 그 다음에 integrate 가 `absent` 로 막혀 또 멈춘다.
               '이 확인 **뒤에** 사전 위임이 하나 더 필요하다 — ' +
-              `\`${delegateCommand(input, true) ?? 'commitgate req:delegate … --high-risk --run'}\` ` +
+              `\`${delegateCommand(input, { highRisk: true, allowAttested: false }) ?? 'commitgate req:delegate … --high-risk --run'}\` ` +
               '(HIGH 라 `--high-risk` 가 없으면 통합이 `high-risk-unacked` 로 막힌다).'
             : '커밋에서 멈추지 않는 설정이므로 이 확인이 이 티켓의 **유일한** 사람 확인이다.'),
         command: buildScriptInvocation(input.packageManager, 'req:confirm', [
@@ -1102,7 +1128,13 @@ export function shellSafeArg(v: string): boolean {
  * 🔴 HIGH 확인 분기와 `auto` 종단 분기가 **같은 함수**를 쓴다. 두 곳이 갈라지면 앞 단계가 알려 준
  *    명령과 뒤 단계가 실제로 주는 명령이 달라진다.
  */
-function delegateCommand(input: NextInput, high: boolean): string | undefined {
+/** 위임 명령에 붙일 **명시 플래그**. 🔴 도구가 켜는 것이 아니라 사람에게 **적어 주는** 값이다. */
+export interface DelegateFlags {
+  highRisk: boolean
+  allowAttested: boolean
+}
+
+function delegateCommand(input: NextInput, flags: DelegateFlags): string | undefined {
   const reqId = String(input.state.id ?? '')
   const branch = typeof input.state.branch === 'string' ? input.state.branch : ''
   if (!shellSafeArg(reqId) || !shellSafeArg(branch)) return undefined
@@ -1113,7 +1145,9 @@ function delegateCommand(input: NextInput, high: boolean): string | undefined {
     `"${branch}"`,
     '--sentence',
     `"${PLACEHOLDER_DELEGATE_SENTENCE}"`,
-    ...(high ? ['--high-risk'] : []),
+    // 🔴 **필요한 플래그를 전부** 담는다(REQ-2026-172). 하나씩 알려 주면 발급 왕복이 줄지 않는다.
+    ...(flags.allowAttested ? ['--allow-attested'] : []),
+    ...(flags.highRisk ? ['--high-risk'] : []),
     '--run',
   ]).join(' ')
 }
@@ -1133,7 +1167,23 @@ function autoDelegationAction(input: NextInput, prefix: string): NextAction {
     '원격 push·branch protection bypass 는 **기본 불허**이고 필요하면 별도로 위임한다. ' +
     '승인 전에 `npx commitgate verify-range` 로 이 범위의 승인 증거를 로컬에서 확인할 수 있다.'
   // 🔴 안전하게 렌더링할 수 없는 값이면 **명령을 만들지 않는다**. 값은 데이터로 보여 준다.
-  const command = delegateCommand(input, high)
+  /**
+   * 🔴 **범위가 요구하는 플래그를 여기서 확정한다**(REQ-2026-172 phase-3). 공급자는 `req:delegate` 의
+   *    preflight 와 **같은 판정**을 돌린다 — `req:next` 가 자기 판정을 따로 가지면 안내와 발급이 갈라진다.
+   */
+  const probe = input.requiredDelegationAcks?.()
+  const flags: DelegateFlags =
+    probe?.kind === 'acks'
+      ? { highRisk: high || probe.acks.highRiskAck, allowAttested: probe.acks.attestedAck }
+      : { highRisk: high, allowAttested: false }
+  const probeNotes: string[] =
+    probe === undefined || probe.kind === 'acks'
+      ? []
+      : probe.kind === 'blocked'
+        ? [`🔴 지금 이 범위로는 통합이 열리지 않는다 — ${probe.detail}. 위임을 발급해도 거부된다.`]
+        : [`이 범위가 요구하는 플래그를 판정하지 못했다(${probe.reason}) — \`req:delegate\` 가 발급 시점에 알려 준다.`]
+  // 🔴 열리지 않는 것이 확실하면 **명령을 만들지 않는다** — 실행하면 거부당할 명령을 주지 않는다.
+  const command = probe?.kind === 'blocked' ? undefined : delegateCommand(input, flags)
   const renderable = command !== undefined
   return {
     kind: 'AWAIT_HUMAN',
@@ -1144,6 +1194,7 @@ function autoDelegationAction(input: NextInput, prefix: string): NextAction {
         ? ''
         : ` ⚠️ branch 값에 셸이 해석하는 문자가 있어 실행 가능한 명령으로 만들지 않았다 — scope=ticket:${reqId} · source=${branch} 를 직접 넣어 \`req:delegate\` 를 실행한다.`),
     command,
+    diagnostics: probeNotes,
     controlPoint: '사전 위임 발급(stopGate=auto)',
     approvalSentence: `사전 위임을 발급할지 사람이 정하고 그 승인 문장을 그대로 --sentence 에 넘긴다${high ? ' (HIGH 이므로 --high-risk 포함)' : ''}`,
   }
@@ -1155,6 +1206,108 @@ function autoDelegationAction(input: NextInput, prefix: string): NextAction {
  *    여기 re-export 는 기존 import 경로를 깨지 않기 위한 것이다.
  */
 export { mentionsMember, readDeliveryGate } from './lib/delivery'
+
+/**
+ * 이 티켓의 범위가 요구하는 **명시 플래그**를 알아낸다(REQ-2026-172 phase-3).
+ *
+ * 🔴 `req:delegate` 의 preflight 와 **같은 판정**(`preflightDelegation`)을 돌린다 — 새 술어를 만들지 않는다.
+ * 🔴 후보 행은 **안내용 가상 행**이다. 원장에 쓰지 않고, 승인 문장 자리에는 자리표시자를 넣는다
+ *    (도구가 만든 문장으로 위임이 발급되면 안 되므로 — REQ-2026-149).
+ * 🔴 읽지 못하면 **추측하지 않는다**: `unknown` 을 돌려 호출부가 "판정하지 못했다"를 말하게 한다.
+ */
+/**
+ * 공급자를 **줄 것인가**(REQ-2026-172 phase-3). 🔴 규칙을 함수로 빼야 단정할 수 있다 —
+ * 리터럴 안의 삼항으로 두면 배선을 지워도 테스트가 전부 green 이다(변이 검사로 확인했다).
+ *
+ * 🔴 `auto` 에서만 준다. 다른 값의 종단은 위임을 쓰지 않으므로, 그 경로가 범위 수집
+ *    (git log + blob 배치)을 하면 값싼 명령이 비싸진다.
+ * 🔴 반환은 **thunk** 다 — 여기서 계산하지 않는다. 실제 비용은 `auto` 종단이 부를 때만 든다.
+ */
+export function delegationAckProvider(
+  stopGate: StopGate,
+  cfg: ProbeConfig,
+  state: WorkflowState,
+  roGit: (args: string[]) => string,
+): (() => AckProbe) | undefined {
+  return stopGate === 'auto' ? () => probeDelegationAcks(cfg, state, roGit) : undefined
+}
+
+/** `probeDelegationAcks` 가 읽는 설정(필요분만 — 좁게 받는다). */
+export interface ProbeConfig {
+  root: string
+  ticketRoot: string
+  trunkBranch: string | null
+  branchPrefix: string
+  reviewBudget: { hardCap: number }
+}
+
+export function probeDelegationAcks(
+  cfg: ProbeConfig,
+  state: WorkflowState,
+  roGit: (args: string[]) => string,
+): AckProbe {
+  const branch = typeof state.branch === "string" ? state.branch : ""
+  const trunkBranch = cfg.trunkBranch
+  if (branch === "" || trunkBranch === null) return { kind: "unknown", reason: "브랜치·trunk 를 확정할 수 없다" }
+  const scope = scopeOfBranch(branch, cfg.branchPrefix)
+  if (scope === null) return { kind: "unknown", reason: `브랜치 이름에서 위임 대상을 판정할 수 없다: ${branch}` }
+
+  let trunkSha: string
+  let sourceSha: string
+  try {
+    trunkSha = roGit(["rev-parse", "--verify", `${trunkBranch}^{commit}`]).trim()
+    sourceSha = roGit(["rev-parse", "--verify", `${branch}^{commit}`]).trim()
+  } catch {
+    return { kind: "unknown", reason: "trunk·source SHA 를 읽지 못했다" }
+  }
+
+  const ports = {
+    git: createGitAdapter(cfg.root),
+    readBlobs: (ref: string, paths: readonly string[]) => readBlobsAtRef(cfg.root, ref, paths),
+    ticketRoot: cfg.ticketRoot,
+    reviewHardCap: cfg.reviewBudget.hardCap,
+  }
+  const collected = collectPreflightFacts(ports, scope, trunkSha, sourceSha)
+  if (collected.kind === "unavailable") return { kind: "unknown", reason: collected.reason }
+
+  const nowIso = new Date().toISOString()
+  const candidate: DelegationIssued = {
+    kind: "issued",
+    id: "PROBE",
+    at: nowIso,
+    scope,
+    trunk_branch: trunkBranch,
+    trunk_sha: trunkSha,
+    source_branch: branch,
+    base_sha: sourceSha,
+    // 🔴 안내용이라 만료는 넉넉히 둔다 — 이 행은 원장에 쓰이지 않는다.
+    expires_at: new Date(Date.parse(nowIso) + 3_600_000).toISOString(),
+    permissions: { local_merge: true, origin_push: false, bypass_protection: false },
+    high_risk_ack: false,
+    attested_ack: false,
+    approval_sentence: PLACEHOLDER_DELEGATE_SENTENCE,
+  }
+
+  const result = preflightDelegation({
+    ledgerText: readDelegationLedgerText(cfg.root),
+    candidate,
+    now: nowIso,
+    trunkSha,
+    requested: { local_merge: true, origin_push: false, bypass_protection: false },
+    ...collected.facts,
+  })
+
+  if (result.kind === "ok") return { kind: "acks", acks: { attestedAck: false, highRiskAck: false } }
+  if (result.kind === "needs-acks") return { kind: "acks", acks: result.acks }
+  if (result.kind === "blocked") return { kind: "blocked", detail: `${result.reason}: ${result.detail}` }
+  return { kind: "unknown", reason: `${result.reason}: ${result.detail}` }
+}
+
+/** 위임 원장 본문(없으면 null). 🔴 읽기 전용이다. */
+function readDelegationLedgerText(rootAbs: string): string | null {
+  const abs = join(rootAbs, ...DELEGATION_LEDGER_REL.split("/"))
+  return existsSync(abs) ? readFileSync(abs, "utf8") : null
+}
 
 export function renderAction(displayId: string, a: NextAction): string {
   const lines = [`[req:next] ${a.kind}  ${displayId}`, `  ${a.detail}`]
@@ -1212,7 +1365,12 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   // review-codex/doctor와 동일한 스크래치 집합(lib/scratch SSOT) — 워크플로 도구가 쓰는 메타데이터는 D10 대상이 아니다.
   const scratch = reviewScratchPaths(ticketRel)
 
-  const action = resolveNext({
+  /**
+   * 🔴 **조립을 함수로 분리한다**(REQ-2026-172 phase-3). 리터럴을 `resolveNext(...)` 인자로 두면
+   *    "main 이 이 입력을 실제로 채우는가"를 **관측할 방법이 없다** — 배선을 지워도 테스트가 전부
+   *    green 이다(변이 검사로 확인했다). 조립 결과를 값으로 만들면 그 자체를 단정할 수 있다.
+   */
+  const input: NextInput = {
     target,
     state,
     packageManager: cfg.packageManager,
@@ -1240,6 +1398,15 @@ export function main(argv: string[] = process.argv.slice(2)): void {
     // 🔴 REQ-2026-129: 정지 정책은 **티켓에 고정된 스냅샷**이 정본이다(없으면 config — legacy 무회귀).
     //    이 지역 변수 하나에서 세 입력이 모두 파생돼야 한 티켓이 두 정책으로 판정되지 않는다.
     stopGate: stopGateNow,
+    /**
+     * 🔴 **지연 공급자**(REQ-2026-172 phase-3). `stopGate: "auto"` 일 때만 만들고, **호출될 때만** 실행된다.
+     *    `auto` 종단(`autoDelegationAction`) 한 곳에서만 부르므로 다른 경로의 비용은 0 이다 —
+     *    `req:next` 는 매 회차 호출되는 값싼 명령인데 범위 수집은 git log + blob 배치라 그렇지 않다.
+     *
+     * 🔴 판정은 `req:delegate` 의 preflight 와 **같은 함수**다. `req:next` 가 자기 판정을 따로 가지면
+     *    안내와 발급이 갈라져, 안내대로 실행했는데 거부당하는 상태가 된다.
+     */
+    requiredDelegationAcks: delegationAckProvider(stopGateNow, cfg, state, roGit),
     deliveryGate: defersToIntegration(stopGateNow) ? readDeliveryGate(cfg.ticketRoot, state.id, roGit) : null,
     // REQ-2026-071: HIGH + stopGate:'req' 일 때만 필요한 계산 — 그 외에는 안내가 이 값을 보지 않는다.
     completesReq:
@@ -1266,7 +1433,8 @@ export function main(argv: string[] = process.argv.slice(2)): void {
       if (!required) return { required: false, durable: true, reason: 'legacy 티켓(marker 없음) — 점검 불요' }
       return { required: true, ...verifyCommittedDesignEvidence({ ticketRel, ports }) }
     })(),
-  })
+  }
+  const action = resolveNext(input)
 
   if (opts.json) console.log(JSON.stringify({ req_id: state.id, ...action }, null, 2))
   else console.log(renderAction(state.id, action))
