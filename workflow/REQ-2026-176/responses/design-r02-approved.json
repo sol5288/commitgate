@@ -1,0 +1,1 @@
+{"machine_schema_version":"1.1","review_base_sha":"85fabbecb6f4da34e8edea622fdc930b20f81c55","status":"STEP_COMPLETE","commit_approved":"yes","merge_ready":"no","review_kind":"design","full_review_requested":"no","findings":[],"next_action":"설계 승인 후 phase 1 구현을 진행하고 staged diff로 phase 리뷰를 요청하세요.","observations":[]}
