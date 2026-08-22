@@ -1,0 +1,98 @@
+{
+  "id": "REQ-2026-171",
+  "branch": "feat/req-2026-171-autonomy-auto-parity",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a0280e-07fc-7ba2-b9a0-b6a365e40c8d",
+  "review_base_sha": "51f2b92b13d57e600f808f4e4848da5a8570180c",
+  "review_diff_hash": "88396f4e1262d20ca2a9d9bb7deb621c05ef05f0",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "7f6ea25964244d80843bae2df287673b7ec926eb3d8164f6ff1b9071fec1c493",
+  "current_phase": "phase-1-auto-parity",
+  "phases": [
+    {
+      "id": "phase-1-auto-parity",
+      "title": "자율 계약·문서에 auto 반영 + 파생 가드",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-auto-parity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-auto-parity",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-auto-parity",
+    "outcome": "approved",
+    "compare_hash": "7b98ced308b858488aa5b569133403ce5271ab607d00d7287a5acd88efdc0ece",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-22T06:01:25.737Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "9a9f6b6e30a588dc16198599b27f55be0c206ceb",
+    "design": "84e3e2d9e8e3bca84b18711201a7e5fc1afe77ba",
+    "plan": "8c9cab5e7b66a3b5f237d2a55fdc1653225af35c"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-171/responses/design-r02-approved.json",
+    "response_sha256": "5c62585f454e7469b5f4bb8f846de9d33ea5c1f97d8aa32842642ef66ca7891f",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "d4485d5c6ac9ef13e8c0d7735b97c7e4e51e8f16",
+    "codex_thread_id": "01a027dd-b489-7261-8a8d-80d40d28d8d5",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-22T05:07:49.419Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-171/responses/design-r01-needs-fix.json",
+          "sha256": "028a9027ce01fe0e5bfdd5ca228c43f0ddbdf70f06836ebcc0630c4b4fb50b03"
+        },
+        {
+          "response_path": "workflow/REQ-2026-171/responses/design-r02-approved.json",
+          "sha256": "5c62585f454e7469b5f4bb8f846de9d33ea5c1f97d8aa32842642ef66ca7891f"
+        }
+      ],
+      "inventory_sha256": "40342ef281d2813380df16e45a489944af7c19e9ffc27619ed286a4eac7372bf",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-171/responses/design-r02-approved.json"
+    },
+    "design_hash": "7f6ea25964244d80843bae2df287673b7ec926eb3d8164f6ff1b9071fec1c493"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "88396f4e1262d20ca2a9d9bb7deb621c05ef05f0",
+      "phase_id": "phase-1-auto-parity",
+      "consumed_by_commit_sha": "cc492835c57662f51a4d032d575c9621a3fbcf96",
+      "approval_consumed_at": "2026-08-22T06:01:47.951Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

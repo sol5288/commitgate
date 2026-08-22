@@ -1004,8 +1004,10 @@ export function parseArgs(argv: string[]): Opts {
  * 세 조건이 **모두** 참일 때만 낸다:
  *  - `hardBlocked`가 아니다 — 🔴 `hardCap`은 어떤 설정으로도 열리지 않으므로, 거기서 "설정으로 끌 수
  *    있다"고 말하면 **거짓 안내**다.
- *  - `stopGate`가 `req`·`merge` — 자율 진행을 이미 고른 사용자다. `phase`를 고른 사용자는 자주 멈추기를
- *    원했으므로 재촉하지 않는다.
+ *  - `stopGate`가 **`phase`가 아니다**(= `req`·`merge`·`auto`) — 자율 진행을 이미 고른 사용자다.
+ *    `phase`를 고른 사용자는 자주 멈추기를 원했으므로 재촉하지 않는다.
+ *    🔴 아래 조건식이 `defersToIntegration`(= `merge`·`auto`)을 쓰므로 `auto`도 포함된다 — 예전 주석은
+ *    `req`·`merge`만 적어 **코드와 어긋나 있었다**(REQ-2026-171).
  *  - `onSoftLimit`이 아직 `ask` — 이미 `auto`면 이 정지 자체가 없다.
  *
  * 🔴 **상시 진단(doctor WARN)으로 만들지 않는다.** `ask`는 정당한 선택이고, 그것을 고른 사용자에게 매번
