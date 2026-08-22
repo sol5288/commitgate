@@ -164,10 +164,21 @@ describe('[REQ-2026-152] 🔴 경로를 정규화하지 않는다', () => {
 })
 
 describe('[REQ-2026-152] 🔴 배선 가드 — 호출부가 사실을 실제로 넘긴다', () => {
-  const src = readFileSync(join(process.cwd(), 'scripts/req/req-commit.ts'), 'utf8')
+  /**
+   * 🔴 REQ-2026-175: 이 계산은 `lib/terminal-reentry` 로 **이관**됐다 — `req:next` 가 **같은 판정·같은
+   *    입력**으로 안내를 내야 하기 때문이다(안내와 거부가 갈라지면 "지시한 명령이 거부되는" 상태가 된다).
+   *    🔴 **단정은 한 줄도 바꾸지 않았다** — 읽는 파일만 코드를 따라 옮겼다.
+   */
+  const src = readFileSync(join(process.cwd(), 'scripts/req/lib/terminal-reentry.ts'), 'utf8')
 
   it('terminalReentryProblem 이 3번째 인자를 받는다(계산만 하고 안 넘기는 끊김 방지)', () => {
-    expect(src).toMatch(/terminalReentryProblem\(String\(state\.id \?\? ''\), baseState, dirtyGitignores, narrowing\)/)
+    expect(src).toMatch(/terminalReentryProblem\(ports\.reqId, baseState, dirtyGitignores, narrowing\)/)
+  })
+
+  /** 🔴 두 호출부가 **그 함수를 실제로 쓴다**(이관이 한쪽을 떼어놓지 않았다). */
+  it('🔴 req:commit·req:next 가 같은 계산을 부른다', () => {
+    for (const rel of ['scripts/req/req-commit.ts', 'scripts/req/req-next.ts'])
+      expect(readFileSync(join(process.cwd(), rel), 'utf8'), rel).toContain('computeTerminalReentry({')
   })
 
   it('🔴 목록이 모든 깊이의 .gitignore 를 본다 — 루트만 보면 중첩을 놓친다', () => {

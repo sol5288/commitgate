@@ -74,6 +74,7 @@ import {
   type DelegationIssued,
 } from './lib/delegation'
 import { authorizeTrunkAdvance } from './lib/trunk-advance'
+import { computeTerminalReentry } from './lib/terminal-reentry'
 
 // ─────────────────────────────────────────────── 읽기 전용 git 경계 (D6-1) ──
 
@@ -190,6 +191,15 @@ export type AckProbe =
   | { kind: 'already-valid'; delegationId: string }
 
 export interface NextInput {
+  /**
+   * 종결 티켓 재진입 안내(REQ-2026-175). 🔴 **지연 공급자**다 — `scanTicketIntake` + `git status` +
+   * `.gitignore` 읽기라 값싼 `req:next` 의 모든 경로에 지울 비용이 아니다. 살아 있는 승인 블록에서만 부른다.
+   *
+   * 🔴 반환은 **완성된 문구**다. `baseState` 만 넘기면 `narrowing` 을 모르는 쪽이
+   *    *"stash 하고 진행하라"* 는 **실행 불가 안내**를 낸다(design-r01 P1).
+   */
+  terminalReentry?: () => string | null
+
   /**
    * 🔴 **지연 공급자**(REQ-2026-172 phase-3). `auto` 종단 분기에서만 호출한다 —
    *    범위 수집은 git log + blob 배치라 값싼 명령인 `req:next` 의 다른 경로가 그 비용을 내면 안 된다.
@@ -736,6 +746,26 @@ function resolveNextCore(input: NextInput): NextAction {
 
   // 1. 살아 있는 승인이 가장 쉽게 상한다 — 다른 어떤 행동도 D9(staged tree == approved tree)를 깨뜨린다.
   if (state.commit_allowed === true) {
+    /**
+     * 🔴 **`req:commit` 이 거부할 명령을 지시하지 않는다**(REQ-2026-175 DEC-4·DEC-5).
+     *
+     *    이 블록의 네 갈래는 전부 `req:commit`(또는 그 앞의 `req:confirm`)으로 이어진다. 티켓이
+     *    HEAD 기준 종결이면 그 명령은 **반드시 실패한다** — 실제로 이 저장소가 겪었다:
+     *    `req:next` 가 `RUN`(계약상 "묻지 말고 실행")을 냈고 `req:commit` 이 종결 재진입으로 거부했다.
+     *
+     * 🔴 **갈래마다가 아니라 진입에서 한 번** 검사한다(DEC-5) — 다섯 번째 갈래가 생겨도 빠지지 않는다.
+     * 🔴 `req:confirm` 갈래도 여기서 막힌다: 확인을 받아도 다음이 `req:commit` 이라 어차피 막히고,
+     *    그러면 **사람의 승인이 낭비**된다.
+     * 🔴 안내 문구는 `req:commit` 의 거부 문구와 **같은 함수·같은 입력**에서 나온다(DEC-1·DEC-2).
+     * 🔴 판정 불가(`undefined`·`null`)면 **종전 동작**이다 — 여기는 안내 지점이고, 진짜 게이트는
+     *    `req:commit` 에 그대로 있다(DEC-3).
+     */
+    const reentry = input.terminalReentry?.()
+    if (reentry != null && reentry !== '')
+      return {
+        kind: 'BLOCKED',
+        detail: reentry,
+      }
     // REQ-2026-037: opt-in 자동 커밋. **fail-closed** — `risk_level==='LOW'` 정확 일치 AND 정책 low-only AND
     // staged 존재일 때만 RUN(자동 커밋). "HIGH가 아님"이 "자동 안전"을 의미하지 않는다: 누락·`'Low'` 오타·
     // 손상·HIGH는 전부 else(AWAIT_HUMAN)로 떨어지고, HIGH는 req-commit의 Gate B가 이중 백스톱.
@@ -1492,6 +1522,13 @@ export function main(argv: string[] = process.argv.slice(2)): void {
      * 🔴 판정은 `req:delegate` 의 preflight 와 **같은 함수**다. `req:next` 가 자기 판정을 따로 가지면
      *    안내와 발급이 갈라져, 안내대로 실행했는데 거부당하는 상태가 된다.
      */
+    /**
+     * 🔴 **실제 배선**(REQ-2026-175). 이 줄이 없으면 종결 검사는 아무 데서도 돌지 않는 죽은 코드다 —
+     *    이 저장소가 이번 작업에서만 다섯 번 만든 "배선 끊김"이라, 호출부를 단정하는 테스트를 함께 둔다.
+     * 🔴 **지연**: thunk 이므로 살아 있는 승인 블록에 도달할 때만 계산된다.
+     */
+    terminalReentry: () =>
+      computeTerminalReentry({ root: cfg.root, ticketRel, reqId: String(state.id ?? ''), git: (a) => roGit(a) }),
     requiredDelegationAcks: delegationAckProvider(stopGateNow, cfg, state, roGit),
     deliveryGate: defersToIntegration(stopGateNow) ? readDeliveryGate(cfg.ticketRoot, state.id, roGit) : null,
     // REQ-2026-071: HIGH + stopGate:'req' 일 때만 필요한 계산 — 그 외에는 안내가 이 값을 보지 않는다.
