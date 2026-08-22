@@ -2,15 +2,23 @@
   "id": "REQ-2026-175",
   "branch": "feat/req-2026-175-next-commit-parity",
   "risk_level": "LOW",
-  "codex_thread_id": "01a029c6-90e1-73b1-a924-30601cbc26da",
-  "review_base_sha": null,
-  "review_diff_hash": null,
+  "codex_thread_id": "01a029fb-358c-7ed1-b434-533f59336664",
+  "review_base_sha": "4193fd2b5e02aa1453f852ca44d2f0fcce93df0c",
+  "review_diff_hash": "6def2215ba67fa28a7f77a2a8c2ba616dddac146",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "c7a5f3d35b5a2e62131368d0ca4633b87ff0248f42b843399e4be9b6244149db",
-  "current_phase": null,
-  "phases": [],
+  "current_phase": "phase-1-parity",
+  "phases": [
+    {
+      "id": "phase-1-parity",
+      "title": "종결 재진입 안내 정합(같은 생성기·같은 입력)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
   "approval_evidence_required": true,
   "evidence_durability_required": true,
   "review_series_model_version": 1,
@@ -24,16 +32,23 @@
       "phase_id": null,
       "attempts": 2,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-parity#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-parity",
+      "attempts": 1,
+      "closed_reason": "approved"
     }
   ],
   "last_review": {
-    "review_kind": "design",
-    "phase_id": null,
+    "review_kind": "phase",
+    "phase_id": "phase-1-parity",
     "outcome": "approved",
-    "compare_hash": "9cd136dd02a703af5756884de705e6a41641ac87f73ec1fe1e7915c6189aa254",
+    "compare_hash": "a8e849c840f13e75229e2fe110c4607273652d234ef0c9c56d6128f0fa5088a7",
     "count": 1,
     "errors": [],
-    "at": "2026-08-22T14:02:06.998Z",
+    "at": "2026-08-22T15:00:25.489Z",
     "findings": [],
     "elided_count": 0
   },
@@ -70,5 +85,14 @@
       "source_response_path": "workflow/REQ-2026-175/responses/design-r02-approved.json"
     },
     "design_hash": "c7a5f3d35b5a2e62131368d0ca4633b87ff0248f42b843399e4be9b6244149db"
-  }
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "6def2215ba67fa28a7f77a2a8c2ba616dddac146",
+      "phase_id": "phase-1-parity",
+      "consumed_by_commit_sha": "f24d2f4d5590b51386072dceaeb202bb26a53320",
+      "approval_consumed_at": "2026-08-22T15:00:48.909Z"
+    }
+  ],
+  "user_commit_confirmed": null
 }
