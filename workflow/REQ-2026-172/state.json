@@ -1,0 +1,142 @@
+{
+  "id": "REQ-2026-172",
+  "branch": "feat/req-2026-172-delegate-preflight",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a0292e-d3c1-7b93-b229-123cb7eec1b2",
+  "review_base_sha": "94d92b2c6ca3ec9624b9f9719f40a445ccf06de7",
+  "review_diff_hash": "6d7d9ad590d1cf3c623defd0ea4a5e079fea9ba9",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "9671ea4f5849a3fd80b900354ce2f0bd5844dee61e8080688ea299e8dc12cdb3",
+  "current_phase": "phase-3-next-hint",
+  "phases": [
+    {
+      "id": "phase-1-relocate",
+      "title": "공유 코드 lib 재배치(동작 변경 0)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-preflight",
+      "title": "preflight 판정 + req:delegate 배선",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-3-next-hint",
+      "title": "req:next 안내 정합(지연 공급자)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 3,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-relocate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-relocate",
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-preflight#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-preflight",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-next-hint#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-next-hint",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-next-hint",
+    "outcome": "approved",
+    "compare_hash": "1c54da2dd8eabd897385d3daa193ca38b1596f3f5a16a9388e7eb2ff2098acc2",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-22T11:17:51.709Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "design_baseline": {
+    "requirement": "e5eac2662c96a04d9c62ff872ee48ff9063835e4",
+    "design": "1c6ad27a30020a750e6650d9e9794f3a98aa8f75",
+    "plan": "616705aa2f430aead48fb0428bd9697ad5c55644"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-172/responses/design-r03-approved.json",
+    "response_sha256": "658d97687327b4117cfde89776596bc9cb3bb509326cc81d244d6ea156831bf7",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "9a8afab106f4292b8d06cb13185d4167193863bc",
+    "codex_thread_id": "01a0283a-1f07-7a41-8c38-f73a13c6a761",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-22T06:48:40.276Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-172/responses/design-r01-needs-fix.json",
+          "sha256": "b6ea357fa60fca7ac92912495516f7cb19ad69348775a052316a8f4e82cfecd9"
+        },
+        {
+          "response_path": "workflow/REQ-2026-172/responses/design-r02-needs-fix.json",
+          "sha256": "bd15a522f4e2cb1dbc8657dedc8a7db37d5548be6ea29cf1f7273beb4b7f5aca"
+        },
+        {
+          "response_path": "workflow/REQ-2026-172/responses/design-r03-approved.json",
+          "sha256": "658d97687327b4117cfde89776596bc9cb3bb509326cc81d244d6ea156831bf7"
+        }
+      ],
+      "inventory_sha256": "c976481093b6eb19fc807cc3d813fa0fd770add19c5421dcf8ee8a23cce11db9",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-172/responses/design-r03-approved.json"
+    },
+    "design_hash": "9671ea4f5849a3fd80b900354ce2f0bd5844dee61e8080688ea299e8dc12cdb3"
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "b0ee1ccc3fc95ebf03657a2e18ef4783ac1b19ba",
+      "phase_id": "phase-1-relocate",
+      "consumed_by_commit_sha": "9514bed055c9cef6c008436537408a9494b86a8b",
+      "approval_consumed_at": "2026-08-22T10:06:45.190Z"
+    },
+    {
+      "approved_tree": "5a4a1ad651fbd157eaf8b684af0dd61a9a1b1e67",
+      "phase_id": "phase-2-preflight",
+      "consumed_by_commit_sha": "a88d44c05eda12eeb0a9ee587bc92fe6df3be98d",
+      "approval_consumed_at": "2026-08-22T10:27:40.472Z"
+    },
+    {
+      "approved_tree": "6d7d9ad590d1cf3c623defd0ea4a5e079fea9ba9",
+      "phase_id": "phase-3-next-hint",
+      "consumed_by_commit_sha": "883657787d9d081d0e9d52c1ed2efd9c950938b5",
+      "approval_consumed_at": "2026-08-22T11:18:09.033Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

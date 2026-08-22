@@ -33,11 +33,16 @@ import {
   foldDelegations,
   parseDelegationLedger,
   parseInstantMs,
+  delegationAppendChunk,
   type DelegationIssued,
   type DelegationRevoked,
   type DelegationRow,
   type DelegationScope,
 } from './lib/delegation'
+import { preflightDelegation, ACK_FOR, type PreflightResult } from './lib/delegation-preflight'
+import { collectPreflightFacts, type PreflightFactPorts } from './lib/delegation-preflight-facts'
+import { readBlobsAtRef } from './lib/git-batch'
+import { DENY_GUIDANCE } from './lib/delegation'
 
 /**
  * 만료 기본값과 상한(시간).
@@ -196,6 +201,11 @@ export interface RunDeps {
   now: () => string
   newId: () => string
   log: (line: string) => void
+  /**
+   * 🔴 발급 시점 preflight 의 사실 수집 포트(REQ-2026-172). `undefined` 면 **검사를 건너뛴다** —
+   *    기존 호출부·테스트가 그대로 동작하고, 진짜 게이트는 `integrate` 에 그대로 있다.
+   */
+  preflightPorts?: PreflightFactPorts
 }
 
 const ledgerAbs = (rootAbs: string): string => join(rootAbs, ...DELEGATION_LEDGER_REL.split('/'))
@@ -213,6 +223,69 @@ export function expiryOf(nowIso: string, ttlHours: number): string {
 }
 
 /** 원장에 한 행을 append 하고 **그 파일만** 부기 커밋한다. */
+/**
+ * 발급 전 preflight 결과를 사람이 읽는 줄로 만든다(REQ-2026-172).
+ *
+ * 🔴 **거부면 throw 한다** — 원장을 건드리기 전이라 실패한 발급이 이력에 남지 않는다.
+ * 🔴 **플래그를 대신 켜지 않는다.** 필요한 것을 **명령 문자열로 알려 줄 뿐**이고,
+ *    그것을 실행할지는 사람이 정한다(완료 기준 3).
+ */
+export function preflightLines(
+  o: Opts,
+  deps: RunDeps,
+  row: DelegationIssued,
+  trunkSha: string,
+  sourceSha: string,
+): string[] {
+  const ports = deps.preflightPorts
+  if (ports === undefined) return []
+
+  const collected = collectPreflightFacts(ports, row.scope, trunkSha, sourceSha)
+  if (collected.kind === "unavailable")
+    // 🔴 모르면 **막지 않는다** — 진짜 게이트는 integrate 다. 다만 조용히 넘기지도 않는다.
+    return [`  preflight  : 판정 생략 — ${collected.reason}`]
+
+  const result: PreflightResult = preflightDelegation({
+    ledgerText: readLedger(deps.rootAbs),
+    candidate: row,
+    now: row.at,
+    trunkSha,
+    requested: { local_merge: true, origin_push: false, bypass_protection: false },
+    ...collected.facts,
+  })
+
+  if (result.kind === "ok") return ["  preflight  : 지금 이 범위로 통합이 열립니다(발급 후 integrate 가 다시 검증합니다)"]
+  if (result.kind === "inconclusive")
+    return [`  preflight  : 판정 보류 — ${result.reason}: ${result.detail}`]
+
+  if (result.kind === "needs-acks") {
+    const flags = [
+      ...(result.acks.attestedAck && !o.allowAttested ? ["--allow-attested"] : []),
+      ...(result.acks.highRiskAck && !o.highRisk ? ["--high-risk"] : []),
+    ]
+    throw new Error(
+      [
+        "이 범위는 명시가 더 필요합니다 — 발급하지 않았습니다(원장 무변경).",
+        ...result.reasons.map((r) => `  - ${r}: ${DENY_GUIDANCE[r]}`),
+        "  🔴 아래 플래그를 **사람이** 판단해 붙여 다시 실행하십시오(도구가 대신 켜지 않습니다):",
+        `      ${flags.join(" ")}`,
+        "  이 플래그들을 한 번에 알려 주는 이유: 거부 사유는 한 번에 하나씩만 나오므로,",
+        "  하나씩 고치면 발급을 여러 번 반복하게 됩니다.",
+      ].join("\n"),
+    )
+  }
+
+  throw new Error(
+    [
+      `이 범위로는 통합이 열리지 않습니다(${result.reason}) — 발급하지 않았습니다(원장 무변경).`,
+      `  ${result.detail}`,
+      `  → ${DENY_GUIDANCE[result.reason]}`,
+      ...(ACK_FOR[result.reason] === null
+        ? ["  🔴 이 사유는 플래그로 열리지 않습니다 — 범위나 상태를 먼저 고쳐야 합니다."]
+        : []),
+    ].join("\n"),
+  )
+}
 function appendAndCommit(deps: RunDeps, row: DelegationRow, subject: string): void {
   const staged = deps.git
     .exec(['diff', '--cached', '--name-only'])
@@ -226,7 +299,12 @@ function appendAndCommit(deps: RunDeps, row: DelegationRow, subject: string): vo
     )
   const abs = ledgerAbs(deps.rootAbs)
   mkdirSync(dirname(abs), { recursive: true })
-  appendFileSync(abs, `${JSON.stringify(row)}\n`, 'utf8')
+  /**
+   * 🔴 preflight 가 가정한 **바이트 그대로** 덧붙인다(REQ-2026-172 phase-2 r01 P1).
+   *    개행 보정을 한쪽만 하면 *"preflight 는 통과했는데 발급이 원장을 깨뜨린다"* 가 된다 —
+   *    끝 개행이 없는 원장에서 두 JSON 객체가 한 줄로 붙어 다음 `integrate` 가 `ledger-corrupt` 로 막힌다.
+   */
+  appendFileSync(abs, delegationAppendChunk(readLedger(deps.rootAbs), row), 'utf8')
   deps.git.exec(['add', DELEGATION_LEDGER_REL])
   deps.git.exec(['commit', '-m', bookkeepingMessage(subject)])
 }
@@ -277,6 +355,12 @@ function runIssue(o: Opts, deps: RunDeps): number {
     `  attested   : ${o.allowAttested ? '함께 위임함(예외 승인 커밋이 실릴 수 있습니다)' : '위임하지 않음(범위에 attested 가 있으면 통합이 막힙니다)'}`,
   )
   if (o.allowBypass) deps.log('  ⚠️ branch protection 우회를 위임했습니다 — 사용 시 원장과 최종 보고에 남습니다.')
+
+  /**
+   * 🔴 **발급 전 preflight**(REQ-2026-172). `--run` 여부와 무관하게 **같은 검사**를 한다 —
+   *    dry-run 이 곧 preflight 다(DEC-5). 거부면 원장을 건드리지 않는다.
+   */
+  for (const line of preflightLines(o, deps, row, trunkSha, baseSha)) deps.log(line)
 
   if (!o.run) {
     deps.log(`DRY-RUN — 기록하지 않았습니다. 실행하려면 --run 을 지정하세요.`)
@@ -367,6 +451,17 @@ export function main(argv: string[]): void {
     now: () => new Date().toISOString(),
     newId: () => randomUUID(),
     log: (l) => console.log(l),
+    /**
+     * 🔴 **실제 배선**(REQ-2026-172). 이 줄이 없으면 preflight 는 만들어만 놓고 아무 데서도 돌지 않는
+     *    죽은 코드다 — 이 저장소가 반복해서 데인 "배선 끊김"이고, 순수 테스트로는 잡히지 않는다.
+     *    그래서 e2e 가 **실제 CLI 를 스폰해** 거부를 확인한다.
+     */
+    preflightPorts: {
+      git,
+      readBlobs: (ref, paths) => readBlobsAtRef(cfg.root, ref, paths),
+      ticketRoot: cfg.ticketRoot,
+      reviewHardCap: cfg.reviewBudget.hardCap,
+    },
   })
 }
 
