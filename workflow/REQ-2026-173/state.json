@@ -2,14 +2,14 @@
   "id": "REQ-2026-173",
   "branch": "feat/req-2026-173-trunk-advance-authorized",
   "risk_level": "LOW",
-  "codex_thread_id": "01a02963-40f6-7b00-a1da-e5cab473ae44",
-  "review_base_sha": "7eb75dd024fba1bbf1145be502c138098afafbcd",
-  "review_diff_hash": "8506def03f70d3159911aa40ad0d2da9c77a8dc8",
+  "codex_thread_id": "01a02974-7b35-7413-89db-356add95d2f4",
+  "review_base_sha": "6bf5bb5060c0837c28e3b797c54c610e916d16ef",
+  "review_diff_hash": "bd38a9e763d734d1258bdfabd366a8e0cb9ae137",
   "approved_diff_hash": null,
   "commit_allowed": false,
   "design_approved": true,
   "design_approved_hash": "dc2dd86e8859d95b09e1a050e78b049939fb65152e02afaacecf0f73ac31342f",
-  "current_phase": "phase-1-authorize",
+  "current_phase": "phase-2-wire-integrate",
   "phases": [
     {
       "id": "phase-1-authorize",
@@ -53,6 +53,13 @@
       "phase_id": "phase-1-authorize",
       "attempts": 4,
       "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-wire-integrate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-wire-integrate",
+      "attempts": 2,
+      "closed_reason": "approved"
     }
   ],
   "design_baseline": {
@@ -87,12 +94,12 @@
   },
   "last_review": {
     "review_kind": "phase",
-    "phase_id": "phase-1-authorize",
+    "phase_id": "phase-2-wire-integrate",
     "outcome": "approved",
-    "compare_hash": "02e3a6b0cdf148e61c013d93296ce883bda70a5a26bf94ca3ea9ba7b2c8216a4",
+    "compare_hash": "da3b2146be0e0d75f624e7dbe557a10cbbc421e5e610172ae89ee1de1b73dd8e",
     "count": 1,
     "errors": [],
-    "at": "2026-08-22T12:14:43.702Z",
+    "at": "2026-08-22T12:33:01.219Z",
     "findings": [],
     "elided_count": 0
   },
@@ -102,6 +109,12 @@
       "phase_id": "phase-1-authorize",
       "consumed_by_commit_sha": "5e3d65c956f30ffa94e8fcf6dce058ee764187f8",
       "approval_consumed_at": "2026-08-22T12:15:02.448Z"
+    },
+    {
+      "approved_tree": "bd38a9e763d734d1258bdfabd366a8e0cb9ae137",
+      "phase_id": "phase-2-wire-integrate",
+      "consumed_by_commit_sha": "9e1ef284fd85f4c0635c0ceedb5c22a0e8826836",
+      "approval_consumed_at": "2026-08-22T12:33:25.550Z"
     }
   ],
   "user_commit_confirmed": null
