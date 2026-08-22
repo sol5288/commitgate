@@ -470,7 +470,19 @@ export interface DelegationCheckInput {
   deliveryMembers: string[] | null
   /** delivery 구성이 발급 시점과 달라졌는가. */
   compositionChanged: boolean
+  /**
+   * trunk 가 움직였을 때 그 이동이 **이 원장이 인가한 병합만으로** 이루어졌는가(REQ-2026-173).
+   *
+   * 🔴 **`undefined` = 계산하지 않았다** → `trunk_sha` 불일치는 종전대로 `trunk-moved` 거부다.
+   *    "모른다"를 "괜찮다"로 읽지 않는다. 판정은 `lib/trunk-advance` 의 `authorizeTrunkAdvance` 가 한다.
+   */
+  trunkAdvance?: TrunkAdvanceVerdict
 }
+
+/** 인가된 trunk 이동 판정 결과(REQ-2026-173). 🔴 통과에도 **무엇이 인가됐는지**를 담는다(정직성). */
+export type TrunkAdvanceVerdict =
+  | { authorized: true; mergeShas: string[]; addedCommits: number }
+  | { authorized: false; reason: string }
 
 export type DelegationVerdict =
   | { ok: true; row: DelegationIssued }
@@ -518,8 +530,22 @@ export function delegationVerdict(input: DelegationCheckInput): DelegationVerdic
    */
   if (row.trunk_branch !== input.trunkBranch)
     return deny('trunk-branch-mismatch', `위임 대상은 '${row.trunk_branch}' 인데 통합 대상은 '${input.trunkBranch}' 다`)
-  if (row.trunk_sha !== input.trunkSha)
-    return deny('trunk-moved', `위임 발급 이후 ${row.trunk_branch} 가 움직였다(${row.trunk_sha.slice(0, 8)} → ${input.trunkSha.slice(0, 8)})`)
+  /**
+   * 🔴 **"움직였다"가 아니라 "인가되지 않은 방식으로 움직였다"를 본다**(REQ-2026-173).
+   *
+   *    사람이 승인한 것은 *무엇을 병합해도 되는가*이지 *trunk 가 어느 SHA 에 있는가*가 아니다.
+   *    앞 REQ 를 통합하면 뒤 REQ 들의 위임이 전부 무효가 되어, 같은 승인을 몇 번씩 다시 받아야 했다
+   *    (소비자 실측: 초과 발급 29건 중 9건이 이 연쇄).
+   *
+   * 🔴 **`undefined` 는 "허용"이 아니라 "계산하지 않았다"** 이다 → 종전대로 거부한다.
+   *    이 기본값이 뒤집히면 **모든 trunk 이동이 통과**하므로, 무회귀와 fail-closed 를 같은 줄에서 지킨다.
+   */
+  if (row.trunk_sha !== input.trunkSha) {
+    const moved = `위임 발급 이후 ${row.trunk_branch} 가 움직였다(${row.trunk_sha.slice(0, 8)} → ${input.trunkSha.slice(0, 8)})`
+    const advance = input.trunkAdvance
+    if (advance === undefined) return deny('trunk-moved', moved)
+    if (!advance.authorized) return deny('trunk-moved', `${moved} — ${advance.reason}`)
+  }
   if (row.source_branch !== input.sourceBranch)
     return deny('source-mismatch', `위임된 소스는 '${row.source_branch}' 인데 병합 소스는 '${input.sourceBranch}' 다`)
 

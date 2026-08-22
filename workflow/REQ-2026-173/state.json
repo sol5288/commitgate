@@ -1,0 +1,134 @@
+{
+  "id": "REQ-2026-173",
+  "branch": "feat/req-2026-173-trunk-advance-authorized",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a02996-1c12-7201-84a9-af0b75fa9014",
+  "review_base_sha": "ea715dbad85e5e0f198e4fe1559a2474d2639e39",
+  "review_diff_hash": "8c4a0bad8d7e379303baec789d32b52acb15161e",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "dc2dd86e8859d95b09e1a050e78b049939fb65152e02afaacecf0f73ac31342f",
+  "current_phase": "phase-3-next-guidance",
+  "phases": [
+    {
+      "id": "phase-1-authorize",
+      "title": "인가된 trunk 이동 판정(순수+사실 계산)",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-2-wire-integrate",
+      "title": "integrate 배선 + 정직한 기록",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    },
+    {
+      "id": "phase-3-next-guidance",
+      "title": "req:next 안내 정합",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-authorize#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-authorize",
+      "attempts": 4,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-2-wire-integrate#1",
+      "review_kind": "phase",
+      "phase_id": "phase-2-wire-integrate",
+      "attempts": 2,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-3-next-guidance#1",
+      "review_kind": "phase",
+      "phase_id": "phase-3-next-guidance",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "9f9c101998b20c2f01624746ddd9e2189707fdc1",
+    "design": "851b1936cea2a33ec2285c71c0e97a571ca0b992",
+    "plan": "081aceb434c1adbc984026daf80272db795d9ad1"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-173/responses/design-r01-approved.json",
+    "response_sha256": "43e0f3e9153f98f87657659c94e8f775e4243bb2170cf81a993e3a811f498ca6",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "0de78ac78c2c80b957cd589d60303c713fea8b08",
+    "codex_thread_id": "01a02940-f785-79c3-a4f5-8f1a0545b105",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-22T11:36:07.021Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-173/responses/design-r01-approved.json",
+          "sha256": "43e0f3e9153f98f87657659c94e8f775e4243bb2170cf81a993e3a811f498ca6"
+        }
+      ],
+      "inventory_sha256": "d8513e502e9f5c07c0297966e7e75c67f8253ac05ce6f7b1e7f3222b16bffe34",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-173/responses/design-r01-approved.json"
+    },
+    "design_hash": "dc2dd86e8859d95b09e1a050e78b049939fb65152e02afaacecf0f73ac31342f"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-3-next-guidance",
+    "outcome": "approved",
+    "compare_hash": "55b6b65159b1e1b9b44aae8a82962e844f34cda14d62eb3b9416dd95ba9f1938",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-22T13:09:54.702Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "8506def03f70d3159911aa40ad0d2da9c77a8dc8",
+      "phase_id": "phase-1-authorize",
+      "consumed_by_commit_sha": "5e3d65c956f30ffa94e8fcf6dce058ee764187f8",
+      "approval_consumed_at": "2026-08-22T12:15:02.448Z"
+    },
+    {
+      "approved_tree": "bd38a9e763d734d1258bdfabd366a8e0cb9ae137",
+      "phase_id": "phase-2-wire-integrate",
+      "consumed_by_commit_sha": "9e1ef284fd85f4c0635c0ceedb5c22a0e8826836",
+      "approval_consumed_at": "2026-08-22T12:33:25.550Z"
+    },
+    {
+      "approved_tree": "8c4a0bad8d7e379303baec789d32b52acb15161e",
+      "phase_id": "phase-3-next-guidance",
+      "consumed_by_commit_sha": "f7ac607258f3d1128df5d31d72ea1d01883decdf",
+      "approval_consumed_at": "2026-08-22T13:10:13.087Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}

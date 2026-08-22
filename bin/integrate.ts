@@ -39,6 +39,7 @@ import { awaitCiRun, createGhCiRunAdapter, type GithubCiRunPort, type CiRunResul
 import { deliveryApprovalBlock, deliveryRecordProblems, type DeliveryRecord } from '../scripts/req/lib/delivery'
 import { bookkeepingMessage } from '../scripts/req/lib/bookkeeping'
 import { collectDeepInput, type RunDeps as VerifyRunDeps } from './verify-range'
+import { authorizeTrunkAdvance } from '../scripts/req/lib/trunk-advance'
 import { attributeRange, type UnattributableCommit } from '../scripts/req/lib/range-attribution'
 // REQ-2026-163 DEC-4: series 판정의 정본. doctor 와 같은 술어를 쓴다(두 곳에서 각자 판정하면 갈라진다).
 import { hasInconclusiveSeries } from '../scripts/req/lib/review-series'
@@ -53,6 +54,7 @@ import {
   type DelegationPermissions,
   type DelegationRow,
   type DelegationScope,
+  type TrunkAdvanceVerdict,
 } from '../scripts/req/lib/delegation'
 import { isStopGate, type StopGate } from '../scripts/req/lib/config'
 
@@ -254,7 +256,16 @@ export function planPushActions(granted: DelegationPermissions): { performed: De
 
 export type DelegationGateResult =
   | { kind: 'not-required' }
-  | { kind: 'allowed'; delegationId: string; permissions: DelegationPermissions }
+  | {
+      kind: 'allowed'
+      delegationId: string
+      permissions: DelegationPermissions
+      /**
+       * trunk 가 움직였는데 **인가된 병합만이어서** 통과한 경우 그 사실(REQ-2026-173 DEC-4).
+       * `undefined` = trunk 가 그대로였다. 🔴 통과를 조용히 넘기지 않기 위한 값이다.
+       */
+      trunkAdvance?: Extract<TrunkAdvanceVerdict, { authorized: true }>
+    }
   | { kind: 'denied'; lines: string[] }
   /**
    * **자동 통합은 못 하지만, 대화형 사람 확인으로는 진행할 수 있다**(REQ-2026-160).
@@ -423,8 +434,32 @@ export function delegationGate(
     ticketRoot: deps.ticketRoot,
   })
 
+  /**
+   * 🔴 **trunk 이동을 "인가된 병합"과 구분한다**(REQ-2026-173). SHA 가 다르기만 하면 거부하던 축을
+   *    좁힌다 — 그 사이가 **전부 이 원장이 인가한 병합과 그 수행 기록**이면 위임은 그대로 유효하다.
+   *
+   * 🔴 **`trunk_sha` 가 실제로 다를 때만** 계산한다(비용). 그 밖에는 `undefined` 로 남겨
+   *    종전 동작(불일치 시 거부)을 그대로 둔다 — "계산하지 않았다"는 "괜찮다"가 아니다.
+   */
+  const ledgerText = deps.readDelegationLedger()
+  const trunkAdvance = ((): TrunkAdvanceVerdict | undefined => {
+    const parsed = parseDelegationLedger(ledgerText)
+    if (parsed.problems.length > 0) return undefined // 손상 원장은 verdict 가 먼저 거부한다.
+    const active = foldDelegations(parsed.rows, scope).active
+    if (active.length !== 1) return undefined // 부재·모호는 verdict 의 몫이다.
+    const row = active[0] as DelegationIssued
+    if (row.trunk_sha === prepared.trunkHeadSha) return undefined // 움직이지 않았다.
+    return authorizeTrunkAdvance(
+      { git: deps.git, readBlobs: deps.readBlobs, ticketRoot: deps.ticketRoot },
+      parsed.rows,
+      row.trunk_sha,
+      prepared.trunkHeadSha,
+      prepared.trunkBranch,
+    )
+  })()
+
   const verdict = delegationVerdict({
-    ledgerText: deps.readDelegationLedger(),
+    ledgerText,
     scope,
     now: deps.now(),
     trunkBranch: prepared.trunkBranch,
@@ -438,9 +473,20 @@ export function delegationGate(
     rangeAttribution: attribution,
     deliveryMembers: ticketFacts.deliveryMembers,
     compositionChanged: ticketFacts.compositionChanged,
+    trunkAdvance,
   })
 
-  if (verdict.ok) return { kind: 'allowed', delegationId: verdict.row.id, permissions: verdict.row.permissions }
+  if (verdict.ok)
+    return {
+      kind: 'allowed',
+      delegationId: verdict.row.id,
+      permissions: verdict.row.permissions,
+      /**
+       * 🔴 **감춰진 완화는 완화가 아니라 구멍이다**(DEC-4). trunk 가 움직였는데 통과했다면 그 사실을
+       *    출력과 원장에 남긴다 — 나중에 이력을 읽는 사람이 "발급 시점 trunk 그대로였다"고 오해하면 안 된다.
+       */
+      trunkAdvance: trunkAdvance?.authorized === true ? trunkAdvance : undefined,
+    }
   const lines = [`사전 위임이 이 통합을 허용하지 않습니다 (${verdict.reason}): ${verdict.detail}`, `  → ${DENY_GUIDANCE[verdict.reason]}`]
   for (const u of attribution.unattributableCommits.slice(0, 3))
     lines.push(`  · 판정 불가: ${u.sha.slice(0, 8)} ${u.subject} — ${u.why}`)
@@ -1007,7 +1053,18 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
   }
 
   deps.log(`commitgate integrate — ${prepared.featureBranch} → ${prepared.trunkBranch}`)
-  if (gate.kind === 'allowed') deps.log(`  사전 위임: ${gate.delegationId} (사람 확인 없이 진행합니다 — 소비는 1회)`)
+  if (gate.kind === 'allowed') {
+    deps.log(`  사전 위임: ${gate.delegationId} (사람 확인 없이 진행합니다 — 소비는 1회)`)
+    /**
+     * 🔴 **완화를 감추지 않는다**(REQ-2026-173 DEC-4). trunk 가 발급 시점과 다른데 통과했다면,
+     *    무엇이 그것을 인가했는지 사람이 지금 볼 수 있어야 한다.
+     */
+    if (gate.trunkAdvance !== undefined)
+      deps.log(
+        `  trunk 이동: 발급 이후 ${gate.trunkAdvance.mergeShas.length}건의 **인가된 병합**으로만 움직였습니다` +
+          ` (${gate.trunkAdvance.mergeShas.map((x) => x.slice(0, 8)).join(', ')} · 커밋 ${gate.trunkAdvance.addedCommits}개) — 재발급 없이 진행합니다`,
+      )
+  }
   const c = prepared.verificationSummary.counts
   deps.log(`  증거: 승인 소비 ${c.approved} · 도구 부기 ${c.bookkeeping} · 머지 ${c.merge} · attested ${c.attested} · 미입증 ${c.unproven} (strict 통과)`)
   deps.log(`  결속: feature ${prepared.featureHeadSha.slice(0, 8)} · trunk ${prepared.trunkHeadSha.slice(0, 8)} (이 두 SHA가 그대로일 때만 병합합니다)`)
@@ -1096,7 +1153,14 @@ export async function runIntegrate(opts: Opts, deps: RunDeps, coordinator?: Inte
         verified_sha: verified,
         authorized: performed,
         outcome: 'merged',
-        detail: `${prepared.featureBranch} → ${prepared.trunkBranch}`,
+        // 🔴 원장만 봐도 되짚을 수 있어야 한다 — trunk 이동 인가 사실을 여기에도 남긴다(DEC-4).
+        detail:
+          `${prepared.featureBranch} → ${prepared.trunkBranch}` +
+          (gate.kind === 'allowed' && gate.trunkAdvance !== undefined
+            ? ` · trunk 이동을 인가된 병합 ${gate.trunkAdvance.mergeShas.length}건으로 확인(${gate.trunkAdvance.mergeShas
+                .map((x) => x.slice(0, 8))
+                .join(', ')})`
+            : ''),
       },
       `delegate — ${gate.delegationId.slice(0, 8)} 소비(통합)`,
     )
