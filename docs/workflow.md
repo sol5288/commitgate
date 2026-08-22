@@ -528,6 +528,13 @@ npx commitgate req:commit <REQ> --finalize --run
 | `req` | **REQ를 완성시키는 커밋** | `req` |
 | `merge` (묶음에 속함) | `delivery integrate` | `delivery` |
 | `merge` (묶음 없음) | **`req:next` 종단**(통합 직전) | `req` |
+| `auto` (묶음에 속함) | `delivery integrate` | `delivery` |
+| `auto` (묶음 없음) | **사전 위임 발급**(`req:delegate --high-risk`) | — |
+
+🔴 **`auto` + 묶음 없음에서는 `req:confirm`을 받지 않습니다.** HIGH 승인이 **사전 위임에 담기기**
+때문입니다 — `--high-risk` 없이 발급된 위임으로는 `commitgate integrate`가 `high-risk-unacked`로
+막습니다. 승인이 사라지는 것이 아니라 **그 자리로 옮겨진** 것이고, 위임은 커밋되는 append-only
+원장에 승인 문장·SHA 결속·만료와 함께 남습니다.
 
 ```sh
 npx commitgate req:confirm 2026-071 --scope req --method "<무엇을 근거로 승인했는지>" --run

@@ -19,7 +19,14 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve, join, relative } from 'node:path'
-import { loadConfig, buildScriptInvocation, effectiveExecutionPolicy, defersToIntegration, type PackageManager } from './lib/config'
+import {
+  loadConfig,
+  buildScriptInvocation,
+  effectiveExecutionPolicy,
+  defersToIntegration,
+  highRiskCarriedByDelegation,
+  type PackageManager,
+} from './lib/config'
 import { createGitAdapter, type GitAdapter } from './lib/adapters'
 import { isDurabilityRequired, verifyCommittedDesignEvidence } from './lib/evidence'
 import { createEvidencePorts } from './lib/evidence-ports'
@@ -950,7 +957,13 @@ function resolveNextCore(input: NextInput): NextAction {
         //    이라 `auto` 티켓도 여기로 오는데, 예전엔 `merge` 가 하드코딩돼 **다른 정책 이름을 말했다**
         //    (같은 순간 D32 는 `auto` 라고 했다). 값이 하나 늘 때 문자열을 갱신하지 않으면 재발한다.
         prefix: `stopGate=${input.stopGate ?? 'merge'} 인데 이 feature 가 속한 delivery 묶음이 없다 — 이 REQ 의 통합이 다음 지점이다. `,
-        requireHighConfirm: true,
+        /**
+         * 🔴 **HIGH 승인의 자리는 정책이 정한다**(REQ-2026-174). `auto` 에서는 사전 위임의
+         *    `--high-risk` 가 그 자리이고, 그 경로에는 `user_commit_confirmed` 를 집행하는 게이트가
+         *    없다 — 확인을 두 번 요구하면 집행되지 않는 정지를 하나 더 만드는 셈이다.
+         *    `merge` 는 위임이 없어 담을 곳이 `req:confirm` 뿐이므로 **그대로 요구한다**.
+         */
+        requireHighConfirm: !highRiskCarriedByDelegation(input.stopGate ?? 'phase'),
       })
     }
     if (input.phaseCommitAutoApprove === 'low-only') return terminalIntegrationAction(input)
@@ -1178,7 +1191,11 @@ function autoDelegationAction(input: NextInput, prefix: string): NextAction {
     '위임이 없으면 `commitgate integrate` 가 `absent` 로 멈춘다(설정이나 대화 문장으로는 열리지 않는다). ' +
     '발급 문장은 **사람이 말한 그대로**여야 한다. ' +
     (high
-      ? '🔴 이 티켓은 HIGH 위험이라 `--high-risk` 가 **필수**다 — 없으면 통합이 `high-risk-unacked` 로 막힌다. '
+      ? '🔴 이 티켓은 HIGH 위험이라 `--high-risk` 가 **필수**다 — 없으면 통합이 `high-risk-unacked` 로 막힌다. ' +
+        // 🔴 REQ-2026-174: 확인이 **하나로 모였다**는 사실을 말한다. 말하지 않으면 앞 단계가 왜
+        //    사라졌는지 모른 채 게이트가 약해졌다고 오해한다 — 감춰진 완화가 곧 구멍이다.
+        '그리고 이것이 **이 티켓의 유일한 사람 확인**이다: `auto` 에서는 HIGH 승인이 이 위임에 담기고, ' +
+        '`integrate` 가 그 값을 검사한다(별도 `req:confirm` 을 받지 않는다). '
       : '') +
     '원격 push·branch protection bypass 는 **기본 불허**이고 필요하면 별도로 위임한다. ' +
     '승인 전에 `npx commitgate verify-range` 로 이 범위의 승인 증거를 로컬에서 확인할 수 있다.'

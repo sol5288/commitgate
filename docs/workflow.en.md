@@ -285,7 +285,8 @@ right after the transition they cause — someone who seals after the last `inte
 `req:next` again.
 
 🔴 **A REQ that belongs to no group stops exactly like `req` does**: the terminal is `AWAIT_HUMAN`
-(integrate feature→main), and a `HIGH` ticket must record `req:confirm --scope req` just before it.
+(integrate feature→main), and under `merge` a `HIGH` ticket must record `req:confirm --scope req` just
+before it. (Under `auto` that acknowledgement is carried by the pre-delegation's `--high-risk` instead.)
 Choosing `merge` or `auto` does not remove the stop — with no group, what comes after this REQ is not the
 next REQ but the **integration**. (Under `auto` you are not asked again only when a valid pre-delegation
 covers that integration.)
@@ -429,6 +430,13 @@ A ticket with `risk_level: HIGH` **cannot pass the point `stopGate` designates w
 | `req` | **the commit that completes the REQ** | `req` |
 | `merge` (in a delivery set) | `delivery integrate` | `delivery` |
 | `merge` (no delivery set) | **the `req:next` terminal** (just before integration) | `req` |
+| `auto` (in a delivery set) | `delivery integrate` | `delivery` |
+| `auto` (no delivery set) | **issuing the pre-delegation** (`req:delegate --high-risk`) | — |
+
+🔴 **With `auto` and no delivery set, `req:confirm` is not requested.** The HIGH acknowledgement is
+carried by the pre-delegation instead: without `--high-risk`, `commitgate integrate` refuses with
+`high-risk-unacked`. The approval is not removed — it **moves** to that place, and a delegation lives in
+a committed append-only ledger together with the approval sentence, SHA bindings, and an expiry.
 
 ```sh
 npx commitgate req:confirm 2026-071 --scope req --method "<what you based the approval on>" --run

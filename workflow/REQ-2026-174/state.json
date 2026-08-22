@@ -1,0 +1,94 @@
+{
+  "id": "REQ-2026-174",
+  "branch": "feat/req-2026-174-high-confirm-absorb",
+  "risk_level": "LOW",
+  "codex_thread_id": "01a029ba-24f9-7ce1-ab85-f91e9bd448b0",
+  "review_base_sha": "9bbeedb54232ec8e7d8c1e4e21cec94859478f8f",
+  "review_diff_hash": "3eab2665f0df05487b2d6fa46abc865140da5674",
+  "approved_diff_hash": null,
+  "commit_allowed": false,
+  "design_approved": true,
+  "design_approved_hash": "c971fdde220a74c5bd556f2ed872e19acc1017f7244cd265bd92cfa14ab606da",
+  "current_phase": "phase-1-absorb",
+  "phases": [
+    {
+      "id": "phase-1-absorb",
+      "title": "HIGH 확인을 위임 발급에 흡수 + 계약 정합",
+      "status": "pending",
+      "max_files": 8,
+      "approved": true
+    }
+  ],
+  "approval_evidence_required": true,
+  "evidence_durability_required": true,
+  "review_series_model_version": 1,
+  "policy_snapshot": {
+    "stop_gate": "auto"
+  },
+  "review_series": [
+    {
+      "series_id": "design:-#1",
+      "review_kind": "design",
+      "phase_id": null,
+      "attempts": 1,
+      "closed_reason": "approved"
+    },
+    {
+      "series_id": "phase:phase-1-absorb#1",
+      "review_kind": "phase",
+      "phase_id": "phase-1-absorb",
+      "attempts": 1,
+      "closed_reason": "approved"
+    }
+  ],
+  "design_baseline": {
+    "requirement": "9f52b56fd05fe203a5677c69bfa93f7f1cfeda33",
+    "design": "2fb317464cba935fde0110bb023ee06b0226f598",
+    "plan": "e6de670dd4b876bfa2159a162e25c733a607b1c5"
+  },
+  "design_approval_evidence": {
+    "response_path": "workflow/REQ-2026-174/responses/design-r01-approved.json",
+    "response_sha256": "b53d138069033f6380397480857620f724967ee250e30e023ad948c2eb706af5",
+    "review_kind": "design",
+    "phase_id": null,
+    "review_base_sha": "12815936e3c89aac9399027cc25c406924365307",
+    "codex_thread_id": "01a0299b-0487-7203-ae3c-20b1715a5dd3",
+    "machine_schema_version": "1.1",
+    "status": "STEP_COMPLETE",
+    "commit_approved": "yes",
+    "approved_at": "2026-08-22T13:15:18.090Z",
+    "archive_inventory": {
+      "items": [
+        {
+          "response_path": "workflow/REQ-2026-174/responses/design-r01-approved.json",
+          "sha256": "b53d138069033f6380397480857620f724967ee250e30e023ad948c2eb706af5"
+        }
+      ],
+      "inventory_sha256": "5880e2f4760cbc2751b503187069c1589f1205420243d04bfc2d24b1d023869b",
+      "review_kind": "design",
+      "phase_id": null,
+      "source_response_path": "workflow/REQ-2026-174/responses/design-r01-approved.json"
+    },
+    "design_hash": "c971fdde220a74c5bd556f2ed872e19acc1017f7244cd265bd92cfa14ab606da"
+  },
+  "last_review": {
+    "review_kind": "phase",
+    "phase_id": "phase-1-absorb",
+    "outcome": "approved",
+    "compare_hash": "d7900331f827f15f7da5dece3dc4e2771679ee13b8caa3de2aa5cac14d21fa42",
+    "count": 1,
+    "errors": [],
+    "at": "2026-08-22T13:48:46.928Z",
+    "findings": [],
+    "elided_count": 0
+  },
+  "consumed_approvals": [
+    {
+      "approved_tree": "3eab2665f0df05487b2d6fa46abc865140da5674",
+      "phase_id": "phase-1-absorb",
+      "consumed_by_commit_sha": "3afbc7c7fa99b100a59c0b442a43f77adf6dfb93",
+      "approval_consumed_at": "2026-08-22T13:49:03.165Z"
+    }
+  ],
+  "user_commit_confirmed": null
+}
