@@ -21,6 +21,9 @@ import { STAGE_B_REQ_VERBS, STAGE_B_REQ_SCRIPTS } from '../../bin/init'
 import { DELEGATION_LEDGER_REL, parseDelegationLedger, type DelegationIssued } from '../../scripts/req/lib/delegation'
 import { BOOKKEEPING_TRAILER } from '../../scripts/req/lib/bookkeeping'
 import type { GitAdapter } from '../../scripts/req/lib/adapters'
+import { main as delegateMain } from '../../scripts/req/req-delegate'
+import { readBlobsAtRef } from '../../scripts/req/lib/git-batch'
+import type { PreflightFactPorts } from '../../scripts/req/lib/delegation-preflight-facts'
 
 /**
  * REQ-2026-140 phase-3 — `req:delegate`(실 git).
@@ -315,5 +318,119 @@ describe('[REQ-2026-140] verb 등록', () => {
   it('🔴 Stage B 주입 목록에 따라온다', () => {
     expect(STAGE_B_REQ_VERBS).toContain('req:delegate')
     expect(STAGE_B_REQ_SCRIPTS['req:delegate']).toBe('commitgate req:delegate')
+  })
+})
+
+/**
+ * REQ-2026-172 phase-2 — **발급 시점 preflight 가 실제로 배선됐는가**.
+ *
+ * 🔴 순수 테스트(`delegation-preflight.test.ts`)는 판정만 본다. 포트를 주입하지 않으면 그 판정은
+ *    **아무 데서도 돌지 않는 죽은 코드**이고 순수 테스트는 전부 green 이다 — 이 저장소가 반복해서
+ *    데인 "배선 끊김"이다. 그래서 여기서는 **실 repo + 실 포트**로 태우고, 오라클은
+ *    **포트 유무에 따른 동작 대비**다(거부 vs 통과).
+ *
+ * 픽스처의 `feat/x` 는 티켓 디렉터리가 없는 순수 코드 커밋이라 귀속 불가 = 열리지 않는 범위다.
+ */
+describe('[REQ-2026-172] req:delegate preflight 배선', () => {
+  /** 실 git 저장소에 붙는 preflight 포트(main() 이 만드는 것과 같은 모양). */
+  const ports = (dir: string): PreflightFactPorts => ({
+    git: { exec: (args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }) },
+    readBlobs: (ref, paths) => readBlobsAtRef(dir, ref, paths),
+    ticketRoot: 'workflow',
+    reviewHardCap: 8,
+  })
+
+  it('🔴 포트를 주면 판정이 돈다 — 열리지 않는 범위는 발급 거부', () => {
+    const { dir } = mkRepo()
+    expect(() => runDelegate(OPTS({ run: false }), deps(dir, { preflightPorts: ports(dir) }))).toThrow(
+      /통합이 열리지 않습니다/,
+    )
+  })
+
+  it('포트가 없으면 기존 동작 그대로 통과한다(무회귀)', () => {
+    const { dir } = mkRepo()
+    const d = deps(dir)
+    expect(() => runDelegate(OPTS({ run: false }), d)).not.toThrow()
+    expect(d.logs.join('\n')).not.toContain('preflight')
+  })
+
+  /** 🔴 **거부는 원장을 건드리기 전에** 일어난다 — 실패한 발급이 이력에 남지 않는다. */
+  it('🔴 열리지 않는 범위면 --run 이어도 원장에 아무것도 쓰지 않는다', () => {
+    const { dir } = mkRepo()
+    expect(() => runDelegate(OPTS({ run: true }), deps(dir, { preflightPorts: ports(dir) }))).toThrow()
+    expect(existsSync(join(dir, DELEGATION_LEDGER_REL))).toBe(false)
+  })
+
+  /**
+   * 🔴 **main() 이 포트를 주입하는가**(진짜 배선). 위 테스트들은 포트를 손으로 넣으므로
+   *    `main()` 이 그 한 줄을 잊어도 전부 green 이다. 여기서만 그것이 검증된다.
+   */
+  it('🔴 main() 이 preflight 포트를 배선한다(잊으면 발급이 그냥 통과해 버린다)', () => {
+    const { dir, g } = mkRepo()
+    writeFileSync(
+      join(dir, 'req.config.json'),
+      JSON.stringify({ packageManager: 'npm', setup: { completedVersion: '0.0.0-test', completedAt: '2026-01-01T00:00:00Z' } }),
+    )
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '0.0.0' }))
+    g('add', '.')
+    g('commit', '-m', 'config')
+    const orig = console.log
+    console.log = () => undefined
+    try {
+      expect(() =>
+        delegateMain([
+          '--scope',
+          'ticket:REQ-2026-001',
+          '--source',
+          'feat/x',
+          '--sentence',
+          '통합을 사전 위임합니다',
+          '--root',
+          dir,
+        ]),
+      ).toThrow(/통합이 열리지 않습니다/)
+    } finally {
+      console.log = orig
+    }
+  })
+})
+
+/**
+ * REQ-2026-172 phase-2 r01 P1 — **preflight 가 가정한 바이트와 실제 append 가 같은가**.
+ *
+ * 🔴 `ledgerWithCandidate` 는 구분 개행을 보정하는데 실제 append 가 보정하지 않으면,
+ *    끝 개행이 없는 원장에서 preflight 는 통과하고 발급이 두 JSON 을 한 줄로 붙여 **원장을 깨뜨린다**.
+ *    그 손상은 다음 `integrate` 에서 `ledger-corrupt` 로 나타나 원인을 되짚기 어렵다.
+ */
+describe('[REQ-2026-172] 원장 append 는 preflight 와 같은 구분 규칙을 쓴다', () => {
+  it('🔴 끝 개행이 없는 유효 원장에 발급해도 두 행으로 파싱된다', () => {
+    const { dir } = mkRepo()
+    const abs = join(dir, DELEGATION_LEDGER_REL)
+    mkdirSync(join(dir, DELEGATION_LEDGER_REL.split('/')[0] as string), { recursive: true })
+    // 유효한 JSON 한 줄인데 **끝 개행만 없다**(손편집·중단된 write 로 생길 수 있다).
+    const prior = {
+      kind: 'issued',
+      id: 'PRIOR-1',
+      at: '2026-08-01T00:00:00.000Z',
+      scope: { kind: 'ticket', req_id: 'REQ-2026-999' },
+      trunk_branch: 'main',
+      trunk_sha: 'c'.repeat(40),
+      source_branch: 'feat/old',
+      base_sha: 'd'.repeat(40),
+      expires_at: '2026-08-01T12:00:00.000Z',
+      permissions: { local_merge: true, origin_push: false, bypass_protection: false },
+      high_risk_ack: false,
+      attested_ack: false,
+      approval_sentence: '이전 위임',
+    }
+    writeFileSync(abs, JSON.stringify(prior), 'utf8') // 🔴 개행 없음
+
+    // preflight 없이(포트 미주입) 발급 — 이 테스트가 보는 것은 **append 바이트**다.
+    runDelegate(OPTS({ run: true }), deps(dir))
+
+    const parsed = parseDelegationLedger(readFileSync(abs, 'utf8'))
+    expect(parsed.problems, '원장이 손상됐다 — 두 JSON 이 한 줄로 붙었다').toEqual([])
+    expect(parsed.rows).toHaveLength(2)
+    expect(parsed.rows.map((r) => r.id)).toEqual(['PRIOR-1', 'ID-0001'])
   })
 })

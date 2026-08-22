@@ -114,6 +114,40 @@ export interface DelegationRevoked {
 
 export type DelegationRow = DelegationIssued | DelegationConsumed | DelegationExecuted | DelegationRevoked
 
+/**
+ * 원장 한 줄 직렬화(개행 포함). 🔴 **한 곳에만 둔다**(REQ-2026-172).
+ *
+ * `req:delegate` 의 append 와 발급 시점 preflight 가 **같은 바이트**를 만들어야 한다 — preflight 는
+ * "이 행이 원장에 있다면" 을 가정해 판정하므로, 직렬화가 갈라지면 *"발급은 통과, 통합은 거부"* 가 남는다.
+ */
+export function serializeDelegationRow(row: DelegationRow): string {
+  return `${JSON.stringify(row)}\n`
+}
+
+/**
+ * 원장 끝에 **실제로 덧붙일 바이트**. 🔴 구분 개행 보정이 **여기 한 곳에만** 있다.
+ *
+ * 마지막 행이 유효한 JSON 이면서 **끝 개행만 없는** 원장이 있을 수 있다(손편집·중단된 write).
+ * 그때 그냥 이어 붙이면 두 JSON 객체가 한 줄로 붙어 **원장이 손상된다** — 그러면 다음 `integrate` 가
+ * `ledger-corrupt` 로 fail-closed 되고, 사람은 자기가 무엇을 잘못했는지 알 수 없다.
+ *
+ * 🔴 **preflight 와 실제 append 가 이 함수를 공유해야 한다**(phase-2 r01 P1). 한쪽만 보정하면
+ *    *"preflight 는 통과했는데 발급이 원장을 깨뜨린다"* 가 된다 — 정확히 그 상태를 만들었다가 잡혔다.
+ */
+export function delegationAppendChunk(ledgerText: string | null, row: DelegationRow): string {
+  const base = ledgerText ?? ''
+  const sep = base === '' || base.endsWith('\n') ? '' : '\n'
+  return `${sep}${serializeDelegationRow(row)}`
+}
+
+/**
+ * 기존 원장 뒤에 행을 이어 붙인 **가상 원장**(preflight 전용).
+ * 🔴 실제 append 와 **같은 청크**를 쓴다 — 바이트가 갈라지면 판정도 갈라진다.
+ */
+export function ledgerWithCandidate(ledgerText: string | null, row: DelegationRow): string {
+  return `${ledgerText ?? ''}${delegationAppendChunk(ledgerText, row)}`
+}
+
 // ───────────────────────────────── 파싱(fail-closed) ──
 
 export interface ParsedLedger {
