@@ -129,7 +129,7 @@
 | # | 예외 — 여기서는 멈춘다 |
 |---|---|
 | 1 | 통제점표(`I1`/`I2`/`B1` · `R1`/`R2`/`R3`) — **예외**: `stopGate: "auto"`이고 이 통합을 덮는 **유효한 사전 위임**이 있으면 `I1`/`I2`/`B1`을 다시 묻지 않는다(위임이 곧 그 승인이다). 위임이 없거나 만료·철회·소비됐으면 여기서 멈춘다. `R1`/`R2`/`R3`(tag·publish·release)는 **위임 대상이 아니다** — 언제나 사람이 승인한다 |
-| 2 | HIGH commit 실행 직전(= `req:confirm` 지점) |
+| 2 | HIGH commit 실행 직전(= `req:confirm` 지점). **예외**: `stopGate: "auto"`이고 delivery 묶음이 없으면 HIGH 승인은 **사전 위임의 `--high-risk`** 가 담는다 — 그 경로에서는 별도 `req:confirm`을 받지 않는다(승인이 사라지는 것이 아니라 그 자리로 **옮겨진** 것이고, `integrate`가 `high-risk-unacked`로 그대로 막는다) |
 | 3 | destructive 작업(reset/clean/force push) |
 | 4 | **설계 범위 변경 또는 비목표 추가**(아래 경계 참조) |
 | 5 | Codex 리뷰 `BLOCKED`(exit 2) 또는 제한된 재시도 후 판단 불명확 |

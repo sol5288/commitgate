@@ -91,6 +91,24 @@ export type StopGate = 'phase' | 'req' | 'merge' | 'auto'
  *    `requiredConfirmScope` 의 단일 인자 오버로드를 쓴다(REQ-2026-128 DEC-2). boolean 을 돌려주면
  *    그 좁히기가 사라져 조용한 오답이 가능해진다.
  */
+/**
+ * 이 정책에서 HIGH 승인을 **사전 위임이** 담는가(REQ-2026-174).
+ *
+ * 🔴 담는 값(`auto`)에서는 종단의 `req:confirm` 정지를 **중복**으로 요구하지 않는다 —
+ *    그 경로에서 `user_commit_confirmed` 를 집행하는 게이트가 없고(`userConfirmGate` 는
+ *    `defersToIntegration` 이면 즉시 통과한다), 실제로 HIGH 를 막는 것은 위임의 `high_risk_ack` 다.
+ *
+ * 🔴 **`defersToIntegration` 으로 대신하면 안 된다.** 그 함수는 `merge` 도 참인데, `merge` 에는
+ *    위임이 없어 HIGH 승인을 담을 곳이 `user_commit_confirmed` 뿐이다 — 거기서 정지를 없애면
+ *    **승인이 옮겨지는 것이 아니라 사라진다.**
+ *
+ * 🔴 값을 호출부에 하드코딩하지 않고 여기 함수로 둔다 — `StopGate` 가 늘 때 판단 지점이 하나다
+ *    (REQ-2026-146: `merge` 하드코딩이 `auto` 티켓에 다른 정책 이름을 말하게 한 이력).
+ */
+export function highRiskCarriedByDelegation(sg: StopGate): boolean {
+  return sg === 'auto'
+}
+
 export function defersToIntegration(sg: StopGate): sg is 'merge' | 'auto' {
   return sg === 'merge' || sg === 'auto'
 }
